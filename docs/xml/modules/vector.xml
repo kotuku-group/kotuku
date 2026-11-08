@@ -339,15 +339,16 @@ Z: Close Path
     <tiriPrototype>err, Handle:any = GetFontHandle(Family:str, Style:str, Weight:num, Size:num)</tiriPrototype>
     <tags>api-owns-result, non-null-result, blocking</tags>
     <input>
-      <param type="STRVIEW" name="Family">The name of the font family to access.</param>
-      <param type="STRVIEW" name="Style">The preferred style name or style descriptors.  Use <code>Regular</code> or <code>NULL</code> for the default.</param>
+      <param type="STRVIEW" name="Family">The name of the font family to access.  If empty, the <code>face</code> key of a font definition in <code>Style</code> is used.</param>
+      <param type="STRVIEW" name="Style">The preferred style name, style descriptors or a font definition.  Use <code>Regular</code> or <code>NULL</code> for the default.</param>
       <param type="INT" name="Weight">Equivalent to CSS font-weight, from 1 to 1000; a value of 400 or 0 is treated as unset.  A <code>weight</code> descriptor in the <code>Style</code> takes precedence.</param>
-      <param type="INT" name="Size">The em size of the font in pixels, equivalent to the VectorText FontSize.  Use <code>pt * 96 / 72</code> to convert from points.</param>
+      <param type="INT" name="Size">The em size of the font in pixels, equivalent to the VectorText FontSize.  Use <code>pt * 96 / 72</code> to convert from points.  If zero, the <code>size</code> key of a font definition in <code>Style</code> is used.</param>
       <param type="APTR *" name="Handle">The resulting font handle is returned here.</param>
     </input>
     <description>
 <p>For a given font family, style and size, this function returns a <code>Handle</code> that can be passed to font querying functions.</p>
 <p>The <code>Style</code> accepts the same style names and descriptors as the <class name="VectorText" field="FontStyle">VectorText.FontStyle</class> field, e.g. <code>Bold</code> or <code>weight=Medium;width=Condensed</code>.  Invalid descriptors are logged and ignored rather than returning an error.  Style strings that resolve to the same variable font coordinates, such as <code>weight=700</code> and <code>Bold</code>, return the same handle.</p>
+<p>A complete font definition (see <function>NormaliseTextStyle</function>) is also a valid <code>Style</code>.  Only its style keys select the font, so a change to a key such as <code>fill</code> returns the same handle.  If <code>Family</code> is empty or <code>Size</code> is zero then the definition's <code>face</code> and <code>size</code> are used in their place, and <code>ERR::Syntax</code> is returned if the definition is malformed.</p>
 <p>The handle is deterministic and permanent, remaining valid for the lifetime of the program.</p>
     </description>
     <result type="ERR">
@@ -360,6 +361,7 @@ Z: Close Path
       <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="ResolvePath">A call to ResolvePath() failed</error>
       <error code="CreateObject">A call to CreateObject() failed</error>
+      <error code="Syntax"><code>Family</code> or <code>Size</code> is unset and <code>Style</code> is a malformed font definition.</error>
     </result>
   </function>
 
@@ -475,6 +477,28 @@ Z: Close Path
   </function>
 
   <function>
+    <name>NormaliseTextStyle</name>
+    <comment>Validates a font definition and returns its canonical form.</comment>
+    <prototype>ERR vec::NormaliseTextStyle(STRVIEW String, STRING * Result)</prototype>
+    <tiriPrototype>err, Result:str = NormaliseTextStyle(String:str)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="STRVIEW" name="String">The font definition.</param>
+      <param type="STRING *" name="Result">The canonical form of the definition.</param>
+    </input>
+    <description>
+<p>A font definition is a single-line string of <code>key=value</code> pairs that describes a complete font selection, such as <code>face=Noto Sans; size=15px; weight=650; fill=#1d2433</code>.  The keys are listed in the Font Definitions manual.</p>
+<p>The result contains the declared keys only, in a fixed order and with normalised values.  Definitions that are equivalent therefore produce identical strings, which allows a change to be detected by comparing them.  Later keys replace earlier ones, so a partial override is applied by appending it to a definition and normalising the result.</p>
+<p>Unknown keys are logged and skipped so that a definition saved by a newer build remains readable.  A malformed value for a known key fails the whole definition.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Syntax">A known key has a malformed value.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
     <name>ParseTransform</name>
     <comment>Parses an SVG transform string and applies it to a matrix.</comment>
     <prototype>ERR vec::ParseTransform(struct VectorMatrix * Matrix, STRVIEW Transform)</prototype>
@@ -566,6 +590,27 @@ follow a <code>url()</code> reference.</li>
       <error code="Syntax">Invalid syntax detected</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="InvalidObject">An object is not of the required class type</error>
+    </result>
+  </function>
+
+  <function>
+    <name>ReadTextStyle</name>
+    <comment>Returns the keys and normalised values of a font definition.</comment>
+    <prototype>ERR vec::ReadTextStyle(STRVIEW String, struct KeyValue ** Result)</prototype>
+    <tiriPrototype>err, Result:any = ReadTextStyle(String:str)</tiriPrototype>
+    <tags>api-owns-result, thread-safe</tags>
+    <input>
+      <param type="STRVIEW" name="String">The font definition.</param>
+      <param type="struct KeyValue **" name="Result">Receives a pointer to the key-value map.</param>
+    </input>
+    <description>
+<p>ReadTextStyle() validates a font definition in the same way as <function>NormaliseTextStyle</function> and returns its declared keys, by their canonical names, with their normalised values.  Keys that are not declared are absent from the result.  Tiri clients receive the result as a table.</p>
+<p>The result is owned by the function and is valid until the next call to ReadTextStyle() on the same thread.  C++ clients should cast the result to <code>KEYVALUE *</code>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Syntax">A known key has a malformed value.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 

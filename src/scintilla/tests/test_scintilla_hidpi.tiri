@@ -26,8 +26,7 @@ function newEditor(Width:num!, Height:num!, Scale:num, Options:table):<obj, obj,
       check mVec.Scale(matrix, Scale, Scale)
    end
    local options = Options ?? { }
-   options.face ?= FACE
-   options.fontSize ?= 14
+   options.textStyle ?= f'face={FACE}; size=14px'
    local sci = host.new('Scintilla', theme_utils.options(options))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
@@ -87,7 +86,7 @@ function compareWithReference(Scale:num!, Setup:func)
    local width, height = PAGE_WIDTH / Scale, PAGE_HEIGHT / Scale
    local scene <close>, host, sci, bmp = newEditor(width, height, Scale)
    local ref_scene <close>, ref_host, ref, ref_bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT, nil, {
-      fontSize = math.round(14 * Scale), leftMargin = math.round(4 * Scale)
+      textStyle = f'face={FACE}; size={math.round(14 * Scale)}px', leftMargin = math.round(4 * Scale)
    })
 
    for editor in values(array<obj> { sci, ref }) do
@@ -133,7 +132,7 @@ end
 
 @Test function ScaledTextIsNotResampled()
    local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2)
-   local ref_scene <close>, ref_host, ref, ref_bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT, nil, { fontSize=28 })
+   local ref_scene <close>, ref_host, ref, ref_bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT, nil, { textStyle=f'face={FACE}; size=28px' })
    sci.string = TEXT
    ref.string = TEXT
    render(scene)
@@ -145,33 +144,33 @@ end
 -- Bitmap faces have fixed sizes, so they are painted at a scale of 1 and resampled.
 
 @Test function BitmapFacesAreResampled()
-   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2, { face='Clean', fontSize=11 })
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2, { textStyle='face=Clean; size=11px' })
    sci.string = TEXT
    render(scene)
    assertNear(canvasWidth(sci), PAGE_WIDTH / 2 + 1, 'A bitmap face must use a scale of 1')
 
-   sci.face = FACE
+   sci.textStyle = f'face={FACE}'
    render(scene)
    assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / 2, 'Changing to a scalable face must apply the device scale')
 
-   sci.face = 'Clean'
+   sci.textStyle = 'face=Clean'
    render(scene)
    assertNear(canvasWidth(sci), PAGE_WIDTH / 2 + 1, 'Changing back to a bitmap face must restore a scale of 1')
 end
 
 @Test function FallbackFamiliesUseTheResolvedFaceScale()
    local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2, {
-      face = 'Missing font family,' .. FACE
+      textStyle = f'face=Missing font family,{FACE}; size=14px'
    })
    sci.string = TEXT
    render(scene)
    assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / 2, 'A scalable fallback face must use the device scale')
 
-   sci.face = 'Missing font family,Clean'
+   sci.textStyle = 'face=Missing font family,Clean'
    render(scene)
    assertNear(canvasWidth(sci), PAGE_WIDTH / 2 + 1, 'A bitmap fallback face must use a scale of 1')
 
-   sci.face = 'Source Code *'
+   sci.textStyle = 'face=Source Code *'
    render(scene)
    assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / 2, 'A scalable wildcard face must use the device scale')
 end
@@ -322,7 +321,7 @@ end
       local host = scene.new('VectorViewport', { x=10, y=5, width=300, height=60 })
       local _, matrix = check host.mtNewMatrix()
       check mVec.Scale(matrix, scale, scale)
-      local sci = host.new('Scintilla', theme_utils.options({ face=FACE, fontSize=14, flags=SCIF_EDIT }))
+      local sci = host.new('Scintilla', theme_utils.options({ textStyle=f'face={FACE}; size=14px', flags=SCIF_EDIT }))
       sci.string = 'first line\nabcdefghijklmnopqrstuvwxyz'
       check surface.acShow()
       check surface.acFocus()

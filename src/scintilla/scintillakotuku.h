@@ -57,7 +57,9 @@ class extScintilla : public objScintilla {
    FUNCTION CompletionCallback;
    FUNCTION ChangeCallback;
    objFile *FileStream;
-   APTR FontHandles[4] = {};         // Regular, bold, italic and bold italic; shared vector module handles
+   APTR FontHandle = nullptr;        // Shared vector module handle for the TextStyle
+   std::string Face;                 // The family declared by TextStyle
+   int FontSize = 14;                // The pixel size declared by TextStyle
    objVectorScene *Scene;        // The scene that hosts the Viewport
    objVectorRectangle *Canvas;   // Displays the Bitmap within the Page
    objVectorImage *Image;        // Scene definition that wraps the Bitmap for use as the Canvas fill
@@ -138,7 +140,7 @@ class extScintilla : public objScintilla {
 
    extScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) : objScintilla(ClassPtr, ObjectID) {
       Face = "Source Code Pro";
-      FontSize = 14;
+      TextStyle = "face=Source Code Pro; size=14px";
       LeftMargin  = 4;
       RightMargin = 30;
       AutoIndent  = TRUE;

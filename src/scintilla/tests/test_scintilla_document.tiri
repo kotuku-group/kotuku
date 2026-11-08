@@ -96,8 +96,8 @@ end
 
 @Test function DefaultFontInitialises()
    local scene <close>, vp, sci = newEditor()
-   assert(sci.face is 'Source Code Pro' and sci.fontSize is 14, 'The default font fields must initialise')
-   local _, handle = check mVec.GetFontHandle(sci.face, 'Regular', 0, sci.fontSize)
+   assert(sci.textStyle is 'face=Source Code Pro; size=14px', 'The default definition must initialise')
+   local _, handle = check mVec.GetFontHandle('', sci.textStyle, 0, 0)
    local width = mVec.CharWidth(handle, 105, 0)
    assert(width is mVec.CharWidth(handle, 77, 0) and width is mVec.CharWidth(handle, 87, 0),
       'The default scalable face must be monospaced')
@@ -514,9 +514,9 @@ end
    local first = vp.new('Scintilla', { })
    local second = vp.new('Scintilla', { })
 
-   check second.mtSetFont('Veranda')
-   assert(first.face is 'Source Code Pro', f'The first editor must keep its font, got {first.face}')
-   assert(second.face is 'Veranda', f'The second editor must use its new font, got {second.face}')
+   second.textStyle = 'face=Veranda'
+   assert(first.textStyle is 'face=Source Code Pro; size=14px', f'The first editor must keep its font, got {first.textStyle}')
+   assert(second.textStyle is 'face=Veranda; size=14px', f'The second editor must use its new font, got {second.textStyle}')
 
    second.free()
 
@@ -528,25 +528,31 @@ end
 
 -- Font handles are shared resources, while each editor retains its own face and size.
 
-@Test function SetFontChangesFace()
+@Test function PartialDefinitionsMerge()
    local scene <close>, vp, sci = newEditor()
-   local size = sci.fontSize
-   check sci.mtSetFont('Opti')
-   assert(sci.face is 'Opti', f'SetFont() must change the face, got {sci.face}')
-   assert(sci.fontSize is size, 'SetFont() must preserve the pixel size')
-   assert(sci.set('face', '') is ERR_NullArgs, 'An empty face must be rejected')
-   assert(sci.face is 'Opti', 'A rejected face must preserve the previous face')
+   sci.textStyle = 'face=Opti'
+   assert(sci.textStyle is 'face=Opti; size=14px', f'The size must be retained, got {sci.textStyle}')
+   sci.textStyle = 'weight=650; fill=#ff0000'
+   assert(sci.textStyle is 'face=Opti; size=14px; weight=650; fill=#ff0000', f'Keys accumulate, got {sci.textStyle}')
+   check sci.set('textStyle', '')
+   assert(sci.textStyle is 'face=Opti; size=14px; weight=650; fill=#ff0000', 'An empty definition changes nothing')
 end
 
-@Test function FontFieldsBeforeAndAfterInit()
-   local scene <close>, vp, sci = newEditor({ face='Noto Sans', fontSize=18 })
-   assert(sci.face is 'Noto Sans' and sci.fontSize is 18, 'Font fields must be accepted before Init')
-   sci.face = 'Source Code Pro'
-   sci.fontSize = 24
-   assert(sci.face is 'Source Code Pro' and sci.fontSize is 24, 'Font fields must be writable after Init')
-   assert(sci.set('fontSize', 0) is ERR_OutOfRange, 'A zero font size must be rejected')
-   assert(sci.set('fontSize', -1) is ERR_OutOfRange, 'A negative font size must be rejected')
-   assert(sci.fontSize is 24, 'Rejected sizes must preserve the previous size')
+@Test function TextStyleBeforeAndAfterInit()
+   local scene <close>, vp, sci = newEditor({ textStyle='face=Noto Sans; size=18px' })
+   assert(sci.textStyle is 'face=Noto Sans; size=18px', 'A definition must be accepted before Init')
+   sci.textStyle = 'face=Source Code Pro; size=24px'
+   assert(sci.textStyle is 'face=Source Code Pro; size=24px', 'A definition must be writable after Init')
+   assert(sci.set('textStyle', 'size=0px') is ERR_Syntax, 'A zero font size must be rejected')
+   assert(sci.set('textStyle', 'size=-1px') is ERR_Syntax, 'A negative font size must be rejected')
+   assert(sci.textStyle is 'face=Source Code Pro; size=24px', 'Rejected definitions must preserve the settings')
+end
+
+@Test function SizeInPoints()
+   local scene <close>, vp, sci = newEditor({ textStyle='face=Noto Sans; size=12pt' })
+   local _, handle = check mVec.GetFontHandle('', sci.textStyle, 0, 0)
+   local _, expected = check mVec.GetFontHandle('Noto Sans', 'Regular', 0, 16)
+   assert(rawequal(handle, expected), 'Points must be converted to pixels')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

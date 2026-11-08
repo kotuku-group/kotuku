@@ -580,6 +580,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    auto total_lines = std::ssize(Vector->txLines) + wrapped_lines;
    if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * pt.line_spacing;
 
+   update_text_effect_region(Vector);
+
    // If debugging the above boundary calculation, use this for verification of the true values (bear in
    // mind it will provide tighter numbers, which is normal).
    //bounding_rect_single(Path, 0, &Vector->BX1, &Vector->BY1, &Vector->BX2, &Vector->BY2);

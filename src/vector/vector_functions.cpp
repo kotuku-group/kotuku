@@ -18,6 +18,7 @@ functions for creating paths and rendering them to bitmaps.
 //#include "vector.h"
 //#include "font.h"
 #include "colours.cpp"
+#include "font_def.h"
 
 #include <charconv>
 
@@ -898,13 +899,17 @@ The `Style` accepts the same style names and descriptors as the @VectorText.Font
 `weight=Medium;width=Condensed`.  Invalid descriptors are logged and ignored rather than returning an error.  Style
 strings that resolve to the same variable font coordinates, such as `weight=700` and `Bold`, return the same handle.
 
+A complete font definition (see ~NormaliseTextStyle()) is also a valid `Style`.  Only its style keys select the font,
+so a change to a key such as `fill` returns the same handle.  If `Family` is empty or `Size` is zero then the
+definition's `face` and `size` are used in their place, and `ERR::Syntax` is returned if the definition is malformed.
+
 The handle is deterministic and permanent, remaining valid for the lifetime of the program.
 
 -INPUT-
-strview Family: The name of the font family to access.
-strview Style: The preferred style name or style descriptors.  Use `Regular` or `NULL` for the default.
+strview Family: The name of the font family to access.  If empty, the `face` key of a font definition in `Style` is used.
+strview Style: The preferred style name, style descriptors or a font definition.  Use `Regular` or `NULL` for the default.
 int Weight: Equivalent to CSS font-weight, from 1 to 1000; a value of 400 or 0 is treated as unset.  A `weight` descriptor in the `Style` takes precedence.
-int Size: The em size of the font in pixels, equivalent to the VectorText FontSize.  Use `pt * 96 / 72` to convert from points.
+int Size: The em size of the font in pixels, equivalent to the VectorText FontSize.  Use `pt * 96 / 72` to convert from points.  If zero, the `size` key of a font definition in `Style` is used.
 &ptr Handle: The resulting font handle is returned here.
 
 -ERRORS-
@@ -917,6 +922,7 @@ Failed
 File
 ResolvePath
 Search
+Syntax: `Family` or `Size` is unset and `Style` is a malformed font definition.
 
 -TAGS-
 api-owns-result, non-null-result, blocking
@@ -928,14 +934,109 @@ ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style,
 {
    kt::Log log(__FUNCTION__);
 
+   std::string_view family(Family);
+   font_def def;
+
+   if ((family.empty() or (Size IS 0)) and kt::font_traits::is_descriptor_string(Style)) {
+      if (auto error = parse_font_def(log, Style, def); error != ERR::Okay) return log.warning(error);
+      if (family.empty() and def.face) family = *def.face;
+      if ((Size IS 0) and def.size) Size = int(std::lround(def.size->pixels(0)));
+   }
+
    if (Size < 1) return log.warning(ERR::Args);
 
    common_font *handle;
-   if (auto error = get_font(log, Family, Style.empty() ? "Regular" : Style, Weight, Size, &handle); !error) {
+   if (auto error = get_font(log, family, Style.empty() ? "Regular" : Style, Weight, Size, &handle); !error) {
       *Handle = handle;
       return ERR::Okay;
    }
    else return error;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+NormaliseTextStyle: Validates a font definition and returns its canonical form.
+
+A font definition is a single-line string of `key=value` pairs that describes a complete font selection, such as
+`face=Noto Sans; size=15px; weight=650; fill=#1d2433`.  The keys are listed in the Font Definitions manual.
+
+The result contains the declared keys only, in a fixed order and with normalised values.  Definitions that are
+equivalent therefore produce identical strings, which allows a change to be detected by comparing them.  Later keys
+replace earlier ones, so a partial override is applied by appending it to a definition and normalising the result.
+
+Unknown keys are logged and skipped so that a definition saved by a newer build remains readable.  A malformed value
+for a known key fails the whole definition.
+
+-INPUT-
+strview String: The font definition.
+^&string Result: The canonical form of the definition.
+
+-ERRORS-
+Okay
+NullArgs
+Syntax: A known key has a malformed value.
+
+-TAGS-
+thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR NormaliseTextStyle(const std::string_view &String, std::string *Result)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (not Result) return log.warning(ERR::NullArgs);
+
+   font_def def;
+   if (auto error = parse_font_def(log, String, def); error != ERR::Okay) return log.warning(error);
+   *Result = def.serialise();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+ReadTextStyle: Returns the keys and normalised values of a font definition.
+
+ReadTextStyle() validates a font definition in the same way as ~NormaliseTextStyle() and returns its declared keys, by
+their canonical names, with their normalised values.  Keys that are not declared are absent from the result.  Tiri
+clients receive the result as a table.
+
+The result is owned by the function and is valid until the next call to ReadTextStyle() on the same thread.  C++
+clients should cast the result to `KEYVALUE *`.
+
+-INPUT-
+strview String: The font definition.
+&struct(*KeyValue) Result: Receives a pointer to the key-value map.
+
+-ERRORS-
+Okay
+NullArgs
+Syntax: A known key has a malformed value.
+
+-TAGS-
+api-owns-result, thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR ReadTextStyle(const std::string_view &String, KeyValue **Result)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (not Result) return log.warning(ERR::NullArgs);
+   *Result = nullptr;
+
+   font_def def;
+   if (auto error = parse_font_def(log, String, def); error != ERR::Okay) return log.warning(error);
+
+   static thread_local KEYVALUE tlEntries;
+   tlEntries.clear();
+   for (auto & [ key, value ] : def.entries()) tlEntries[key] = value;
+   *Result = (KeyValue *)&tlEntries;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

@@ -989,6 +989,9 @@ static void save_font_style(XTag *Tag, std::string_view Style, int Weight)
       return std::string(buffer, end);
    };
 
+   const auto style_keys = ft::style_part(Style); // Moves `style=` to a leading name and removes definition keys
+   Style = style_keys;
+
    const double weight = ft::style_traits(Style, Weight).weight;
    std::optional<double> width, slant, opsz;
    bool italic = false, opsz_none = false;
@@ -1015,7 +1018,7 @@ static void save_font_style(XTag *Tag, std::string_view Style, int Weight)
       else if (key IS "width") width = ft::parse_width(Value);
       else if (key IS "italic") { if (auto v = ft::parse_bool(Value)) italic = *v; }
       else if (key IS "slant") slant = ft::parse_number(Value);
-      else if (Key.size() IS 4) {
+      else if (ft::is_axis_tag(Key)) {
          if (auto v = ft::parse_number(Value)) {
             if (not variations.empty()) variations.append(", ");
             variations.append("\"").append(Key).append("\" ").append(number(*v));

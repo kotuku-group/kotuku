@@ -160,7 +160,6 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
   ]])
 
   methods("scintilla", "Sci", {
-    { id=1,  name="SetFont" },
     { id=2,  name="ReplaceText" },
     { id=3,  name="DeleteLine" },
     { id=4,  name="SelectRange" },
@@ -207,7 +206,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     references={ 'SCGUIDE', 'SCEOL', 'SCPOP' },
     extended=true
   }, [[
-    string Face                  # Font family used for all text styles
+    string TextStyle             # Font definition used for all text styles
     string Path                  # Source text file
     int(SEF) EventFlags          # SEF flags.  Indicates the events that will be reported.
     int(SCIF) Flags              # Optional flags
@@ -221,7 +220,6 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     int CursorCol                # Current cursor column
     int(SCLEX) Lexer             # Chosen lexer
     int Modified                 # TRUE if the document has been modified since last save.
-    int FontSize                 # Font em size in pixels
   ]])
 
   methods("scintillasearch", "Ss", {
