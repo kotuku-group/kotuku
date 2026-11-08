@@ -286,7 +286,7 @@ ERR parse_font_def(kt::Log &Log, std::string_view String, font_def &Def)
       }
       else if (key IS "lineheight") {
          auto length = parse_length(Value);
-         if ((not length) or (length->value < 0)) reject(Key, Value);
+         if ((not length) or (length->value <= 0)) reject(Key, Value);
          else def.line_height = length;
       }
       else if ((key IS "letterspacing") or (key IS "wordspacing") or (key IS "strokewidth")) {

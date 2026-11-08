@@ -16,6 +16,10 @@ static void raster_text_to_bitmap(extVectorText *Vector)
 
    int dx = 0, dy = Vector->txBitmapFont->Leading;
    int longest_line_width = 0;
+   const int line_pitch = int(Vector->line_pitch(Vector->txBitmapFont->LineSpacing));
+   const int paragraph_spacing = int(Vector->paragraph_spacing());
+   const bool align_rows = needs_row_alignment(Vector);
+   std::vector<TextRow> rows;
 
    if ((not Vector->txInlineSize) and (not Vector->needs_caret_geometry())) { // No wrapping or selection
       for (auto &line : Vector->txLines) {
@@ -23,7 +27,9 @@ static void raster_text_to_bitmap(extVectorText *Vector)
          line.wrapOffsets.clear();
          int line_width = fnt::StringWidth(Vector->txBitmapFont, line, -1);
          if (line_width > longest_line_width) longest_line_width = line_width;
-         dy += Vector->txBitmapFont->LineSpacing;
+         if (align_rows) rows.push_back({ &line, 0, 0, 0, 0, double(line_width) });
+         dy += line_pitch;
+         if (&line != &Vector->txLines.back()) dy += paragraph_spacing;
       }
    }
    else {
@@ -34,12 +40,21 @@ static void raster_text_to_bitmap(extVectorText *Vector)
          bool in_word = false;
          bool char_break = false; // ANYWHERE mode: break between characters until segment_end is reached
          const char *segment_end = nullptr; // End of the current wrapping segment
+         int visible_dx = 0; // Position after the last non-whitespace character of the visual line
+         size_t row_first_char = 0;
+
+         auto finish_row = [&](int Width) {
+            if (Width > longest_line_width) longest_line_width = Width;
+            if (align_rows) rows.push_back({ &line, row_first_char, line.chars.size(), 0, 0, double(Width) });
+            row_first_char = line.chars.size();
+         };
 
          auto wrap_line = [&](const char *Position) {
             line.wrapOffsets.push_back(int(Position - line.c_str()));
-            if (dx > longest_line_width) longest_line_width = dx;
+            finish_row(visible_dx); // Whitespace at a soft wrap hangs past the edge of the block
             dx = 0;
-            dy += Vector->txBitmapFont->LineSpacing;
+            visible_dx = 0;
+            dy += line_pitch;
             Vector->txWrappedLines++;
          };
 
@@ -95,13 +110,19 @@ static void raster_text_to_bitmap(extVectorText *Vector)
             }
 
             dx += char_width;
+            if (unicode > 0x20) visible_dx = dx;
          }
 
-         if (dx > longest_line_width) longest_line_width = dx;
+         finish_row(dx); // Whitespace before a hard break is retained so that the caret of an edited line is stable
          dx = 0;
-         dy += Vector->txBitmapFont->LineSpacing;
+         dy += line_pitch;
+         if (&line != &Vector->txLines.back()) dy += paragraph_spacing;
       }
    }
+
+   // The last row needs the natural height of the font, whatever the pitch between rows.
+
+   dy += Vector->txBitmapFont->LineSpacing - line_pitch;
 
    if (dy < Vector->txBitmapFont->LineSpacing) dy = Vector->txBitmapFont->LineSpacing; // Enforce min. height
 
@@ -114,6 +135,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
    Vector->BasePath.close_polygon();
 
    Vector->txWidth = longest_line_width;
+   align_text_rows(Vector, rows, longest_line_width, nullptr);
 
    if (Vector->needs_caret_geometry()) {
       Vector->txCursor.reset_vector(Vector);
@@ -152,14 +174,16 @@ static void raster_text_to_bitmap(extVectorText *Vector)
    Vector->txBitmapFont->Colour.Alpha = int(Vector->Fill.Colour.Alpha * 255.0);
 
    int y = Vector->txBitmapFont->Leading;
+   size_t row_index = 0;
    auto draw_line = [&](std::string_view Line) {
+      const int x = align_rows ? int(row_alignment_shift(Vector, longest_line_width, rows[row_index++].width)) : 0;
       if (not Line.empty()) {
          Vector->txBitmapFont->setString(Line);
-         Vector->txBitmapFont->X = 0;
+         Vector->txBitmapFont->X = x;
          Vector->txBitmapFont->Y = y;
          acDraw(Vector->txBitmapFont);
       }
-      y += Vector->txBitmapFont->LineSpacing;
+      y += line_pitch;
    };
 
    for (const auto &line : lines) {
@@ -170,6 +194,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
          start = size_t(offset);
       }
       draw_line(text.substr(start));
+      if (&line != &lines.back()) y += paragraph_spacing;
    }
 
    // Text paths are always oriented around (0,0) and are transformed later

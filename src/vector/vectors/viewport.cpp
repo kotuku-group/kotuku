@@ -887,7 +887,7 @@ static const FieldArray clViewFields[] = {
    { "AbsY",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsY },
    { "Buffered",     FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE, VIEW_GET_Buffered, VIEW_SET_Buffered },
    { "DragCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DragCallback, VIEW_SET_DragCallback },
-   { "DropPrepare", FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DropPrepare, VIEW_SET_DropPrepare },
+   { "DropPrepare",  FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DropPrepare, VIEW_SET_DropPrepare },
    { "DropTarget",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VIEW_GET_DropTarget, VIEW_SET_DropTarget },
    { "Overflow",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_Overflow, VIEW_SET_Overflow, &clVectorViewportVOF },
    { "X",            FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_X,       VIEW_SET_X },

@@ -15,6 +15,7 @@ static const struct FieldDef clVectorTextVTXF[] = {
    { "Selectable", 0x00000400 },
    { "NoAutoOffset", 0x00000800 },
    { "NoKerning", 0x00001000 },
+   { "Justify", 0x00002000 },
    { nullptr, 0 }
 };
 
