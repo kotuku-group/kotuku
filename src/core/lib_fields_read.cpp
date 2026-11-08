@@ -48,6 +48,7 @@ Field * lookup_id(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target)
 
    for (unsigned i=0; mc->Local[i] != 0xff; i++) {
       OBJECTPTR child = *((OBJECTPTR *)(((int8_t *)Object) + mc->FieldLookup[mc->Local[i]].Offset));
+      if (not child) continue;
       auto &field = child->ExtClass->FieldLookup;
       unsigned floor = 0;
       auto ceiling = child->ExtClass->BaseCeiling;

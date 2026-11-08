@@ -246,6 +246,9 @@ namespace agg
       // Basically used to calculate the approximation_scale when decompositioning curves into line segments.
       double scale() const;
 
+      // Largest singular value: bounds enlargement in every direction, including under shear.
+      double max_scale() const;
+
       // Check to see if the matrix is not degenerate
       bool is_valid(double epsilon = affine_epsilon) const;
 
@@ -292,6 +295,11 @@ namespace agg
       double x = SQRT2DIV2 * sx  + SQRT2DIV2 * shx;
       double y = SQRT2DIV2 * shy + SQRT2DIV2 * sy;
       return sqrt(x*x + y*y);
+   }
+
+   inline double trans_affine::max_scale() const {
+      return std::hypot(sx * 0.5 + sy * 0.5, shy * 0.5 - shx * 0.5) +
+         std::hypot(sx * 0.5 - sy * 0.5, shy * 0.5 + shx * 0.5);
    }
 
    inline const trans_affine& trans_affine::translate(double x, double y) {
