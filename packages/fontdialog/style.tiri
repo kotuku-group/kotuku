@@ -186,12 +186,13 @@ end
 
 OUTLINE_SETTINGS <const> = array<str> {
    'strokeOn', 'strokeColour', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur', 'glowOn',
-   'glowRadius', 'blend'
+   'glowRadius', 'blend', 'tracking', 'wordSpace'
 }
 
 @Doc(text=[[
 @desc True if a family has glyph outlines.  Bitmap families are drawn as a textured block, to which a stroke or effect
-would apply as a whole, so the Stroke and Effects panels are unavailable for them.
+would apply as a whole, so the Stroke and Effects panels are unavailable for them.  Bitmap text is also drawn a line at
+a time, so tracking, word spacing and justification are unavailable.
 ]])
 fontdialog_style.hasOutlines = function(Font:table!):bool
    return Font.tech != 'bitmap'
@@ -205,13 +206,23 @@ fontdialog_style.blended = function(State:table!):bool
 end
 
 @Doc(text=[[
-@desc Return a copy of the picker state for the dialog's result.  Stroke and effect settings are left out for a bitmap
-family.  The picker's own state keeps them, so that they return if a family with outlines is chosen.
+@desc The alignment that the picker state renders with.  A bitmap family can't be justified, so it is shown left
+aligned.
+]])
+fontdialog_style.textAlign = function(State:table!):str
+   if (State.align is 'justify') and (not fontdialog_style.hasOutlines(State.font)) then return 'left' end
+   return State.align
+end
+
+@Doc(text=[[
+@desc Return a copy of the picker state for the dialog's result.  Settings that a bitmap family can't render are left
+out for it.  The picker's own state keeps them, so that they return if a family with outlines is chosen.
 ]])
 fontdialog_style.resultSettings = function(State:table!):table
    settings = table.clone(State)
    if not fontdialog_style.hasOutlines(State.font) then
       for key in values(OUTLINE_SETTINGS) do settings[key] = nil end
+      settings.align = fontdialog_style.textAlign(State)
    end
    return settings
 end
@@ -253,6 +264,32 @@ fontdialog_style.paintDef = function(State:table!):str
    return paintParts(State).concat('; ')
 end
 
+-- The definition keys for the line height and spacing.  Slider steps are rounded, as accumulated floating point error
+-- would otherwise appear in the definition.
+
+function tidy(Value:num!):num
+   return math.round(Value * 1000) / 1000
+end
+
+function layoutParts(State:table!):array<str>
+   parts = array<str>
+   parts.push(f'lineHeight={tidy(State.lineHeight)}')
+   if not fontdialog_style.hasOutlines(State.font) then return parts end
+   parts.push(f'letterSpacing={tidy(State.tracking / 1000)}em')
+   parts.push(f'wordSpacing={tidy(State.wordSpace)}em')
+   return parts
+end
+
+@Doc(text=[[
+@desc Return the font definition that a sample is drawn with, for the VectorText `textStyle` field: the paint settings
+of `paintDef()` and the line height and spacing.
+]])
+fontdialog_style.sampleDef = function(State:table!):str
+   parts = paintParts(State)
+   for part in values(layoutParts(State)) do parts.push(part) end
+   return parts.concat('; ')
+end
+
 @Doc(text=[[
 @desc Return the canonical font definition for the picker state.  Paragraph settings are not part of a definition.
 ]])
@@ -273,9 +310,7 @@ fontdialog_style.fontDef = function(State:table!):str
    for tag, on in State.features do features.push(f'{tag} {on ? 1 : 0}') end
    if #features > 0 then parts.push('features=' .. features.concat(', ')) end
 
-   parts.push(f'lineHeight={State.lineHeight}')
-   parts.push(f'letterSpacing={State.tracking / 1000}em')
-   parts.push(f'wordSpacing={State.wordSpace}em')
+   for part in values(layoutParts(State)) do parts.push(part) end
    parts.push(f'kerning={State.kerning}')
    for part in values(paintParts(State)) do parts.push(part) end
 

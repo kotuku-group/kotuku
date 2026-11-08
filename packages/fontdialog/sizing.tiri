@@ -1,8 +1,7 @@
 -- Sizing panel: font size, line height, tracking, word spacing and kerning, with a px / pt unit switch in the
--- header.  Size and kerning are applied to the preview.  Line height, tracking and word spacing are recorded in the
--- picker state but are not yet rendered, as VectorText has no settable line spacing or letter spacing.
+-- header.  Tracking and word spacing are disabled for bitmap families, which are drawn a line at a time.
 
-   import 'gui', 'gui/panel', './theme', './parts', './controls'
+   import 'gui', 'gui/panel', './theme', './parts', './controls', './style'
 
    namespace fontdialog_sizing { }
 
@@ -122,7 +121,7 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
    state = Picker.state
    inner = Options.width - (PAD * 2)
 
-   self = { }
+   self = { outlined = true }
 
    self.panel = gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = fontdialog_sizing.HEIGHT,
@@ -189,6 +188,13 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
 
    self.update = function(Source:str)
       s = Picker.state
+
+      outlined = fontdialog_style.hasOutlines(s.font)
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.tracking, self.wordSpace }, outlined)
+      end
+
       if (Source is 'reset') or (Source is 'preset') then self.units.select(s.unit) end
       if (Source is 'font') or (Source is 'init') or (Source is 'reset') or (Source is 'preset') or (Source is 'unit')
       then

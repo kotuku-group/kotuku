@@ -1,6 +1,6 @@
 -- Preview: the Preview panel at the top of the centre column.  Its footer holds the Paragraph / Waterfall and the
 -- Compare / Edit text button groups.  The preview shows the sample text in the picker's current family, style, size,
--- kerning, paint (fill, opacity, stroke and effects) and letter case.  In Compare mode a frozen copy of the settings is
+-- spacing, kerning, alignment, paint (fill, opacity, stroke and effects) and letter case.  In Compare mode a frozen copy of the settings is
 -- shown beside the live settings, and clicking the frozen pane swaps the two.  While Edit text is pressed, the live
 -- paragraph is an editable VectorText and the sample text buttons are shown in the footer.
 
@@ -27,20 +27,16 @@ SIZE_COL   <const> = 34  -- Waterfall size column
 REBUILD <const> = { init = true, reset = true, compare = true, edit = true, view = true }
 
 fontdialog_preview.TEXT = [[Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas varius dignissim sapien eu pellentesque. Ètiam libero velit, vehicula nec ante non, sodales ultricies metus. Phasellus commodo dolor turpis. Âliquam sed pellentesque magna, non luctus sapien. Ètiam molestie dui nibh, nec finibus velit molestie non. Ut feugiat maximus elit nec mattis. Suspendisse porta vestibulum faucibus. Sed iaculis placerat justo id lobortis. Interdum et malesuada fames ac ante ipsum primis in faucibus.
-
 Morbi tincidunt varius ante sit amet pulvinar. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nulla ante orci, faucibus non odio viverra, tempus rutrum ex. Mauris sit amet hendrerit quam. Vestibulum tincidunt magna suscipit ultrices congue. Aliquam et blandit tellus, ut porta libero. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Cras vulputate congue eros sed placerat. Nunc eleifend nec felis sit amet fermentum. Cras suscipit ullamcorper eros, id consectetur quam blandit ac.
-
 Suspendisse sed diam ut sem euismod accumsan commodo vehicula sapien. Nullam nisl augue, suscipit vitae posuere sit amet, porttitor et ex. Duis at elit pellentesque, placerat risus in, placerat mauris. Nam in metus sed dui iaculis aliquam sed ut sem. In varius euismod quam, sed lobortis sem. Aliquam nec dui magna. Suspendisse lobortis enim vitae vestibulum accumsan. Pellentesque ac tincidunt est. Ut porta, arcu eu ornare placerat, urna urna venenatis est, at imperdiet lectus justo vel neque. Sed congue dolor eget erat dignissim sollicitudin. Aliquam mollis massa in est gravida faucibus.
-
 Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas non nisi vehicula, aliquam turpis in, mattis lectus. Dõnec magna metus, tempor fringilla metus ac, ultricies efficitur ante. Quisque at semper elit. Ut in purus in est venenatis interdum. Curabitur a dui mauris. Suspendisse potenti. Suspendisse tempus dictum ipsum, id condimentum nulla fermentum sed. Etiam mattis ligula lacus, a tempor felis sodales fermentum. Donec in risus vulputate, tempor neque vel, volutpat mauris. Integer placerat a nunc a aliquet. Phasellus quis porta leo. Etiam et arcu ex. Nunc dictum at ipsum eu dapibus.
-
 Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.]]
 
 SAMPLES <const> = array<table> {
    { id = 'pangram',   label = 'Pangram',   text = 'The quick brown fox jumps over the lazy dog.' },
    { id = 'paragraph', label = 'Paragraph' },
    { id = 'glyphs',    label = 'Glyphs',
-      text = 'ABCDEFGHIJKLM nopqrstuvwxyz\n\nĀĒĪŌŪ āēīōū ÆØÅ æøå ß Œœ\n\n0123456789 ½ ¼ → ← ≠ ≤ ≥ € £ ¥ @ & §' },
+      text = 'ABCDEFGHIJKLM nopqrstuvwxyz\nĀĒĪŌŪ āēīōū ÆØÅ æøå ß Œœ\n0123456789 ½ ¼ → ← ≠ ≤ ≥ € £ ¥ @ & §' },
    { id = 'code',      label = 'Code',
       text = 'fn main() -> Result<(), Error> {\n    let x = 0x1F; // != 0O1l |> =>\n}' }
 }
@@ -161,12 +157,30 @@ fontdialog_preview.summary = function(State:table!):str
       fontdialog_style.describe(State)
 end
 
--- The text flags for the settings.  Bitmap families are rasterised.
+-- The text flags for the settings.  Bitmap families are rasterised.  Justification only applies to wrapped text, so
+-- it has no effect on the waterfall.
 
 function sampleFlags(State:table!):num
    flags = (State.kerning is 'none') ? VTXF_NO_KERNING : 0
    if State.font.tech is 'bitmap' then flags = flags | VTXF_RASTER end
+   if fontdialog_style.textAlign(State) is 'justify' then flags = flags | VTXF_JUSTIFY end
    return flags
+end
+
+-- The anchor and align flags of a paragraph that is Inline pixels wide.  Each row aligns about the anchor, so it is
+-- placed at the middle or right edge of the inline area.
+
+function paragraphAnchor(State:table!, Inline:num!):<num, num>
+   align = fontdialog_style.textAlign(State)
+   if align is 'centre' then return PANE_PAD_X + (Inline * 0.5), ALIGN_HORIZONTAL end
+   if align is 'right' then return PANE_PAD_X + Inline, ALIGN_RIGHT end
+   return PANE_PAD_X, ALIGN_LEFT
+end
+
+-- Paragraph spacing is set in ems, and the VectorText field is in pixels.
+
+function paragraphSpacing(State:table!):num
+   return State.paraSpace * State.size
 end
 
 -- Create a VectorText in the given settings.  Every sample in the preview is created here, so that the paragraph, the
@@ -177,7 +191,7 @@ function sampleText(Target:obj!, State:table!, Fields:table!):obj
       face      = State.font.name,
       fontSize  = f'{State.size}px',
       fontStyle = fontdialog_style.fontStyle(State),
-      textStyle = fontdialog_style.paintDef(State)
+      textStyle = fontdialog_style.sampleDef(State)
    }, Fields)
    fields.textFlags = (fields.textFlags ?? 0) | sampleFlags(State)
    return Target.new('VectorText', fields)
@@ -322,10 +336,13 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    self.sampleRow.width = math.max(1, x - SAMPLE_GAP)
 
    ----------------------------------------------------------------------------------------------------------------
-   -- The bottom of a paragraph sample.
+   -- The bottom of a paragraph sample.  Line height and paragraph spacing mean that a row count can't give this, so it
+   -- is taken from the boundary, which ends at the last baseline.
 
    function textBottom(Sample:obj!):num
-      return Sample.y + ((math.max(Sample.totalLines, Sample.wrappedLines ?? 0) - 0.5) * Sample.lineSpacing)
+      err, _, y, _, height = Sample.mtGetBoundary(VBF_NO_TRANSFORM)
+      if err != ERR_Okay then return Sample.y + Sample.lineSpacing end -- There is nothing to measure in an empty text
+      return y + height + Sample.descent
    end
 
    -- Size the page to the content.
@@ -453,9 +470,9 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
             y += math.ceil(size * 0.35) + 8
          end
       else
-         -- Alignment is not applied: VectorText aligns a wrapped block as a whole rather than line by line.
-
-         fields = { x = PANE_PAD_X, string = text, inlineSize = inline }
+         x, align = paragraphAnchor(Settings, inline)
+         fields = { x = x, align = align, string = text, inlineSize = inline,
+            paragraphSpacing = paragraphSpacing(Settings) }
          if editable then
             -- EDITABLE must be set at initialisation.  The panel does the scrolling, so the text keeps its offset.
             fields.{ textFlags = VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET, onChange = textChanged,
@@ -469,7 +486,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          if Tag != 'Frozen' then
             self.{ liveSample = sample, liveEditable = editable, liveFace = Settings.font.name,
                liveStyle = fontdialog_style.fontStyle(Settings), liveString = text, liveTop = top, livePane = pane,
-               liveSize = Settings.size, livePaint = fontdialog_style.paintDef(Settings),
+               liveSize = Settings.size, livePaint = fontdialog_style.sampleDef(Settings), liveInline = inline,
                liveFlags = sampleFlags(Settings), liveBlended = blended }
          end
 
@@ -550,7 +567,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          sample.fontSize = f'{s.size}px'
       end
 
-      paint = fontdialog_style.paintDef(s)
+      paint = fontdialog_style.sampleDef(s)
       if paint != self.livePaint then
          self.livePaint = paint
          sample.textStyle = paint
@@ -559,9 +576,12 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       flags = sampleFlags(s)
       if flags != self.liveFlags then
          self.liveFlags = flags
-         sample.textFlags = (s.kerning is 'none') ? (sample.textFlags | VTXF_NO_KERNING) :
-            (sample.textFlags & ~VTXF_NO_KERNING)
+         mask = VTXF_NO_KERNING | VTXF_JUSTIFY
+         sample.textFlags = (sample.textFlags & ~mask) | (flags & mask)
       end
+
+      x, align = paragraphAnchor(s, self.liveInline)
+      sample.{ x = x, align = align, paragraphSpacing = paragraphSpacing(s) }
 
       sample.y = self.liveTop + math.ceil(sample.displaySize)
 

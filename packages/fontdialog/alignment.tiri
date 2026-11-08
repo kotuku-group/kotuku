@@ -1,8 +1,7 @@
--- Alignment & layout panel: paragraph alignment, letter case and paragraph spacing.  Letter case is applied to
--- the preview.  Alignment and paragraph spacing are recorded in the picker state but are not yet rendered:
--- VectorText aligns a wrapped block as a whole rather than line by line.
+-- Alignment & layout panel: paragraph alignment, letter case and paragraph spacing.  Justify is disabled for bitmap
+-- families, which are drawn a line at a time.
 
-   import 'gui', 'gui/panel', './theme', './parts', './controls'
+   import 'gui', 'gui/panel', './theme', './parts', './controls', './style'
 
    namespace fontdialog_alignment { }
 
@@ -38,7 +37,7 @@ fontdialog_alignment.new = function(Picker:table!, Target:obj!, Options:table!):
    state = Picker.state
    inner = Options.width - (PAD * 2)
 
-   self = { height = fontdialog_alignment.HEIGHT }
+   self = { height = fontdialog_alignment.HEIGHT, outlined = true }
 
    self.panel = gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
@@ -68,9 +67,18 @@ fontdialog_alignment.new = function(Picker:table!, Target:obj!, Options:table!):
 
    self.update = function(Source:str)
       s = Picker.state
-      self.panel.setMeta(ALIGN_NAMES[s.align] ?? '')
+      align = fontdialog_style.textAlign(s)
+      self.panel.setMeta(ALIGN_NAMES[align] ?? '')
+
+      outlined = fontdialog_style.hasOutlines(s.font)
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.align.buttons.justify }, outlined)
+         self.align.select(align)
+      end
+
       if Source is 'alignment' then return end
-      self.align.select(s.align)
+      self.align.select(align)
       self.letterCase.select(s.letterCase)
       self.paraSpace.set(s.paraSpace)
    end
