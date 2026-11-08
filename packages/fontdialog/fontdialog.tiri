@@ -6,11 +6,19 @@ Font picker dialog (prototype).  Open it with:
    import 'gui/fontdialog'
 
    gui.dialog.font({
-      face     = 'Noto Sans',            -- Optional initial family; the Body copy preset is used if omitted
-      size     = '12pt',                 -- Optional initial size: pixels (number) or e.g. '16px', '12pt'
-      pinned   = { 'Noto Sans' },        -- Optional families to pin to the top of the list
-      feedback = function(Result) ... end -- Result table, or nil on cancel
+      face      = 'Noto Sans, Arial',     -- Optional family list; the first installed family is used.  If there is
+                                          -- none, or face is omitted, the Body copy preset is used
+      size      = '12pt',                 -- Optional initial size: pixels (number) or e.g. '16px', '12pt'
+      pointSize = 12,                     -- Optional initial size in points; ignored if size is set
+      style     = 'Bold Italic',          -- Optional style name, or descriptors such as 'weight=550;italic=yes'
+      fill      = '#203040',              -- Optional text colour
+      example   = 'Sample text',          -- Optional preview text
+      fontDef   = 'face=Noto Sans; ...',  -- Optional font definition; its keys override the options above
+      pinned    = { 'Noto Sans' },        -- Optional families to pin to the top of the list
+      feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
+
+   Result holds face, style, size (px), pointSize, fill, fontDef and settings.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
@@ -57,18 +65,16 @@ MIN_CLIENT_HEIGHT <const> = MIN_BODY_HEIGHT + FOOTER_HEIGHT
 
 DEFAULT_FACE <const> = 'Noto Sans'
 
--- Presets.  The first available face of each is used.  Saving presets is not yet supported.
+-- Presets.  The first available face of each is used.  A preset's `def` is a font definition.  Saved presets last for
+-- the life of the dialog.
 
 PRESETS <const> = array<table> {
-   { name = 'Body copy',    faces = array<str> { 'Noto Serif', 'PT Serif', 'Crimson Pro' }, size = 19, weight = 400 },
-   { name = 'Headline',     faces = array<str> { 'Noto Sans', 'Inconsolata' }, size = 56, weight = 800 },
-   { name = 'Poster',       faces = array<str> { 'Libre Baskerville', 'Noto Serif' }, size = 64, weight = 700 },
-   { name = 'Code listing', faces = array<str> { 'Source Code Pro', 'Inconsolata', 'Courier Prime' }, size = 15,
-      weight = 400 }
-}
-
-STYLE_WEIGHTS <const> = {
-   [400] = 'Regular', [500] = 'Medium', [600] = 'Semi Bold', [700] = 'Bold', [800] = 'Extra Bold'
+   { name = 'Body copy',    faces = array<str> { 'Noto Serif', 'PT Serif', 'Crimson Pro' },
+      def = 'size=19px; Regular' },
+   { name = 'Headline',     faces = array<str> { 'Noto Sans', 'Inconsolata' }, def = 'size=56px; Extra Bold' },
+   { name = 'Poster',       faces = array<str> { 'Libre Baskerville', 'Noto Serif' }, def = 'size=64px; Bold' },
+   { name = 'Code listing', faces = array<str> { 'Source Code Pro', 'Inconsolata', 'Courier Prime' },
+      def = 'size=15px; Regular' }
 }
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -118,7 +124,7 @@ gui.dialog.font = function(Options:table)
       feedback  = Options.feedback,
       finished  = false,
       isTyping  = false,
-      presets   = PRESETS,
+      presets   = PRESETS.clone(),
       pins      = { },
       fonts     = nil,
       state     = nil,
@@ -140,6 +146,20 @@ gui.dialog.font = function(Options:table)
       function findFont(Name:str):table
          for font in values(&fonts) do
             if font.name is Name then return font end
+         end
+         return nil
+      end
+
+      -- The first installed family of a comma-separated list, following aliases.  Returns nil if there is none.
+
+      function findFace(List:str):table
+         List ?! return nil
+         for entry in values(List.split(',')) do
+            local name = entry.trim()
+            local info = gui.fontList[name]
+            local target = info?.alias ?? name
+            local font = findFont(target)
+            if font then return font end
          end
          return nil
       end
@@ -191,14 +211,17 @@ gui.dialog.font = function(Options:table)
          end
          font ?! return nil
 
-         state = freshState(font, preset.size, &defaultFill)
-         if font.variable and (state.axes.wght != nil) then
-            state.axes.wght = preset.weight
-         else
-            name = STYLE_WEIGHTS[preset.weight]
-            if name and (name in font.styles) then state.style = name end
-         end
+         state = freshState(font, nil, &defaultFill)
+         fontdialog_style.applyDef(state, preset.def)
+         state.size = fontdialog_sizing.snap(font, state.size)
          return state
+      end
+
+      &savePreset = function():str
+         def = fontdialog_style.fontDef(&state)
+         name = f'Saved {#&presets - #PRESETS + 1}'
+         &presets.push({ name = name, faces = array<str> { &state.font.name }, def = def })
+         return name
       end
 
       &applyPreset = function(Name:str!)
@@ -311,11 +334,13 @@ gui.dialog.font = function(Options:table)
          if &finished then return end
          s = &state
          &finish({
-            face     = s.font.name,
-            style    = fontdialog_style.fontStyle(s),
+            face      = s.font.name,
+            style     = fontdialog_style.fontStyle(s),
             size     = s.size,
-            fill     = s.fill,
-            settings = table.clone(s)
+            pointSize = fontdialog_sizing.points(s.size),
+            fill      = s.fill,
+            fontDef   = fontdialog_style.fontDef(s),
+            settings  = table.clone(s)
          })
       end
 
@@ -355,10 +380,20 @@ gui.dialog.font = function(Options:table)
       &defaultFill = fontdialog_controls.toHex(&theme.page.text.fill ?? '#000000')
 
       -- Initial settings: the requested family, or the first preset.  A requested size overrides the preset's, and
-      -- is shown in points if it is a whole number of points once snapped to the family's fixed sizes.
+      -- is shown in points if requested through pointSize, or if it is a whole number of points once snapped to the
+      -- family's fixed sizes.  The other options are then applied, and fontDef last so that its keys take precedence.
 
       size = fontdialog_sizing.parse(Options.size)
-      font = Options.face and findFont(Options.face)
+      unit = nil
+      if (not size) and (Options.pointSize != nil) then
+         size = fontdialog_sizing.parse(f'{Options.pointSize}pt')
+         unit = 'pt'
+      end
+
+      local definition:table
+      if Options.fontDef?? then definition = fontdialog_style.readDef(Options.fontDef) end
+
+      font = findFace(definition?.face) ?? findFace(Options.face)
       if font then
          &state = freshState(font, size, &defaultFill)
       else
@@ -368,7 +403,16 @@ gui.dialog.font = function(Options:table)
 
       if size then
          &state.size = fontdialog_sizing.snap(&state.font, size)
-         &state.unit = fontdialog_sizing.preferredUnit(&state.size)
+         &state.unit = unit ?? fontdialog_sizing.preferredUnit(&state.size)
+      end
+
+      if Options.style?? then fontdialog_style.applyDef(&state, Options.style) end
+      if Options.fill?? then &state.fill = fontdialog_controls.toHex(Options.fill) end
+      if Options.example?? then &state.text = Options.example end
+
+      if definition then
+         fontdialog_style.applyDef(&state, Options.fontDef)
+         &state.size = fontdialog_sizing.snap(&state.font, &state.size)
       end
 
       &initialState = table.clone(&state)
@@ -472,7 +516,8 @@ gui.dialog.font = function(Options:table)
 
       -- Dialog keys.  The handler receives every key while the focus is anywhere in the client area:
       --
-      --   Enter    Selects the font, unless a text box has the focus.
+      --   Enter    Selects the font, unless a text box has the focus.  A focused button, toggle or combobox consumes
+      --            the key, so it does not reach this handler.
       --   Escape   Cancels, unless a combobox menu is open; the combobox closes its menu instead.
       --   Ctrl+F   Moves the focus to the search box.
       --   S        Pins or unpins the current family, unless a text box has the focus.
@@ -530,6 +575,7 @@ gui.dialog.font = function(Options:table)
 
       &window.moveToFront()
       &window.show(true)
+      &viewport.acFocus() -- A no-op if the window hasn't gained the focus yet: tabOrder then selects the viewport
 
       gui.dialog.active[&&] = true
       ready = true
@@ -540,25 +586,34 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- This sub-routine is provided for languages other than Tiri to use the interface.  Options are passed as script keys
 -- and the window ID is returned.  The outcome is written back to the script's keys before the window closes:
--- 'response' is 'select' or 'cancel', and on Select 'face', 'style' and 'size' describe the font.
+-- 'response' is 'select' or 'cancel', and on Select 'face', 'style', 'size' (px), 'pointSize', 'fill' and 'fontDef'
+-- describe the font.  'fontDef' is the string equivalent of the Tiri result's settings table.
 
 @if(imported=false)
    script = obj.find('self')
    modal = arg('modal')
 
    dlg = gui.dialog.font({
-      face     = arg('face'),
-      size     = arg('size'),
-      title    = arg('title'),
-      icon     = arg('icon'),
-      theme    = arg('theme'),
-      modal    = (modal is '1') or (modal is 'true'),
-      popOver  = tonumber(arg('popOver')),
-      feedback = function(Result:table)
+      face      = arg('face'),
+      size      = arg('size'),
+      pointSize = arg('pointSize'),
+      style     = arg('style'),
+      fill      = arg('fill'),
+      example   = arg('example'),
+      fontDef   = arg('fontDef'),
+      title     = arg('title'),
+      icon      = arg('icon'),
+      theme     = arg('theme'),
+      modal     = (modal is '1') or (modal is 'true'),
+      popOver   = tonumber(arg('popOver')),
+      feedback  = function(Result:table)
          if Result then
             script.setKey('face', Result.face)
             script.setKey('style', Result.style)
             script.setKey('size', tostring(Result.size))
+            script.setKey('pointSize', tostring(Result.pointSize))
+            script.setKey('fill', Result.fill)
+            script.setKey('fontDef', Result.fontDef)
          end
          script.setKey('response', Result ? 'select' : 'cancel')
       end

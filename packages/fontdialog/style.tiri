@@ -1,10 +1,25 @@
 -- Style panel: the axes of a variable family, or the styles of a static or bitmap family, followed by the OpenType
 -- feature switches.  The content is rebuilt whenever the family changes.  Weight, width, italic and the static style
--- are applied to the preview.  Other axes and the feature switches are recorded but not yet rendered.
+-- and the other axes are applied to the preview.  The feature switches are recorded but not yet rendered.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 
    namespace fontdialog_style { }
+
+   module vector as mVec
+
+-- The number in a normalised value such as `15px`.  The result of replace() has a second value, so it is not passed
+-- directly to tonumber().
+
+function unitValue(Value:str!, Unit:str!):num
+   local text = Value.replace(Unit, '')
+   return tonumber(text)
+end
+
+function fontdialog_sizing_pixels(Size:str!):num
+   if Size.endsWith('pt') then return unitValue(Size, 'pt') * 96 / 72 end
+   return unitValue(Size, 'px')
+end
 
 PAD   <const> = fontdialog_controls.PAD
 ROW_H <const> = fontdialog_controls.ROW_H
@@ -80,6 +95,23 @@ function styleTraits(Name:str!):<num, bool>
    return WEIGHT_KEYWORDS[name] ?? 400, italic
 end
 
+-- Use the renderer's CSS weight preference order when an exact static weight is unavailable.
+
+function weightRank(Weight:num!, Target:num!):num
+   if Weight is Target then return 0 end
+   if (Target >= 400) and (Target <= 500) then
+      if (Weight > Target) and (Weight <= 500) then return 1000 + Weight - Target end
+      if Weight < Target then return 2000 + Target - Weight end
+      return 3000 + Weight - Target
+   elseif Target < 400 then
+      if Weight < Target then return 1000 + Target - Weight end
+      return 2000 + Weight - Target
+   else
+      if Weight > Target then return 1000 + Weight - Target end
+      return 2000 + Target - Weight
+   end
+end
+
 @Doc(text=[[
 @desc Return a family's styles ordered by italic, then weight.
 ]])
@@ -118,8 +150,8 @@ end
 
 @Doc(text=[[
 @desc Return the VectorText fontStyle for the picker state.  Variable families are described by their weight, width
-and italic traits, using a conventional style name where one exists.  Static and bitmap families use the selected
-style name.
+and italic traits and any other axis that is away from its default, using a conventional style name where one exists.
+Static and bitmap families use the selected style name.
 ]])
 fontdialog_style.fontStyle = function(State:table!):str
    font = State.font
@@ -128,7 +160,15 @@ fontdialog_style.fontStyle = function(State:table!):str
    weight = math.round(State.axes.wght ?? 400)
    width  = State.axes.wdth ?? 100
    name   = WEIGHT_NAMES[weight]
-   if name and (width is 100) then
+
+   extras = array<str>
+   for tag in values(font.axes ?? array<str>) do
+      if (tag is 'wght') or (tag is 'wdth') or ((tag is 'ital') and State.italic) then continue end
+      value = State.axes[tag]
+      if (value != nil) and (value != axisDef(font, tag).default) then extras.push(f'{tag}={value}') end
+   end
+
+   if name and (width is 100) and (#extras is 0) then
       if not State.italic then return name end
       return (name is 'Regular') ? 'Italic' : name .. ' Italic'
    end
@@ -137,7 +177,154 @@ fontdialog_style.fontStyle = function(State:table!):str
    parts.push(f'weight={weight}')
    if width != 100 then parts.push(f'width={width}%') end
    if State.italic then parts.push('italic=yes') end
+   for extra in values(extras) do parts.push(extra) end
    return parts.concat(';')
+end
+
+@Doc(text=[[
+@desc Return the canonical font definition for the picker state.  Paragraph settings are not part of a definition.
+]])
+fontdialog_style.fontDef = function(State:table!):str
+   font = State.font
+   parts = array<str>
+   parts.push(f'face={font.name}')
+
+   if State.unit is 'pt' then
+      parts.push(f'size={State.size * 0.75}pt')
+   else
+      parts.push(f'size={State.size}px')
+   end
+
+   parts.push(fontdialog_style.fontStyle(State)) -- Includes any axis that is away from its default
+
+   features = array<str>
+   for tag, on in State.features do features.push(f'{tag} {on ? 1 : 0}') end
+   if #features > 0 then parts.push('features=' .. features.concat(', ')) end
+
+   parts.push(f'lineHeight={State.lineHeight}')
+   parts.push(f'letterSpacing={State.tracking / 1000}em')
+   parts.push(f'wordSpacing={State.wordSpace}em')
+   parts.push(f'kerning={State.kerning}')
+   parts.push(f'fill={State.fill}')
+   parts.push(f'opacity={State.opacity}%')
+
+   if State.strokeOn then
+      parts.push(f'stroke={State.strokeColour}')
+      parts.push(f'strokeWidth={State.strokeWidth}')
+      parts.push(f'strokeAlign={State.strokePos}')
+      parts.push(f'lineJoin={State.strokeJoin}')
+   else
+      parts.push('stroke=none')
+   end
+
+   if State.shadowOn then
+      parts.push(f'shadow={State.shadowX}px {State.shadowY}px {State.shadowBlur}px rgba(0,0,0,0.4)')
+   else
+      parts.push('shadow=none')
+   end
+
+   if State.glowOn then parts.push(f'glow={State.glowRadius}px {State.fill}') else parts.push('glow=none') end
+   parts.push(f'blend={State.blend}')
+
+   _, result = check mVec.NormaliseTextStyle(parts.concat('; '))
+   return result
+end
+
+@Doc(text=[[
+@desc Return the keys of a font definition as a table of normalised strings.
+]])
+fontdialog_style.readDef = function(Def:str!):table
+   local _, result = check mVec.ReadTextStyle(Def)
+   return result
+end
+
+@Doc(text=[[
+@desc Copy the settings of a font definition to the picker state.  Keys that are absent leave the state unchanged.
+The `face` key is not applied here, because the family decides which axes and styles are available.
+]])
+fontdialog_style.applyDef = function(State:table!, Def:str!)
+   settings = fontdialog_style.readDef(Def)
+   font = State.font
+
+   if settings.size then
+      State.unit = settings.size.endsWith('pt') ? 'pt' : 'px'
+      State.size = fontdialog_sizing_pixels(settings.size)
+   end
+
+   if font.variable then
+      if settings.style then
+         for weight, name in WEIGHT_NAMES do
+            if name is settings.style.replace(' Italic', '') then State.axes.wght = weight end
+         end
+         if settings.style.endsWith('Italic') then State.italic = true end
+      end
+      if settings.weight and (State.axes.wght != nil) then State.axes.wght = tonumber(settings.weight) end
+      if settings.width and (State.axes.wdth != nil) then State.axes.wdth = unitValue(settings.width, '%') end
+      for tag, value in settings do
+         if (State.axes[tag] != nil) and (tag.size() is 4) then State.axes[tag] = tonumber(value) end
+      end
+   else
+      if settings.style and (settings.style in font.styles) then State.style = settings.style end
+
+      if settings.weight or settings.italic then
+         weight, italic = styleTraits(settings.style ?? State.style)
+         if settings.weight then weight = tonumber(settings.weight) end
+         if settings.italic then italic = settings.italic is 'yes' end
+
+         best_rank:num = nil
+         for name in values(fontdialog_style.orderedStyles(font)) do
+            candidate_weight, candidate_italic = styleTraits(name)
+            rank = weightRank(candidate_weight, weight)
+            if candidate_italic != italic then rank += 10000 end
+            if (best_rank is nil) or (rank < best_rank) then
+               best_rank = rank
+               State.style = name
+            end
+         end
+      end
+   end
+
+   if settings.italic then State.italic = settings.italic is 'yes' end
+
+   if settings.features and (settings.features != 'none') then
+      State.features = { }
+      for entry in values(settings.features.split(', ')) do
+         feature = entry.split(' ')
+         State.features[feature[0]] = feature[1] != '0'
+      end
+   end
+
+   if settings.lineHeight then State.lineHeight = tonumber(settings.lineHeight) end
+   if settings.letterSpacing then State.tracking = unitValue(settings.letterSpacing, 'em') * 1000 end
+   if settings.wordSpacing then State.wordSpace = unitValue(settings.wordSpacing, 'em') end
+   if settings.kerning then State.kerning = settings.kerning end
+   if settings.fill then State.fill = settings.fill end
+   if settings.opacity then State.opacity = tonumber(settings.opacity) * 100 end
+
+   if settings.stroke then
+      State.strokeOn = settings.stroke != 'none'
+      if State.strokeOn then State.strokeColour = settings.stroke end
+   end
+
+   if settings.strokeWidth then State.strokeWidth = unitValue(settings.strokeWidth, 'px') end
+   if settings.strokeAlign then State.strokePos = settings.strokeAlign end
+   if settings.lineJoin then State.strokeJoin = settings.lineJoin end
+
+   if settings.shadow then
+      State.shadowOn = settings.shadow != 'none'
+      if State.shadowOn then
+         shadow = settings.shadow.split(' ')
+         State.shadowX, State.shadowY, State.shadowBlur = unitValue(shadow[0], 'px'),
+            unitValue(shadow[1], 'px'), unitValue(shadow[2], 'px')
+      end
+   end
+
+   if settings.glow then
+      State.glowOn = settings.glow != 'none'
+      if State.glowOn then State.glowRadius = unitValue(settings.glow.split(' ')[0], 'px') end
+   end
+
+   if settings.blend then State.blend = (settings.blend is 'burn') ? 'Colour Burn' : settings.blend.cap() end
 end
 
 @Doc(text=[[
@@ -272,7 +459,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
       if self.font != Picker.state.font then
          self.font = Picker.state.font
          build()
-      elseif Source is 'reset' then
+      elseif (Source is 'reset') or (Source is 'preset') then
          build()
       end
    end

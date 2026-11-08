@@ -286,7 +286,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    self.btnSave = gui.button({
       target = bottom, y = button_y, height = BUTTON_H, icon = 'items/file_save', tip = 'Save as preset',
-      events = { activate = function() self.panel.flash('save: not in prototype') end }
+      events = { activate = function() self.panel.flash('saved as ' .. Picker.savePreset()) end }
    })
    self.btnSave.viewport.x = self.btnInstall.viewport.x - 6 - self.btnSave.viewport.width
 

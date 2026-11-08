@@ -46,12 +46,12 @@ new scale while keeping the layout's height, within the monitor.  The window's o
 ## Prototype status
 
 Working: the font list (search, filters, pins, selection, keyboard navigation), the preview (paragraph, waterfall,
-compare, editing the sample text in place), size, the variable axes weight and width, italic, static and bitmap styles, fill
-colour, upper and lower case, presets, and Select / Cancel / Reset.
+compare, editing the sample text in place), size, all variable axes, italic, static and bitmap styles, fill colour,
+upper, lower and title case, presets, and Select / Cancel / Reset.
 
-Mockups that record their settings without rendering them: line height, tracking, word spacing, kerning, other
-variable axes, OpenType features, opacity, stroke, effects, alignment, title case and paragraph spacing.  Save,
-Install and Remove flash a message.
+Mockups that record their settings without rendering them: line height, tracking, word spacing, kerning, OpenType
+features, opacity, stroke, effects, alignment and paragraph spacing.  Install and
+Remove flash a message.  Save records the current settings as a font definition for the life of the dialog.
 
 Known gaps found while building the prototype:
 
@@ -62,5 +62,7 @@ Known gaps found while building the prototype:
   by the classification filters.  The filters offer serif, sans and mono only, so script, display and symbol families
   are also only listed when no classification filter is active.  The weight axis defaults to 400 where the range
   allows, rather than the font's default instance, matching the Regular default of static families.
-- `string.upper()` is byte-based, so upper case does not convert non-ASCII letters such as `ō`.
-- Pins and presets are not saved.
+- `string.upper()` is byte-based, so the preview uses `fontdialog_preview.applyCase()`.  It converts ASCII, Latin-1,
+  Latin Extended-A, Greek and Cyrillic; letters in other scripts are unchanged.
+- Pins and saved presets are not persisted between sessions.  Presets are held as font definition strings, which
+  `fontdialog_style.applyDef()` loads through `ReadTextStyle()`.

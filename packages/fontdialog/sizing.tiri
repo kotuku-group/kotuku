@@ -57,6 +57,13 @@ fontdialog_sizing.parse = function(Value:any):num
 end
 
 @Doc(text=[[
+@desc Convert a pixel size to points at the 96 DPI baseline used by the font database.
+]])
+fontdialog_sizing.points = function(Pixels:num!):num
+   return Pixels * PT_PER_PX
+end
+
+@Doc(text=[[
 @desc The unit to show a pixel size in: `pt` if the size is a whole number of points, otherwise `px`.
 ]])
 fontdialog_sizing.preferredUnit = function(Pixels:num!):str

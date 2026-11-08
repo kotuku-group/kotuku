@@ -22,6 +22,10 @@ TAG_H      <const> = 18
 WATERFALL  <const> = array<double> { 10, 12, 14, 18, 24, 32, 40, 56, 72, 96 }
 SIZE_COL   <const> = 34  -- Waterfall size column
 
+-- Changes that replace the panes.  Any other change is applied to the existing paragraph where its font is unchanged.
+
+REBUILD <const> = { init = true, reset = true, compare = true, edit = true, view = true }
+
 fontdialog_preview.TEXT = [[Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas varius dignissim sapien eu pellentesque. Ètiam libero velit, vehicula nec ante non, sodales ultricies metus. Phasellus commodo dolor turpis. Âliquam sed pellentesque magna, non luctus sapien. Ètiam molestie dui nibh, nec finibus velit molestie non. Ut feugiat maximus elit nec mattis. Suspendisse porta vestibulum faucibus. Sed iaculis placerat justo id lobortis. Interdum et malesuada fames ac ante ipsum primis in faucibus.
 
 Morbi tincidunt varius ante sit amet pulvinar. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nulla ante orci, faucibus non odio viverra, tempus rutrum ex. Mauris sit amet hendrerit quam. Vestibulum tincidunt magna suscipit ultrices congue. Aliquam et blandit tellus, ut porta libero. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Cras vulputate congue eros sed placerat. Nunc eleifend nec felis sit amet fermentum. Cras suscipit ullamcorper eros, id consectetur quam blandit ac.
@@ -43,10 +47,111 @@ SAMPLES <const> = array<table> {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function applyCase(Text:str!, Case:str):str
-   if Case is 'upper' then return Text.upper() end
-   if Case is 'lower' then return Text.lower() end
-   return Text
+-- Letter case conversion, which is UTF-8 aware for ASCII, Latin-1, Latin Extended-A, Greek and Cyrillic.  All of the
+-- mapped letters occupy one or two bytes.  Letters with no single-letter counterpart, such as `ß`, are left as they are.
+
+function upperCode(Code:num!):num
+   if Code < 0x80 then return ((Code >= 0x61) and (Code <= 0x7a)) ? Code - 32 : Code end
+   if Code is 0xb5 then return 0x39c end
+   if Code is 0xff then return 0x178 end
+   if Code is 0x131 then return 0x49 end
+   if Code is 0x17f then return 0x53 end
+   if (Code >= 0xe0) and (Code <= 0xfe) then return (Code is 0xf7) ? Code : Code - 32 end
+   if ((Code >= 0x100) and (Code <= 0x137)) or ((Code >= 0x14a) and (Code <= 0x177)) then
+      return (Code % 2 is 1) ? Code - 1 : Code
+   end
+   if ((Code >= 0x139) and (Code <= 0x148)) or ((Code >= 0x179) and (Code <= 0x17e)) then
+      return (Code % 2 is 0) ? Code - 1 : Code
+   end
+   if Code is 0x3ac then return 0x386 end
+   if (Code >= 0x3ad) and (Code <= 0x3af) then return Code - 37 end
+   if Code is 0x3c2 then return 0x3a3 end
+   if Code is 0x3cc then return 0x38c end
+   if (Code >= 0x3cd) and (Code <= 0x3ce) then return Code - 63 end
+   if (Code >= 0x3b1) and (Code <= 0x3cb) then return Code - 32 end
+   if (Code >= 0x430) and (Code <= 0x44f) then return Code - 32 end
+   if (Code >= 0x450) and (Code <= 0x45f) then return Code - 80 end
+   return Code
+end
+
+function lowerCode(Code:num!):num
+   if Code < 0x80 then return ((Code >= 0x41) and (Code <= 0x5a)) ? Code + 32 : Code end
+   if Code is 0x130 then return 0x69 end
+   if Code is 0x178 then return 0xff end
+   if (Code >= 0xc0) and (Code <= 0xde) then return (Code is 0xd7) ? Code : Code + 32 end
+   if ((Code >= 0x100) and (Code <= 0x137)) or ((Code >= 0x14a) and (Code <= 0x177)) then
+      return (Code % 2 is 0) ? Code + 1 : Code
+   end
+   if ((Code >= 0x139) and (Code <= 0x148)) or ((Code >= 0x179) and (Code <= 0x17e)) then
+      return (Code % 2 is 1) ? Code + 1 : Code
+   end
+   if Code is 0x386 then return 0x3ac end
+   if (Code >= 0x388) and (Code <= 0x38a) then return Code + 37 end
+   if Code is 0x38c then return 0x3cc end
+   if (Code >= 0x38e) and (Code <= 0x38f) then return Code + 63 end
+   if (Code >= 0x391) and (Code <= 0x3ab) then return Code + 32 end
+   if (Code >= 0x400) and (Code <= 0x40f) then return Code + 80 end
+   if (Code >= 0x410) and (Code <= 0x42f) then return Code + 32 end
+   return Code
+end
+
+function encodeCode(Code:num!):str
+   if Code < 0x80 then return string.char(Code) end
+   return string.char(0xc0 | (Code >> 6), 0x80 | (Code & 0x3f))
+end
+
+-- Whether a character continues a word for title case.  Apostrophes do, so that `don't` has one capital.  General
+-- punctuation other than the right single quote ends a word, as do the Latin-1 symbols.
+
+function isWordCode(Code:num!):bool
+   if Code < 0x80 then
+      return ((Code >= 0x30) and (Code <= 0x39)) or ((Code >= 0x41) and (Code <= 0x5a)) or
+         ((Code >= 0x61) and (Code <= 0x7a)) or (Code is 0x27)
+   end
+   if Code < 0xc0 then return Code is 0xb5 end
+   if (Code is 0xd7) or (Code is 0xf7) then return false end
+   if (Code >= 0x2000) and (Code <= 0x206f) then return Code is 0x2019 end
+   return true
+end
+
+@Doc(text=[[
+@desc Apply a letter case (`upper`, `lower`, `title` or `none`) to UTF-8 text.  Title case capitalises the first letter
+of each word and leaves the other letters as they are.
+]])
+fontdialog_preview.applyCase = function(Text:str!, Case:str):str
+   if (Case != 'upper') and (Case != 'lower') and (Case != 'title') then return Text end
+
+   parts = array<str>
+   in_word = false
+   i = 0
+   while i < #Text do
+      lead = Text.byte(i)
+      size = 1
+      code = lead
+      if lead >= 0xf0 then
+         size = 4
+      elseif lead >= 0xe0 then
+         size = 3
+         code = ((lead & 0x0f) << 12) | ((Text.byte(i + 1) & 0x3f) << 6) | (Text.byte(i + 2) & 0x3f)
+      elseif lead >= 0xc0 then
+         size = 2
+         code = ((lead & 0x1f) << 6) | (Text.byte(i + 1) & 0x3f)
+      end
+
+      if size > 2 then
+         parts.push(Text.sub(i, i + size))
+      elseif Case is 'upper' then
+         parts.push(encodeCode(upperCode(code)))
+      elseif Case is 'lower' then
+         parts.push(encodeCode(lowerCode(code)))
+      else
+         parts.push(in_word ? Text.sub(i, i + size) : encodeCode(upperCode(code)))
+      end
+
+      in_word = isWordCode(code) or (size is 4)
+      i += size
+   end
+   return parts.concat('')
 end
 
 -- A one-line summary of a settings table, e.g. `Noto Sans · 20 px · Regular`.
@@ -86,7 +191,14 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       panes         = array<table>,
       contentHeight = nil, -- Height of the page content
       editing       = false,
-      liveSample    = nil, -- The editable VectorText, while editing
+      liveSample    = nil, -- The live paragraph's VectorText; nil in the waterfall view
+      liveEditable  = false, -- True if liveSample is editable
+      liveFace      = nil, -- The face that liveSample was created with
+      liveStyle     = nil, -- The fontStyle that liveSample was created with, which can't be changed afterwards
+      liveString    = nil, -- The string last given to liveSample
+      liveTop       = 0,   -- Top of liveSample within its pane
+      liveCaption   = nil, -- The live pane's summary, in Compare mode
+      captionWidth  = 0,
       liveHeight    = 0,   -- Height of the live pane's content
       frozenHeight  = 0,   -- Height of the frozen pane's content, in Compare mode
       typing        = false
@@ -269,6 +381,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
             x = PANE_PAD_X + tag.width + 8, y = fontdialog_parts.baseline(y, TAG_H, 11), size = 11, fill = t.fg2
          })
          gui.layout.fitText(caption, fontdialog_preview.summary(Settings), Width - caption.x - PANE_PAD_X)
+         if live then self.liveCaption, self.captionWidth = caption, Width - caption.x - PANE_PAD_X end
          y += TAG_H + 16
          if not live then
             -- Clicking the frozen pane swaps it with the live settings.  Button input is delivered to the viewport
@@ -291,7 +404,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       end
 
       editable = self.editing and (Tag != 'Frozen') and (Settings.view != 'water')
-      text = editable ? Settings.text : applyCase(Settings.text, Settings.letterCase)
+      text = editable ? Settings.text : fontdialog_preview.applyCase(Settings.text, Settings.letterCase)
       inline = Width - (PANE_PAD_X * 2)
 
       if Settings.view is 'water' then
@@ -327,11 +440,17 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
                onCursorMove = function() revealCaret() end }
          end
          sample = sampleText(pane, Settings, fields)
-         sample.y = y + math.ceil(sample.displaySize)
+         top = y
+         sample.y = top + math.ceil(sample.displaySize)
          y = textBottom(sample)
 
+         if Tag != 'Frozen' then
+            self.{ liveSample = sample, liveEditable = editable, liveFace = Settings.font.name,
+               liveStyle = fontdialog_style.fontStyle(Settings), liveString = text, liveTop = top, livePane = pane,
+               liveSize = Settings.size, liveFill = Settings.fill }
+         end
+
          if editable then
-            self.liveSample = sample
             pane.cursor = 'text'
             pane.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event)
                setTyping(Event != FM_LOST_FOCUS)
@@ -345,10 +464,19 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    -- Redraw the panes.
 
    self.render = function()
+      -- The caret and the focus of the editable text carry over to its replacement.
+
+      caret_row, caret_column = nil, nil
+      if self.liveSample and self.liveEditable then
+         caret_row, caret_column = self.liveSample.cursorRow, self.liveSample.cursorColumn
+      end
+      had_focus = self.typing
+
       setTyping(false) -- The focused pane, if any, is freed without a focus notification
       self.content?.free()
       self.panes = array<table>
       self.liveSample = nil
+      self.liveCaption = nil
       page = self.panel.page
       self.content = page.new('VectorViewport', {
          x = 0, y = 0, width = '100%', height = '100%'
@@ -367,7 +495,51 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       end
       fitContent()
 
+      if self.liveSample and self.liveEditable and (caret_row != nil) then
+         self.liveSample.cursorRow = caret_row
+         self.liveSample.cursorColumn = caret_column
+         if had_focus then self.livePane.acFocus() end
+      end
+
       page.acDraw()
+   end
+
+   -- Apply the current settings to the live paragraph without recreating it, so that the caret, focus and selection
+   -- survive.  Returns false if the paragraph must be recreated because its face or style has changed.
+
+   function updateLive():bool
+      s = Picker.state
+      sample = self.liveSample
+      if (not sample) or (s.view is 'water') then return false end
+      if (s.font.name != self.liveFace) or (fontdialog_style.fontStyle(s) != self.liveStyle) then return false end
+
+      text = self.liveEditable ? s.text : fontdialog_preview.applyCase(s.text, s.letterCase)
+      if text != self.liveString then
+         self.liveString = text
+         sample.string = text
+         if self.liveEditable then sample.{ cursorRow = 0, cursorColumn = 0 } end
+      end
+
+      if s.size != self.liveSize then
+         self.liveSize = s.size
+         sample.fontSize = f'{s.size}px'
+      end
+
+      if s.fill != self.liveFill then
+         self.liveFill = s.fill
+         sample.fill = s.fill
+      end
+
+      sample.y = self.liveTop + math.ceil(sample.displaySize)
+
+      if self.liveCaption then
+         gui.layout.fitText(self.liveCaption, fontdialog_preview.summary(s), self.captionWidth)
+      end
+
+      self.liveHeight = textBottom(sample) + PANE_PAD_Y
+      fitContent()
+      self.panel.page.acDraw()
+      return true
    end
 
    self.swapPanes = function()
@@ -433,6 +605,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          self.panel.setMeta(fontdialog_preview.summary(s))
       end
 
+      if (not REBUILD[Source]) and updateLive() then return end
       self.render()
    end
 
