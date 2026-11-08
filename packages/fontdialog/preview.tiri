@@ -1,8 +1,8 @@
 -- Preview: the Preview panel at the top of the centre column.  Its footer holds the Paragraph / Waterfall and the
 -- Compare / Edit text button groups.  The preview shows the sample text in the picker's current family, style, size,
--- fill and letter case.  In Compare mode a frozen copy of the settings is shown beside the live settings, and
--- clicking the frozen pane swaps the two.  While Edit text is pressed, the live paragraph is an editable VectorText
--- and the sample text buttons are shown in the footer.
+-- kerning, paint (fill, opacity, stroke and effects) and letter case.  In Compare mode a frozen copy of the settings is
+-- shown beside the live settings, and clicking the frozen pane swaps the two.  While Edit text is pressed, the live
+-- paragraph is an editable VectorText and the sample text buttons are shown in the footer.
 
    import 'gui', 'gui/layout', 'gui/panel', 'gui/button'
 
@@ -161,16 +161,25 @@ fontdialog_preview.summary = function(State:table!):str
       fontdialog_style.describe(State)
 end
 
--- Create a VectorText in the given settings.  Bitmap families are rasterised.
+-- The text flags for the settings.  Bitmap families are rasterised.
+
+function sampleFlags(State:table!):num
+   flags = (State.kerning is 'none') ? VTXF_NO_KERNING : 0
+   if State.font.tech is 'bitmap' then flags = flags | VTXF_RASTER end
+   return flags
+end
+
+-- Create a VectorText in the given settings.  Every sample in the preview is created here, so that the paragraph, the
+-- waterfall and both Compare panes agree.
 
 function sampleText(Target:obj!, State:table!, Fields:table!):obj
    fields = table.merge({
       face      = State.font.name,
       fontSize  = f'{State.size}px',
       fontStyle = fontdialog_style.fontStyle(State),
-      fill      = State.fill
+      textStyle = fontdialog_style.paintDef(State)
    }, Fields)
-   if State.font.tech is 'bitmap' then fields.textFlags = (fields.textFlags ?? 0) | VTXF_RASTER end
+   fields.textFlags = (fields.textFlags ?? 0) | sampleFlags(State)
    return Target.new('VectorText', fields)
 end
 
@@ -193,6 +202,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       editing       = false,
       liveSample    = nil, -- The live paragraph's VectorText; nil in the waterfall view
       liveEditable  = false, -- True if liveSample is editable
+      liveBlended   = false, -- True if liveSample's pane provides the backdrop for a blend mode
       liveFace      = nil, -- The face that liveSample was created with
       liveStyle     = nil, -- The fontStyle that liveSample was created with, which can't be changed afterwards
       liveString    = nil, -- The string last given to liveSample
@@ -208,6 +218,8 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    -- does.  The meta shows the settings summary or a hint.  The bottom padding makes room for the footer.
 
    panel_theme = Picker.theme.panel
+   page_bkgd = Picker.theme.page.bkgd
+   if Picker.previewBkgd?? then page_bkgd = table.merge(page_bkgd, { fill = Picker.previewBkgd }) end
    edge = panel_theme.bkgd.strokeWidth ?? 0
    inset = math.ceil(edge)
    divider_h = math.max(1, math.floor(edge))
@@ -217,7 +229,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
       title = 'Preview', scroll = 'vertical', truncate = 'meta',
       padding = { bottom = divider_h + footer_h + inset },
-      theme = { bkgd = Picker.theme.page.bkgd },
+      theme = { bkgd = page_bkgd },
       events = {
          -- The page fills the body and is extended to fit the content.  The content is not redrawn, as its width
          -- does not change.
@@ -361,8 +373,18 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    -- edit does not store the converted text.
 
    function drawPane(Page:obj!, Settings:table!, X:num!, Width:num!, Tag:str):num
-      pane = Page.new('VectorViewport', { x = X, y = 0, width = Width, height = '100%', overflow = VOF_HIDDEN })
+      -- A blend mode needs an isolated ancestor that holds the backdrop, so the pane repeats the panel's background.
+
+      blended = fontdialog_style.blended(Settings)
+      pane = Page.new('VectorViewport', {
+         x = X, y = 0, width = Width, height = '100%', overflow = VOF_HIDDEN, flags = blended ? VF_ISOLATED : 0
+      })
       self.panes.push({ viewport = pane, tag = Tag })
+
+      if blended then
+         pane.new('VectorRectangle', { width = '100%', height = '100%', fill = page_bkgd.fill })
+      end
+
       y = PANE_PAD_Y
 
       if Tag then
@@ -447,7 +469,8 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          if Tag != 'Frozen' then
             self.{ liveSample = sample, liveEditable = editable, liveFace = Settings.font.name,
                liveStyle = fontdialog_style.fontStyle(Settings), liveString = text, liveTop = top, livePane = pane,
-               liveSize = Settings.size, liveFill = Settings.fill }
+               liveSize = Settings.size, livePaint = fontdialog_style.paintDef(Settings),
+               liveFlags = sampleFlags(Settings), liveBlended = blended }
          end
 
          if editable then
@@ -505,13 +528,15 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    end
 
    -- Apply the current settings to the live paragraph without recreating it, so that the caret, focus and selection
-   -- survive.  Returns false if the paragraph must be recreated because its face or style has changed.
+   -- survive.  Returns false if the paragraph must be recreated because its face or style has changed, or because the
+   -- pane must start or stop providing a backdrop for a blend mode.
 
    function updateLive():bool
       s = Picker.state
       sample = self.liveSample
       if (not sample) or (s.view is 'water') then return false end
       if (s.font.name != self.liveFace) or (fontdialog_style.fontStyle(s) != self.liveStyle) then return false end
+      if fontdialog_style.blended(s) != self.liveBlended then return false end
 
       text = self.liveEditable ? s.text : fontdialog_preview.applyCase(s.text, s.letterCase)
       if text != self.liveString then
@@ -525,9 +550,17 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          sample.fontSize = f'{s.size}px'
       end
 
-      if s.fill != self.liveFill then
-         self.liveFill = s.fill
-         sample.fill = s.fill
+      paint = fontdialog_style.paintDef(s)
+      if paint != self.livePaint then
+         self.livePaint = paint
+         sample.textStyle = paint
+      end
+
+      flags = sampleFlags(s)
+      if flags != self.liveFlags then
+         self.liveFlags = flags
+         sample.textFlags = (s.kerning is 'none') ? (sample.textFlags | VTXF_NO_KERNING) :
+            (sample.textFlags & ~VTXF_NO_KERNING)
       end
 
       sample.y = self.liveTop + math.ceil(sample.displaySize)

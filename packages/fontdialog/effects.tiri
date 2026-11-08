@@ -1,8 +1,7 @@
 -- Effects panel: drop shadow, outer glow and blend mode.  Enabling an effect reveals its sliders and grows the panel,
--- and the picker restacks the right column.  This panel is a mockup: its settings are recorded in the picker state but
--- are not rendered in the preview.
+-- and the picker restacks the right column.  The panel is disabled for bitmap families, which have no outlines.
 
-   import 'gui', 'gui/panel', 'gui/combobox', './theme', './parts', './controls'
+   import 'gui', 'gui/panel', 'gui/combobox', './theme', './parts', './controls', './style'
 
    namespace fontdialog_effects { }
 
@@ -91,18 +90,20 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
 
    function layout()
       s = Picker.state
+      outlined = fontdialog_style.hasOutlines(s.font)
+      shadow_on, glow_on = s.shadowOn and outlined, s.glowOn and outlined
       y = 8
       self.shadowBox.viewport.y = y + ((CHECK_H - self.shadowBox.viewport.height) * 0.5)
       y += CHECK_H
-      showGroup(self.shadow, s.shadowOn)
-      if s.shadowOn then
+      showGroup(self.shadow, shadow_on)
+      if shadow_on then
          self.shadow.viewport.y = y
          y += self.shadow.viewport.height
       end
       self.glowBox.viewport.y = y + ((CHECK_H - self.glowBox.viewport.height) * 0.5)
       y += CHECK_H
-      showGroup(self.glow, s.glowOn)
-      if s.glowOn then
+      showGroup(self.glow, glow_on)
+      if glow_on then
          self.glow.viewport.y = y
          y += self.glow.viewport.height
       end
@@ -121,22 +122,33 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
 
    self.update = function(Source:str)
       s = Picker.state
+      outlined = fontdialog_style.hasOutlines(s.font)
+
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.shadowBox, self.glowBox, self.blend }, outlined)
+      end
+
       parts = array<str>
       if s.shadowOn then parts.push('Shadow') end
       if s.glowOn then parts.push('Glow') end
       if s.blend != 'Normal' then parts.push(s.blend) end
-      self.panel.setMeta((#parts > 0) ? parts.concat(' · ') : 'None')
+      if not outlined then
+         self.panel.setMeta('Scalable fonts only')
+      else
+         self.panel.setMeta((#parts > 0) ? parts.concat(' · ') : 'None')
+      end
 
       if (Source is 'effects') or (Source is 'effects-layout') then
          if Source is 'effects-layout' then layout() end
          return
       end
 
-      self.shadowBox.setState(s.shadowOn)
-      self.glowBox.setState(s.glowOn)
+      self.shadowBox.setState(s.shadowOn and outlined)
+      self.glowBox.setState(s.glowOn and outlined)
       for key, row in self.shadow.rows do row.set(s[key]) end
       for key, row in self.glow.rows do row.set(s[key]) end
-      self.blend.setText(s.blend)
+      self.blend.setText(outlined ? s.blend : 'Normal')
       layout()
    end
 

@@ -1,5 +1,5 @@
--- Alignment & layout panel: paragraph alignment, letter case and paragraph spacing.  Upper and lower case are applied
--- to the preview.  Alignment and paragraph spacing are recorded in the picker state but are not yet rendered:
+-- Alignment & layout panel: paragraph alignment, letter case and paragraph spacing.  Letter case is applied to
+-- the preview.  Alignment and paragraph spacing are recorded in the picker state but are not yet rendered:
 -- VectorText aligns a wrapped block as a whole rather than line by line.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'

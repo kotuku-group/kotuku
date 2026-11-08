@@ -46,11 +46,16 @@ new scale while keeping the layout's height, within the monitor.  The window's o
 ## Prototype status
 
 Working: the font list (search, filters, pins, selection, keyboard navigation), the preview (paragraph, waterfall,
-compare, editing the sample text in place), size, all variable axes, italic, static and bitmap styles, fill colour,
-upper, lower and title case, presets, and Select / Cancel / Reset.
+compare, editing the sample text in place), size, kerning (metrics or off), all variable axes, italic, static and
+bitmap styles, fill colour, opacity, centred stroke, drop shadow, outer glow, blend, upper, lower and title case,
+presets, and Select / Cancel / Reset.  The paint settings reach every sample through `fontdialog_style.paintDef()` and
+the VectorText `textStyle` field.  A blend mode needs a backdrop, so the pane is made `ISOLATED` and repeats the page
+background while one is active.  Bitmap families have no outlines, so `fontdialog_style.hasOutlines()` disables the
+Stroke and Effects panels for them and leaves those settings out of the preview and the result.  The picker's state
+keeps them, so they return when a scalable family is chosen.
 
-Mockups that record their settings without rendering them: line height, tracking, word spacing, kerning, OpenType
-features, opacity, stroke, effects, alignment and paragraph spacing.  Install and
+Mockups that record their settings without rendering them: line height, tracking, word spacing, OpenType features,
+alignment and paragraph spacing.  Install and
 Remove flash a message.  Save records the current settings as a font definition for the life of the dialog.
 
 Known gaps found while building the prototype:

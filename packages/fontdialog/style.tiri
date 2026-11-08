@@ -1,6 +1,7 @@
 -- Style panel: the axes of a variable family, or the styles of a static or bitmap family, followed by the OpenType
 -- feature switches.  The content is rebuilt whenever the family changes.  Weight, width, italic and the static style
--- and the other axes are applied to the preview.  The feature switches are recorded but not yet rendered.
+-- and the other axes are applied to the preview.  The feature switches are recorded but not yet rendered.  This file
+-- also composes the font definitions: fontDef() for the result, and paintDef() for the preview.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 
@@ -181,6 +182,77 @@ fontdialog_style.fontStyle = function(State:table!):str
    return parts.concat(';')
 end
 
+-- Settings that exist only for families with glyph outlines.
+
+OUTLINE_SETTINGS <const> = array<str> {
+   'strokeOn', 'strokeColour', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur', 'glowOn',
+   'glowRadius', 'blend'
+}
+
+@Doc(text=[[
+@desc True if a family has glyph outlines.  Bitmap families are drawn as a textured block, to which a stroke or effect
+would apply as a whole, so the Stroke and Effects panels are unavailable for them.
+]])
+fontdialog_style.hasOutlines = function(Font:table!):bool
+   return Font.tech != 'bitmap'
+end
+
+@Doc(text=[[
+@desc True if the picker state renders with a blend mode.
+]])
+fontdialog_style.blended = function(State:table!):bool
+   return fontdialog_style.hasOutlines(State.font) and (State.blend != 'Normal')
+end
+
+@Doc(text=[[
+@desc Return a copy of the picker state for the dialog's result.  Stroke and effect settings are left out for a bitmap
+family.  The picker's own state keeps them, so that they return if a family with outlines is chosen.
+]])
+fontdialog_style.resultSettings = function(State:table!):table
+   settings = table.clone(State)
+   if not fontdialog_style.hasOutlines(State.font) then
+      for key in values(OUTLINE_SETTINGS) do settings[key] = nil end
+   end
+   return settings
+end
+
+-- The definition keys for the fill, opacity, stroke and effects.  Keys that are switched off are stated, so that a
+-- definition assigned to an existing text clears them.  A bitmap family has neither stroke nor effects, and a change
+-- of family recreates the text, so those keys are left out for it.
+
+function paintParts(State:table!):array<str>
+   parts = array<str>
+   parts.push(f'fill={State.fill}')
+   parts.push(f'opacity={State.opacity}%')
+   if not fontdialog_style.hasOutlines(State.font) then return parts end
+
+   if State.strokeOn then
+      parts.push(f'stroke={State.strokeColour}')
+      parts.push(f'strokeWidth={State.strokeWidth}')
+      parts.push(f'lineJoin={State.strokeJoin}')
+   else
+      parts.push('stroke=none')
+   end
+
+   if State.shadowOn then
+      parts.push(f'shadow={State.shadowX}px {State.shadowY}px {State.shadowBlur}px rgba(0,0,0,0.4)')
+   else
+      parts.push('shadow=none')
+   end
+
+   if State.glowOn then parts.push(f'glow={State.glowRadius}px {State.fill}') else parts.push('glow=none') end
+   parts.push(f'blend={State.blend}')
+   return parts
+end
+
+@Doc(text=[[
+@desc Return the font definition of the picker state's fill, opacity, stroke and effects, for the VectorText `textStyle`
+field.  Every sample in the preview is painted from this definition.
+]])
+fontdialog_style.paintDef = function(State:table!):str
+   return paintParts(State).concat('; ')
+end
+
 @Doc(text=[[
 @desc Return the canonical font definition for the picker state.  Paragraph settings are not part of a definition.
 ]])
@@ -205,26 +277,7 @@ fontdialog_style.fontDef = function(State:table!):str
    parts.push(f'letterSpacing={State.tracking / 1000}em')
    parts.push(f'wordSpacing={State.wordSpace}em')
    parts.push(f'kerning={State.kerning}')
-   parts.push(f'fill={State.fill}')
-   parts.push(f'opacity={State.opacity}%')
-
-   if State.strokeOn then
-      parts.push(f'stroke={State.strokeColour}')
-      parts.push(f'strokeWidth={State.strokeWidth}')
-      parts.push(f'strokeAlign={State.strokePos}')
-      parts.push(f'lineJoin={State.strokeJoin}')
-   else
-      parts.push('stroke=none')
-   end
-
-   if State.shadowOn then
-      parts.push(f'shadow={State.shadowX}px {State.shadowY}px {State.shadowBlur}px rgba(0,0,0,0.4)')
-   else
-      parts.push('shadow=none')
-   end
-
-   if State.glowOn then parts.push(f'glow={State.glowRadius}px {State.fill}') else parts.push('glow=none') end
-   parts.push(f'blend={State.blend}')
+   for part in values(paintParts(State)) do parts.push(part) end
 
    _, result = check mVec.NormaliseTextStyle(parts.concat('; '))
    return result
@@ -297,7 +350,7 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
    if settings.lineHeight then State.lineHeight = tonumber(settings.lineHeight) end
    if settings.letterSpacing then State.tracking = unitValue(settings.letterSpacing, 'em') * 1000 end
    if settings.wordSpacing then State.wordSpace = unitValue(settings.wordSpacing, 'em') end
-   if settings.kerning then State.kerning = settings.kerning end
+   if settings.kerning then State.kerning = (settings.kerning is 'none') ? 'none' : 'metrics' end -- No optical kerning
    if settings.fill then State.fill = settings.fill end
    if settings.opacity then State.opacity = tonumber(settings.opacity) * 100 end
 
@@ -307,7 +360,6 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
    end
 
    if settings.strokeWidth then State.strokeWidth = unitValue(settings.strokeWidth, 'px') end
-   if settings.strokeAlign then State.strokePos = settings.strokeAlign end
    if settings.lineJoin then State.strokeJoin = settings.lineJoin end
 
    if settings.shadow then

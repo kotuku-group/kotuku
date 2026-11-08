@@ -263,6 +263,27 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Doc(text=[[
+@desc Enable or disable controls made by this file, or widgets with enable() and disable() methods.
+@input Controls: array of controls
+@input Enabled
+]])
+fontdialog_controls.setEnabled = function(Controls:array<table>!, Enabled:bool)
+   function apply(Widget:table!)
+      if Enabled then Widget.enable() else Widget.disable() end
+   end
+
+   for control in values(Controls) do
+      if control.buttons then
+         for btn in values(control.buttons) do apply(btn) end
+      else
+         apply(control.slider ?? control.button ?? control)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 function hexColour(Colour:table!):str
    return string.format('#%02X%02X%02X', math.round(Colour.r * 255), math.round(Colour.g * 255),
       math.round(Colour.b * 255))

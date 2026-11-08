@@ -1,6 +1,6 @@
 -- Sizing panel: font size, line height, tracking, word spacing and kerning, with a px / pt unit switch in the
--- header.  Size is applied to the preview.  Line height, tracking, word spacing and kerning are recorded in the picker
--- state but are not yet rendered, as VectorText has no settable line spacing or letter spacing.
+-- header.  Size and kerning are applied to the preview.  Line height, tracking and word spacing are recorded in the
+-- picker state but are not yet rendered, as VectorText has no settable line spacing or letter spacing.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 
@@ -18,8 +18,7 @@ fontdialog_sizing.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 8 + (ROW_H * 5) + 8
 
 KERNING_ITEMS <const> = array<table> {
    { id = 'metrics', label = 'Metrics', tip = 'Kerning from the font\'s kern table' },
-   { id = 'optical', label = 'Optical', tip = 'Kerning derived from the glyph outlines' },
-   { id = 'off',     label = 'Off' }
+   { id = 'none',    label = 'Off' }
 }
 
 ----------------------------------------------------------------------------------------------------------------------

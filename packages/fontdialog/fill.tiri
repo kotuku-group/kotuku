@@ -1,4 +1,4 @@
--- Fill panel: the text colour and opacity.  The colour is applied to the preview; opacity is recorded only.
+-- Fill panel: the text colour and opacity.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 

@@ -1712,13 +1712,13 @@ gui.fileview = function(Options)
                      gui.dialog.font({
                         modal      = true,
                         popOver    = &_surface,
-                        feedback = function(Accepted) -- Runs in the font dialog's context
-                           if Accepted then
+                        feedback = function(Result)
+                           if Result then
                               ViewOptions.theme = table.merge(ViewOptions.theme, {
                                  page = { text = {
-                                    face = &face,
-                                    fontSize = string.format('%.2fpt', &pointSize),
-                                    fontStyle = &style
+                                    face = Result.face,
+                                    fontSize = string.format('%.2fpt', Result.pointSize),
+                                    fontStyle = Result.style
                                  } }
                               }, true, true)
                               self.setStyle(self.style)

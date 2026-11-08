@@ -13,12 +13,14 @@ Font picker dialog (prototype).  Open it with:
       style     = 'Bold Italic',          -- Optional style name, or descriptors such as 'weight=550;italic=yes'
       fill      = '#203040',              -- Optional text colour
       example   = 'Sample text',          -- Optional preview text
+      bkgd      = '#203040',              -- Optional fill for the preview's background
       fontDef   = 'face=Noto Sans; ...',  -- Optional font definition; its keys override the options above
       pinned    = { 'Noto Sans' },        -- Optional families to pin to the top of the list
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
 
-   Result holds face, style, size (px), pointSize, fill, fontDef and settings.
+   Result holds face, style, size (px), pointSize, fill, fontDef and settings.  Stroke and effect settings are not
+   included for a bitmap family.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
@@ -98,7 +100,6 @@ function freshState(Font:table!, Size:num, Fill:str):table
       strokeOn     = false,
       strokeColour = '#EC3013',
       strokeWidth  = 1,
-      strokePos    = 'outside',
       strokeJoin   = 'miter',
       shadowOn     = false,
       shadowX      = 3,
@@ -122,6 +123,7 @@ gui.dialog.font = function(Options:table)
 
    self = entity {
       feedback  = Options.feedback,
+      previewBkgd = Options.bkgd, -- Overrides the fill of the preview's background
       finished  = false,
       isTyping  = false,
       presets   = PRESETS.clone(),
@@ -340,7 +342,7 @@ gui.dialog.font = function(Options:table)
             pointSize = fontdialog_sizing.points(s.size),
             fill      = s.fill,
             fontDef   = fontdialog_style.fontDef(s),
-            settings  = table.clone(s)
+            settings  = fontdialog_style.resultSettings(s)
          })
       end
 
@@ -600,6 +602,7 @@ end
       style     = arg('style'),
       fill      = arg('fill'),
       example   = arg('example'),
+      bkgd      = arg('bkgd'),
       fontDef   = arg('fontDef'),
       title     = arg('title'),
       icon      = arg('icon'),
