@@ -303,11 +303,14 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
       events = {
          activate = function()
             -- Using a script to open the colour picker is more resource efficient (no pre-loading of the import)
+            -- The parent dependency ensures the picker window is closed if the font dialog is closed first
 
             cb.button.picker_script ?= obj<tiri> { string = [[
                import 'gui/colourpicker', 'json'
 
-               proc = processing.new()
+               self = obj.find('self')
+               parent = obj.find(tonumber(arg('parent')))
+               proc = processing.new({ signals = array<obj> { self, parent }, mode = 'any' })
 
                gui.dialog.colour({
                   colour   = arg('colour'),
@@ -315,19 +318,18 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
                   modal    = false,
                   feedback = function(Colour)
                      if Colour?? then
-                        script = obj.find('self')
-                        script.acSetKey('result', json.encode(Colour))
+                        self.acSetKey('result', json.encode(Colour))
                      end
                      proc.signal()
                   end
                })
-
                proc.sleep()
             ]] }
 
+            cb.button.picker_script.acSetKey('parent', tostring(Target.id))
             cb.button.picker_script.acSetKey('colour', cb.colour)
-            cb.button.picker_script.acActivate()
-
+            msg('Waiting on colour dialog')
+            check cb.button.picker_script.acActivate()
             _, result = cb.button.picker_script.acGetKey('result')
             if result?? then
                Colour = json.decode(result)
