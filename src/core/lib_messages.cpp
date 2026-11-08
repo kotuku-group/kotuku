@@ -44,6 +44,7 @@ static std::deque<TaskMessage> glQueue; // Available to all threads, use glQueue
 static std::atomic_size_t glQueuedMessages = 0;
 static bool glWFOAnySignal = false; // Main-thread state for the active WaitForObjects() call
 static bool glWFOSignalReceived = false;
+static int glWFOMsgDepth = -1; // tlMsgRecursion level of the ProcessMessages() loop owned by the active WaitForObjects()
 
 template <class T> inline APTR ResolveAddress(T *Pointer, int Offset) {
    return APTR(((int8_t *)Pointer) + Offset);
@@ -543,6 +544,11 @@ timer_cycle:
          }
       #endif
 
+      // A WaitForObjects() wake-up can be consumed by an intermediate ProcessMessages() call, or recorded while the
+      // loop was dispatching a nested call.  The loop owned by the active WaitForObjects() checks the state directly.
+
+      if ((tlMainThread) and (glWFOSignalReceived) and (tlMsgRecursion IS glWFOMsgDepth)) breaking = true;
+
       int64_t wait = 0;
       if ((glQueuedMessages.load(std::memory_order_acquire) > 0) or (breaking) or
           ((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)));
@@ -798,6 +804,7 @@ ERR WaitForObjects(PMF Flags, int Timeout, ObjectSignal *ObjectSignals)
    std::unordered_map<OBJECTID, ObjectSignal> saved_list;
    bool saved_any_signal = glWFOAnySignal;
    bool saved_signal_received = glWFOSignalReceived;
+   int saved_msg_depth = glWFOMsgDepth;
 
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
@@ -815,6 +822,7 @@ ERR WaitForObjects(PMF Flags, int Timeout, ObjectSignal *ObjectSignals)
    glWFOList.clear();
    glWFOAnySignal = (Flags & PMF::ANY_SIGNAL) != PMF::NIL;
    glWFOSignalReceived = false;
+   glWFOMsgDepth = tlMsgRecursion + 1;
 
    if (ObjectSignals) {
       for (int i=0; ((!error) and (not glWFOSignalReceived) and (ObjectSignals[i].Object)); i++) {
@@ -883,9 +891,45 @@ ERR WaitForObjects(PMF Flags, int Timeout, ObjectSignal *ObjectSignals)
       glWFOList.clear();
    }
 
-   if (!saved_list.empty()) std::swap(glWFOList, saved_list);
+   if (!saved_list.empty()) {
+      std::swap(glWFOList, saved_list);
+
+      // Signals and frees directed at the outer wait's objects were dropped by notify_signal_wfo() while this nested
+      // list was active.  Reconcile them now so that the outer wait doesn't sleep through a wake-up.
+
+      bool outer_signalled = false;
+      for (auto it = glWFOList.begin(); it != glWFOList.end(); ) {
+         bool signalled = false;
+         kt::ScopedObjectLock lock(it->first);
+         if (lock.granted()) {
+            if (lock.obj->defined(NF::SIGNALLED)) {
+               UnsubscribeAction(lock.obj, AC::Free, nullptr);
+               UnsubscribeAction(lock.obj, AC::Signal, nullptr);
+               lock.obj->clearFlag(NF::SIGNALLED);
+               signalled = true;
+            }
+         }
+         else if ((lock.error IS ERR::MarkedForDeletion) or (lock.error IS ERR::DoesNotExist) or
+                  (lock.error IS ERR::NoMatchingObject)) {
+            signalled = true;
+         }
+
+         if (signalled) {
+            log.trace("Object #%d was signalled during a nested wait.", it->first);
+            it = glWFOList.erase(it);
+            outer_signalled = true;
+         }
+         else it++;
+      }
+
+      // The outer ProcessMessages() loop detects the change when this call returns to it.
+
+      if (outer_signalled and (saved_any_signal or glWFOList.empty())) saved_signal_received = true;
+   }
+
    glWFOAnySignal = saved_any_signal;
    glWFOSignalReceived = saved_signal_received;
+   glWFOMsgDepth = saved_msg_depth;
 
    if ((error > ERR::ExceptionThreshold) and (error != ERR::Timeout)) log.warning(error);
 

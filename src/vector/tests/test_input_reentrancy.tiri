@@ -2,8 +2,9 @@
 
    include 'display', 'vector'
 
--- The normal FD dispatcher blocks recursive input callbacks.  The unit-test hook dispatches straight into the
--- scene, as native input paths can do, so callbacks below exercise nested scene_input_events() calls.
+-- The unit-test hook dispatches straight into the scene, as native input paths can do, so the first group of
+-- callbacks below exercises nested scene_input_events() calls in isolation.  The second group feeds the system
+-- pointer and blocks in processing.sleep(), which re-enters input_event_loop() through the FD dispatcher.
 
 function feed(Scene:obj!, Type:num!, Value0:num!, Value1:num!)
    local passed, total = mod.test('vector', f'input:{Scene.id}:{Type}:{Value0}:{Value1}')
@@ -94,4 +95,155 @@ end
    assert(wheels is 1, 'The enter callback did not dispatch the nested wheel event')
    assert(moves is 1, 'Nested wheel input must not discard the pending movement event')
    assert(surface.cursor is b.cursor, 'Nested wheel input during entry must preserve the selected cursor')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Pointer input through the FD dispatcher.  A callback that blocks in processing.sleep(), as one waiting on a dialog
+-- does, must not stop input from reaching the scene.
+
+-- Write the little-endian IEEE-754 encoding of a non-negative double into Buffer at Offset.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576 -- The top 20 bits of the mantissa occupy the high word
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Queue one dcDeviceInput record on the system pointer without dispatching it.
+
+function queuePointer(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+end
+
+function feedPointer(Type:num!, Value0:num!, Value1:num!)
+   queuePointer(Type, Value0, Value1)
+   processing.sleep(0)
+end
+
+-- Tests share one system pointer, and the scenes all open at the same position.  Park the pointer in a corner that
+-- no test vector covers, so that a later test's scene does not receive input from where an earlier test left it.
+
+@AfterEach function parkPointer()
+   feedPointer(JET_ABS_XY, 99, 99)
+end
+
+-- A scene with a root viewport that logs its movement and right button events, and a child at (10, 10, 20, 20).
+
+function newPointerScene():<obj, obj, obj, array<str>>
+   local surface = obj.new('Surface', { x=0, y=0, width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100 })
+   root.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='#808080' })
+   local child = root.new('VectorViewport', { x=10, y=10, width=20, height=20 })
+   child.new('VectorRectangle', { x=0, y=0, width=20, height=20, fill='#ff0000' })
+   local log = array<str>
+   check root.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function(Vector, Msg)
+      if Msg.type is JET_ABS_XY then log.push(f'M{Msg.absX}')
+      elseif Msg.type is JET_RMB then log.push(f'R{Msg.value}') end
+   end)
+   return surface, root, child, log
+end
+
+function showScene(Surface:obj!)
+   check Surface.acShow()
+   check Surface.acDraw()
+   processing.sleep(0)
+end
+
+-- The button lock is released before a release callback runs, so input reaches the rest of the scene while the
+-- callback blocks.
+
+@Test function BlockedReleaseCallbackReleasesLock()
+   local surface <close>, root, child, log = newPointerScene()
+   local nested:any
+   check child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value is 0) and (nested is nil) then
+         local before = #log
+         feedPointer(JET_ABS_XY, 60, 60)
+         feedPointer(JET_ABS_XY, 70, 70)
+         processing.sleep(0.05)
+         nested = #log - before
+      end
+   end)
+   showScene(surface)
+
+   feedPointer(JET_ABS_XY, 20, 20)
+   feedPointer(JET_LMB, 1, 0)
+   feedPointer(JET_LMB, 0, 0)
+   assert(nested is 2, f'The root received {nested} of 2 movement events while the release callback blocked')
+end
+
+-- A press callback that blocks while the button is released must not leave the button lock in place.
+
+@Test function BlockedPressCallbackHonoursNestedRelease()
+   local surface <close>, root, child, log = newPointerScene()
+   local nested:any
+   check child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) and (nested is nil) then
+         local before = #log
+         feedPointer(JET_LMB, 0, 0)
+         feedPointer(JET_ABS_XY, 60, 60)
+         feedPointer(JET_ABS_XY, 70, 70)
+         processing.sleep(0.05)
+         nested = #log - before
+      end
+   end)
+   showScene(surface)
+
+   feedPointer(JET_ABS_XY, 20, 20)
+   feedPointer(JET_LMB, 1, 0)
+   assert(nested is 2, f'The root received {nested} of 2 movement events after the nested release')
+
+   local before = #log
+   feedPointer(JET_ABS_XY, 80, 80)
+   feedPointer(JET_ABS_XY, 90, 90)
+   assert(#log - before is 2, f'The root received {#log - before} of 2 movement events after the press callback ' ..
+      'returned; the button lock was left in place')
+end
+
+-- A movement callback blocks part-way through a batch while newer input arrives.  The scene and a second,
+-- display-level subscriber must each receive the remaining older events before the newer ones.  M20 is coalesced
+-- into the nested M40 because consecutive movement events are consolidated.
+
+@Test function BlockedCallbackPreservesEventOrder()
+   local surface <close>, root, child, log = newPointerScene()
+   local global_log = array<str>
+   local global_sub = input.subscribe(JTYPE_MOVEMENT|JTYPE_BUTTON, nil, 0, function(Input, Event)
+      if Event.type is JET_ABS_XY then global_log.push(f'M{Event.absX}')
+      elseif Event.type is JET_RMB then global_log.push(f'R{Event.value}') end
+   end)
+   defer global_sub.unsubscribe() end
+
+   local blocked = false
+   check root.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg)
+      if (Msg.type is JET_ABS_XY) and (Msg.absX is 10) and (not blocked) then
+         blocked = true
+         feedPointer(JET_ABS_XY, 40, 10)
+         feedPointer(JET_ABS_XY, 50, 10)
+         processing.sleep(0.05)
+      end
+   end)
+   showScene(surface)
+   log.clear()
+
+   queuePointer(JET_ABS_XY, 10, 10)
+   queuePointer(JET_RMB, 1, 0)
+   queuePointer(JET_RMB, 0, 0)
+   queuePointer(JET_ABS_XY, 20, 10)
+   processing.sleep(0.1)
+
+   local scene_order = log.concat(',')
+   local global_order = global_log.concat(',')
+   assert(scene_order is 'M10,R1,R0,M40,M50', f'Scene received {scene_order}')
+   assert(global_order is 'M10,R1,R0,M20,M40,M50', f'Second subscriber received {global_order}')
 end
