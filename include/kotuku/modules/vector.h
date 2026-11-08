@@ -333,6 +333,7 @@ enum class VTXF : uint32_t {
    SELECTABLE = 0x00000400,
    NO_AUTO_OFFSET = 0x00000800,
    NO_KERNING = 0x00001000,
+   JUSTIFY = 0x00002000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VTXF)
@@ -4426,22 +4427,22 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextFlags(VTXF &Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
+      auto field = &this->Class->Dictionary[66];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[71];
+      auto field = &this->Class->Dictionary[73];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[62];
+      auto field = &this->Class->Dictionary[63];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[76];
+      auto field = &this->Class->Dictionary[78];
       return field->GetValue(this, &Value);
    }
 
@@ -4456,7 +4457,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getFace(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[68];
+      auto field = &this->Class->Dictionary[70];
       return field->GetValue(this, &Value);
    }
 
@@ -4469,12 +4470,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getFontStyle(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[57];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTextStyle(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[83];
+      auto field = &this->Class->Dictionary[86];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4482,7 +4483,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDescent(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[70];
+      auto field = &this->Class->Dictionary[72];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4490,7 +4491,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDisplayHeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[78];
+      auto field = &this->Class->Dictionary[80];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4506,7 +4507,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDX(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[77];
+      auto field = &this->Class->Dictionary[79];
       return field->GetValue(this, &Value);
    }
 
@@ -4516,12 +4517,32 @@ class objVectorText : public objVector {
    }
 
    inline ERR getInlineSize(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
+      auto field = &this->Class->Dictionary[60];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWrapMode(int &Value) noexcept {
       auto field = &this->Class->Dictionary[48];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getLetterSpacing(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[64];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getWordSpacing(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getLineHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[69];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getParagraphSpacing(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[81];
       return field->GetValue(this, &Value);
    }
 
@@ -4531,7 +4552,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getLineSpacing(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[69];
+      auto field = &this->Class->Dictionary[71];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4539,7 +4560,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getRotate(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
+      auto field = &this->Class->Dictionary[59];
       return field->GetValue(this, &Value);
    }
 
@@ -4554,12 +4575,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextLength(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[84];
+      auto field = &this->Class->Dictionary[87];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTextWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[80];
+      auto field = &this->Class->Dictionary[83];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4567,12 +4588,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getOnChange(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
+      auto field = &this->Class->Dictionary[58];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getOnCursorMove(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[75];
+      auto field = &this->Class->Dictionary[77];
       return field->GetValue(this, &Value);
    }
 
@@ -4582,7 +4603,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getCursorColumn(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[81];
+      auto field = &this->Class->Dictionary[84];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4590,7 +4611,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getCursorRow(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
+      auto field = &this->Class->Dictionary[56];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4598,12 +4619,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTotalLines(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[79];
+      auto field = &this->Class->Dictionary[82];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWrappedLines(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[85];
+      auto field = &this->Class->Dictionary[88];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4611,27 +4632,27 @@ class objVectorText : public objVector {
    }
 
    inline ERR getSelectRow(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[61];
+      auto field = &this->Class->Dictionary[62];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getSelectColumn(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[74];
+      auto field = &this->Class->Dictionary[76];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getLineLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[67];
+      auto field = &this->Class->Dictionary[68];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getCharLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[72];
+      auto field = &this->Class->Dictionary[74];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getSelectedText(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[64];
+      auto field = &this->Class->Dictionary[65];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4639,7 +4660,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getSelectFill(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[73];
+      auto field = &this->Class->Dictionary[75];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4655,22 +4676,22 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextFlags(const VTXF Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
+      auto field = &this->Class->Dictionary[66];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[71];
+      auto field = &this->Class->Dictionary[73];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[62];
+      auto field = &this->Class->Dictionary[63];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setWeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[76];
+      auto field = &this->Class->Dictionary[78];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4685,7 +4706,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setFace(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[68];
+      auto field = &this->Class->Dictionary[70];
       return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
@@ -4695,17 +4716,17 @@ class objVectorText : public objVector {
    }
 
    inline ERR setFontStyle(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[57];
       return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
    inline ERR setTextStyle(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[83];
+      auto field = &this->Class->Dictionary[86];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
    inline ERR setDX(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[77];
+      auto field = &this->Class->Dictionary[79];
       return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
@@ -4715,7 +4736,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setInlineSize(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
+      auto field = &this->Class->Dictionary[60];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4724,8 +4745,28 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setLetterSpacing(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[64];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setWordSpacing(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setLineHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[69];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setParagraphSpacing(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[81];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setRotate(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
+      auto field = &this->Class->Dictionary[59];
       return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
@@ -4740,22 +4781,22 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextLength(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[84];
+      auto field = &this->Class->Dictionary[87];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFont(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
+      auto field = &this->Class->Dictionary[61];
       return field->WriteValue(this, field, 0x08000409, Value);
    }
 
    inline ERR setOnChange(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
+      auto field = &this->Class->Dictionary[58];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setOnCursorMove(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[75];
+      auto field = &this->Class->Dictionary[77];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -4765,27 +4806,27 @@ class objVectorText : public objVector {
    }
 
    inline ERR setCursorColumn(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[81];
+      auto field = &this->Class->Dictionary[84];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCursorRow(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
+      auto field = &this->Class->Dictionary[56];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setLineLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[67];
+      auto field = &this->Class->Dictionary[68];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCharLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[72];
+      auto field = &this->Class->Dictionary[74];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSelectFill(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[73];
+      auto field = &this->Class->Dictionary[75];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 

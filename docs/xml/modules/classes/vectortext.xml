@@ -331,6 +331,29 @@ font size in points.  <code>none</code> uses the value of the named style or fon
     </field>
 
     <field>
+      <name>LetterSpacing</name>
+      <comment>Additional space between characters.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>LetterSpacing adds a fixed distance between each pair of characters.  A number is a distance in pixels and a scaled value is relative to <fl>FontSize</fl>, for example <code>2%</code> is 2% of the font size and follows any change to it.  Negative values bring the characters closer together.  The default of zero adds no spacing.</p>
+<p>No space is added after the last character of a line, and combining marks stay attached to their base character. <fl>TextWidth</fl> and word-wrapping both include the spacing.  The field corresponds to the <code>letterSpacing</code> key of <fl>TextStyle</fl>, in which a scaled value is expressed with the <code>em</code> unit.  It has no effect on bitmap fonts.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>LineHeight</name>
+      <comment>Overrides the distance between the baselines of consecutive lines.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>LineHeight replaces the font's natural line pitch.  A number is a distance in pixels and a scaled value is relative to <fl>FontSize</fl>, for example <code>145%</code> is 1.45 times the font size and follows any change to it.  The default of zero uses the natural pitch of the font.  Negative values are not permitted.</p>
+<p>The pitch is rounded to a whole number of pixels and has a minimum of 1.  The first baseline remains at <fl>Y</fl>, so the setting does not move the first line.  <fl>LineSpacing</fl> reports the resulting pitch.</p>
+<p>The field corresponds to the <code>lineHeight</code> key of <fl>TextStyle</fl>.  Note that a number with no unit is a multiple of the font size in that key, so <code>lineHeight=1.45</code> is equivalent to a field value of <code>145%</code>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>LineLimit</name>
       <comment>Restricts the total number of lines allowed in a text object.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -346,7 +369,7 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>This field can be queried for the vertical advance between each line of text.  The value is measured in the same pixel units as <fl>FontSize</fl>, so it is unaffected by the display density and is subject to the same transforms as the text.</p>
+<p>This field can be queried for the vertical advance between each line of text, which reflects <fl>LineHeight</fl> if it is set. The value is measured in the same pixel units as <fl>FontSize</fl>, so it is unaffected by the display density and is subject to the same transforms as the text.</p>
       </description>
     </field>
 
@@ -503,7 +526,7 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <description>
 <p>TextStyle reads and writes the whole font selection as a single string, for instance <code>face=Noto Sans; size=15px; weight=650; fill=#1d2433; shadow=3px 4px 0 rgba(0,0,0,0.4)</code>.  The keys are listed in the Font Definitions manual, and <function module="Vector">NormaliseTextStyle</function> can be used to validate them.  The field can be set before or after initialisation.</p>
 <p>Assignment overwrites the declared keys only, and an empty string has no effect.  Style keys update individually, so <code>italic=yes</code> retains an earlier <code>weight=650</code>.  An absent <code>fill</code> or <code>stroke</code> leaves the existing value unchanged and <code>stroke=none</code> clears the stroke.  If the string contains a malformed value then <code>ERR::Syntax</code> is returned and the settings are unchanged.</p>
-<p>The <code>shadow</code>, <code>glow</code> and <code>blend</code> keys are rendered through a <class name="VectorFilter">VectorFilter</class> that belongs to the text, which replaces the value of #Filter while any of them is active.  <code>blend</code> requires a backdrop, which is provided by setting the <code>ISOLATED</code> flag on an enclosing viewport.  The <code>lineHeight</code>, <code>letterSpacing</code>, <code>wordSpacing</code> and <code>features</code> keys, <code>kerning</code>, and any <code>strokeAlign</code> other than <code>centre</code>, are stored and returned but are not rendered at present.</p>
+<p>The <code>shadow</code>, <code>glow</code> and <code>blend</code> keys are rendered through a <class name="VectorFilter">VectorFilter</class> that belongs to the text, which replaces the value of #Filter while any of them is active.  <code>blend</code> requires a backdrop, which is provided by setting the <code>ISOLATED</code> flag on an enclosing viewport.  The <code>features</code> key, a <code>kerning</code> value of <code>optical</code>, and any <code>strokeAlign</code> other than <code>centre</code>, are stored and returned but are not rendered at present.</p>
 <p>Reading the field returns the canonical form of the current state, including changes that have been made through fields such as <fl>Face</fl> and <fl>FontSize</fl>.  The result can be assigned to another VectorText or saved.</p>
       </description>
     </field>
@@ -534,6 +557,17 @@ font size in points.  <code>none</code> uses the value of the named style or fon
 <p>The Weight is equivalent to the CSS <code>font-weight</code> value, ranging from 1 to 1000.  The default of 400 renders text in its normal state.  Lower values such as 300 render light text, while higher values such as 700 render bold text.</p>
 <p>For variable fonts, the Weight sets the <code>wght</code> axis and takes precedence over the weight of a named <fl>FontStyle</fl>.  A <code>weight</code> descriptor in the <fl>FontStyle</fl> takes precedence over the Weight.  For other fonts, the Weight is used to choose the nearest matching file of the family.</p>
 <p>A Weight of 400 is treated as unset, and therefore cannot reset the weight of a named style such as <code>Bold</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>WordSpacing</name>
+      <comment>Additional space at the end of each word.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>WordSpacing adds a fixed distance to each space (U+0020) and non-breaking space (U+00A0).  A number is a distance in pixels and a scaled value is relative to <fl>FontSize</fl>, for example <code>25%</code> is a quarter of the font size and follows any change to it.  The value can be negative.  The default of zero adds no spacing.</p>
+<p><fl>TextWidth</fl> and word-wrapping both include the spacing.  The field corresponds to the <code>wordSpacing</code> key of <fl>TextStyle</fl>, in which a scaled value is expressed with the <code>em</code> unit.  It has no effect on bitmap fonts.</p>
       </description>
     </field>
 

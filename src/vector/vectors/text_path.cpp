@@ -329,6 +329,9 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    // point sizes.
 
    const bool kern = (Vector->txFlags & VTXF::NO_KERNING) IS VTXF::NIL;
+   const double letter_spacing = Vector->letter_spacing();
+   const double word_spacing = Vector->word_spacing();
+   const double line_pitch = Vector->line_pitch(pt.line_spacing);
 
    FT_Activate_Size(pt.ft_size);
    if (pt.font->face->size->metrics.height != dbl_to_int26p6(Vector->txFontSize)) {
@@ -359,6 +362,16 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                apply_transition(Vector->Transition, double(char_index) / double(total_chars), transform);
             }
 
+            // Spacing separates this character from the next one, unless the next is a zero-advance glyph that has
+            // to stay attached.  The look-ahead precedes the glyph reference because it can modify the glyph cache.
+
+            double spacing = is_word_gap(unicode) ? word_spacing : 0;
+            if ((letter_spacing != 0) and *str) {
+               int next_len;
+               auto next = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &next_len);
+               if (pt.get_glyph(next).adv_x != 0) spacing += letter_spacing;
+            }
+
             auto &glyph = pt.get_glyph(unicode);
 
             auto adjustment = kern ? pt.positioning(prev_glyph_index, glyph.glyph_index) :
@@ -367,10 +380,13 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             const double placement = kern ? adjustment.second_placement +
                pt.first_placement(glyph.glyph_index, str) : 0;
 
-            double char_width = (glyph.adv_x + adjustment.second_advance) * std::abs(transform.sx) * advance_scale;
+            // The walk along the guide path can only move forwards, so negative spacing is limited by the advance.
+
+            double char_width = std::max(0.0,
+               (glyph.adv_x + adjustment.second_advance + spacing) * std::abs(transform.sx) * advance_scale);
 
             // Compute end_vx,end_vy (the last vertex to use for angle computation) and store the distance from start_x,start_y to end_vx,end_vy in dist.
-            if (char_width > dist) {
+            if ((char_width > dist) or (dist <= 0)) {
                while (cmd != agg::path_cmd_stop) {
                   double current_x, current_y;
                   cmd = guide->BasePath.vertex(&current_x, &current_y);
@@ -384,7 +400,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                      end_vx = current_x;
                      end_vy = current_y;
 
-                     if (char_width <= dist) break; // Stop processing vertices if dist exceeds the character width.
+                     // Even a zero advance needs a non-zero segment to establish the guide direction.
+                     if ((char_width <= dist) and (dist > 0)) break;
                   }
                }
             }
@@ -442,22 +459,44 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       int prev_glyph_index = 0;
       int char_index = 0;
       const auto wrap_mode = Vector->effective_wrap_mode();
+      const bool align_rows = needs_row_alignment(Vector);
+      const bool justify = needs_justification(Vector);
+      const double paragraph_spacing = Vector->paragraph_spacing();
+      std::vector<TextRow> rows;
 
       for (auto &line : Vector->txLines) {
          line.chars.clear();
          line.wrapOffsets.clear();
          bool in_word = false;
          bool char_break = false; // ANYWHERE mode: break between characters until segment_end is reached
+         bool line_started = false; // True once the visual line has a glyph that later characters are spaced from
          prev_glyph_index = 0; // Kerning does not apply across lines
          const char *segment_end = nullptr; // End of the current wrapping segment
          unsigned previous_start = Path.total_vertices(), previous_end = previous_start;
          double previous_sx = 1, previous_shy = 0;
+         double visible_dx = 0; // Position after the last non-whitespace character of the visual line
+         size_t row_first_char = 0;
+         unsigned row_first_vertex = previous_start;
+         std::vector<TextGap> row_gaps;
+
+         auto finish_row = [&](double Width, bool SoftWrapped) {
+            if (Width > longest_line_width) longest_line_width = Width;
+            if (align_rows) {
+               rows.push_back({ &line, row_first_char, line.chars.size(), row_first_vertex,
+                  Path.total_vertices(), Width, SoftWrapped, std::move(row_gaps) });
+               row_gaps.clear();
+            }
+            row_first_char = line.chars.size();
+            row_first_vertex = Path.total_vertices();
+         };
 
          auto wrap_line = [&](const char *Position) {
-            if (dx > longest_line_width) longest_line_width = dx;
+            finish_row(visible_dx, true); // Whitespace at a soft wrap hangs past the edge of the block
             dx = 0;
-            dy += pt.line_spacing;
+            visible_dx = 0;
+            dy += line_pitch;
             wrapped_lines++;
+            line_started = false;
             prev_glyph_index = 0; // Kerning does not apply across a line break
             line.wrapOffsets.push_back(int(Position - line.c_str()));
          };
@@ -498,6 +537,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                   auto extent = segment_extent(str, wrap_mode, word_start);
                   segment_end = str + extent.bytes;
                   auto segment_width = string_width(Vector, std::string_view(str, extent.bytes));
+                  if (line_started) segment_width += letter_spacing; // The gap before the segment's first character
 
                   // A segment that is too wide for an empty line stays on that line instead of leaving it blank.
                   if ((dx > 0) and ((dx + segment_width) * scale >= Vector->txInlineSize)) wrap_line(str);
@@ -515,17 +555,28 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             auto adjustment = kern ? pt.positioning(prev_glyph_index, glyph.glyph_index) :
                gpos_kerning::adjustment{};
             double kx = adjustment.first_advance;
+            const double letter_gap = ((glyph.adv_x != 0) and line_started) ? letter_spacing : 0;
             if (Vector->txInlineSize and not segment_start and char_break and (dx > 0) and
-                ((dx + kx + glyph.adv_x) * std::abs(transform.sx) > Vector->txInlineSize)) {
+                ((dx + kx + letter_gap + glyph.adv_x) * std::abs(transform.sx) > Vector->txInlineSize)) {
                wrap_line(str);
                kx = 0; // Kerning does not apply across a line break
                adjustment = {};
             }
+
+            // A word that follows visible text on its row can be moved by justification.
+
+            if (justify and word_start and (visible_dx > 0)) {
+               row_gaps.push_back({ Path.total_vertices(), line.chars.size() });
+            }
+
             dx += kx;
+            if ((glyph.adv_x != 0) and line_started) dx += letter_spacing * std::abs(transform.sx);
+            if (glyph.adv_x != 0) line_started = true;
 
             str += char_len;
 
-            double char_width = (glyph.adv_x + adjustment.second_advance) * std::abs(transform.sx);
+            double char_width = (glyph.adv_x + adjustment.second_advance + (is_word_gap(unicode) ? word_spacing : 0)) *
+               std::abs(transform.sx);
 
             // Apply first-glyph placement only after wrapping has decided whether this pair stays together.
             if (adjustment.first_placement) {
@@ -558,15 +609,23 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             dx += char_width;
             dy += glyph.adv_y;
+            if (unicode > 0x20) visible_dx = dx;
 
             prev_glyph_index = glyph.glyph_index;
          }
 
-         if (dx > longest_line_width) longest_line_width = dx;
+         finish_row(dx, false); // Whitespace before a hard break is retained so that the caret of an edited line is stable
          dx = 0;
-         dy += pt.line_spacing;
+         dy += line_pitch;
+         if (&line != &Vector->txLines.back()) dy += paragraph_spacing;
       }
 
+      if (justify and wrapped_lines) { // Text that doesn't wrap has nothing to justify and keeps its natural width
+         justify_text_rows(rows, Vector->txInlineSize, Path);
+         longest_line_width = std::max(longest_line_width, Vector->txInlineSize);
+      }
+
+      align_text_rows(Vector, rows, longest_line_width, &Path);
       Vector->txWidth = longest_line_width;
    }
 
@@ -578,7 +637,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    Vector->txWrappedLines = wrapped_lines;
    Vector->Bounds = { 0.0, double(-pt.ascent), Vector->txWidth, 1.0 };
    auto total_lines = std::ssize(Vector->txLines) + wrapped_lines;
-   if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * pt.line_spacing;
+   if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * line_pitch;
+   if (not guide) Vector->Bounds.bottom += (std::ssize(Vector->txLines) - 1) * Vector->paragraph_spacing();
 
    update_text_effect_region(Vector);
 
