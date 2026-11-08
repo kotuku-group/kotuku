@@ -375,6 +375,7 @@ void gen_vector_path(extVector *Vector)
             Vector->BasePath.approximation_scale(Vector->Transform.scale());
             Vector->DashArray->path.attach(Vector->BasePath);
             configure_stroke(*Vector, Vector->DashArray->stroke);
+            Vector->DashArray->stroke.approximation_scale(Vector->Transform.max_scale());
             agg::conv_transform<agg::conv_stroke<agg::conv_dash<agg::path_storage>>, agg::trans_affine> stroke_path(Vector->DashArray->stroke, Vector->Transform);
             Vector->StrokeRaster->add_path(stroke_path);
          }
@@ -382,6 +383,7 @@ void gen_vector_path(extVector *Vector)
             Vector->BasePath.approximation_scale(Vector->Transform.scale());
             agg::conv_stroke<agg::path_storage> stroked_path(Vector->BasePath);
             configure_stroke(*Vector, stroked_path);
+            stroked_path.approximation_scale(Vector->Transform.max_scale()); // Transformed after tessellation
             agg::conv_transform<agg::conv_stroke<agg::path_storage>, agg::trans_affine> stroke_path(stroked_path, Vector->Transform);
             Vector->StrokeRaster->add_path(stroke_path);
          }

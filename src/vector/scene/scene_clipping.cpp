@@ -199,6 +199,7 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
 
                      agg::conv_stroke<agg::path_storage> stroked_path(node->BasePath);
                      configure_stroke(*node, stroked_path);
+                     stroked_path.approximation_scale(t.max_scale());
                      agg::conv_transform<agg::conv_stroke<agg::path_storage>, agg::trans_affine> final_path(stroked_path, t);
 
                      Raster.reset();
