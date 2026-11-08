@@ -345,6 +345,7 @@ gui.button = function(Options)
 
          if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
             &events.activate?(&&)
+            return KRES_HANDLED
          end
       end)
 
