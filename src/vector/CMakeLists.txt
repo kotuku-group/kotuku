@@ -26,6 +26,7 @@ set (vector_sources
    "${CMAKE_CURRENT_SOURCE_DIR}/vector_functions.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/kerning.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/font_style.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/font_def.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/filters/filter.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/scene/scene.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/painters/painters.cpp"
