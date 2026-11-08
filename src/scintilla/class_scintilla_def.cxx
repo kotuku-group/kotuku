@@ -68,7 +68,6 @@ static const struct FieldDef clScintillaSCPOP[] = {
    { nullptr, 0 }
 };
 
-FDEF maSetFont[] = { { "Face", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maReplaceText[] = { { "Find", FDF_CPPSTRING }, { "Replace", FDF_CPPSTRING }, { "Flags", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maSelectRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
@@ -103,7 +102,6 @@ FDEF maFoldAll[] = { { "Expanded", FD_INT }, { 0, 0 } };
 FDEF maGetFold[] = { { "Line", FD_INT }, { "Header", FD_RESULT|FD_INT }, { "Expanded", FD_RESULT|FD_INT }, { "Visible", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clScintillaMethods[] = {
-   { AC(-1), (APTR)SCINTILLA_SetFont, "SetFont", maSetFont, sizeof(struct sci::SetFont) },
    { AC(-2), (APTR)SCINTILLA_ReplaceText, "ReplaceText", maReplaceText, sizeof(struct sci::ReplaceText) },
    { AC(-3), (APTR)SCINTILLA_DeleteLine, "DeleteLine", maDeleteLine, sizeof(struct sci::DeleteLine) },
    { AC(-4), (APTR)SCINTILLA_SelectRange, "SelectRange", maSelectRange, sizeof(struct sci::SelectRange) },

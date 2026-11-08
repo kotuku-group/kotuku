@@ -36,8 +36,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
-   options.face ?= 'Clean'
-   options.fontSize ?= 11
+   options.textStyle ?= 'face=Clean; size=11px'
    local sci = vp.new('Scintilla', theme_utils.options(options))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
@@ -46,8 +45,7 @@ end
 
 function newFoldEditor(Options:table):<obj, obj, obj, obj>
    local options = Options ?? { }
-   options.face ?= 'Clean'
-   options.fontSize ?= 11
+   options.textStyle ?= 'face=Clean; size=11px'
    options.lexer ?= SCLEX_CPP
    options.foldingMarkers ?= true
    local scene, vp, sci, bmp = newEditor(options)
@@ -542,8 +540,7 @@ function newSurfaceEditor(Options:table):<obj, obj>
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
-   options.face ?= 'Clean'
-   options.fontSize ?= 11
+   options.textStyle ?= 'face=Clean; size=11px'
    options.flags ?= SCIF_EDIT
    options.lexer ?= SCLEX_CPP
    options.symbols ?= true

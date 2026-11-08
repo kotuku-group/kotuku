@@ -23,8 +23,10 @@ FDEF argsLineTo[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "X", FD_DOUBLE 
 FDEF argsMoveTo[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
 FDEF argsMultiply[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { "ScaleX", FD_DOUBLE }, { "ShearY", FD_DOUBLE }, { "ShearX", FD_DOUBLE }, { "ScaleY", FD_DOUBLE }, { "TranslateX", FD_DOUBLE }, { "TranslateY", FD_DOUBLE }, { 0, 0 } };
 FDEF argsMultiplyMatrix[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Target", FD_PTR|FD_STRUCT }, { "VectorMatrix:Source", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsNormaliseTextStyle[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsParseTransform[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { "Transform", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsReadPainter[] = { { "Error", FD_INT|FD_ERROR }, { "Scene", FD_OBJECTPTR }, { "IRI", FDF_CPPSTRING }, { "VectorPainter:Painter", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF argsReadTextStyle[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "KeyValue:Result", FD_RESULT|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsResetMatrix[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsRewindPath[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { 0, 0 } };
 FDEF argsRotate[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { "Angle", FD_DOUBLE }, { "CenterX", FD_DOUBLE }, { "CenterY", FD_DOUBLE }, { 0, 0 } };
@@ -67,6 +69,8 @@ const struct Function glFunctions[] = {
    { (APTR)vec::ResetMatrix, "ResetMatrix", argsResetMatrix },
    { (APTR)vec::GetFontHandle, "GetFontHandle", argsGetFontHandle },
    { (APTR)vec::GetFontMetrics, "GetFontMetrics", argsGetFontMetrics },
+   { (APTR)vec::NormaliseTextStyle, "NormaliseTextStyle", argsNormaliseTextStyle },
+   { (APTR)vec::ReadTextStyle, "ReadTextStyle", argsReadTextStyle },
    { (APTR)vec::CharWidth, "CharWidth", argsCharWidth },
    { (APTR)vec::StringWidth, "StringWidth", argsStringWidth },
    { (APTR)vec::FlushMatrix, "FlushMatrix", argsFlushMatrix },

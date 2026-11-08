@@ -4473,6 +4473,14 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getTextStyle(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[83];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getDescent(int &Value) noexcept {
       auto field = &this->Class->Dictionary[70];
       SetObjectContext(this, field, AC::NIL);
@@ -4546,7 +4554,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextLength(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[83];
+      auto field = &this->Class->Dictionary[84];
       return field->GetValue(this, &Value);
    }
 
@@ -4595,7 +4603,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getWrappedLines(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[84];
+      auto field = &this->Class->Dictionary[85];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4691,6 +4699,11 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, 0x00904508, &Value);
    }
 
+   inline ERR setTextStyle(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[83];
+      return field->WriteValue(this, field, 0x00804308, &Value);
+   }
+
    inline ERR setDX(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[77];
       return field->WriteValue(this, field, 0x80101308, &Value);
@@ -4727,7 +4740,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextLength(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[83];
+      auto field = &this->Class->Dictionary[84];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -6033,6 +6046,8 @@ struct VectorBase {
    ERR (*_ResetMatrix)(struct VectorMatrix *Matrix);
    ERR (*_GetFontHandle)(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle);
    ERR (*_GetFontMetrics)(APTR Handle, struct FontMetrics *Info);
+   ERR (*_NormaliseTextStyle)(const std::string_view &String, std::string *Result);
+   ERR (*_ReadTextStyle)(const std::string_view &String, struct KeyValue **Result);
    double (*_CharWidth)(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning);
    double (*_StringWidth)(APTR FontHandle, const std::string_view &String, int Chars);
    ERR (*_FlushMatrix)(struct VectorMatrix *Matrix);
@@ -6072,6 +6087,8 @@ inline ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view &T
 inline ERR ResetMatrix(struct VectorMatrix *Matrix) { return VectorBase->_ResetMatrix(Matrix); }
 inline ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle) { return VectorBase->_GetFontHandle(Family,Style,Weight,Size,Handle); }
 inline ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info) { return VectorBase->_GetFontMetrics(Handle,Info); }
+inline ERR NormaliseTextStyle(const std::string_view &String, std::string *Result) { return VectorBase->_NormaliseTextStyle(String,Result); }
+inline ERR ReadTextStyle(const std::string_view &String, struct KeyValue **Result) { return VectorBase->_ReadTextStyle(String,Result); }
 inline double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning) { return VectorBase->_CharWidth(FontHandle,Char,KChar,Kerning); }
 inline double StringWidth(APTR FontHandle, const std::string_view &String, int Chars) { return VectorBase->_StringWidth(FontHandle,String,Chars); }
 inline ERR FlushMatrix(struct VectorMatrix *Matrix) { return VectorBase->_FlushMatrix(Matrix); }
@@ -6108,6 +6125,8 @@ extern ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view &T
 extern ERR ResetMatrix(struct VectorMatrix *Matrix);
 extern ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle);
 extern ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info);
+extern ERR NormaliseTextStyle(const std::string_view &String, std::string *Result);
+extern ERR ReadTextStyle(const std::string_view &String, struct KeyValue **Result);
 extern double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning);
 extern double StringWidth(APTR FontHandle, const std::string_view &String, int Chars);
 extern ERR FlushMatrix(struct VectorMatrix *Matrix);

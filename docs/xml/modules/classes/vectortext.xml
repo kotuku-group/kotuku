@@ -310,9 +310,10 @@ the negated value.</li>
 <li><code>opsz</code>: The optical size, which is a number, <code>auto</code> or <code>none</code>.  The default, <code>auto</code>, sets the optical size to the
 font size in points.  <code>none</code> uses the value of the named style or font default.</li>
 </list>
-<p>Any other four-character key is an OpenType axis tag, e.g. <code>GRAD=-50</code>.  Axis tags are case-sensitive.</p>
+<p>A four-character key that is a registered axis (<code>wght</code>, <code>wdth</code>, <code>ital</code>, <code>slnt</code>, <code>opsz</code>) or has no lower-case letters is an OpenType axis tag, e.g. <code>GRAD=-50</code>.  Axis tags are case-sensitive.  Other lower-case keys are reserved.</p>
 <p>For variable fonts, the design coordinates are resolved in the following order, with later values taking precedence: the font defaults, the named style, the <fl>Weight</fl> field, the descriptors listed above, and finally axis tags.  Values are clamped to the range of each axis, and axes that the font does not have are ignored.  Strings that resolve to the same coordinates share the same cached font, so <code>weight=Bold</code> and <code>Bold</code> are equivalent.</p>
 <p>For fonts that are not variable, the family's file that is the nearest match is chosen with the CSS font matching order of width, then italic, then weight.  For instance, <code>weight=SemiBold</code> on a family that has no semi-bold file resolves to <code>Bold</code>.  Axis tags are ignored and no synthetic styles are produced.</p>
+<p>A complete font definition, as described for <fl>TextStyle</fl>, is also accepted.  Only its style keys are used, and the face, size and paint keys have no effect.  <code>style=Semi Bold</code> is an explicit spelling of a leading style name.</p>
 <p>Errors are not returned if a style name or descriptor is invalid or unavailable.  Invalid descriptors are reported as warnings in the log and otherwise ignored.</p>
       </description>
     </field>
@@ -491,6 +492,19 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <type>DOUBLE</type>
       <description>
 <p>The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the computed text width does not match this value, then the text will be scaled to match the TextLength.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>TextStyle</name>
+      <comment>A portable font definition that describes the complete appearance of the text.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>TextStyle reads and writes the whole font selection as a single string, for instance <code>face=Noto Sans; size=15px; weight=650; fill=#1d2433; shadow=3px 4px 0 rgba(0,0,0,0.4)</code>.  The keys are listed in the Font Definitions manual, and <function module="Vector">NormaliseTextStyle</function> can be used to validate them.  The field can be set before or after initialisation.</p>
+<p>Assignment overwrites the declared keys only, and an empty string has no effect.  Style keys update individually, so <code>italic=yes</code> retains an earlier <code>weight=650</code>.  An absent <code>fill</code> or <code>stroke</code> leaves the existing value unchanged and <code>stroke=none</code> clears the stroke.  If the string contains a malformed value then <code>ERR::Syntax</code> is returned and the settings are unchanged.</p>
+<p>The <code>shadow</code>, <code>glow</code> and <code>blend</code> keys are rendered through a <class name="VectorFilter">VectorFilter</class> that belongs to the text, which replaces the value of #Filter while any of them is active.  <code>blend</code> requires a backdrop, which is provided by setting the <code>ISOLATED</code> flag on an enclosing viewport.  The <code>lineHeight</code>, <code>letterSpacing</code>, <code>wordSpacing</code> and <code>features</code> keys, <code>kerning</code>, and any <code>strokeAlign</code> other than <code>centre</code>, are stored and returned but are not rendered at present.</p>
+<p>Reading the field returns the canonical form of the current state, including changes that have been made through fields such as <fl>Face</fl> and <fl>FontSize</fl>.  The result can be assigned to another VectorText or saved.</p>
       </description>
     </field>
 

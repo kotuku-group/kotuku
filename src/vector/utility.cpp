@@ -625,7 +625,7 @@ static alias_options read_alias_options(kt::Log &Log, const std::string &Alias)
 
    for (auto keys = chain.rbegin(); keys != chain.rend(); keys++) {
       if (auto it = (*keys)->find("Style"); it != (*keys)->end()) {
-         kt::font_traits::for_each_descriptor(it->second,
+         kt::font_traits::for_each_descriptor(kt::font_traits::style_part(it->second),
             [&result](std::string_view Key, std::string_view Value, bool HasValue) {
             if (HasValue) result.descriptors.append(Key).append("=").append(Value).append(";");
             else result.name.assign(Value);
@@ -702,7 +702,10 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    // family.  The metric options are applied per alias, so they are included in the style cache key.
 
    auto alias_opts = read_alias_options(Log, alias);
-   std::string style = merge_alias_style(alias_opts, Style);
+   // A definition that has only non-style keys is the same request as an unstyled font.
+
+   auto style_keys = kt::font_traits::style_part(Style);
+   std::string style = merge_alias_style(alias_opts, style_keys.empty() ? "Regular" : style_keys);
 
    auto spec = parse_font_style(style);
    for (auto &warning : spec.warnings) Log.warning("%s", warning.c_str());

@@ -1,7 +1,6 @@
 // Parser for font style descriptor strings.  See font_style.h for the syntax.
 
 #include "font_style.h"
-#include <algorithm>
 
 namespace ft = kt::font_traits;
 
@@ -26,6 +25,11 @@ font_style_spec parse_font_style(std::string_view Style)
       spec.warnings.push_back(std::move(msg));
    };
 
+   auto invalid = [&](std::string_view Message, std::string_view Key, std::string_view Value) {
+      spec.invalid = true;
+      warn(Message, Key, Value);
+   };
+
    bool named_set = false;
    ft::for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
       if (not HasValue) {
@@ -42,6 +46,7 @@ font_style_spec parse_font_style(std::string_view Style)
          return;
       }
       else if (Value.empty()) {
+         if (ft::is_definition_key(Key)) return;
          warn("Missing descriptor value", Key, Value);
          return;
       }
@@ -56,33 +61,39 @@ font_style_spec parse_font_style(std::string_view Style)
             spec.opsz_mode = font_style_spec::OPSZ::FIXED;
             spec.opsz = *v;
          }
-         else { warn("Invalid opsz value", Key, Value); return; }
+         else { invalid("Invalid opsz value", Key, Value); return; }
+         spec.opsz_set = true;
          spec.descriptors = true;
          return;
       }
 
       auto key = ft::normalise(Key);
-      if (key IS "weight") {
+      if (key IS "style") { // Explicit spelling of the style name; unlike a bare name, the last one wins
+         spec.named.assign(Value);
+         named_set = true;
+         return;
+      }
+      else if (key IS "weight") {
          if (auto v = ft::parse_weight(Value)) spec.weight = *v;
-         else { warn("Invalid weight value", Key, Value); return; }
+         else { invalid("Invalid weight value", Key, Value); return; }
       }
       else if (key IS "width") {
          if (auto v = ft::parse_width(Value)) spec.width = *v;
-         else { warn("Invalid width value", Key, Value); return; }
+         else { invalid("Invalid width value", Key, Value); return; }
       }
       else if (key IS "italic") {
          if (auto v = ft::parse_bool(Value)) spec.italic = *v;
-         else { warn("Invalid italic value", Key, Value); return; }
+         else { invalid("Invalid italic value", Key, Value); return; }
       }
       else if (key IS "slant") {
          if (auto v = ft::parse_number(Value)) spec.slant = *v;
-         else { warn("Invalid slant value", Key, Value); return; }
+         else { invalid("Invalid slant value", Key, Value); return; }
       }
-      else if ((Key.size() IS 4) and std::ranges::all_of(Key, [](char C) { return (C > 0x20) and (C < 0x7f); })) {
-         // Raw OpenType axis tag, matched case-sensitively
+      else if (ft::is_axis_tag(Key)) { // Raw OpenType axis tag, matched case-sensitively
          if (auto v = ft::parse_number(Value)) spec.tags.emplace_back(make_axis_tag(Key), *v);
-         else { warn("Invalid axis value", Key, Value); return; }
+         else { invalid("Invalid axis value", Key, Value); return; }
       }
+      else if (ft::is_definition_key(Key)) return; // Used only by consumers of a complete font definition
       else { warn("Unknown style descriptor", Key, Value); return; }
 
       spec.descriptors = true;

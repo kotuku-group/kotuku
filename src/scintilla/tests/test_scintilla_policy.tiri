@@ -263,7 +263,7 @@ end
 end
 
 @Test function IndentationGuidesRenderAndClear()
-   local scene <close>, sci = newEditor(theme_utils.options({ face='Clean', fontSize=11, indentWidth=3,
+   local scene <close>, sci = newEditor(theme_utils.options({ textStyle='face=Clean; size=11px', indentWidth=3,
       tabWidth=8 }))
    local bmp <close> = obj.new('Bitmap', { width=400, height=300, bitsPerPixel=32 })
    scene.bitmap = bmp

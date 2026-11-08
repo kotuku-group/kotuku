@@ -21,6 +21,8 @@ struct font_style_spec {
    std::optional<double> weight, width, slant;    // CSS weight, width percentage and oblique angle in degrees
    std::optional<bool> italic;
    OPSZ opsz_mode = OPSZ::AUTO;
+   bool opsz_set = false;                         // True if opsz was declared
+   bool invalid = false;                          // True if a known key has a malformed value
    double opsz = 0;                               // Optical size if opsz_mode is FIXED
    std::vector<std::pair<uint32_t, double>> tags; // Raw axis tags in declaration order; later wins
    std::vector<std::string> warnings;             // Descriptors that were ignored

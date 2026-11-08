@@ -900,6 +900,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     'ResetMatrix',
     'GetFontHandle',
     'GetFontMetrics',
+    'NormaliseTextStyle',
+    'ReadTextStyle',
     'CharWidth',
     'StringWidth',
     'FlushMatrix',

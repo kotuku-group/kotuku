@@ -116,8 +116,7 @@ function newEditor(Options:table):<obj, obj, obj, obj, array<str>>
    local flags = SCIF_EDIT
    if Options?.flags != nil then flags = Options.flags end
    local options = {
-      face          = 'Clean',
-      fontSize      = 11,
+      textStyle='face=Clean; size=11px',
       flags         = flags,
       themeXML      = theme_utils.xml({ lineHighlight='transparent' }),
       completionCallback = function(Scintilla, Event, Position, Value, Text)
@@ -403,7 +402,7 @@ end
    defer surface.free() end
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   local sci = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT,
+   local sci = host.new('Scintilla', { textStyle='face=Clean; size=11px', flags=SCIF_EDIT,
       completionCallback = function(Scintilla, Event, Position, Value, Text)
          if Event is SCAC_CHAR_ADDED and Value is ('.').byte() then
             Scintilla.mtShowCompletions(0, 'len\nfind\nsub', 0)
@@ -638,7 +637,7 @@ end
    local scene = surface.new('VectorScene', { surface=surface })
    local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local host = root.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   local sci <close> = obj.new('Scintilla', { viewport=host, face='Clean', fontSize=11, flags=SCIF_EDIT })
+   local sci <close> = obj.new('Scintilla', { viewport=host, textStyle='face=Clean; size=11px', flags=SCIF_EDIT })
    surface.acShow()
    surface.acFocus()
    processing.sleep(0)
@@ -656,7 +655,7 @@ end
    local scene = surface.new('VectorScene', { surface=surface })
    local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local host = root.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   local sci <close> = obj.new('Scintilla', { viewport=host, face='Clean', fontSize=11, flags=SCIF_EDIT })
+   local sci <close> = obj.new('Scintilla', { viewport=host, textStyle='face=Clean; size=11px', flags=SCIF_EDIT })
    surface.acShow()
    surface.acFocus()
    processing.sleep(0)
@@ -672,7 +671,7 @@ end
 @Test function IndependentEditors()
    local surface <close>, scene, host, sci, events = newEditor()
    local host2 = scene.viewport.new('VectorViewport', { x=0, y=60, width='100%', height=60 })
-   local sci2 = host2.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT })
+   local sci2 = host2.new('Scintilla', { textStyle='face=Clean; size=11px', flags=SCIF_EDIT })
    complete(sci, 'p', 'pairs\nprint')
    check sci2.mtShowCallTip(0, 'other', 0, 0)
    settle()
