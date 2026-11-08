@@ -87,6 +87,13 @@ struct struct_record {
    return (colon IS std::string_view::npos) ? Name : Name.substr(0, colon);
 }
 
+// KEYVALUE maps have no struct definition and are always copied to a plain table when returned to Tiri.
+
+[[nodiscard]] constexpr inline bool is_keyvalue_struct(std::string_view Name) noexcept
+{
+   return struct_name_prefix(Name) IS "KeyValue";
+}
+
 [[nodiscard]] constexpr inline bool valid_struct_name(std::string_view Name) noexcept
 {
    Name = struct_name_prefix(Name);

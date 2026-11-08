@@ -674,6 +674,13 @@ GCstruct * push_struct(extTiri *Self, APTR Address, uint32_t StructKey, StructPa
    if (not Field.Name or not valid_struct_name(Field.Name)) return ERR::Search;
 
    auto name = struct_name_prefix(Field.Name);
+
+   if (is_keyvalue_struct(name)) {
+      if (Address) keyvalue_to_table(Self->Lua, (const KEYVALUE *)Address);
+      else lua_pushnil(Self->Lua);
+      return ERR::Okay;
+   }
+
    auto def = (Field.Type & FD_RESOURCE) ? find_registered_resource_struct(Self->Lua, name) :
       find_struct(Self->Lua, name);
    if (not def) return ERR::Search;
