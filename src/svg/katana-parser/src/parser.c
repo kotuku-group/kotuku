@@ -1254,9 +1254,9 @@ void katanaerror(YYLTYPE* yyloc, void* scanner, struct KatanaInternalParser * pa
            yyloc->last_line,
            yyloc->last_column,
            error,
-           katanaget_text(parser->scanner));
+           katanaget_text(scanner));
 
-    YYSTYPE * s = katanaget_lval(parser->scanner);
+    YYSTYPE * s = katanaget_lval(scanner);
 
 //	struct yy_buffer_state state = katana_get_previous_state(parser->scanner);
 //    s, (*yy_buffer_stack[0]).yy_ch_buf);
@@ -1272,7 +1272,7 @@ void katanaerror(YYLTYPE* yyloc, void* scanner, struct KatanaInternalParser * pa
     e->last_line = yyloc->last_line;
     e->last_column = yyloc->last_column;
     snprintf(e->message, KATANA_ERROR_MESSAGE_SIZE, "%s at %s", error,
-             katanaget_text(parser->scanner));
+             katanaget_text(scanner));
     katana_array_add(parser, e, &(parser->output->errors));
 }
 

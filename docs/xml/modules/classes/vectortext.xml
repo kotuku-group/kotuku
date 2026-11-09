@@ -139,6 +139,7 @@
       <type lookup="ALIGN">ALIGN</type>
       <description>
 <p>This field specifies the horizontal alignment of the text string.  The standard alignment flags are supported in the form of <code>ALIGN::LEFT</code>, <code>ALIGN::HORIZONTAL</code> and <code>ALIGN::RIGHT</code>.</p>
+<p>Each line of multi-line or word-wrapped text is aligned individually about <fl>X</fl>, so right-aligned rows end at <fl>X</fl> and centred rows are centred on it.  Whitespace at the end of a word-wrapped row is ignored, and the alignment has no effect on text that follows a guide path.  To justify text, set <code>VTXF::JUSTIFY</code> in <fl>TextFlags</fl>.</p>
 <p>In addition, the SVG equivalent values of <code>start</code>, <code>middle</code> and <code>end</code> are supported and map directly to the formerly mentioned align flags.</p>
 <types lookup="ALIGN"/>
       </description>
@@ -398,6 +399,17 @@ font size in points.  <code>none</code> uses the value of the named style or fon
     </field>
 
     <field>
+      <name>ParagraphSpacing</name>
+      <comment>Additional distance between paragraphs.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>ParagraphSpacing adds a fixed distance in pixels after each hard line break, on top of the normal distance between baselines.  Lines created by word-wrapping are unaffected, and no space is added after the last line.  The default of zero adds no spacing.  Negative values are not permitted.</p>
+<p>The distance is rounded to a whole number of pixels when applied, so that baselines stay on the pixel grid.  It is applicable to both scalable and bitmap fonts, and has no effect on guide paths.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Point</name>
       <comment>Returns the point-size of the font.</comment>
       <access read="G">Get</access>
@@ -504,6 +516,7 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <access read="G" write="S">Get/Set</access>
       <type lookup="VTXF">VTXF</type>
       <description>
+<p>Text can be justified with <code>VTXF::JUSTIFY</code>, which requires <fl>InlineSize</fl>.  Bitmap fonts and guide paths ignore the flag.</p>
 <types lookup="VTXF"/>
       </description>
     </field>
@@ -649,6 +662,7 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <const name="BLINK">Enable animated blinking (not supported - exists as SVG dummy option).</const>
       <const name="EDIT">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="EDITABLE">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
+      <const name="JUSTIFY">Stretch the gaps between words so that each soft-wrapped line fills <fl>InlineSize</fl>.  The last line of each paragraph follows <fl>Align</fl>.  Requires <fl>InlineSize</fl> and has no effect on bitmap fonts or guide paths.</const>
       <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
       <const name="NO_AUTO_OFFSET">Leave text scrolling to its container; disables automatic cursor offsets.</const>
       <const name="NO_KERNING">Disable the pair kerning defined by the font.  Equivalent to setting the CSS font-kerning property to <code>none</code>.</const>

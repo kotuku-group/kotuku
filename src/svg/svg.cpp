@@ -143,6 +143,8 @@ struct svgState {
    std::unordered_map<uint32_t, std::string> m_text_properties; // Computed values, distinct from XML declarations
    std::string m_display;
    std::string m_visibility;
+   double  m_root_font_size = 16;
+   bool    m_has_root_font_size = false;
    double  m_font_size_px;    // Converted from m_font_size
    double  m_stroke_width;    // 0 if undefined
    double  m_fill_opacity;    // -1 if undefined
@@ -446,6 +448,7 @@ static constexpr auto SVF_kotuku_wave         = strhash("kotuku:wave");
 static constexpr auto SVF_l                   = strhash("l");
 static constexpr auto SVF_length              = strhash("length");
 static constexpr auto SVF_lengthAdjust        = strhash("lengthAdjust");
+static constexpr auto SVF_line_height         = strhash("line-height");
 static constexpr auto SVF_letter_spacing      = strhash("letter-spacing");
 static constexpr auto SVF_lighten             = strhash("lighten");
 static constexpr auto SVF_lighter             = strhash("lighter");
