@@ -124,6 +124,21 @@ fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:tab
       row.ring = fontdialog_parts.thumbRings(row.slider, t)
    end
 
+   -- The outer thumb ring shows the keyboard focus
+
+   row.slider.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS,
+      function(Viewport:obj!, Event:num!)
+         if Picker.finished then return end -- Focus is dropped while the window is torn down
+
+         if Event is FM_LOST_FOCUS then
+            row.ring.stroke = (Picker.theme.scheme is 'light') ? 'black' : 'white'
+         else
+            row.ring.stroke = Picker.theme.slider.foreFocus.stroke
+         end
+
+         Viewport.acDraw()
+      end)
+
    row.valueText.string = row.format(row.slider.value)
 
    row.set = function(Value:num)

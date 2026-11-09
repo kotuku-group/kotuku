@@ -109,7 +109,7 @@ end
 The rings are placed behind the thumb bar, so the slider's thumbSize must be at least the bar height plus 6.
 @input Slider created with fontdialog_theme.channelSlider()
 @input tokens
-@result The outer ring, whose fill can be changed to show focus, and the inner ring
+@result The outer ring, whose stroke can be changed to show focus, and the inner ring
 ]])
 fontdialog_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
    bar = Slider.button

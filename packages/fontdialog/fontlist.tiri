@@ -134,7 +134,7 @@ function buildRow(Picker:table!, Item:table!, Viewport:obj!):table
       if Reason is 'selected' then
          hl.{ fill = t.accentSoft, stroke = Picker.theme.palette.prime, visibility = VIS_VISIBLE }
       elseif Focused or (Reason is 'highlighted') then
-         hl.{ fill = 'none', stroke = Focused ? Picker.theme.palette.prime : t.border, visibility = VIS_VISIBLE }
+         hl.{ fill = 'none', stroke = Picker.theme.palette.contrast, visibility = VIS_VISIBLE }
       else
          hl.visibility = VIS_HIDDEN
       end
@@ -212,7 +212,9 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    })
    self.scriptFilter.viewport.x = body_w - PAD_X - self.scriptFilter.width
 
-   body.new('VectorRectangle', { x = edge, y = TOP_H, xOffset = edge, height = 1, fill = t.border })
+   body.new('VectorRectangle', {
+      name='divider', x = edge, y = TOP_H, xOffset = edge, height = 1, fill = t.border
+   })
 
    -- The list insets its rows by VIEW_EDGE, so it is enlarged by that amount to keep the rows at the list padding.
 
@@ -221,10 +223,10 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    self.view = gui.listView({
       target     = body,
-      x          = PAD_X - VIEW_EDGE,
+      x          = edge,
       y          = list_top,
-      width      = body_w - (PAD_X * 2) + (VIEW_EDGE * 2),
-      height     = list_h,
+      xOffset    = edge,
+      yOffset    = BOTTOM_H,
       borderless = true,
       showIcons  = false,
       rowHeight  = ROW_H,

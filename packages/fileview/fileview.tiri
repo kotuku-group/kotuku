@@ -1910,6 +1910,7 @@ gui.fileview = function(Options)
       released = false
       function releaseSubscriptions()
          if released then return end
+
          released = true
          for field in values(array<str> {
             'dlgShortcutBrowse', 'dlgRenameReplace', 'dlgFolder', 'dlgShortcut', 'dlgDelete', 'dlgRename'
@@ -1917,6 +1918,7 @@ gui.fileview = function(Options)
             self[field]?.window?.surface?.free()
             self[field] = nil
          end
+
          if &timer then mSys.UpdateTimer(&timer, 0); &timer = nil end
          if &evVolumeCreated then unsubscribeEvent(&evVolumeCreated); &evVolumeCreated = nil end
          if &evVolumeDeleted then unsubscribeEvent(&evVolumeDeleted); &evVolumeDeleted = nil end
