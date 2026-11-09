@@ -201,8 +201,8 @@ end
 -- Settings that exist only for families with glyph outlines.
 
 OUTLINE_SETTINGS <const> = array<str> {
-   'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur', 'glowOn',
-   'glowRadius', 'blend', 'tracking', 'wordSpace'
+   'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur',
+   'shadowOpacity', 'glowOn', 'glowRadius', 'blend', 'tracking', 'wordSpace'
 }
 
 @Doc(text=[[
@@ -262,12 +262,13 @@ function paintParts(State:table!):array<str>
    end
 
    if State.shadowOn then
-      parts.push(f'shadow={State.shadowX}px {State.shadowY}px {State.shadowBlur}px rgba(0,0,0,0.4)')
+      colour = f'rgba(0,0,0,{State.shadowOpacity / 100})'
+      parts.push(f'shadow={tidy(State.shadowX)}em {tidy(State.shadowY)}em {tidy(State.shadowBlur)}em {colour}')
    else
       parts.push('shadow=none')
    end
 
-   if State.glowOn then parts.push(f'glow={State.glowRadius}px {State.fill}') else parts.push('glow=none') end
+   if State.glowOn then parts.push(f'glow={tidy(State.glowRadius)}em {State.fill}') else parts.push('glow=none') end
    parts.push(f'blend={State.blend}')
    return parts
 end
@@ -350,11 +351,11 @@ fontdialog_style.readDef = function(Def:str!):table
    return result
 end
 
--- The stroke width as a multiple of the font size.  Absolute widths are converted at the given size in pixels.
+-- A length as a multiple of the font size.  Absolute lengths are converted at the given size in pixels.
 
-function strokeEm(Width:str!, Size:num!):num
-   if Width.endsWith('em') then return tidy(unitValue(Width, 'em')) end
-   return tidy(fontdialog_sizing_pixels(Width) / Size)
+function lengthEm(Length:str!, Size:num!):num
+   if Length.endsWith('em') then return tidy(unitValue(Length, 'em')) end
+   return tidy(fontdialog_sizing_pixels(Length) / Size)
 end
 
 @Doc(text=[[
@@ -437,21 +438,22 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
       if State.strokeOn and settings.stroke then State.strokeOpacity = stroke_alpha end
    end
 
-   if settings.strokeWidth then State.strokeWidth = strokeEm(settings.strokeWidth, State.size) end
+   if settings.strokeWidth then State.strokeWidth = lengthEm(settings.strokeWidth, State.size) end
    if settings.lineJoin then State.strokeJoin = settings.lineJoin end
 
    if settings.shadow then
       State.shadowOn = settings.shadow != 'none'
       if State.shadowOn then
          shadow = settings.shadow.split(' ')
-         State.shadowX, State.shadowY, State.shadowBlur = unitValue(shadow[0], 'px'),
-            unitValue(shadow[1], 'px'), unitValue(shadow[2], 'px')
+         State.shadowX, State.shadowY = lengthEm(shadow[0], State.size), lengthEm(shadow[1], State.size)
+         State.shadowBlur = lengthEm(shadow[2], State.size)
+         _, State.shadowOpacity = fontdialog_controls.splitAlpha(shadow.concat(' ', nil, 3))
       end
    end
 
    if settings.glow then
       State.glowOn = settings.glow != 'none'
-      if State.glowOn then State.glowRadius = unitValue(settings.glow.split(' ')[0], 'px') end
+      if State.glowOn then State.glowRadius = lengthEm(settings.glow.split(' ')[0], State.size) end
    end
 
    if settings.blend then State.blend = (settings.blend is 'burn') ? 'Colour Burn' : settings.blend.cap() end

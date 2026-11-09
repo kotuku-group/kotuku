@@ -94,14 +94,17 @@ template <class T> static void split_outer(std::string_view Value, char Delimite
 
 static bool read_shadow_layer(std::string_view Value, font_shadow_layer &Layer)
 {
-   std::vector<double> lengths;
+   std::vector<font_length> lengths;
    std::string colour;
    bool valid = true;
 
    split_outer(Value, ' ', [&](std::string_view Token) {
       if (auto length = parse_length(Token)) {
-         if (length->unit IS font_length::UNIT::EM) valid = false; // A shadow has no font size to be relative to
-         else lengths.push_back(length->pixels(0));
+         if (length->unit != font_length::UNIT::EM) {
+            length->value = length->pixels(0);
+            length->unit = font_length::UNIT::PX;
+         }
+         lengths.push_back(*length);
       }
       else if (colour.empty() and valid_colour(Token)) colour = Token;
       else valid = false;
@@ -110,9 +113,9 @@ static bool read_shadow_layer(std::string_view Value, font_shadow_layer &Layer)
    if ((not valid) or (lengths.size() < 2) or (lengths.size() > 3)) return false;
    Layer.x = lengths[0];
    Layer.y = lengths[1];
-   Layer.blur = (lengths.size() > 2) ? lengths[2] : 0;
+   Layer.blur = (lengths.size() > 2) ? lengths[2] : font_length { 0, font_length::UNIT::PX };
    Layer.colour = colour.empty() ? "#000000" : colour;
-   return Layer.blur >= 0;
+   return Layer.blur.value >= 0;
 }
 
 std::vector<font_shadow_layer> decode_shadow(std::string_view Value)
@@ -137,14 +140,14 @@ static std::optional<std::string> normalise_shadow(std::string_view Value)
       font_shadow_layer layer;
       if (not read_shadow_layer(Segment, layer)) { valid = false; return; }
       if (count++) result.append(", ");
-      result.append(number_text(layer.x)).append("px ").append(number_text(layer.y)).append("px ");
-      result.append(number_text(layer.blur)).append("px ").append(layer.colour);
+      result.append(length_text(layer.x)).append(" ").append(length_text(layer.y)).append(" ");
+      result.append(length_text(layer.blur)).append(" ").append(layer.colour);
    });
    if ((not valid) or (not count)) return std::nullopt;
    return result;
 }
 
-bool decode_glow(std::string_view Value, double &Radius, std::string &Colour)
+bool decode_glow(std::string_view Value, font_length &Radius, std::string &Colour)
 {
    Value = ft::trim(Value);
    auto space = Value.find_first_of(" \t");
@@ -152,9 +155,13 @@ bool decode_glow(std::string_view Value, double &Radius, std::string &Colour)
 
    auto radius = parse_length(Value.substr(0, space));
    auto colour = ft::trim(Value.substr(space + 1));
-   if ((not radius) or (radius->unit IS font_length::UNIT::EM) or (radius->value < 0)) return false;
+   if ((not radius) or (radius->value < 0)) return false;
    if (not valid_colour(colour)) return false;
-   Radius = radius->pixels(0);
+   Radius = *radius;
+   if (Radius.unit != font_length::UNIT::EM) {
+      Radius.value = Radius.pixels(0);
+      Radius.unit = font_length::UNIT::PX;
+   }
    Colour = colour;
    return true;
 }
@@ -162,10 +169,10 @@ bool decode_glow(std::string_view Value, double &Radius, std::string &Colour)
 static std::optional<std::string> normalise_glow(std::string_view Value)
 {
    if (ft::normalise(Value) IS "none") return "none";
-   double radius;
+   font_length radius;
    std::string colour;
    if (not decode_glow(Value, radius, colour)) return std::nullopt;
-   return number_text(radius) + "px " + colour;
+   return length_text(radius) + " " + colour;
 }
 
 // Features are sorted by tag, so that equivalent lists are identical strings.  A later tag replaces an earlier one.

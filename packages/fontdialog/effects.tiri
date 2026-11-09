@@ -14,6 +14,10 @@ BLENDS <const> = array<str> {
    'Normal', 'Multiply', 'Screen', 'Overlay', 'Darken', 'Lighten', 'Colour Burn', 'Difference'
 }
 
+function lengthLabel(Value:num!):str
+   return string.format('%.2f em', Value)
+end
+
 @Doc(text=[[
 @desc Create the Effects panel.
 @input Picker table
@@ -40,8 +44,8 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       for i, row in Rows do
          group.rows[row.key] = fontdialog_controls.sliderRow(Picker, group.viewport, {
             x = PAD + 22, y = i * ROW_H, width = inner - 22, label = row.label, labelWidth = 54,
-            min = row.min, max = row.max, step = 1, value = state[row.key],
-            format = function(V):str return f'{V} px' end,
+            min = row.min, max = row.max, step = row.step ?? 0.01, value = state[row.key],
+            format = row.format ?? lengthLabel,
             onChange = function(V) Picker.update({ [row.key] = V }, 'effects') end
          })
       end
@@ -54,9 +58,11 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
    })
 
    self.shadow = sliders(array<table> {
-      { key = 'shadowX', label = 'X', min = -20, max = 20 },
-      { key = 'shadowY', label = 'Y', min = -20, max = 20 },
-      { key = 'shadowBlur', label = 'Blur', min = 0, max = 40 }
+      { key = 'shadowX', label = 'X', min = -1, max = 1 },
+      { key = 'shadowY', label = 'Y', min = -1, max = 1 },
+      { key = 'shadowBlur', label = 'Blur', min = 0, max = 2 },
+      { key = 'shadowOpacity', label = 'Opacity', min = 0, max = 100, step = 1,
+         format = function(V):str return f'{math.round(V)}%' end }
    })
 
    self.glowBox = fontdialog_controls.checkRow(Picker, body, {
@@ -65,7 +71,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
    })
 
    self.glow = sliders(array<table> {
-      { key = 'glowRadius', label = 'Radius', min = 1, max = 40 }
+      { key = 'glowRadius', label = 'Radius', min = 0.01, max = 2 }
    })
 
    self.blendLabel = fontdialog_controls.text(body, { x = PAD, size = 12, fill = t.fg1, string = 'Blend' })

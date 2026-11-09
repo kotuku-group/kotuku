@@ -302,12 +302,14 @@ class extVectorText : public extVector {
       return txDefinition.word_spacing ? txDefinition.word_spacing->pixels(txFontSize) : 0.0;
    }
 
-   // Changes the em size.  A stroke width in `em` units follows it, unless StrokeWidth has been set directly since.
+   // Changes the em size.  Text effects and a stroke width in `em` units follow it, unless StrokeWidth has been
+   // set directly since.
 
    void change_font_size(double Size) {
       const auto &width = txDefinition.stroke_width;
       const bool follow = width and (width->unit IS font_length::UNIT::EM);
       txFontSize = Size;
+      if (txDefinition.shadow or txDefinition.glow) txEffectsPending = true;
       if (follow) {
          Unit value(width->pixels(txFontSize));
          VECTOR_SET_StrokeWidth(this, value);
@@ -2558,7 +2560,7 @@ static ERR update_text_effects(extVectorText *Self)
 
    auto &def = Self->txDefinition;
    auto shadows = def.shadow ? decode_shadow(*def.shadow) : std::vector<font_shadow_layer>();
-   double glow_radius = 0;
+   font_length glow_radius;
    std::string glow_colour;
    const bool glow = def.glow and (*def.glow != "none") and decode_glow(*def.glow, glow_radius, glow_colour);
    const bool blended = def.blend and (*def.blend != "normal");
@@ -2589,13 +2591,17 @@ static ERR update_text_effects(extVectorText *Self)
    };
 
    bool built = true;
-   if (glow) built = add(0, 0, glow_radius, glow_colour);
 
    // As in CSS, the first shadow in a list is drawn on top.
 
    for (auto layer = shadows.rbegin(); built and (layer != shadows.rend()); layer++) {
-      built = add(layer->x, layer->y, layer->blur, layer->colour);
+      built = add(layer->x.pixels(Self->txFontSize), layer->y.pixels(Self->txFontSize),
+         layer->blur.pixels(Self->txFontSize), layer->colour);
    }
+
+   // Merge from back to front: shadows, glow, then the text itself.
+
+   if (built and glow) built = add(0, 0, glow_radius.pixels(Self->txFontSize), glow_colour);
 
    objFilterEffect *result = nullptr;
    if (built and (not sources.empty())) {
@@ -2648,6 +2654,7 @@ static ERR reset_font(extVectorText *Vector, bool Force)
          Vector->txFontSize = std::trunc(double(Vector->txBitmapFont->Height) * (DISPLAY_DPI / 72.0));
       }
       mark_dirty(Vector, RC::DIRTY);
+      if (Vector->txEffectsPending) return update_text_effects(Vector);
       return ERR::Okay;
    }
    else return log.warning(error);

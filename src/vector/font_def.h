@@ -32,7 +32,7 @@ struct font_length {
 };
 
 struct font_shadow_layer {
-   double x = 0, y = 0, blur = 0;
+   font_length x, y, blur;
    std::string colour;
 };
 
@@ -58,4 +58,4 @@ struct font_def {
 // Effect value decoders.  Definitions that passed parse_font_def() always decode.
 
 [[nodiscard]] extern std::vector<font_shadow_layer> decode_shadow(std::string_view);
-[[nodiscard]] extern bool decode_glow(std::string_view, double &Radius, std::string &Colour);
+[[nodiscard]] extern bool decode_glow(std::string_view, font_length &Radius, std::string &Colour);
