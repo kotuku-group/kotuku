@@ -11,6 +11,37 @@
 #include <cfloat>
 #include <charconv>
 #include <format>
+#include <kotuku/font_traits.hpp>
+
+// Inline emphasis overrides one trait and inherits the rest of the font selection.
+
+static std::string inline_font_style(std::string_view Style, bool Bold)
+{
+   namespace ft = kt::font_traits;
+
+   auto traits = ft::name_traits(Style);
+   if ((not ft::is_descriptor_string(Style)) and traits.recognised) {
+      if (Bold) traits.weight = 700;
+      else traits.italic = true;
+      return ft::style_name(traits);
+   }
+
+   std::string result;
+   ft::for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      // Raw registered axes take precedence over friendly descriptors in variable fonts.
+      auto key = ft::normalise(Key);
+      if (HasValue and (Bold ? ((key IS "weight") or (Key IS "wght")) :
+            ((key IS "italic") or (Key IS "ital")))) return;
+
+      if (not result.empty()) result.push_back(';');
+      if (HasValue) result.append(Key).push_back('=');
+      result.append(Value);
+   });
+
+   if (not result.empty()) result.push_back(';');
+   result.append(Bold ? "weight=700" : "italic=yes");
+   return result;
+}
 
 static constexpr uint32_t HASH_let           = strhash("let");
 static constexpr uint32_t HASH_for_each      = strhash("for-each");
@@ -804,7 +835,9 @@ TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
          break;
 
       case HASH_b:
-         if (not resolved_tag.Children.empty()) tag_font_style(resolved_tag.Children, FSO::NIL, "Bold");
+         if (not resolved_tag.Children.empty()) {
+            tag_font_style(resolved_tag.Children, FSO::NIL, inline_font_style(m_style.style, true));
+         }
          break;
 
       case HASH_div:
@@ -818,7 +851,9 @@ TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
          break;
 
       case HASH_i:
-         if (not resolved_tag.Children.empty()) tag_font_style(resolved_tag.Children, FSO::NIL, "Italic");
+         if (not resolved_tag.Children.empty()) {
+            tag_font_style(resolved_tag.Children, FSO::NIL, inline_font_style(m_style.style, false));
+         }
          break;
 
       case HASH_li:

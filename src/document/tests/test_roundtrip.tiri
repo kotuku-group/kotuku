@@ -84,25 +84,71 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Inline styling: bold, italic, nested
 
+-- Read the effective style using the same push/pop semantics as the document stream.
+function textStyle(Xml, Text:str):str
+   stack = {}
+   depth = -1
+   count = xpathNum(Xml, 'count(/extract/stream/*)')
+   for i in {1 to count} do
+      path = f'(/extract/stream/*)[{i}]'
+      tag = xpath(Xml, f'name({path})')
+      if tag is 'font' then
+         depth++
+         stack[depth] = xpath(Xml, f'string({path}/@style)')
+      elseif tag is 'font-end' then
+         stack[depth] = nil
+         depth -= 1
+      elseif tag is 'text' and xpath(Xml, f'string({path})') is Text then
+         assert(depth >= 0, 'Text must have an active font')
+         return stack[depth]
+      end
+   end
+   raise 'Text run not found: ' .. Text
+end
+
 @Test function BoldItalicRoundTrip()
-   xml_str = feedAndRead('<body/><page><p>Normal <b>bold</b> <i>italic</i> <b><i>both</i></b></p></page>')
-   xml = parseXML(xml_str)
+   xml = parseXML(feedAndRead('<body font-style="Regular"/><page><p>normal'
+      .. '<b>bold<i>both</i>bold again</b>normal again'
+      .. '<i>italic<b>reverse</b>italic again</i></p></page>'))
 
-   -- At least one font byte-code with style="Bold" must appear
-   bold_count = xpathNum(xml, 'count(/extract/stream//font[@style="Bold"])')
-   assert(bold_count > 0, 'Bold styling must produce a font byte-code with style="Bold"')
+   assert(textStyle(xml, 'normal') is 'Regular', 'Initial style must be Regular')
+   assert(textStyle(xml, 'bold') is 'Bold', 'Bold tag must select Bold')
+   assert(textStyle(xml, 'both') is 'Bold Italic', 'Nested italic must retain bold')
+   assert(textStyle(xml, 'bold again') is 'Bold', 'Closing italic must restore Bold')
+   assert(textStyle(xml, 'normal again') is 'Regular', 'Closing bold must restore Regular')
+   assert(textStyle(xml, 'italic') is 'Italic', 'Italic tag must select Italic')
+   assert(textStyle(xml, 'reverse') is 'Bold Italic', 'Nested bold must retain italic')
+   assert(textStyle(xml, 'italic again') is 'Italic', 'Closing bold must restore Italic')
+end
 
-   italic_count = xpathNum(xml, 'count(/extract/stream//font[@style="Italic"])')
-   assert(italic_count > 0, 'Italic styling must produce a font byte-code with style="Italic"')
+@Test function InlineStyleInheritance()
+   xml = parseXML(feedAndRead('<body font-style="Condensed Semi Bold"/><page><p>'
+      .. '<i>named<i>repeated</i></i>'
+      .. '<b><u><i>underlined</i></u></b>'
+      .. '<b><font style="Regular">explicit</font></b></p></page>'))
 
-   -- Nested <b><i> produces two stacked font byte-codes rather than a single combined style.
-   -- Verify that both Bold and Italic font byte-codes appear for the nested region.
-   assert(bold_count >= 2, 'Nested <b><i> must produce at least 2 Bold font byte-codes, got ' .. bold_count)
-   assert(italic_count >= 2, 'Nested <b><i> must produce at least 2 Italic font byte-codes, got ' .. italic_count)
+   assert(textStyle(xml, 'named') is 'Condensed Semi Bold Italic', 'Italic must preserve named weight and width')
+   assert(textStyle(xml, 'repeated') is 'Condensed Semi Bold Italic', 'Repeated italic must be idempotent')
+   assert(textStyle(xml, 'underlined') is 'Condensed Bold Italic', 'Underline must retain combined style')
+   assert(textStyle(xml, 'explicit') is 'Regular', 'Explicit font style must still replace inherited style')
+end
 
-   -- All text runs must be present (normal, bold, spaces, italic, both)
-   text_count = xpathNum(xml, 'count(/extract/stream//text)')
-   assert(text_count >= 4, 'At least four text runs expected, got ' .. text_count)
+@Test function InlineDescriptorInheritance()
+   xml = parseXML(feedAndRead('<body/><page><p>'
+      .. '<font style="weight=550;width=87.5%;opsz=none;GRAD=-50;italic=no">'
+      .. '<i>italic</i><b>bold<b>repeated</b></b><u>underline</u>restored</font>'
+      .. '<font style="wght=550;ital=0;wdth=87.5"><b><i>axes</i></b></font></p></page>'))
+
+   inherited = 'weight=550;width=87.5%;opsz=none;GRAD=-50;italic=no'
+   assert(textStyle(xml, 'italic') is 'weight=550;width=87.5%;opsz=none;GRAD=-50;italic=yes',
+      'Italic must override only the italic descriptor')
+   bold = 'width=87.5%;opsz=none;GRAD=-50;italic=no;weight=700'
+   assert(textStyle(xml, 'bold') is bold, 'Bold must override only the weight descriptor')
+   assert(textStyle(xml, 'repeated') is bold, 'Repeated bold must be idempotent')
+   assert(textStyle(xml, 'underline') is inherited, 'Underline must preserve descriptors')
+   assert(textStyle(xml, 'restored') is inherited, 'Closing emphasis must restore descriptors')
+   assert(textStyle(xml, 'axes') is 'wdth=87.5;weight=700;italic=yes',
+      'Inline emphasis must override conflicting raw weight and italic axes')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -684,8 +730,8 @@ end
    bold = xpathNum(xml, 'count(/extract/stream//font[@style="Bold"])')
    assert(bold > 0, 'fonts.rpl must contain bold font byte-codes')
 
-   italic = xpathNum(xml, 'count(/extract/stream//font[@style="Italic"])')
-   assert(italic > 0, 'fonts.rpl must contain italic font byte-codes')
+   italic = xpathNum(xml, 'count(/extract/stream//font[@style="Medium Italic"])')
+   assert(italic > 0, 'fonts.rpl must preserve the inherited Medium weight when applying italic')
 
    -- Verify the Courier face from the fixture.  It is an alias of Courier Prime and the alias name is retained so
    -- that its options apply.
