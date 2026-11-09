@@ -505,7 +505,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
          Self->XML = xml;
 
-         convert_styles(xml->Tags);
+         prepare_styles(xml->Tags);
 
          objVector *sibling = nullptr;
          for (auto &scan : xml->Tags) {
@@ -556,51 +556,6 @@ end:
 }
 
 //********************************************************************************************************************
-// Example style string: "fill:rgb(255,0,0);stroke:none;"
-
-static void convert_styles(objXML::TAGS &Tags)
-{
-   kt::Log log(__FUNCTION__);
-
-   for (auto &tag : Tags) {
-      for (int style=1; style < std::ssize(tag.Attribs); style++) {
-         if (not iequals("style", tag.Attribs[style].Name)) continue;
-
-         // Convert all the style values into real attributes.
-
-         auto value = std::move(tag.Attribs[style].Value);
-         tag.Attribs.erase(tag.Attribs.begin() + style);
-         for (unsigned v=0; v < value.size(); ) {
-            while ((value[v]) and (value[v] <= 0x20)) v++;
-
-            auto n_start = v;
-            auto n_end = value.find(':', n_start);
-            if (n_end != std::string::npos) {
-               auto v_start = n_end + 1;
-               while ((value[v_start]) and (value[v_start] <= 0x20)) v_start++;
-
-               auto v_end = value.find(';', v_start);
-               if (v_end IS std::string::npos) v_end = value.size();
-
-               tag.Attribs.emplace_back(value.substr(n_start, n_end - n_start), value.substr(v_start, v_end-v_start));
-
-               v = v_end + 1;
-            }
-            else {
-               log.warning("Style string missing ':' to denote value: %s", value.c_str());
-               break;
-            }
-         }
-
-         break;
-      }
-
-      if (not tag.Children.empty()) convert_styles(tag.Children);
-   }
-}
-
-//********************************************************************************************************************
-
 static bool read_integer_value(std::string_view Value, int &Result) noexcept
 {
    Value = next_value(Value);

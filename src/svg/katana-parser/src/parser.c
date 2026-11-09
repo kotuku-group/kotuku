@@ -1652,7 +1652,7 @@ static const char* katana_stringify_value_list(KatanaParser* parser, KatanaArray
 static const char* katana_stringify_value(KatanaParser* parser, KatanaValue* value)
 {
     // TODO: @(QFish) Handle this more gracefully X).
-    char str[256];
+    char str[256] = {0};
 
     switch (value->unit) {
         case KATANA_VALUE_NUMBER:
@@ -1680,6 +1680,8 @@ static const char* katana_stringify_value(KatanaParser* parser, KatanaValue* val
         case KATANA_VALUE_TURN:
             snprintf(str, sizeof(str), "%s", value->raw);
             break;
+        case KATANA_VALUE_DIMENSION:
+        case KATANA_VALUE_UNICODE_RANGE:
         case KATANA_VALUE_IDENT:
             snprintf(str, sizeof(str), "%s", value->string);
             break;

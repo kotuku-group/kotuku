@@ -128,15 +128,50 @@ static RQ shape_rendering_to_render_quality(const std::string_view Value)
 }
 
 //********************************************************************************************************************
-// Enables or disables font kerning on a VectorText without affecting its other text flags.
+// The supported inherited CSS subset.  Layout attributes (x/y and positioning lists) are deliberately excluded.
 
-static void set_kerning(objVectorText *Text, bool Enable)
+static const char * text_property_initial(uint32_t Hash)
 {
-   VTXF flags = VTXF::NIL;
-   Text->getTextFlags(flags);
-   if (Enable) flags &= ~VTXF::NO_KERNING;
-   else flags |= VTXF::NO_KERNING;
-   Text->setTextFlags(flags);
+   switch (Hash) {
+      case SVF_font_family: return "Noto Sans";
+      case SVF_font_size: return "12pt";
+      case SVF_font_weight: return "400";
+      case SVF_font_style:
+      case SVF_font_stretch:
+      case SVF_font_width:
+      case SVF_font_variation_settings: return "normal";
+      case SVF_font_optical_sizing:
+      case SVF_font_kerning:
+      case SVF_kerning: return "auto";
+      case SVF_text_anchor: return "start";
+      case SVF_text_decoration: return "none";
+      default: return nullptr;
+   }
+}
+
+static constexpr auto glDecorationMask = VTXF::UNDERLINE | VTXF::OVERLINE | VTXF::LINE_THROUGH | VTXF::BLINK;
+
+static bool decoration_flags(std::string_view Value, VTXF &Flags)
+{
+   Flags = VTXF::NIL;
+   Value = kt::font_traits::trim(Value);
+   if (iequals(Value, "none")) return true;
+   if (Value.empty()) return false;
+   while (not Value.empty()) {
+      auto end = Value.find_first_of(" \t\r\n");
+      auto word = Value.substr(0, end);
+      VTXF flag;
+      if (iequals(word, "underline")) flag = VTXF::UNDERLINE;
+      else if (iequals(word, "overline")) flag = VTXF::OVERLINE;
+      else if (iequals(word, "line-through")) flag = VTXF::LINE_THROUGH;
+      else if (iequals(word, "blink")) flag = VTXF::BLINK;
+      else return false;
+      if ((Flags & flag) != VTXF::NIL) return false;
+      Flags |= flag;
+      if (end IS std::string_view::npos) break;
+      Value = kt::font_traits::trim(Value.substr(end));
+   }
+   return true;
 }
 
 //********************************************************************************************************************
@@ -147,8 +182,6 @@ static void set_kerning(objVectorText *Text, bool Enable)
 static bool font_descriptors(uint32_t Hash, std::string_view Value, std::string &Result)
 {
    namespace ft = kt::font_traits;
-   kt::Log log(__FUNCTION__);
-
    Value = ft::trim(Value);
    Result.clear();
    if (iequals("inherit", Value)) return false;
@@ -163,20 +196,23 @@ static bool font_descriptors(uint32_t Hash, std::string_view Value, std::string 
       case SVF_font_stretch:
       case SVF_font_width: // CSS: <percentage> | normal | ultra-condensed ... ultra-expanded
          if (auto width = ft::parse_width(Value)) {
+            if (*width <= 0) return false;
             if (*width != 100) Result = "width=" + format_number(*width);
             return true;
          }
          break;
 
       case SVF_font_style: { // CSS: normal | italic | oblique <angle>?
-         auto keyword = Value.substr(0, Value.find_first_of(" \t"));
-         if (iequals("normal", keyword)) return true;
-         else if (iequals("italic", keyword)) { Result = "italic=yes"; return true; }
+         auto keyword = Value.substr(0, Value.find_first_of(" \t\r\n"));
+         if (iequals("normal", Value)) return true;
+         else if (iequals("italic", Value)) { Result = "italic=yes"; return true; }
          else if (iequals("oblique", keyword)) {
             auto angle = ft::trim(Value.substr(keyword.size()));
-            if (angle.ends_with("deg")) angle.remove_suffix(3);
             if (angle.empty()) { Result = "slant=14"; return true; } // CSS default oblique angle
-            else if (auto number = ft::parse_number(angle)) {
+            const bool degrees = angle.ends_with("deg");
+            if (degrees) angle.remove_suffix(3);
+            if (auto number = ft::parse_number(angle)) {
+               if ((not degrees and (*number != 0)) or (*number < -90) or (*number > 90)) return false;
                if (*number != 0) Result = "slant=" + format_number(*number);
                return true;
             }
@@ -191,19 +227,24 @@ static bool font_descriptors(uint32_t Hash, std::string_view Value, std::string 
             auto end = list.find(',');
             auto setting = ft::trim(list.substr(0, end));
             list = (end IS std::string_view::npos) ? std::string_view() : list.substr(end + 1);
-            if (setting.size() < 7) continue; // Minimum of "abcd" 0
+            if (setting.size() < 7) return false; // Minimum of "abcd" 0
 
             const char quote = setting.front();
             if (((quote != '"') and (quote != '\'')) or (setting[5] != quote)) {
-               log.warning("Invalid font-variation-settings entry '%.*s'", int(setting.size()), setting.data());
-               continue;
+               return false;
             }
 
+            if ((setting[6] != ' ') and (setting[6] != '\t') and (setting[6] != '\r') and
+                (setting[6] != '\n')) return false;
+            for (auto c : setting.substr(1, 4)) {
+               if ((c < 0x20) or (c > 0x7e) or (c IS ';') or (c IS '=')) return false;
+            }
             if (auto number = ft::parse_number(setting.substr(6))) {
                if (not Result.empty()) Result.push_back(';');
                Result.append(setting.substr(1, 4)).append("=").append(format_number(*number));
             }
-            else log.warning("Invalid font-variation-settings entry '%.*s'", int(setting.size()), setting.data());
+            else return false;
+            if ((end != std::string_view::npos) and ft::trim(list).empty()) return false;
          }
          return true;
       }
@@ -217,10 +258,10 @@ static bool font_descriptors(uint32_t Hash, std::string_view Value, std::string 
          return false;
    }
 
-   log.warning("No support for font property value '%.*s'", int(Value.size()), Value.data());
    return false;
 }
 
+//********************************************************************************************************************
 // Replaces the descriptors that are owned by the CSS font property Hash in Style with Descriptors.  This allows the
 // properties to be combined and inherited independently, so that a child's font-stretch does not discard a parent's
 // font-style.
@@ -262,26 +303,156 @@ static void merge_font_style(std::string &Style, uint32_t Hash, std::string_view
    });
 
    ft::for_each_descriptor(Descriptors, retain);
+
    // Explicit variation coordinates override optical-sizing irrespective of property declaration order.  Keep
    // the mode as well, so clearing variation-settings restores the inherited auto/none behaviour.
+
    if (not optical_coordinate.empty()) append("opsz=" + optical_coordinate);
    Style = result;
 }
 
-// Applies a CSS font property to the FontStyle of a VectorText.
+//********************************************************************************************************************
+// Resolve declarations in cascade order, always using the unchanged parent for CSS-wide and relative values.
+// Invalid declarations leave both the computed value and its descriptor ownership unchanged.
 
-static void apply_font_property(objVectorText *Text, uint32_t Hash, std::string_view Value)
+ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const svgState &Parent) noexcept
 {
-   std::string descriptors;
-   if (not font_descriptors(Hash, Value, descriptors)) return;
+   namespace ft = kt::font_traits;
 
-   std::string_view current;
-   std::string style;
-   if (Text->getFontStyle(current) IS ERR::Okay) style.assign(current);
-   if (iequals("Regular", style)) style.clear();
+   if (Hash IS SVF_font_width) Hash = SVF_font_stretch;
 
-   merge_font_style(style, Hash, descriptors);
-   Text->setFontStyle(style.empty() ? std::string_view("Regular") : std::string_view(style));
+   const char *initial = text_property_initial(Hash);
+
+   if (not initial) return ERR::NoSupport;
+
+   Value = ft::trim(Value);
+   const bool inherited = Hash != SVF_text_decoration;
+
+   if (iequals(Value, "inherit") or (inherited and iequals(Value, "unset"))) {
+      auto it = Parent.m_text_properties.find(Hash);
+      Value = (it != Parent.m_text_properties.end()) ? std::string_view(it->second) : std::string_view(initial);
+   }
+   else if (iequals(Value, "initial") or iequals(Value, "unset")) Value = initial;
+
+   if (Value.empty()) return ERR::InvalidValue;
+
+   std::string computed(Value);
+   switch (Hash) {
+      case SVF_font_weight: {
+         int weight;
+         const int parent_weight = Parent.m_font_weight ? Parent.m_font_weight : 400;
+         if (iequals(Value, "normal")) weight = 400;
+         else if (iequals(Value, "bold")) weight = 700;
+         else if (iequals(Value, "bolder")) {
+            weight = parent_weight < 350 ? 400 : (parent_weight < 550 ? 700 : std::max(900, parent_weight));
+         }
+         else if (iequals(Value, "lighter")) {
+            weight = parent_weight < 550 ? std::min(100, parent_weight) : (parent_weight < 750 ? 400 : 700);
+         }
+         else {
+            auto number = ft::parse_number(Value);
+            if ((not number) or (*number < 1) or (*number > 1000)) return ERR::InvalidValue;
+            weight = int(std::round(*number));
+         }
+
+         m_font_weight = weight;
+         computed = std::to_string(weight);
+         break;
+      }
+      case SVF_font_style:
+      case SVF_font_stretch:
+      case SVF_font_variation_settings:
+      case SVF_font_optical_sizing: {
+         std::string descriptors;
+         if (not font_descriptors(Hash, Value, descriptors)) return ERR::InvalidValue;
+         merge_font_style(m_font_style, Hash, descriptors);
+         break;
+      }
+      case SVF_font_kerning:
+         if (not iequals(Value, "auto") and not iequals(Value, "normal") and not iequals(Value, "none")) {
+            return ERR::InvalidValue;
+         }
+         m_font_kerning = iequals(Value, "none") ? 0 : 1;
+         break;
+      case SVF_kerning: {
+         if (iequals(Value, "auto")) m_font_kerning = 1;
+         else {
+            auto end = Value.find_first_not_of("+-.0123456789");
+            if (not ft::parse_number(Value.substr(0, end))) return ERR::InvalidValue;
+            auto unit = (end IS std::string_view::npos) ? std::string_view() : Value.substr(end);
+            if (not unit.empty() and unit != "px" and unit != "pt" and unit != "pc" and unit != "in" and
+                unit != "cm" and unit != "mm" and unit != "em" and unit != "ex") return ERR::InvalidValue;
+            m_font_kerning = 0; // Legacy compatibility: disable automatic kerning without applying a fixed distance.
+         }
+         break;
+      }
+      case SVF_text_anchor:
+         if (not iequals(Value, "start") and not iequals(Value, "middle") and not iequals(Value, "end")) {
+            return ERR::InvalidValue;
+         }
+         break;
+      case SVF_text_decoration: {
+         VTXF flags;
+         if (not decoration_flags(Value, flags)) return ERR::InvalidValue;
+         break;
+      }
+      case SVF_font_family: m_font_family = computed; break;
+      case SVF_font_size: {
+         // Context-sensitive size computation is phase 2.  Reject malformed lengths before they can erase defaults.
+         auto end = Value.find_first_not_of("+-.0123456789");
+         auto number = ft::parse_number(Value.substr(0, end));
+         auto unit = (end IS std::string_view::npos) ? std::string_view() : Value.substr(end);
+         if ((not number) or (*number <= 0)) return ERR::InvalidValue;
+         if (not unit.empty() and unit != "px" and unit != "pt" and unit != "pc" and unit != "in" and
+             unit != "cm" and unit != "mm" and unit != "em" and unit != "ex" and unit != "%") {
+            return ERR::InvalidValue;
+         }
+         // Match the backend's rounding threshold, including its current percentage-size limitation.
+         double used_size = SVGUnit(Value);
+         if (unit IS "em") used_size = *number * 16;
+         else if (unit IS "ex") used_size = *number * 8;
+         if (not std::isfinite(used_size) or (std::round(used_size) < 1)) return ERR::InvalidValue;
+         // The backend length reader requires a leading digit, even for valid CSS fractions such as .5em.
+         if (computed.front() IS '.') computed.insert(0, "0");
+         else if (computed.starts_with("+.")) computed.insert(1, "0");
+         m_font_size = computed;
+         m_font_size_px = SVGUnit(Value);
+         break;
+      }
+   }
+   m_text_properties[Hash] = std::move(computed);
+   if ((Hash IS SVF_kerning) and not iequals(Value, "auto")) return ERR::NoSupport;
+   return ERR::Okay;
+}
+
+ERR svgState::apply_text_properties(objVectorText *Text) const noexcept
+{
+   if (auto error = Text->setFace(m_font_family); error != ERR::Okay) return error;
+   if (auto error = Text->setFontSize(m_font_size); error != ERR::Okay) return error;
+   if (auto error = Text->setWeight(m_font_weight ? m_font_weight : 400); error != ERR::Okay) return error;
+   if (auto error = Text->setFontStyle(m_font_style.empty() ? "Regular" : m_font_style); error != ERR::Okay) {
+      return error;
+   }
+
+   auto anchor = m_text_properties.find(SVF_text_anchor);
+   const auto align = anchor IS m_text_properties.end() ? ALIGN::LEFT :
+      (iequals(anchor->second, "middle") ? ALIGN::HORIZONTAL :
+      (iequals(anchor->second, "end") ? ALIGN::RIGHT : ALIGN::LEFT));
+   if (auto error = Text->setAlign(align); error != ERR::Okay) return error;
+
+   VTXF flags;
+   if (auto error = Text->getTextFlags(flags); error != ERR::Okay) return error;
+   flags &= ~glDecorationMask;
+   auto decoration = m_text_properties.find(SVF_text_decoration);
+   if (decoration != m_text_properties.end()) {
+      VTXF lines;
+      if (not decoration_flags(decoration->second, lines)) return ERR::InvalidValue;
+      flags |= lines;
+   }
+
+   if (m_font_kerning IS 0) flags |= VTXF::NO_KERNING;
+   else flags &= ~VTXF::NO_KERNING;
+   return Text->setTextFlags(flags);
 }
 
 //********************************************************************************************************************
@@ -302,14 +473,6 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
    if (m_inner_join != VIJ::NIL) Vector->setInnerJoin(m_inner_join);
    if (m_line_cap != VLC::NIL)   Vector->setLineCap(m_line_cap);
 
-   if (Vector->classID() IS CLASSID::VECTORTEXT) {
-      auto vt = (objVectorText *)Vector;
-      if (!m_font_family.empty()) vt->setFace(m_font_family);
-      if (!m_font_size.empty())   vt->setFontSize(m_font_size);
-      if (m_font_weight)          vt->setWeight(m_font_weight);
-      if (!m_font_style.empty())  vt->setFontStyle(m_font_style);
-      if (m_font_kerning >= 0)    set_kerning(vt, m_font_kerning);
-   }
 
    if (!m_display.empty()) {
       if (iequals("none", m_display))          Vector->setVisibility(VIS::HIDDEN);
@@ -343,6 +506,17 @@ void svgState::applyTag(const XTag &Tag) noexcept
    kt::Log log(__FUNCTION__);
 
    log.traceBranch("Total Attributes: %d", int(std::ssize(Tag.Attribs)));
+
+   const auto parent = *this;
+   m_text_properties.erase(SVF_text_decoration); // Decoration propagation needs a future styled-run model.
+   for (size_t a=1; a < Tag.Attribs.size(); a++) {
+      const auto &attr = Tag.Attribs[a];
+      if (text_property_initial(strhash(attr.Name))) {
+         if (auto error = resolve_text_property(strhash(attr.Name), attr.Value, parent); error != ERR::Okay) {
+            log.warning("Invalid or unsupported text property '%s': %s", attr.Name.c_str(), attr.Value.c_str());
+         }
+      }
+   }
 
    if (Tag.Children.empty()) {
       // If the tag has no children then few tags are worth saving to the state. E.g.
@@ -419,49 +593,6 @@ void svgState::applyTag(const XTag &Tag) noexcept
             break;
 
          case SVF_stroke_width: svtonum(val, m_stroke_width); break;
-         case SVF_font_family:  m_font_family = val; break;
-         case SVF_font_kerning: // CSS: auto | normal | none
-            switch(strhash(val)) {
-               case SVF_auto: case SVF_normal: m_font_kerning = 1; break;
-               case SVF_none: m_font_kerning = 0; break;
-            }
-            break;
-         case SVF_kerning: // SVG 1.1: auto | <length>.  A length disables automatic kerning but is not applied.
-            m_font_kerning = (strhash(val) IS SVF_auto) ? 1 : 0;
-            break;
-         case SVF_font_size:
-            m_font_size = val;
-            m_font_size_px = SVGUnit(val);
-            break;
-
-         case SVF_font_weight: {
-            svtonum(val, m_font_weight);
-            if (!m_font_weight) {
-               switch(strhash(val)) {
-                  case SVF_normal:  m_font_weight = 400; break;
-                  case SVF_lighter: m_font_weight = 300; break; // -100 off the inherited weight
-                  case SVF_bold:    m_font_weight = 700; break;
-                  case SVF_bolder:  m_font_weight = 900; break; // +100 on the inherited weight
-                  case SVF_inherit: m_font_weight = 400; break; // Not supported correctly yet.
-                  default:
-                     log.warning("No support for font-weight value '%s'", val.c_str()); // Non-fatal
-                     m_font_weight = 400;
-               }
-            }
-            break;
-         }
-         case SVF_font_stretch:
-         case SVF_font_width:
-         case SVF_font_style:
-         case SVF_font_variation_settings:
-         case SVF_font_optical_sizing: {
-            std::string descriptors;
-            if (font_descriptors(strhash(Tag.Attribs[a].Name), val, descriptors)) {
-               merge_font_style(m_font_style, strhash(Tag.Attribs[a].Name), descriptors);
-               if (m_font_style.empty()) m_font_style = "Regular";
-            }
-            break;
-         }
          case SVF_fill_opacity: m_fill_opacity = std::clamp(svtonum<double>(val), 0.0, 1.0); break;
          case SVF_stop_opacity: m_stop_opacity = std::clamp(svtonum<double>(val), 0.0, 1.0); break;
          case SVF_shape_rendering: m_path_quality = shape_rendering_to_render_quality(val); break;
@@ -1956,7 +2087,9 @@ void svgState::proc_pattern(XTag &Tag) noexcept
       };
 
       XTag *next = nullptr;
-      for (int a=1; a < std::ssize(tag->Attribs); a++) {
+      // Declarations are stored in ascending cascade order.  Resolve the highest-priority valid value on this
+      // pattern before consulting its href, whose values only fill properties that remain unspecified.
+      for (auto a = std::ssize(tag->Attribs); a-- > 1; ) {
          auto &name = tag->Attribs[a].Name;
          auto &val = tag->Attribs[a].Value;
          if (val.empty()) continue;
@@ -2091,6 +2224,12 @@ ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVecto
       svgState state = *this;
       state.applyStateToVector(vector);
       state.applyTag(Tag); // Apply all attribute values to the current state.
+      if (VectorID IS CLASSID::VECTORTEXT) {
+         if (auto error = state.apply_text_properties((objVectorText *)vector); error != ERR::Okay) {
+            FreeResource(vector);
+            return error;
+         }
+      }
       state.process_attrib(Tag, vector);
 
       if (!vector->init()) {
@@ -2179,15 +2318,16 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
          else return error;
 
       case SVF_text: {
-         if (!proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector)) {
+         if (auto error = proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector); error != ERR::Okay) return error;
+         else {
             if (!Tag.Children.empty()) {
                std::string existing_str;
-               ((objVectorText *)Vector)->getString(existing_str);
+               if (auto error = ((objVectorText *)Vector)->getString(existing_str); error != ERR::Okay) return error;
 
                if (auto buffer = Tag.getContent(); !buffer.empty()) {
                   kt::ltrim(buffer);
                   if (not existing_str.empty()) buffer.insert(0, existing_str.data(), existing_str.size());
-                  ((objVectorText *)Vector)->setString(buffer);
+                  if (auto error = ((objVectorText *)Vector)->setString(buffer); error != ERR::Okay) return error;
                }
                else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);
             }
@@ -2565,57 +2705,8 @@ ERR svgState::proc_defs(XTag &Tag, OBJECTPTR Parent) noexcept
 
 ERR svgState::proc_style(XTag &Tag)
 {
-   kt::Log log(__FUNCTION__);
-   ERR error = ERR::Okay;
-
-   if (!Self->XML) {
-      // The application of CSS styles is possible on initial loading of the document, but not in post-processing
-      // once the XML object has been abandoned.
-      log.warning("Unable to apply CSS style-sheet, XML object already terminated.");
-      return ERR::InvalidState;
-   }
-
-   for (auto &a : Tag.Attribs) {
-      if (iequals("type", a.Name)) {
-         if (!iequals("text/css", a.Value)) {
-            log.warning("Unsupported stylesheet '%s'", a.Value.c_str());
-            return ERR::NoSupport;
-         }
-         break;
-      }
-   }
-
-   // Parse the CSS using the Katana Parser.
-
-   auto css_buffer = Tag.getContent();
-   if (auto css = katana_parse(css_buffer.c_str(), css_buffer.size(), KatanaParserModeStylesheet)) {
-      /*#ifdef _DEBUG
-         Self->CSS->mode = KatanaParserModeStylesheet;
-         katana_dump_output(css);
-      #endif*/
-
-      // For each rule in the stylesheet, apply them to the loaded XML document by injecting tags and attributes.
-      // The stylesheet attributes have precedence over inline tag attributes (therefore we can overwrite matching
-      // attribute names) however they are outranked by inline styles.
-
-      KatanaStylesheet *sheet = css->stylesheet;
-
-      log.msg("%d CSS rules will be applied", sheet->imports.length + sheet->rules.length);
-
-      for (unsigned i=0; i < sheet->imports.length; ++i) {
-         if (sheet->imports.data[i])
-            process_rule(Self, Self->XML->Tags, (KatanaRule *)sheet->imports.data[i]);
-      }
-
-      for (unsigned i=0; i < sheet->rules.length; ++i) {
-         if (sheet->rules.data[i])
-            process_rule(Self, Self->XML->Tags, (KatanaRule *)sheet->rules.data[i]);
-      }
-
-      katana_destroy_output(css);
-   }
-
-   return error;
+   // Stylesheets have already been collected before any scene objects are created.
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -2643,7 +2734,6 @@ void svgState::proc_guide_path(XTag &Tag, OBJECTPTR Parent) noexcept
 
    // Find the definition that is being referenced for the guide path.
 
-   std::string offset;
    std::string ref;
    std::string transition;
    VMF flags = VMF::NIL;
@@ -2655,14 +2745,19 @@ void svgState::proc_guide_path(XTag &Tag, OBJECTPTR Parent) noexcept
          case SVF_path:
          case SVF_xlink_href:  ref = val; break;
          case SVF_transition:  transition = val; break;
-         case SVF_startOffset: offset = val; break;
+         case SVF_startOffset:
+            log.warning("Guide startOffset is not supported by text layout.");
+            break;
          case SVF_method:
             if (iequals("align", val)) flags &= ~VMF::STRETCH;
             else if (iequals("stretch", val)) flags |= VMF::STRETCH;
             break;
 
          case SVF_spacing:
-            if (iequals("auto", val)) flags |= VMF::AUTO_SPACING;
+            if (iequals("auto", val)) {
+               flags |= VMF::AUTO_SPACING;
+               log.warning("Automatic guide spacing is not supported by text layout.");
+            }
             else if (iequals("exact", val)) flags &= ~VMF::AUTO_SPACING;
             break;
 
@@ -3511,6 +3606,8 @@ void svgState::process_attrib(XTag &Tag, objVector *Vector) noexcept
       if (name.find(':') != std::string::npos) continue; // Do not interpret non-SVG attributes, e.g. 'inkscape:dx'
       if (name == "_id") continue; // Ignore temporary private attribs like '_id'
 
+      if (text_property_initial(strhash(name))) continue; // Resolved once by applyTag(), including on groups.
+
       log.trace("%s = %.40s", name.c_str(), value.c_str());
 
       if (auto error = set_property(Vector, strhash(name), Tag, value); error != ERR::Okay) {
@@ -3523,181 +3620,203 @@ void svgState::process_attrib(XTag &Tag, objVector *Vector) noexcept
 }
 
 //********************************************************************************************************************
-// Apply all attributes in a rule to a target tag.
-
-static void apply_rule(extSVG *Self, KatanaArray *Properties, XTag &Tag)
+// Serialise Katana values without its fixed-size buffers or loss of CSS string quotes.
+static std::string css_values(const KatanaArray *Values)
 {
-   kt::Log log(__FUNCTION__);
-
-   for (unsigned i=0; i < Properties->length; i++) {
-      auto prop = (KatanaDeclaration *)Properties->data[i];
-
-      log.trace("Set property %s with %d values", prop->property, prop->values->length);
-
-      for (unsigned v=0; v < prop->values->length; v++) {
-         auto value = (KatanaValue *)prop->values->data[v];
-
-         switch (value->unit) {
-            case KATANA_VALUE_NUMBER:
-            case KATANA_VALUE_PERCENTAGE:
-            case KATANA_VALUE_EMS:
-            case KATANA_VALUE_EXS:
-            case KATANA_VALUE_REMS:
-            case KATANA_VALUE_CHS:
-            case KATANA_VALUE_PX:
-            case KATANA_VALUE_CM:
-            case KATANA_VALUE_DPPX:
-            case KATANA_VALUE_DPI:
-            case KATANA_VALUE_DPCM:
-            case KATANA_VALUE_MM:
-            case KATANA_VALUE_IN:
-            case KATANA_VALUE_PT:
-            case KATANA_VALUE_PC:
-            case KATANA_VALUE_DEG:
-            case KATANA_VALUE_RAD:
-            case KATANA_VALUE_GRAD:
-            case KATANA_VALUE_MS:
-            case KATANA_VALUE_S:
-            case KATANA_VALUE_HZ:
-            case KATANA_VALUE_KHZ:
-            case KATANA_VALUE_TURN:
-               xml::UpdateAttrib(Tag, prop->property, value->raw, true);
-               break;
-
-            case KATANA_VALUE_IDENT:
-               xml::UpdateAttrib(Tag, prop->property, value->string, true);
-               break;
-
-            case KATANA_VALUE_STRING:
-               xml::UpdateAttrib(Tag, prop->property, value->string, true);
-               break;
-
-            case KATANA_VALUE_PARSER_FUNCTION: {
-               //const char* args_str = katana_stringify_value_list(parser, value->function->args);
-               //snprintf(str, sizeof(str), "%s%s)", value->function->name, args_str);
-               //katana_parser_deallocate(parser, (void*) args_str);
-               break;
+   std::string result;
+   if (not Values) return result;
+   for (unsigned i=0; i < Values->length; i++) {
+      auto value = (KatanaValue *)Values->data[i];
+      const bool comma = (value->unit IS KATANA_VALUE_PARSER_OPERATOR) and (value->iValue IS ',');
+      // The font-family backend expects CSV names without surrounding whitespace.
+      if (not result.empty() and not comma and (result.back() != ',')) result.push_back(' ');
+      switch (value->unit) {
+         case KATANA_VALUE_STRING:
+            result.push_back('"');
+            for (const char *c = value->string; *c; c++) {
+               if ((*c IS '"') or (*c IS '\\')) result.push_back('\\');
+               result.push_back(*c);
             }
+            result.push_back('"');
+            break;
+         case KATANA_VALUE_DIMENSION:
+         case KATANA_VALUE_UNICODE_RANGE:
+         case KATANA_VALUE_IDENT: result.append(value->string); break;
+         case KATANA_VALUE_PARSER_OPERATOR: result.push_back(char(value->iValue)); break;
+         case KATANA_VALUE_PARSER_FUNCTION:
+            result.append(value->function->name).append(css_values(value->function->args)).push_back(')');
+            break;
+         case KATANA_VALUE_PARSER_LIST: result.append(css_values(value->list)); break;
+         case KATANA_VALUE_PARSER_HEXCOLOR: result.append("#").append(value->string); break;
+         case KATANA_VALUE_URI: result.append("url(").append(value->string).push_back(')'); break;
+         case KATANA_VALUE_NUMBER:
+         case KATANA_VALUE_PERCENTAGE:
+         case KATANA_VALUE_EMS:
+         case KATANA_VALUE_EXS:
+         case KATANA_VALUE_REMS:
+         case KATANA_VALUE_CHS:
+         case KATANA_VALUE_PX:
+         case KATANA_VALUE_CM:
+         case KATANA_VALUE_MM:
+         case KATANA_VALUE_IN:
+         case KATANA_VALUE_PT:
+         case KATANA_VALUE_PC:
+         case KATANA_VALUE_DEG:
+         case KATANA_VALUE_RAD:
+         case KATANA_VALUE_GRAD:
+         case KATANA_VALUE_MS:
+         case KATANA_VALUE_S:
+         case KATANA_VALUE_HZ:
+         case KATANA_VALUE_KHZ:
+         case KATANA_VALUE_TURN:
+         case KATANA_VALUE_DPPX:
+         case KATANA_VALUE_DPI:
+         case KATANA_VALUE_DPCM:
+         case KATANA_VALUE_VW:
+         case KATANA_VALUE_VH:
+         case KATANA_VALUE_VMIN:
+         case KATANA_VALUE_VMAX:
+         case KATANA_VALUE_FR:
+            result.append(value->raw);
+            break;
+         default: return "!unsupported";
+      }
+   }
+   return result;
+}
 
-            case KATANA_VALUE_PARSER_OPERATOR: {
-               char str[8];
-               if (value->iValue != '=') snprintf(str, sizeof(str), " %c ", value->iValue);
-               else snprintf(str, sizeof(str), " %c", value->iValue);
-               xml::UpdateAttrib(Tag, prop->property, str, true);
-               break;
+//********************************************************************************************************************
+// Only simple/compound tag, universal, ID and class selectors are supported.  Reject an entire selector containing
+// combinators or unsupported components, rather than applying just its rightmost component.
+
+static bool css_matches(const KatanaSelector *Selector, const XTag &Tag, size_t &Specificity)
+{
+   Specificity = 0;
+   for (auto sel = Selector; sel; sel = sel->tagHistory) {
+      if (sel->tagHistory and (sel->relation != KatanaSelectorRelationSubSelector)) return false;
+      switch (sel->match) {
+         case KatanaSelectorMatchTag:
+            if (not sel->tag or sel->tag->prefix) return false; // Namespaced selectors are outside this subset.
+            if (std::string_view(sel->tag->local) != "*") {
+               if (std::string_view(sel->tag->local) != svg_local_name(Tag)) return false;
+               Specificity++;
             }
+            break;
+         case KatanaSelectorMatchId: {
+            const auto id = Tag.attrib("id");
+            if (not id or not sel->data or *id != sel->data->value) return false;
+            Specificity += 0x10000;
+            break;
+         }
+         case KatanaSelectorMatchClass: {
+            const auto classes = Tag.attrib("class");
+            if (not classes or not sel->data) return false;
+            bool found = false;
+            std::string_view list(*classes);
+            while (not list.empty()) {
+               list = kt::font_traits::trim(list);
+               auto end = list.find_first_of(" \t\r\n");
+               if (list.substr(0, end) IS sel->data->value) found = true;
+               if (end IS std::string_view::npos) break;
+               list.remove_prefix(end + 1);
+            }
+            if (not found) return false;
+            Specificity += 0x100;
+            break;
+         }
+         default: return false;
+      }
+   }
+   return true;
+}
 
-            case KATANA_VALUE_PARSER_LIST:
-               //katana_stringify_value_list(parser, value->list);
-               break;
+struct CSSDeclaration {
+   std::string name;
+   std::string value;
+   size_t specificity;
+   bool important;
+};
 
-            case KATANA_VALUE_PARSER_HEXCOLOR:
-               xml::UpdateAttrib(Tag, prop->property, std::string("#") + value->string, true);
-               break;
+//********************************************************************************************************************
 
-            case KATANA_VALUE_URI:
-               xml::UpdateAttrib(Tag, prop->property, std::string("url(") + value->string + ")", true);
-               break;
-
-            default:
-               log.warning("Unknown property value.");
-               break;
+static void collect_styles(objXML::TAGS &Tags, std::vector<KatanaOutput *> &Sheets)
+{
+   for (auto &tag : Tags) {
+      if (svg_tag_is(tag, SVF_style)) {
+         const auto type = tag.attrib("type");
+         if (not type or iequals(*type, "text/css")) {
+            auto content = tag.getContent();
+            if (auto sheet = katana_parse(content.data(), content.size(), KatanaParserModeStylesheet)) {
+               Sheets.push_back(sheet);
+            }
          }
       }
+      collect_styles(tag.Children, Sheets);
    }
 }
 
 //********************************************************************************************************************
-// Scan and apply all stylesheet selectors to the loaded XML document.
 
-static void process_rule(extSVG *Self, objXML::TAGS &Tags, KatanaRule *Rule)
+static void cascade_styles(objXML::TAGS &Tags, const std::vector<KatanaOutput *> &Sheets)
 {
-   kt::Log log(__FUNCTION__);
-
-   if (!Rule) return;
-
-   switch (Rule->type) {
-      case KatanaRuleStyle: {
-         auto sr = (KatanaStyleRule *)Rule;
-         for (unsigned i=0; i < sr->selectors->length; ++i) {
-            auto sel = (KatanaSelector *)sr->selectors->data[i];
-
-            switch (sel->match) {
-               case KatanaSelectorMatchTag: // Applies to all tags matching this name
-                  log.trace("Processing selector: %s", (sel->tag) ? sel->tag->local : "UNNAMED");
-                  for (auto &tag : Tags) {
-                     if (iequals(sel->tag->local, tag.name())) {
-                        apply_rule(Self, sr->declarations, tag);
-                     }
-
-                     if (!tag.Children.empty()) {
-                        process_rule(Self, tag.Children, Rule);
-                     }
-                  }
-                  break;
-
-               case KatanaSelectorMatchId: // Applies to the first tag expressing this id
-                  break;
-
-               case KatanaSelectorMatchClass: // Requires tag to specify a class attribute
-                  log.trace("Processing class selector: %s", (sel->data) ? sel->data->value : "UNNAMED");
-                  for (auto &tag : Tags) {
-                     for (auto &a : tag.Attribs) {
-                        if (iequals("class", a.Name)) {
-                           if (iequals(sel->data->value, a.Value)) {
-                              apply_rule(Self, sr->declarations, tag);
-                           }
-                           break;
-                        }
-                     }
-
-                     if (!tag.Children.empty()) {
-                        process_rule(Self, tag.Children, Rule);
-                     }
-                  }
-                  break;
-
-               case KatanaSelectorMatchPseudoClass: // E.g. a:link
-                  break;
-
-               case KatanaSelectorMatchPseudoElement: break;
-               case KatanaSelectorMatchPagePseudoClass: break;
-               case KatanaSelectorMatchAttributeExact: break;
-               case KatanaSelectorMatchAttributeSet: break;
-               case KatanaSelectorMatchAttributeList: break;
-               case KatanaSelectorMatchAttributeHyphen: break;
-               case KatanaSelectorMatchAttributeContain: break;
-               case KatanaSelectorMatchAttributeBegin: break;
-               case KatanaSelectorMatchAttributeEnd: break;
-               case KatanaSelectorMatchUnknown: break;
-            }
+   for (auto &tag : Tags) {
+      if (not tag.isTag()) continue;
+      std::vector<CSSDeclaration> declarations;
+      auto append = [&](KatanaArray *Properties, size_t Specificity) {
+         for (unsigned i=0; i < Properties->length; i++) {
+            auto prop = (KatanaDeclaration *)Properties->data[i];
+            declarations.push_back({prop->property, css_values(prop->values), Specificity, prop->important});
          }
+      };
 
-         break;
+      for (auto sheet : Sheets) {
+         for (unsigned i=0; i < sheet->stylesheet->rules.length; i++) {
+            auto rule = (KatanaRule *)sheet->stylesheet->rules.data[i];
+            if (rule->type != KatanaRuleStyle) continue;
+            auto style = (KatanaStyleRule *)rule;
+            bool matched = false;
+            size_t specificity = 0;
+            for (unsigned j=0; j < style->selectors->length; j++) {
+               size_t score;
+               if (css_matches((KatanaSelector *)style->selectors->data[j], tag, score)) {
+                  matched = true;
+                  specificity = std::max(specificity, score);
+               }
+            }
+            if (matched) append(style->declarations, specificity);
+         }
       }
 
-      case KatanaRuleImport: //(KatanaImportRule*)rule
-         log.msg("Support required for KatanaRuleImport");
-         break;
+      for (size_t i=1; i < tag.Attribs.size(); ) {
+         if (not iequals(tag.Attribs[i].Name, "style")) { i++; continue; }
+         auto value = std::move(tag.Attribs[i].Value);
+         tag.Attribs.erase(tag.Attribs.begin() + i);
+         if (auto css = katana_parse(value.data(), value.size(), KatanaParserModeDeclarationList)) {
+            append(css->declarations, 0x1000000); // Inline author specificity exceeds every supported selector.
+            katana_destroy_output(css);
+         }
+      }
 
-      case KatanaRuleFontFace: //(KatanaFontFaceRule*)rule
-         log.msg("Support required for KatanaRuleFontFace");
-         break;
+      std::stable_sort(declarations.begin(), declarations.end(), [](const auto &Left, const auto &Right) {
+         if (Left.important != Right.important) return not Left.important;
+         return Left.specificity < Right.specificity;
+      });
 
-      case KatanaRuleKeyframes: //(KatanaKeyframesRule*)rule
-         log.msg("Support required for KatanaRuleKeyframes");
-         break;
-
-      case KatanaRuleMedia: //(KatanaMediaRule*)rule
-         log.msg("Support required for KatanaRuleMedia");
-         break;
-
-      case KatanaRuleUnkown:
-      case KatanaRuleSupports:
-      case KatanaRuleCharset:
-      case KatanaRuleHost:
-         break;
+      // Keep lower-priority declarations: an invalid later value must leave the earlier applicable value intact.
+      // Presentation attributes precede all author declarations, independent of their XML attribute order.
+      for (const auto &declaration : declarations) tag.Attribs.emplace_back(declaration.name, declaration.value);
+      cascade_styles(tag.Children, Sheets);
    }
+}
+
+//********************************************************************************************************************
+
+static void prepare_styles(objXML::TAGS &Tags)
+{
+   std::vector<KatanaOutput *> sheets;
+   collect_styles(Tags, sheets);
+   cascade_styles(Tags, sheets);
+   for (auto sheet : sheets) katana_destroy_output(sheet);
 }
 
 //********************************************************************************************************************
@@ -3829,25 +3948,25 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case CLASSID::VECTORTEXT: {
          auto vt = (objVectorText *)Vector;
          switch (Hash) {
-            case SVF_x: vt->setX(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_y: vt->setY(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_x: return vt->setX(SVGUnit(StrValue));
+            case SVF_y: return vt->setY(SVGUnit(StrValue));
 
             case SVF_dx: {
                auto values = read_array(StrValue);
-               vt->setDX(values);
-               return ERR::Okay;
+               if (auto error = vt->setDX(values); error != ERR::Okay) return error;
+               return ERR::NoSupport; // Stored for compatibility; not consumed by the renderer.
             }
 
             case SVF_dy: {
                auto values = read_array(StrValue);
-               vt->setDY(values);
-               return ERR::Okay;
+               if (auto error = vt->setDY(values); error != ERR::Okay) return error;
+               return ERR::NoSupport; // Stored for compatibility; not consumed by the renderer.
             }
 
             case SVF_lengthAdjust: // Can be set to either 'spacing' or 'spacingAndGlyphs'
                //if (iequals("spacingAndGlyphs", va_arg(list, STRING))) vt->VT.SpacingAndGlyphs = TRUE;
                //else vt->VT.SpacingAndGlyphs = FALSE;
-               return ERR::Okay;
+               return ERR::NoSupport;
 
             case SVF_font: {
                // Officially accepted examples for the 'font' attribute:
@@ -3864,79 +3983,20 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                return ERR::NoSupport;
             }
 
-            case SVF_font_family:
-               vt->setFace(StrValue);
-               return ERR::Okay;
-
-            case SVF_font_kerning: // CSS: auto | normal | none
-               switch(strhash(StrValue)) {
-                  case SVF_auto: case SVF_normal: set_kerning(vt, true); return ERR::Okay;
-                  case SVF_none: set_kerning(vt, false); return ERR::Okay;
-                  case SVF_inherit: return ERR::Okay;
-                  default: log.warning("font-kerning: No support for value '%s'", StrValue.c_str());
-               }
-               break;
-
-            case SVF_kerning: // SVG 1.1: auto | <length>.  A length disables automatic kerning but is not applied.
-               set_kerning(vt, strhash(StrValue) IS SVF_auto);
-               return ERR::Okay;
-
-            case SVF_font_size:
-               // A plain numeric font size is interpreted as "a height value corresponding to the current user
-               // coordinate system".  Alternatively the user can specify the unit identifier, e.g. '12pt', '10%', '30px'
-               vt->setFontSize(StrValue);
-               return ERR::Okay;
-
             case SVF_font_size_adjust:
-               // Auto-adjust the font height according to the formula "y(a/a') = c" where the value provided is used as 'a'.
-               // y = 'font-size' of first-choice font
-               // a' = aspect value of available font
-               // c = 'font-size' to apply to available font
-               return ERR::NoSupport;
-
-            case SVF_font_stretch:
-            case SVF_font_width:
-            case SVF_font_style:
-            case SVF_font_variation_settings:
-            case SVF_font_optical_sizing:
-               apply_font_property(vt, Hash, StrValue);
-               return ERR::Okay;
-
             case SVF_font_variant: return ERR::NoSupport;
-
-            case SVF_font_weight: { // SVG: normal | bold | bolder | lighter | inherit
-               auto num = svtonum<double>(StrValue);
-               if (num) vt->setWeight(int(num));
-               else switch(strhash(StrValue)) {
-                  case SVF_normal:  vt->setWeight(400); return ERR::Okay;
-                  case SVF_lighter: vt->setWeight(300); return ERR::Okay; // -100 off the inherited weight
-                  case SVF_bold:    vt->setWeight(700); return ERR::Okay;
-                  case SVF_bolder:  vt->setWeight(900); return ERR::Okay; // +100 on the inherited weight
-                  case SVF_inherit: vt->setWeight(400); return ERR::Okay; // Not supported correctly yet.
-                  default: log.warning("No support for font-weight value '%s'", StrValue.c_str()); // Non-fatal
-               }
-               break;
-            }
 
             case SVF_rotate: {
                // SVG defines rotate as a comma or whitespace separated list of <number> values.
                auto values = read_array(StrValue);
-               vt->setRotate(values);
-               return ERR::Okay;
+               if (auto error = vt->setRotate(values); error != ERR::Okay) return error;
+               return ERR::NoSupport; // Stored for compatibility; not consumed by the renderer.
             }
-            case SVF_string: vt->setString(StrValue); return ERR::Okay;
+            case SVF_string: return vt->setString(StrValue);
 
-            case SVF_text_anchor:
-               switch(strhash(StrValue)) {
-                  case SVF_start:   vt->setAlign(ALIGN::LEFT); return ERR::Okay;
-                  case SVF_middle:  vt->setAlign(ALIGN::HORIZONTAL); return ERR::Okay;
-                  case SVF_end:     vt->setAlign(ALIGN::RIGHT); return ERR::Okay;
-                  case SVF_inherit: vt->setAlign(ALIGN::NIL); return ERR::Okay;
-                  default: log.warning("text-anchor: No support for value '%s'", StrValue.c_str());
-               }
-               break;
-
-            case SVF_textLength: vt->setTextLength(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_textLength:
+               if (auto error = vt->setTextLength(SVGUnit(StrValue)); error != ERR::Okay) return error;
+               return ERR::NoSupport; // Stored for compatibility; length adjustment is not implemented.
             // TextPath only
             //case SVF_startOffset: vt->set(FID_StartOffset, StrValue); return ERR::Okay;
             //case SVF_method:      // The default is align.  For 'stretch' mode, set VMF::STRETCH in GuideFlags
@@ -3948,16 +4008,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             //case SVF_letter_spacing: vt->set(FID_LetterSpacing, StrValue); return ERR::Okay;
             //case SVF_pathLength:     vt->set(FID_PathLength, StrValue); return ERR::Okay;
             //case SVF_word_spacing:   vt->set(FID_WordSpacing, StrValue); return ERR::Okay;
-            case SVF_text_decoration:
-               switch(strhash(StrValue)) {
-                  case SVF_underline:    vt->setTextFlags(VTXF::UNDERLINE); return ERR::Okay;
-                  case SVF_overline:     vt->setTextFlags(VTXF::OVERLINE); return ERR::Okay;
-                  case SVF_line_through: vt->setTextFlags(VTXF::LINE_THROUGH); return ERR::Okay;
-                  case SVF_blink:        vt->setTextFlags(VTXF::BLINK); return ERR::Okay;
-                  case SVF_inherit:      return ERR::Okay;
-                  default: log.warning("No support for text-decoration value '%s'", StrValue.c_str());
-               }
-               return ERR::Okay;
+
          }
          break;
       }
