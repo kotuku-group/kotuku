@@ -205,11 +205,12 @@ function freshState(Font:table!, Size:num, Fill:str):table
       strokeOpacity = 100,
       strokeJoin   = 'miter',
       shadowOn     = false,
-      shadowX      = 3,
-      shadowY      = 4,
+      shadowX      = 0.15, -- Multiple of the font size (em)
+      shadowY      = 0.2,
       shadowBlur   = 0,
+      shadowOpacity = 40,
       glowOn       = false,
-      glowRadius   = 10,
+      glowRadius   = 0.5, -- Multiple of the font size (em)
       blend        = 'Normal',
       align        = 'left',
       letterCase   = 'none',
