@@ -14,6 +14,12 @@ JOIN_ITEMS <const> = array<table> {
    { id = 'miter', label = 'Miter' }, { id = 'round', label = 'Round' }, { id = 'bevel', label = 'Bevel' }
 }
 
+-- The width is a multiple of the font size, so that the outline scales with the text.
+
+function widthLabel(Width:num!):str
+   return string.format('%.3f em', Width)
+end
+
 @Doc(text=[[
 @desc Create the stroke controls with an unlabelled toggle beside the colour selector.
 @input Picker table
@@ -63,8 +69,8 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
    y += ROW_H
 
    self.width = fontdialog_controls.sliderRow(Picker, body, {
-      x = PAD, y = y, width = inner, label = 'Width', min = 0, max = 8, step = 0.5, value = state.strokeWidth,
-      format = function(V):str return f'{V} px' end,
+      x = PAD, y = y, width = inner, label = 'Width', min = 0, max = 0.25, step = 0.005, value = state.strokeWidth,
+      format = widthLabel,
       onChange = function(V) Picker.update({ strokeWidth = V, strokeOn = true }, 'stroke') end
    })
    y += ROW_H
@@ -86,7 +92,7 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
       end
 
       if outlined then
-         self.panel.setMeta(s.strokeOn ? f'{s.strokeWidth} px' : '')
+         self.panel.setMeta(s.strokeOn ? widthLabel(s.strokeWidth) : '')
       else
          self.panel.setMeta('Scalable fonts only')
       end

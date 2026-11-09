@@ -201,7 +201,7 @@ function freshState(Font:table!, Size:num, Fill:str):table
       opacity      = 100, -- Alpha of the fill
       strokeOn     = false,
       strokeColour = '#EC3013',
-      strokeWidth  = 1,
+      strokeWidth  = 0.05, -- Multiple of the font size (em)
       strokeOpacity = 100,
       strokeJoin   = 'miter',
       shadowOn     = false,

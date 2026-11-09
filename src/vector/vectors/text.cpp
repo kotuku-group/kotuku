@@ -302,6 +302,18 @@ class extVectorText : public extVector {
       return txDefinition.word_spacing ? txDefinition.word_spacing->pixels(txFontSize) : 0.0;
    }
 
+   // Changes the em size.  A stroke width in `em` units follows it, unless StrokeWidth has been set directly since.
+
+   void change_font_size(double Size) {
+      const auto &width = txDefinition.stroke_width;
+      const bool follow = width and (width->unit IS font_length::UNIT::EM);
+      txFontSize = Size;
+      if (follow) {
+         Unit value(width->pixels(txFontSize));
+         VECTOR_SET_StrokeWidth(this, value);
+      }
+   }
+
    // Paragraph spacing is a whole number so that baselines stay on the pixel grid.
 
    double paragraph_spacing() const {
@@ -365,6 +377,27 @@ static const int * text_fill_gamma(extVector *Vector)
       return small_text_gamma();
    }
    return nullptr;
+}
+
+//********************************************************************************************************************
+// The LineHeight, LetterSpacing and WordSpacing fields are shortcuts for the equivalent TextStyle keys.  A scaled Unit
+// is relative to the font size, and corresponds to a key in the unit given by ScaledUnit.
+
+static void get_length_unit(extVectorText *Self, const std::optional<font_length> &Length, Unit &Value)
+{
+   if (not Length) Value = Unit(0);
+   else if ((Length->unit IS font_length::UNIT::EM) or (Length->unit IS font_length::UNIT::NONE)) {
+      Value = Unit(Length->value, FD_SCALED);
+   }
+   else Value = Unit(Length->pixels(Self->txFontSize));
+}
+
+static void set_length_unit(extVectorText *Self, std::optional<font_length> &Length, const Unit &Value,
+   font_length::UNIT ScaledUnit)
+{
+   if ((not Value.defined()) or (Value.Value IS 0)) Length.reset();
+   else Length = font_length { Value.Value, Value.scaled() ? ScaledUnit : font_length::UNIT::PX };
+   reset_path(Self);
 }
 
 //********************************************************************************************************************
@@ -1060,74 +1093,6 @@ static ERR TEXT_SET_DY(extVectorText *Self, std::span<const double> &Array)
 }
 
 /*********************************************************************************************************************
-
--FIELD-
-OnChange: Receive notifications for changes to the text string.
-
-Set this field with a function reference to receive notifications whenever the text string changes.
-
-The callback function prototype is `void Function(*VectorText)`.
-
-*********************************************************************************************************************/
-
-static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION * &Value)
-{
-   if (Self->txOnChange.defined()) {
-      Value = &Self->txOnChange;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR TEXT_SET_OnChange(extVectorText *Self, FUNCTION *Value)
-{
-   release_callback(Self->txOnChange);
-   if (Value) {
-      Self->txOnChange = *Value;
-      if (Self->txOnChange.defined()) Self->txOnChange.pin();
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-OnCursorMove: Receives notifications after cursor or selection changes.
-
-Set this field with a function reference to be notified when the cursor position, selected area or text content
-changes.  This is commonly used to update status displays or to keep the cursor in view with #GetCaretBounds().
-
-An operation that moves the cursor or selection more than once triggers a single notification, which reports the
-final state.  When the text changes, #OnChange is called first.  Text layout is regenerated before the callback runs,
-so caret geometry and cursor fields are up to date.  Cursor or selection changes made from inside the callback do not
-trigger another notification.
-
-Notifications are only sent after initialisation, and only when `VTXF::EDITABLE` or `VTXF::SELECTABLE` is set in
-#TextFlags.
-
-The callback function prototype is `void Function(*VectorText)`.
-
-*********************************************************************************************************************/
-
-static ERR TEXT_GET_OnCursorMove(extVectorText *Self, FUNCTION * &Value)
-{
-   if (Self->txOnCursorMove.defined()) {
-      Value = &Self->txOnCursorMove;
-      return ERR::Okay;
-   }
-   return ERR::FieldNotSet;
-}
-
-static ERR TEXT_SET_OnCursorMove(extVectorText *Self, FUNCTION *Value)
-{
-   release_callback(Self->txOnCursorMove);
-   if (Value) {
-      Self->txOnCursorMove = *Value;
-      if (Self->txOnCursorMove.defined()) Self->txOnCursorMove.pin();
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Face: Defines the font face/family to use in rendering the text string.
 
@@ -1162,6 +1127,52 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
    if (Self->initialised()) return reset_font(Self);
 
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Fill: Defines the fill painter using SVG's IRI format.
+
+The painter used for filling a vector path can be defined through this field using SVG compatible formatting.  The
+string is parsed through the ~Vector.ReadPainter() function.  Please refer to it for further details on
+valid formatting.
+
+Fallback colours and layered fill painters are supported in the same way as the @Vector.Fill field.  Please refer to it
+for further details.
+
+*********************************************************************************************************************/
+
+// Override the existing Vector Fill field - this is required for bitmap fonts as they need a path reset to be
+// triggered when decorative changes occur.
+
+static ERR TEXT_GET_Fill(extVectorText *Self, std::string_view &Value)
+{
+   Value = Self->FillString;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
+{
+   Self->FillString.clear();
+   Self->reset_fill();
+
+   if (Value.empty()) {
+      return ERR::Okay;
+   }
+
+   if (auto error = read_fill_painters(Self->Scene, Value, Self->Fill, Self->ExtFill); !error) {
+      Self->FillString = Value;
+
+      // Bitmap font reset/redraw required
+      if (Self->txBitmapFont) reset_path(Self);
+
+      return ERR::Okay;
+   }
+   else {
+      Self->reset_fill();
+      return error;
+   }
 }
 
 /*********************************************************************************************************************
@@ -1207,7 +1218,7 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
 
       Self->txFamily         = other->Face.empty() ? "Noto Sans" : other->Face;
       Self->txAlias.clear();
-      Self->txFontSize       = std::max(1.0, std::round(other->Point * (96.0 / 72.0)));
+      Self->change_font_size(std::max(1.0, std::round(other->Point * (96.0 / 72.0))));
       Self->txScaledFontSize = false;
       Self->txFontStyle      = other->Style.empty() ? "Regular" : other->Style;
 
@@ -1219,7 +1230,7 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
 
       Self->txFamily         = other->txFamily;
       Self->txAlias          = other->txAlias;
-      Self->txFontSize       = other->txFontSize;
+      Self->change_font_size(other->txFontSize);
       Self->txScaledFontSize = false;
       Self->txFontStyle      = other->txFontStyle;
 
@@ -1227,51 +1238,6 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
       else return ERR::Okay;
    }
    else return ERR::NoSupport;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-Fill: Defines the fill painter using SVG's IRI format.
-
-The painter used for filling a vector path can be defined through this field using SVG compatible formatting.  The
-string is parsed through the ~Vector.ReadPainter() function.  Please refer to it for further details on
-valid formatting.
-
-Fallback colours and layered fill painters are supported in the same way as the @Vector.Fill field.  Please refer to it
-for further details.
-
-*********************************************************************************************************************/
-// Override the existing Vector Fill field - this is required for bitmap fonts as they need a path reset to be
-// triggered when decorative changes occur.
-
-static ERR TEXT_GET_Fill(extVectorText *Self, std::string_view &Value)
-{
-   Value = Self->FillString;
-   return ERR::Okay;
-}
-
-static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
-{
-   Self->FillString.clear();
-   Self->reset_fill();
-
-   if (Value.empty()) {
-      return ERR::Okay;
-   }
-
-   if (auto error = read_fill_painters(Self->Scene, Value, Self->Fill, Self->ExtFill); !error) {
-      Self->FillString = Value;
-
-      // Bitmap font reset/redraw required
-      if (Self->txBitmapFont) reset_path(Self);
-
-      return ERR::Okay;
-   }
-   else {
-      Self->reset_fill();
-      return error;
-   }
 }
 
 /*********************************************************************************************************************
@@ -1323,7 +1289,7 @@ static ERR TEXT_SET_FontSize(extVectorText *Self, const std::string_view &Value)
 
    if (auto new_size = std::round(size); new_size >= 1) {
       if (Self->txFontSize IS new_size) return ERR::Okay;
-      Self->txFontSize = new_size;
+      Self->change_font_size(new_size);
       Self->txScaledFontSize = pct;
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;
@@ -1343,7 +1309,8 @@ or after initialisation.
 
 Assignment overwrites the declared keys only, and an empty string has no effect.  Style keys update individually, so
 `italic=yes` retains an earlier `weight=650`.  An absent `fill` or `stroke` leaves the existing value unchanged and
-`stroke=none` clears the stroke.  If the string contains a malformed value then `ERR::Syntax` is returned and the
+`stroke=none` clears the stroke.  A `strokeWidth` in `em` units follows later changes to #FontSize, until #StrokeWidth
+is set directly.  If the string contains a malformed value then `ERR::Syntax` is returned and the
 settings are unchanged.
 
 The `shadow`, `glow` and `blend` keys are rendered through a @VectorFilter that belongs to the text, which replaces the
@@ -1420,7 +1387,7 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
    Self->txFontStyle = style.empty() ? "Regular" : style;
 
    if (def.size) {
-      Self->txFontSize = std::max(1.0, std::round(def.size->pixels(0)));
+      Self->change_font_size(std::max(1.0, std::round(def.size->pixels(0))));
       Self->txScaledFontSize = false;
    }
 
@@ -1441,7 +1408,10 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
 
    if (def.opacity) Self->setOpacity(*def.opacity);
    if (def.stroke) Self->setStroke(*def.stroke);
-   if (def.stroke_width) Self->setStrokeWidth(def.stroke_width->pixels(Self->txFontSize));
+   if (def.stroke_width) {
+      Unit width(def.stroke_width->pixels(Self->txFontSize));
+      VECTOR_SET_StrokeWidth(Self, width);
+   }
 
    if (def.line_join) {
       if (*def.line_join IS "round") Self->setLineJoin(VLJ::ROUND);
@@ -1567,81 +1537,6 @@ static ERR TEXT_SET_InlineSize(extVectorText *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-WrapMode: Controls where word-wrapping may break a line.
-Lookup: VTW
-
-WrapMode determines where a line may be broken when #InlineSize enables word-wrapping.  It has no effect if
-#InlineSize is zero.
-
-The default, `WORD`, only breaks lines at whitespace.  A word that is wider than the wrapping area stays on a line of
-its own and overflows it.
-
-In `SYMBOL` mode, a word is also divided into segments after each of the following symbols, and a line may break
-between any two segments:
-
-<types type="Symbol">
-<type name="/ \">File and URL paths, e.g. `/usr/` `share/` `kotuku`</type>
-<type name="-">Hyphenated words, e.g. `well-` `known`</type>
-<type name="_">Identifiers, e.g. `field_` `name`</type>
-<type name="? &amp; =">URL queries, e.g. `page?` `id=` `4&amp;` `x=` `2`</type>
-</types>
-
-A break after a symbol is suppressed if the symbol is the last character of the word, or the next character is also
-a break symbol (so `//` and `--` are never split).  A `-` does not permit a break if it is part of the hyphens that
-start a word, as in `--log-warning`, or if it is followed by a digit, as in `x-1`.  Periods, commas, colons and
-semi-colons are not break symbols, so numbers such as `3.14`, times and file extensions are kept whole.  The symbol
-always remains at the end of the earlier line and no hyphen is inserted at the break.
-
-`ANYWHERE` mode extends `SYMBOL` by breaking between characters when a segment is too wide to fit on a line of its
-own, so that no line overflows the wrapping area.  A segment is only divided in this way when it cannot fit on an
-empty line.  At least one character is always placed on each line, so a glyph that is wider than the wrapping area
-will overflow it.  Breaks are made between UTF-8 characters, but combining marks are not treated specially and can
-be separated from the character that they modify.
-
-Text with the `SECRET` flag in #TextFlags is always wrapped in `WORD` mode, so that the line breaks do not reveal the
-positions of symbols in the hidden string.  Text that follows a guide path is not wrapped.
-
-*********************************************************************************************************************/
-
-static ERR TEXT_GET_WrapMode(extVectorText *Self, VTW *Value)
-{
-   *Value = Self->txWrapMode;
-   return ERR::Okay;
-}
-
-static ERR TEXT_SET_WrapMode(extVectorText *Self, VTW Value)
-{
-   if ((int(Value) < int(VTW::WORD)) or (int(Value) > int(VTW::ANYWHERE))) return ERR::OutOfRange;
-   if (Self->txWrapMode != Value) {
-      Self->txWrapMode = Value;
-      reset_path(Self);
-   }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-// The LineHeight, LetterSpacing and WordSpacing fields are shortcuts for the equivalent TextStyle keys.  A scaled Unit
-// is relative to the font size, and corresponds to a key in the unit given by ScaledUnit.
-
-static void get_length_unit(extVectorText *Self, const std::optional<font_length> &Length, Unit &Value)
-{
-   if (not Length) Value = Unit(0);
-   else if ((Length->unit IS font_length::UNIT::EM) or (Length->unit IS font_length::UNIT::NONE)) {
-      Value = Unit(Length->value, FD_SCALED);
-   }
-   else Value = Unit(Length->pixels(Self->txFontSize));
-}
-
-static void set_length_unit(extVectorText *Self, std::optional<font_length> &Length, const Unit &Value,
-   font_length::UNIT ScaledUnit)
-{
-   if ((not Value.defined()) or (Value.Value IS 0)) Length.reset();
-   else Length = font_length { Value.Value, Value.scaled() ? ScaledUnit : font_length::UNIT::PX };
-   reset_path(Self);
-}
-
-/*********************************************************************************************************************
--FIELD-
 LetterSpacing: Additional space between characters.
 
 LetterSpacing adds a fixed distance between each pair of characters.  A number is a distance in pixels and a scaled
@@ -1663,31 +1558,6 @@ static ERR TEXT_GET_LetterSpacing(extVectorText *Self, Unit &Value)
 static ERR TEXT_SET_LetterSpacing(extVectorText *Self, Unit &Value)
 {
    set_length_unit(Self, Self->txDefinition.letter_spacing, Value, font_length::UNIT::EM);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-WordSpacing: Additional space at the end of each word.
-
-WordSpacing adds a fixed distance to each space (U+0020) and non-breaking space (U+00A0).  A number is a distance in
-pixels and a scaled value is relative to #FontSize, for example `25%` is a quarter of the font size and follows any
-change to it.  The value can be negative.  The default of zero adds no spacing.
-
-#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `wordSpacing` key of #TextStyle,
-in which a scaled value is expressed with the `em` unit.  It has no effect on bitmap fonts.
-
-*********************************************************************************************************************/
-
-static ERR TEXT_GET_WordSpacing(extVectorText *Self, Unit &Value)
-{
-   get_length_unit(Self, Self->txDefinition.word_spacing, Value);
-   return ERR::Okay;
-}
-
-static ERR TEXT_SET_WordSpacing(extVectorText *Self, Unit &Value)
-{
-   set_length_unit(Self, Self->txDefinition.word_spacing, Value, font_length::UNIT::EM);
    return ERR::Okay;
 }
 
@@ -1717,35 +1587,6 @@ static ERR TEXT_SET_LineHeight(extVectorText *Self, Unit &Value)
 {
    if (Value.defined() and (Value.Value < 0)) return ERR::OutOfRange;
    set_length_unit(Self, Self->txDefinition.line_height, Value, font_length::UNIT::NONE);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
--FIELD-
-ParagraphSpacing: Additional distance between paragraphs.
-
-ParagraphSpacing adds a fixed distance in pixels after each hard line break, on top of the normal distance between
-baselines.  Lines created by word-wrapping are unaffected, and no space is added after the last line.  The default of
-zero adds no spacing.  Negative values are not permitted.
-
-The distance is rounded to a whole number of pixels when applied, so that baselines stay on the pixel grid.  It is
-applicable to both scalable and bitmap fonts, and has no effect on guide paths.
-
-*********************************************************************************************************************/
-
-static ERR TEXT_GET_ParagraphSpacing(extVectorText *Self, double *Value)
-{
-   *Value = Self->txParagraphSpacing;
-   return ERR::Okay;
-}
-
-static ERR TEXT_SET_ParagraphSpacing(extVectorText *Self, double Value)
-{
-   if (Value < 0) return ERR::OutOfRange;
-   if (Value != Self->txParagraphSpacing) {
-      Self->txParagraphSpacing = Value;
-      reset_path(Self);
-   }
    return ERR::Okay;
 }
 
@@ -1798,6 +1639,103 @@ static ERR TEXT_GET_LineSpacing(extVectorText *Self, int *Value)
       *Value = 1;
       return ERR::InvalidState;
    }
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+OnChange: Receive notifications for changes to the text string.
+
+Set this field with a function reference to receive notifications whenever the text string changes.
+
+The callback function prototype is `void Function(*VectorText)`.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION * &Value)
+{
+   if (Self->txOnChange.defined()) {
+      Value = &Self->txOnChange;
+      return ERR::Okay;
+   }
+   else return ERR::FieldNotSet;
+}
+
+static ERR TEXT_SET_OnChange(extVectorText *Self, FUNCTION *Value)
+{
+   release_callback(Self->txOnChange);
+   if (Value) {
+      Self->txOnChange = *Value;
+      if (Self->txOnChange.defined()) Self->txOnChange.pin();
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+OnCursorMove: Receives notifications after cursor or selection changes.
+
+Set this field with a function reference to be notified when the cursor position, selected area or text content
+changes.  This is commonly used to update status displays or to keep the cursor in view with #GetCaretBounds().
+
+An operation that moves the cursor or selection more than once triggers a single notification, which reports the
+final state.  When the text changes, #OnChange is called first.  Text layout is regenerated before the callback runs,
+so caret geometry and cursor fields are up to date.  Cursor or selection changes made from inside the callback do not
+trigger another notification.
+
+Notifications are only sent after initialisation, and only when `VTXF::EDITABLE` or `VTXF::SELECTABLE` is set in
+#TextFlags.
+
+The callback function prototype is `void Function(*VectorText)`.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_OnCursorMove(extVectorText *Self, FUNCTION * &Value)
+{
+   if (Self->txOnCursorMove.defined()) {
+      Value = &Self->txOnCursorMove;
+      return ERR::Okay;
+   }
+   return ERR::FieldNotSet;
+}
+
+static ERR TEXT_SET_OnCursorMove(extVectorText *Self, FUNCTION *Value)
+{
+   release_callback(Self->txOnCursorMove);
+   if (Value) {
+      Self->txOnCursorMove = *Value;
+      if (Self->txOnCursorMove.defined()) Self->txOnCursorMove.pin();
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+ParagraphSpacing: Additional distance between paragraphs.
+
+ParagraphSpacing adds a fixed distance in pixels after each hard line break, on top of the normal distance between
+baselines.  Lines created by word-wrapping are unaffected, and no space is added after the last line.  The default of
+zero adds no spacing.  Negative values are not permitted.
+
+The distance is rounded to a whole number of pixels when applied, so that baselines stay on the pixel grid.  It is
+applicable to both scalable and bitmap fonts, and has no effect on guide paths.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_ParagraphSpacing(extVectorText *Self, double *Value)
+{
+   *Value = Self->txParagraphSpacing;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_ParagraphSpacing(extVectorText *Self, double Value)
+{
+   if (Value < 0) return ERR::OutOfRange;
+   if (Value != Self->txParagraphSpacing) {
+      Self->txParagraphSpacing = Value;
+      reset_path(Self);
+   }
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1889,6 +1827,16 @@ static ERR TEXT_SET_StartOffset(extVectorText *Self, double Value)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// This shim ensures that a direct assignment to StrokeWidth clears the definition's relative width.
+
+static ERR TEXT_SET_StrokeWidth(extVectorText *Self, Unit &Value)
+{
+   auto error = VECTOR_SET_StrokeWidth(Self, Value);
+   if (error IS ERR::Okay) Self->txDefinition.stroke_width.reset();
+   return error;
+}
+
 /*********************************************************************************************************************
 -FIELD-
 TextFlags: Controls text presentation, editing and selection.
@@ -1911,22 +1859,106 @@ static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
    constexpr auto input_flags = VTXF::EDITABLE|VTXF::SELECTABLE;
    const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
+
    if (((previous_flags ^ Value) & (VTXF::NO_KERNING|VTXF::JUSTIFY)) != VTXF::NIL) reset_path(Self);
+
    if ((Value & VTXF::NO_AUTO_OFFSET) != VTXF::NIL) {
       Self->txXOffset = 0;
       Self->txYOffset = 0;
       reset_path(Self);
    }
+
    if (Self->needs_caret_geometry() and not had_caret_geometry) reset_path(Self);
    if ((Value & VTXF::EDITABLE) IS VTXF::NIL) {
       if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
       if (Self->txCursor.timer) { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = nullptr; }
    }
+
    if (Self->initialised() and Self->txHasFocus and Self->needs_caret_geometry() and
        ((previous_flags & input_flags) != (Value & input_flags))) {
       activate_text_input(Self);
    }
    else selection_changed(Self);
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+WordSpacing: Additional space at the end of each word.
+
+WordSpacing adds a fixed distance to each space (U+0020) and non-breaking space (U+00A0).  A number is a distance in
+pixels and a scaled value is relative to #FontSize, for example `25%` is a quarter of the font size and follows any
+change to it.  The value can be negative.  The default of zero adds no spacing.
+
+#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `wordSpacing` key of #TextStyle,
+in which a scaled value is expressed with the `em` unit.  It has no effect on bitmap fonts.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WordSpacing(extVectorText *Self, Unit &Value)
+{
+   get_length_unit(Self, Self->txDefinition.word_spacing, Value);
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_WordSpacing(extVectorText *Self, Unit &Value)
+{
+   set_length_unit(Self, Self->txDefinition.word_spacing, Value, font_length::UNIT::EM);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+WrapMode: Controls where word-wrapping may break a line.
+Lookup: VTW
+
+WrapMode determines where a line may be broken when #InlineSize enables word-wrapping.  It has no effect if
+#InlineSize is zero.
+
+The default, `WORD`, only breaks lines at whitespace.  A word that is wider than the wrapping area stays on a line of
+its own and overflows it.
+
+In `SYMBOL` mode, a word is also divided into segments after each of the following symbols, and a line may break
+between any two segments:
+
+<types type="Symbol">
+<type name="/ \">File and URL paths, e.g. `/usr/` `share/` `kotuku`</type>
+<type name="-">Hyphenated words, e.g. `well-` `known`</type>
+<type name="_">Identifiers, e.g. `field_` `name`</type>
+<type name="? &amp; =">URL queries, e.g. `page?` `id=` `4&amp;` `x=` `2`</type>
+</types>
+
+A break after a symbol is suppressed if the symbol is the last character of the word, or the next character is also
+a break symbol (so `//` and `--` are never split).  A `-` does not permit a break if it is part of the hyphens that
+start a word, as in `--log-warning`, or if it is followed by a digit, as in `x-1`.  Periods, commas, colons and
+semi-colons are not break symbols, so numbers such as `3.14`, times and file extensions are kept whole.  The symbol
+always remains at the end of the earlier line and no hyphen is inserted at the break.
+
+`ANYWHERE` mode extends `SYMBOL` by breaking between characters when a segment is too wide to fit on a line of its
+own, so that no line overflows the wrapping area.  A segment is only divided in this way when it cannot fit on an
+empty line.  At least one character is always placed on each line, so a glyph that is wider than the wrapping area
+will overflow it.  Breaks are made between UTF-8 characters, but combining marks are not treated specially and can
+be separated from the character that they modify.
+
+Text with the `SECRET` flag in #TextFlags is always wrapped in `WORD` mode, so that the line breaks do not reveal the
+positions of symbols in the hidden string.  Text that follows a guide path is not wrapped.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WrapMode(extVectorText *Self, VTW *Value)
+{
+   *Value = Self->txWrapMode;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_WrapMode(extVectorText *Self, VTW Value)
+{
+   if ((int(Value) < int(VTW::WORD)) or (int(Value) > int(VTW::ANYWHERE))) return ERR::OutOfRange;
+   if (Self->txWrapMode != Value) {
+      Self->txWrapMode = Value;
+      reset_path(Self);
+   }
    return ERR::Okay;
 }
 
@@ -2309,6 +2341,7 @@ struct TextRow {
    std::vector<TextGap> gaps = {};    // Only recorded for justified text
 };
 
+//********************************************************************************************************************
 // Justification adjusts individual words, which isn't possible for bitmap fonts because they draw whole lines.
 
 static bool needs_justification(extVectorText *Vector)
@@ -2317,6 +2350,7 @@ static bool needs_justification(extVectorText *Vector)
       (not Vector->GuidePath) and (not Vector->txBitmapFont);
 }
 
+//********************************************************************************************************************
 // True if each visual line has to be positioned within the block.  Guide paths have no rows to align.
 
 static bool needs_row_alignment(extVectorText *Vector)
@@ -2325,6 +2359,7 @@ static bool needs_row_alignment(extVectorText *Vector)
    return (not Vector->GuidePath) and ((Vector->txAlignFlags & (ALIGN::RIGHT|ALIGN::HORIZONTAL)) != ALIGN::NIL);
 }
 
+//********************************************************************************************************************
 // Bitmap fonts are drawn at whole pixels, so their shift has to be identical for the glyphs and the caret entries.
 
 static double row_alignment_shift(extVectorText *Vector, double Block, double Width)
@@ -2334,6 +2369,7 @@ static double row_alignment_shift(extVectorText *Vector, double Block, double Wi
    return Vector->txBitmapFont ? std::floor((Block - Width) * 0.5) : (Block - Width) * 0.5;
 }
 
+//********************************************************************************************************************
 // Moves a range of glyphs and caret entries.  Only X changes, which remains valid under a transition because each
 // glyph's transform is complete before it is appended.
 
@@ -2353,6 +2389,7 @@ static void shift_text_range(agg::path_storage *Path, unsigned FirstVertex, unsi
    }
 }
 
+//********************************************************************************************************************
 // Stretches each soft-wrapped row to the inline size by dividing the spare width across its gaps.  Each word's shift
 // is derived from the total so that rounding errors cannot accumulate along the row.  Whitespace trailing the row
 // moves with the last word.
@@ -2373,6 +2410,7 @@ static void justify_text_rows(std::vector<TextRow> &Rows, double InlineSize, agg
    }
 }
 
+//********************************************************************************************************************
 // Moves the caret entries of each row, and its glyphs if a Path is provided.
 
 static void align_text_rows(extVectorText *Vector, std::vector<TextRow> &Rows, double Block, agg::path_storage *Path)
@@ -2437,6 +2475,8 @@ static OP blend_operator(std::string_view Name)
    return OP::OVER;
 }
 
+//********************************************************************************************************************
+
 template <class T> static T * new_text_effect(objVectorFilter *Filter, CLASSID Class)
 {
    T *effect;
@@ -2445,6 +2485,7 @@ template <class T> static T * new_text_effect(objVectorFilter *Filter, CLASSID C
    return effect;
 }
 
+//********************************************************************************************************************
 // Appends a tinted copy of the text's alpha channel that has been offset and blurred.
 
 static objFilterEffect * add_text_effect_layer(objVectorFilter *Filter, double X, double Y, double Blur,
@@ -2485,6 +2526,7 @@ static objFilterEffect * add_text_effect_layer(objVectorFilter *Filter, double X
    return tint;
 }
 
+//********************************************************************************************************************
 // Filter regions are relative to the bounding box, so the margin that the effects need is converted to that scale
 // whenever the bounds change.
 
@@ -2499,6 +2541,8 @@ static void update_text_effect_region(extVectorText *Self)
    Self->txEffects->Width  = Unit(1.0 + (margin * 2.0 / width), FD_SCALED);
    Self->txEffects->Height = Unit(1.0 + (margin * 2.0 / height), FD_SCALED);
 }
+
+//********************************************************************************************************************
 
 static ERR update_text_effects(extVectorText *Self)
 {
@@ -2746,6 +2790,8 @@ static TextPosition hit_test(extVectorText *Self, double X, double Y, bool Chara
    return nearest;
 }
 
+//********************************************************************************************************************
+
 static void extend_mouse_selection(extVectorText *Self)
 {
    Self->txDragPending = false;
@@ -2756,6 +2802,7 @@ static void extend_mouse_selection(extVectorText *Self)
    }
 }
 
+//********************************************************************************************************************
 // Coalesce pointer movement into one selection update per frame.  Release flushes a pending endpoint immediately.
 
 static ERR text_drag_timer(extVectorText *Self, int64_t Elapsed, int64_t CurrentTime)
@@ -2764,6 +2811,8 @@ static ERR text_drag_timer(extVectorText *Self, int64_t Elapsed, int64_t Current
    if (Self->txDragging and Self->txDragPending) extend_mouse_selection(Self);
    return ERR::Terminate;
 }
+
+//********************************************************************************************************************
 
 static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
 {
@@ -2845,6 +2894,7 @@ static TextCharClass text_character_class(uint32_t Unicode)
          [](const TextUnicodeRange &Range, uint32_t Value) { return Range.last < Value; });
       return (match != Ranges.end()) and (match->first <= Unicode);
    };
+
    if ((Unicode IS '_') or in_ranges(glTextWordRanges)) return TextCharClass::WORD;
    if (in_ranges(glTextWhitespaceRanges)) return TextCharClass::SPACE;
    return TextCharClass::SEPARATOR;
@@ -2856,9 +2906,11 @@ static TextCharClass text_character_class(uint32_t Unicode)
 static const std::vector<TextCharClass> & text_character_classes(TextLine &Line)
 {
    if (Line.classesValid) return Line.characterClasses;
+
    auto &classes = Line.characterClasses;
    classes.clear();
    auto remaining = std::string_view(Line);
+
    while (not remaining.empty()) {
       int length;
       const auto unicode = UTF8ReadValue(remaining, &length);
@@ -3011,6 +3063,7 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
    Self->txCursor.validate_position(Self);
    auto &cursor = Self->txCursor;
    TextPosition position { cursor.row(), cursor.column() };
+
    if (not shift and ((Event->Code IS KEY::LEFT) or (Event->Code IS KEY::RIGHT)) and
        ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL)) {
       int row, column, end_row, end_column;
@@ -3077,7 +3130,9 @@ static ERR routed_text_key(const evKey *Event, APTR Meta)
 static void key_event(evKey *Event, int Size, extVectorText *Self)
 {
    CursorUpdate update(Self);
+
    if (not Self->needs_caret_geometry()) return;
+
    Self->txMouseShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
    if ((Event->Qualifiers & KQ::PRESSED) IS KQ::NIL) return;
 
@@ -3340,6 +3395,7 @@ void morph_text_carets(extVectorText *Self, const agg::trans_single_path &Transf
          Transform.transform(&caret.x2, &caret.y2);
       }
    }
+
    Self->txCursor.reset_vector(Self);
    rebuild_selection(Self);
 }
@@ -3365,11 +3421,14 @@ static void selection_changed(extVectorText *Self)
 static void report_cursor_move(extVectorText *Self)
 {
    if (Self->txCursorUpdateDepth or Self->txReportingCursor) return;
+
    const bool selected = (Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL;
+
    const bool changed = Self->txCursorChanged or (Self->txReportedRow != Self->txCursor.row()) or
       (Self->txReportedColumn != Self->txCursor.column()) or (Self->txReportedSelection != selected) or
       (selected and ((Self->txReportedSelectRow != Self->txCursor.selectRow) or
        (Self->txReportedSelectColumn != Self->txCursor.selectColumn)));
+
    auto remember_position = [&]() {
       Self->txReportedRow = Self->txCursor.row();
       Self->txReportedColumn = Self->txCursor.column();
@@ -3529,12 +3588,14 @@ static bool replace_selection(extVectorText *Self, std::string_view Value)
 void TextCursor::position(extVectorText *Vector, int Row, int Column, bool ValidateWidth)
 {
    if (Vector->txLines.empty()) Vector->txLines.resize(1);
+
    Row = std::clamp(Row, 0, int(Vector->txLines.size()) - 1);
    Column = std::max(0, Column);
    if (ValidateWidth) {
       const auto max_col = Vector->txLines[Row].utf8Length();
       Column = std::min(Column, max_col);
    }
+
    mRow = Row;
    mColumn = Column;
    preferredColumn = -1;
@@ -3563,8 +3624,10 @@ void TextCursor::extend(extVectorText *Vector, int Row, int Column)
    }
 
    position(Vector, Row, Column, true);
+
    if ((selectRow != mRow) or (selectColumn != mColumn)) Vector->txFlags |= VTXF::AREA_SELECTED;
    else Vector->txFlags &= ~VTXF::AREA_SELECTED;
+
    selection_changed(Vector);
 }
 
@@ -3693,6 +3756,7 @@ static const FieldArray clTextFields[] = {
    { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_Weight, TEXT_SET_Weight },
    { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
+   { "StrokeWidth",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, TEXT_SET_StrokeWidth },
    { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
    { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Face, TEXT_SET_Face },
    { "FontSize",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
