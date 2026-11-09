@@ -209,6 +209,33 @@ end
    assert(isRed(bmp, 10, 10), 'The referencing pattern should inherit from the cycle once')
 end
 
+@Test function PatternCascadeOverridesPresentationAndHref()
+   local scene <close> = newScene(100, 50)
+   obj.new('svg', { target=scene, statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg">
+         <style>
+            pattern { overflow: hidden; opacity: 0.7 }
+            .selected { overflow: visible; opacity: 0.8 }
+            #pattern_cascade { overflow: hidden !important }
+         </style>
+         <defs>
+            <pattern id="pattern_base" width="10" height="10" overflow="visible" opacity="0.1">
+               <rect width="10" height="10"/>
+            </pattern>
+            <pattern id="pattern_cascade" class="selected" href="#pattern_base"
+               overflow="visible" opacity="0.2" style="overflow: visible; opacity: 0.9"/>
+            <pattern id="pattern_invalid" href="#pattern_base" overflow="visible"
+               style="overflow: hidden; overflow: nonsense"/>
+         </defs>
+      </svg>
+   ]] })
+   local pattern = findPattern(scene, 'pattern_cascade')
+   assert(pattern.viewport.overflow is VOF_HIDDEN, 'Important CSS must override inline and presentation overflow')
+   assert(math.abs(pattern.opacity - 0.9) < 0.0001, 'Inline opacity must override stylesheet and href values')
+   assert(findPattern(scene, 'pattern_invalid').viewport.overflow is VOF_HIDDEN,
+      'An invalid later overflow must preserve the earlier valid declaration')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Export and reload
 

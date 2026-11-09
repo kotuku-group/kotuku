@@ -387,8 +387,10 @@ end
 @Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0xa95283ef) end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0x86937dc1) end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xaaa3ec5b) end
-@Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x34ca56b0) end
-@Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x0f56620c) end
+-- These fixtures inherit text-anchor="middle" from a group.  The old hashes represented left-aligned labels;
+-- removing only that group attribute reproduces the old hashes exactly.  Centre anchoring is now applied.
+@Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x40930c88) end
+@Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0xc6a28bc8) end
 @Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2a996913) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0x9dbdcd62) end
 

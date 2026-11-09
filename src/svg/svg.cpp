@@ -140,6 +140,7 @@ struct svgState {
    std::string m_font_size;
    std::string m_font_family;
    std::string m_font_style;  // VectorText FontStyle descriptors from font-stretch, font-style etc; empty if undefined
+   std::unordered_map<uint32_t, std::string> m_text_properties; // Computed values, distinct from XML declarations
    std::string m_display;
    std::string m_visibility;
    double  m_font_size_px;    // Converted from m_font_size
@@ -172,6 +173,8 @@ public:
    void proc_svg(XTag &, OBJECTPTR, objVector *&) noexcept;
 
 private:
+   ERR resolve_text_property(uint32_t, std::string_view, const svgState &) noexcept;
+   ERR apply_text_properties(objVectorText *) const noexcept;
    void applyTag(const XTag &) noexcept;
    void applyStateToVector(objVector *) const noexcept;
    const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
@@ -660,13 +663,12 @@ static constexpr auto glKotukuSVGNamespace = strhash("http://www.kotuku.dev/xmln
 //********************************************************************************************************************
 
 static ERR  animation_timer(extSVG *, int64_t, int64_t);
-static void convert_styles(objXML::TAGS &);
 static double read_unit(std::string_view &);
 
 static ERR  init_svg(void);
 static ERR  init_rsvg(void);
 
-static void process_rule(extSVG *, objXML::TAGS &, KatanaRule *);
+static void prepare_styles(objXML::TAGS &);
 
 static ERR  save_svg_scan(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_defs(extSVG *, objXML *, objVectorScene *, int);
