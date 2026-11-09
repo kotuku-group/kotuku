@@ -1,8 +1,9 @@
--- Preview: the Preview panel at the top of the centre column.  Its footer holds the Paragraph / Waterfall and the
--- Compare / Edit text button groups.  The preview shows the sample text in the picker's current family, style, size,
--- spacing, kerning, alignment, paint (fill, stroke and effects) and letter case.  In Compare mode a frozen copy of the settings is
--- shown beside the live settings, and clicking the frozen pane swaps the two.  While Edit text is pressed, the live
--- paragraph is an editable VectorText and the sample text buttons are shown in the footer.
+-- Preview: the Preview panel at the top of the centre column.  Its footer holds the Paragraph / Waterfall group, a
+-- button that sets the preview background, and the Compare / Edit text group.  The preview shows the sample text in
+-- the picker's current family, style, size, spacing, kerning, alignment, paint (fill, stroke and effects) and letter
+-- case.  In Compare mode a frozen copy of the settings is shown beside the live settings, and clicking the frozen pane
+-- swaps the two.  While Edit text is pressed, the live paragraph is an editable VectorText and the sample text buttons
+-- are shown in the footer.
 
    import 'gui', 'gui/layout', 'gui/panel', 'gui/button'
 
@@ -269,6 +270,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       contentHeight = nil, -- Height of the page content
       editing       = false,
       liveSample    = nil, -- The live paragraph's VectorText; nil in the waterfall view
+      paneBkgds     = array<obj>, -- The background rectangles of panes with a blend mode
       liveEditable  = false, -- True if liveSample is editable
       liveBlended   = false, -- True if liveSample's pane provides the backdrop for a blend mode
       liveFace      = nil, -- The face that liveSample was created with
@@ -286,12 +288,12 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    -- does.  The meta shows the settings summary or a hint.  The bottom padding makes room for the footer.
 
    panel_theme = Picker.theme.panel
-   page_bkgd = Picker.theme.page.bkgd
-   if Picker.previewBkgd?? then page_bkgd = table.merge(page_bkgd, { fill = Picker.previewBkgd }) end
-   edge = panel_theme.bkgd.strokeWidth ?? 0
-   inset = math.ceil(edge)
-   divider_h = math.max(1, math.floor(edge))
-   footer_h = fontdialog_theme.PANEL_HEADER_H - 1 -- The footer matches the header, excluding its divider
+   page_bkgd   = Picker.theme.page.bkgd
+   body_fill   = Picker.previewBkgd ?? page_bkgd.fill -- The fill of the preview's background
+   edge        = panel_theme.bkgd.strokeWidth ?? 0
+   inset       = math.ceil(edge)
+   divider_h   = math.max(1, math.floor(edge))
+   footer_h    = fontdialog_theme.PANEL_HEADER_H - 1 -- The footer matches the header, excluding its divider
 
    self.panel = gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
@@ -307,6 +309,15 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          end
       }
    })
+
+   -- The preview's background fills the body, behind the scrolling frame.  It is kept apart from the panel's own
+   -- background, which extends under the border and the rounded corners, so that a custom fill can't show at the
+   -- panel's edges.
+
+   self.bodyFill = self.panel.body.new('VectorRectangle', {
+      name = 'PreviewBkgd', x = 0, y = 0, xOffset = 0, yOffset = 0, fill = body_fill
+   })
+   self.bodyFill.acMoveToBack()
 
    -- Footer, styled as the header: a divider above a strip in the header fill, with the panel's rounded corners
    -- at the bottom.  It holds the view buttons at the left and the mode buttons at the right.
@@ -342,6 +353,21 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          if (ID is 'water') and self.editing then self.setEditing(false, true) end
          Picker.update({ view = ID }, 'view')
       end
+   })
+
+   -- The background button opens the colour picker to change the fill of the preview's background.
+
+   self.bkgdButton = gui.button({
+      target = self.footer, x = math.round(footer_pad + self.viewSeg.width + SAMPLE_GAP), y = seg_y,
+      width = FOOTER_SEG_H, height = FOOTER_SEG_H, icon = 'tools/palette', tip = 'Preview background colour',
+      theme = { bkgd = { roundX = 3, roundY = 3 } },
+      events = {
+         activate = function()
+            chosen = fontdialog_controls.pickColour(self, self.footer,
+               fontdialog_controls.toHex(body_fill), 'Select preview background')
+            if chosen then self.setBackground(chosen) end
+         end
+      }
    })
 
    -- The mode buttons are held in a viewport anchored to the right of the footer.
@@ -453,7 +479,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       self.panes.push({ viewport = pane, tag = Tag })
 
       if blended then
-         pane.new('VectorRectangle', { width = '100%', height = '100%', fill = page_bkgd.fill })
+         self.paneBkgds.push(pane.new('VectorRectangle', { width = '100%', height = '100%', fill = body_fill }))
       end
 
       y = PANE_PAD_Y
@@ -527,11 +553,13 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          x, align = paragraphAnchor(Settings, inline)
          fields = { x = x, align = align, string = text, inlineSize = inline,
             paragraphSpacing = paragraphSpacing(Settings) }
+
          if editable then
             -- EDITABLE must be set at initialisation.  The panel does the scrolling, so the text keeps its offset.
             fields.{ textFlags = VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET, onChange = textChanged,
                onCursorMove = function() revealCaret() end }
          end
+
          sample = sampleText(pane, Settings, fields)
          top = y
          sample.y = top + math.ceil(sample.displaySize)
@@ -567,14 +595,17 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       had_focus = self.typing
 
       setTyping(false) -- The focused pane, if any, is freed without a focus notification
+
       self.content?.free()
       self.panes = array<table>
+      self.paneBkgds = array<obj>
       self.liveSample = nil
       self.liveCaption = nil
       page = self.panel.page
       self.content = page.new('VectorViewport', {
          x = 0, y = 0, width = '100%', height = '100%'
       })
+
       width = self.panel.bodySize()
       width -= 12 -- Leave room for the scrollbar, so that showing it does not cover the text
 
@@ -587,6 +618,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          self.frozenHeight = 0
          self.liveHeight = drawPane(self.content, Picker.state, 0, width, nil)
       end
+
       fitContent()
 
       if self.liveSample and self.liveEditable and (caret_row != nil) then
@@ -649,6 +681,16 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       return true
    end
 
+   -- Change the fill of the preview's background.  It is kept in Picker.previewBkgd, as for the bkgd option.
+
+   self.setBackground = function(Fill:str!)
+      Picker.previewBkgd = Fill
+      body_fill = Fill
+      self.bodyFill.fill = Fill
+      for rect in values(self.paneBkgds) do rect.fill = Fill end
+      self.panel.page.acDraw()
+   end
+
    self.swapPanes = function()
       frozen = self.frozen
       frozen ?! return
@@ -676,7 +718,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    -- caller redraws the preview itself.
 
    self.setEditing = function(On:bool, NoRender:bool)
-      On = On ?? false
+      On ??= false
       self.editing = On
       self.modeSeg.set('edit', On)
       self.sampleRow.visibility = On ? VIS_VISIBLE : VIS_HIDDEN

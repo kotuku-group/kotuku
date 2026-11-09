@@ -359,9 +359,55 @@ fontdialog_controls.splitAlpha = function(Colour:str!):<str, num>
 end
 
 @Doc(text=[[
+@desc Open the colour picker dialog with Colour and wait for it to close.  Owner keeps the script that runs the dialog,
+so that it is loaded once per control.
+@input Owner: a table that holds the dialog script between calls
+@input Target: an object of the font dialog; the picker is closed if it is freed first
+@input Colour: the initial colour, as a CSS string
+@input Title: the dialog's title
+@result The chosen colour as `#RRGGBB`, or nil if the dialog was cancelled.
+]])
+fontdialog_controls.pickColour = function(Owner:table!, Target:obj!, Colour:str!, Title:str!):str
+   -- Using a script to open the colour picker is more resource efficient (no pre-loading of the import)
+   -- The parent dependency ensures the picker window is closed if the font dialog is closed first
+
+   Owner.picker_script ?= obj<tiri> { string = [[
+      import 'gui/colourpicker', 'json'
+
+      self = obj.find('self')
+      parent = obj.find(tonumber(arg('parent')))
+      proc = processing.new({ signals = array<obj> { self, parent }, mode = 'any' })
+
+      gui.dialog.colour({
+         colour   = arg('colour'),
+         title    = arg('title'),
+         modal    = false,
+         feedback = function(Colour)
+            if Colour?? then
+               self.acSetKey('result', json.encode(Colour))
+            end
+            proc.signal()
+         end
+      })
+      proc.sleep()
+   ]] }
+
+   script = Owner.picker_script
+   script.acSetKey('parent', tostring(Target.id))
+   script.acSetKey('colour', Colour)
+   script.acSetKey('title', Title)
+   script.acSetKey('result', '') -- Clear the result of a previous run, so that a cancel is not taken as a choice
+   msg('Waiting on colour dialog')
+   check script.acActivate()
+   _, result = script.acGetKey('result')
+   if not result?? then return nil end
+   return hexColour(json.decode(result))
+end
+
+@Doc(text=[[
 @desc Create a colour button: a swatch, the hex value and a `Colour Picker` note.  Clicking it opens the colour picker
 dialog with the current colour, and a chosen colour replaces it.
-@input Options: x, y, width, colour (CSS string), onChange(Hex)
+@input Options: x, y, width, colour (CSS string), dialogTitle, onChange(Hex)
 @result Table with `button`, `colour` and `set(Colour)`
 ]])
 fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
@@ -379,38 +425,9 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
       },
       events = {
          activate = function()
-            -- Using a script to open the colour picker is more resource efficient (no pre-loading of the import)
-            -- The parent dependency ensures the picker window is closed if the font dialog is closed first
-
-            cb.button.picker_script ?= obj<tiri> { string = [[
-               import 'gui/colourpicker', 'json'
-
-               self = obj.find('self')
-               parent = obj.find(tonumber(arg('parent')))
-               proc = processing.new({ signals = array<obj> { self, parent }, mode = 'any' })
-
-               gui.dialog.colour({
-                  colour   = arg('colour'),
-                  title    = 'Select font colour',
-                  modal    = false,
-                  feedback = function(Colour)
-                     if Colour?? then
-                        self.acSetKey('result', json.encode(Colour))
-                     end
-                     proc.signal()
-                  end
-               })
-               proc.sleep()
-            ]] }
-
-            cb.button.picker_script.acSetKey('parent', tostring(Target.id))
-            cb.button.picker_script.acSetKey('colour', cb.colour)
-            msg('Waiting on colour dialog')
-            check cb.button.picker_script.acActivate()
-            _, result = cb.button.picker_script.acGetKey('result')
-            if result?? then
-               Colour = json.decode(result)
-               cb.set(hexColour(Colour))
+            chosen = fontdialog_controls.pickColour(cb, Target, cb.colour, Options.dialogTitle ?? 'Select font colour')
+            if chosen then
+               cb.set(chosen)
                Options.onChange?(cb.colour)
             end
          end
