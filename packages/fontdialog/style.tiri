@@ -194,6 +194,10 @@ fontdialog_style.fontStyle = function(State:table!):str
    return parts.concat(';')
 end
 
+function tidy(Value:num!):num
+   return math.round(Value * 1000) / 1000
+end
+
 -- Settings that exist only for families with glyph outlines.
 
 OUTLINE_SETTINGS <const> = array<str> {
@@ -251,7 +255,7 @@ function paintParts(State:table!):array<str>
 
    if State.strokeOn then
       parts.push(f'stroke={fontdialog_controls.withAlpha(State.strokeColour, State.strokeOpacity)}')
-      parts.push(f'strokeWidth={State.strokeWidth}')
+      parts.push(f'strokeWidth={tidy(State.strokeWidth)}em')
       parts.push(f'lineJoin={State.strokeJoin}')
    else
       parts.push('stroke=none')
@@ -278,10 +282,6 @@ end
 
 -- The definition keys for the line height, spacing and OpenType features.  Slider steps are rounded, as accumulated floating point error
 -- would otherwise appear in the definition.
-
-function tidy(Value:num!):num
-   return math.round(Value * 1000) / 1000
-end
 
 function layoutParts(State:table!):array<str>
    parts = array<str>
@@ -348,6 +348,13 @@ end
 fontdialog_style.readDef = function(Def:str!):table
    local _, result = check mVec.ReadTextStyle(Def)
    return result
+end
+
+-- The stroke width as a multiple of the font size.  Absolute widths are converted at the given size in pixels.
+
+function strokeEm(Width:str!, Size:num!):num
+   if Width.endsWith('em') then return tidy(unitValue(Width, 'em')) end
+   return tidy(fontdialog_sizing_pixels(Width) / Size)
 end
 
 @Doc(text=[[
@@ -430,7 +437,7 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
       if State.strokeOn and settings.stroke then State.strokeOpacity = stroke_alpha end
    end
 
-   if settings.strokeWidth then State.strokeWidth = unitValue(settings.strokeWidth, 'px') end
+   if settings.strokeWidth then State.strokeWidth = strokeEm(settings.strokeWidth, State.size) end
    if settings.lineJoin then State.strokeJoin = settings.lineJoin end
 
    if settings.shadow then

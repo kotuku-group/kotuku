@@ -27,6 +27,422 @@ function sendKey(Code:num!, Qualifiers:num, Unicode:num)
    processing.sleep(0)
 end
 
+function caret(Input:table!):obj
+   local child:obj = Input.text.child
+   while child do
+      if child.name is 'vtcursor' then return child end
+      child = child.next
+   end
+   raise 'The input must have an editing caret'
+end
+
+@Test function ControlKReportsChangesAndRetypingTheOriginalValue()
+   local changes = array<str>
+   local surface <close>, input = fixture({ text='q', maxLength=1, inputMask='^[a-z]+$', maskMode='keystroke',
+      events={ change=function(Event) changes.push(Event.text) end } })
+   sendKey(KEY_K, KQ_CTRL)
+   assert(input.getText() is '' and #changes is 1 and changes[0] is '',
+      'Ctrl+K must report clearing a populated input exactly once')
+   sendKey(KEY_K, KQ_CTRL)
+   assert(#changes is 1, 'Ctrl+K on an empty input must not report another change')
+   sendKey(KEY_Q, 0, 113)
+   assert(input.getText() is 'q' and #changes is 2 and changes[1] is 'q',
+      'Retyping the previous value after Ctrl+K must report a new change')
+   sendKey(KEY_Q, 0, 113)
+   assert(input.getText() is 'q' and #changes is 2, 'Typing must still enforce maxLength after Ctrl+K')
+   sendKey(KEY_K, KQ_CTRL)
+   sendKey(KEY_Q, 0, 49)
+   assert(input.getText() is '' and #changes is 3, 'Typing must still enforce the keystroke mask after Ctrl+K')
+end
+
+@Test function ControlKHonoursTheChangeVeto()
+   local changes = 0
+   local surface <close>, input = fixture({ text='abc',
+      events={ change=function(Event) changes++; return false end } })
+   sendKey(KEY_K, KQ_CTRL)
+   assert(input.getText() is 'abc' and changes is 1, 'A change veto must restore text deleted by Ctrl+K')
+end
+
+@Test function FocusedReadOnlyInputBecomesEditableImmediately()
+   for initially_read_only in {0 to 2} do
+      for refocus in {0 to 2} do
+         local changes = 0
+         local surface <close>, input, root = fixture({ text='abc', readOnly=(initially_read_only != 0),
+            events={ change=function(Event) changes++ end } })
+         input.setReadOnly(true)
+         if refocus != 0 then
+            check root.acFocus()
+            check input._textClip.acFocus()
+            processing.sleep(0)
+         end
+         input.setReadOnly(false)
+         input.setReadOnly(false)
+         assert(caret(input).visibility is VIS_VISIBLE, 'Enabling a focused input must show its caret immediately')
+         sendKey(KEY_END)
+         sendKey(KEY_Q, 0, 113)
+         assert(input.getText() is 'abcq' and changes is 1,
+            'Enabling a focused input must accept typing once without a focus change')
+
+         input.setReadOnly(true)
+         assert(caret(input).visibility is VIS_HIDDEN, 'Making an input read-only must hide the caret immediately')
+         sendKey(KEY_K, KQ_CTRL)
+         sendKey(KEY_DELETE)
+         sendKey(KEY_Q, 0, 113)
+         assert(input.getText() is 'abcq' and changes is 1, 'Read-only inputs must block deletion and typing')
+      end
+   end
+end
+
+@Test function EnablingUnfocusedInputWaitsForFocus()
+   local surface <close>, input, root = fixture({ text='abc', readOnly=true })
+   check root.acFocus()
+   input.setReadOnly(false)
+   assert(caret(input).visibility is VIS_HIDDEN, 'Enabling an unfocused input must leave its caret hidden')
+   sendKey(KEY_Q, 0, 113)
+   assert(input.getText() is 'abc', 'Enabling an unfocused input must not capture keyboard events')
+   check input._textClip.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_END)
+   sendKey(KEY_Q, 0, 113)
+   assert(input.getText() is 'abcq', 'An enabled input must accept typing once it gains focus')
+   check root.acFocus()
+   sendKey(KEY_Q, 0, 113)
+   assert(input.getText() is 'abcq', 'Losing focus must stop keyboard editing after enabling an input')
+end
+
+@Test function SetTextUpdatesTheActivationBaseline()
+   local reports = array<str>
+   local surface <close>, input, root = fixture({ text='a',
+      events={ activate=function(Event) reports.push(f'{Event.state}:{Event.text}') end } })
+   check root.acFocus()
+   processing.sleep(0)
+   assert(#reports is 1 and reports[0] is 'lost-focus:a', 'Losing focus must report the initial text once')
+
+   input.setText('b')
+   check input._textClip.acFocus()
+   processing.sleep(0)
+   check root.acFocus()
+   processing.sleep(0)
+   assert(#reports is 1, 'Losing focus after setText() without an edit must not report an activation')
+
+   check input._textClip.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_END)
+   sendKey(KEY_BACKSPACE)
+   sendKey(KEY_A, 0, 97)
+   check root.acFocus()
+   processing.sleep(0)
+   assert(input.getText() is 'a' and #reports is 2 and reports[1] is 'lost-focus:a',
+      'Retyping the previously reported text after setText() must report a lost-focus activation')
+end
+
+@Test function RejectedEditsRestoreTheCaret()
+   local surface <close>, input = fixture({ text='a1', inputMask='^[a-z][0-9]$', maskMode='keystroke' })
+   sendKey(KEY_END)
+   sendKey(KEY_BACKSPACE)
+   assert(input.getText() is 'a1', 'The keystroke mask must reject a backspace that breaks the pattern')
+   assert(input.text.cursorRow is 0 and input.text.cursorColumn is 2,
+      f'A rejected backspace must restore the caret to column 2, not {input.text.cursorColumn}')
+
+   sendKey(KEY_HOME)
+   sendKey(KEY_RIGHT)
+   sendKey(KEY_X, 0, 120)
+   assert(input.getText() is 'a1' and input.text.cursorColumn is 1,
+      'A rejected insertion must restore the caret to the insertion point')
+
+   sendKey(KEY_DELETE)
+   assert(input.getText() is 'a1' and input.text.cursorColumn is 1,
+      'A rejected deletion must leave the caret in place')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Multi-line mode
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+-- Draw the scene immediately.  Resize events are delivered before this returns, whereas a surface redraw defers them
+-- while editable text is present.
+
+function draw(Surface:obj!, Root:obj!)
+   Root.scene.bitmap = Surface.buffer
+   check Root.scene.acDraw()
+end
+
+function lines(Count:num!):str
+   local list = array<str>
+   for i in {0 to Count} do list.push(f'line {i}') end
+   return list.concat('\n')
+end
+
+-- True if the caret's line box is entirely inside the view.
+
+function caretVisible(Input:table!):bool
+   local _, _, y, h = check Input.text.mtGetCaretBounds(-1, -1)
+   local top = y + Input.page.y
+   return (top >= 0) and (top + h <= Input._textView.height)
+end
+
+@Test function MultilineEnterInsertsALineAndControlEnterActivates()
+   local reports = array<str>
+   local surface <close>, input = fixture({ multiline=true, text='ab',
+      events={ activate=function(Event) reports.push(f'{Event.state}:{Event.text}') end } })
+   sendKey(KEY_END)
+   sendKey(KEY_ENTER)
+   sendKey(KEY_NP_ENTER)
+   assert(input.getText() is 'ab\n\n' and #reports is 0, 'Enter must insert lines without activating')
+   sendKey(KEY_ENTER, KQ_CTRL)
+   assert(input.getText() is 'ab\n\n' and #reports is 1 and reports[0] is 'activated:ab\n\n',
+      'Ctrl+Enter must activate without inserting a line')
+end
+
+@Test function MultilineControlEnterPreservesTheBlurActivation()
+   local reports = array<str>
+   local surface <close>, input, root = fixture({ multiline=true, text='draft',
+      events={ activate=function(Event) reports.push(Event.state) end } })
+   input.setText('draft')
+   sendKey(KEY_END)
+   sendKey(KEY_A, 0, 97)
+   sendKey(KEY_ENTER, KQ_CTRL)
+   check root.acFocus()
+   processing.sleep(0)
+   assert(#reports is 2 and reports[0] is 'activated' and reports[1] is 'lost-focus',
+      'Ctrl+Enter must not suppress the later blur activation of an edited multiline draft')
+end
+
+@Test function MultilineDefaultsAndPlacement()
+   local surface <close>, input = fixture({ multiline=true, placeholder='Notes' })
+   local _, _, top, line_h = check input.text.mtGetCaretBounds(0, 0)
+   assert(input._textView.height >= (top * 2) + (line_h * 4), 'The default height must fit four lines')
+   assert(input._textView.height < (top * 2) + (line_h * 5), 'The default height must not fit five lines')
+   assert(input.placeholder.parent.id is input.page.id and input.placeholder.y is input.text.y,
+      'The placeholder must sit at the top of the page with the text')
+   assert(top < line_h, 'The first line must be at the top of the box, not centred')
+
+   local rejected = false
+   try
+      gui.input({ target=input.viewport.parent, multiline=true, secret=true })
+   except
+      rejected = true
+   end
+   assert(rejected, 'multiline must not be combined with secret')
+
+   local labelled = gui.input({ target=input.viewport.parent, y=100, multiline=true, label='Notes:' })
+   assert(labelled.labelText.y < line_h + top + 4, 'A side label must align with the first line')
+end
+
+-- Ported from the colour picker's description areas: appending lines past the bottom grows the page and keeps the
+-- caret visible, and the beginning remains reachable while the caret stays at the end.
+
+function verifyAppend(Text:str!, Row:num!, Column:num!)
+   local surface <close>, input, root = fixture({ multiline=true, width=200 })
+   input.setText(Text)
+   draw(surface, root)
+   local initial_height = input.page.height
+   input.text.cursorRow = Row
+   input.text.cursorColumn = Column
+   for _ in {0 to 8} do sendKey(KEY_ENTER) end
+   sendKey(KEY_A, 0, 97)
+   draw(surface, root)
+   assert(input.text.cursorRow is Row + 8, 'The fixture must append eight lines at the end')
+   assert(input.page.height >= initial_height + (8 * input.text.lineSpacing) - 1,
+      'The page must grow by the full height of the appended lines')
+   assert(caretVisible(input), 'The caret must stay visible while appending')
+   assert(input.page.y is math.floor(input.page.y), 'The page must stay on whole pixels')
+
+   input.scrollbar.scrollPage(0, 10000)
+   assert(input.page.y is 0 and input.text.cursorRow is Row + 8,
+      'Scrolling to the top must reveal the beginning, even while the caret stays at the end')
+end
+
+@Test function AppendingLinesKeepsTheBeginningScrollable()
+   verifyAppend(lines(30), 29, 7)
+end
+
+@Test function AppendingWrappedLinesKeepsTheBeginningScrollable()
+   local text = ('one two three four five six seven eight nine ten. ').rep(20)
+   verifyAppend(text, 0, #text)
+end
+
+@Test function MovingTheCaretUpRevealsIt()
+   local surface <close>, input, root = fixture({ multiline=true, text=lines(12) })
+   draw(surface, root)
+   input.text.cursorRow = 11
+   assert(input.page.y < 0 and caretVisible(input), 'A programmatic caret move must reveal the caret')
+   for _ in {0 to 11} do
+      sendKey(KEY_UP)
+      assert(caretVisible(input), f'Moving up must keep the caret visible (row {input.text.cursorRow})')
+   end
+   assert(input.text.cursorRow is 0 and input.page.y is 0, 'Reaching the first line must scroll to the top')
+end
+
+@Test function DeletingTextShrinksThePage()
+   local surface <close>, input, root = fixture({ multiline=true, text=lines(20) })
+   draw(surface, root)
+   input.text.cursorRow = 19
+   assert(input.page.y < 0, 'The fixture must scroll to the end')
+   sendKey(KEY_A, KQ_CTRL)
+   sendKey(KEY_BACKSPACE)
+   draw(surface, root)
+   assert(input.getText() is '', 'Select-all and Backspace must clear the text')
+   assert(input.page.height is input._textView.height and input.page.y is 0,
+      'Clearing the text must shrink the page to the view and clamp the scroll position')
+   assert(input.scrollbar.vbar.viewport.visibility is VIS_HIDDEN, 'The scrollbar must hide when nothing overflows')
+end
+
+@Test function ResizingRewrapsAndRefits()
+   local text = ('one two three four five six. ').rep(6)
+   local surface <close>, input, root = fixture({ multiline=true, text=text })
+   draw(surface, root)
+   local inline_size = input.text.inlineSize
+   local height = input.page.height
+   assert(input.scrollbar.vbar.viewport.visibility is VIS_VISIBLE, 'The fixture text must overflow')
+   assert(inline_size is input._textView.width - 8, 'The text must wrap to the view, beside the scrollbar')
+
+   input.viewport.width = 120
+   draw(surface, root)
+   assert(input.text.inlineSize is input._textView.width - 8 and input.text.inlineSize < inline_size,
+      'Narrowing the widget must rewrap the text')
+   assert(input.page.height > height, 'Narrower text must lengthen the page')
+
+   input.viewport.width = 400
+   input.viewport.height = 300
+   draw(surface, root)
+   draw(surface, root) -- Hiding the scrollbar widens the view after the first resize event
+   assert(input.page.height is input._textView.height and input.page.y is 0,
+      'A box taller than the text must fit the page to the view')
+   assert(input.scrollbar.vbar.viewport.visibility is VIS_HIDDEN, 'The scrollbar must hide when the text fits')
+   assert(input.text.inlineSize is input._textView.width - 8, 'The text must use the full width without a scrollbar')
+end
+
+@Test function MaxLengthRejectsAMultilinePaste()
+   local surface <close>, input = fixture({ multiline=true, text='ab\ncd', maxLength=10 })
+   local clipboard <close> = obj.new('Clipboard')
+   check clipboard.mtAddText('xx\nyy\nzz')
+   defer
+      local clear <close> = obj.new('Clipboard')
+      clear.mtRemove(CLIPTYPE_TEXT)
+   end
+   input.text.cursorRow = 1
+   input.text.cursorColumn = 1
+   sendKey(KEY_V, KQ_CTRL)
+   assert(input.getText() is 'ab\ncd', 'A paste beyond maxLength must be rejected')
+   assert(input.text.cursorRow is 1 and input.text.cursorColumn is 1,
+      'A rejected paste must restore the caret row and column')
+
+   sendKey(KEY_ENTER)
+   sendKey(KEY_ENTER)
+   sendKey(KEY_ENTER)
+   sendKey(KEY_ENTER)
+   sendKey(KEY_ENTER)
+   sendKey(KEY_ENTER)
+   assert(input.getText() is 'ab\nc\n\n\n\n\nd', 'Newlines must count as one character each towards maxLength')
+end
+
+@Test function SetTextReturnsToTheTop()
+   local surface <close>, input, root = fixture({ multiline=true, text=lines(20) })
+   draw(surface, root)
+   input.text.cursorRow = 19
+   assert(input.page.y < 0, 'The fixture must scroll to the end')
+   input.setText(lines(25))
+   draw(surface, root)
+   assert(input.page.y is 0, 'setText() must scroll back to the top')
+   assert(input.page.height > input._textView.height, 'setText() must refit the page to the new text')
+end
+
+@Test function ReadOnlyMultilineRetainsItsScrollExtent()
+   for initially_read_only in {0 to 2} do
+      local surface <close>, input, root = fixture({ multiline=true, readOnly=(initially_read_only != 0), text='abc' })
+      input.setReadOnly(true)
+      local text = ('one two three four five six. ').rep(20)
+      input.setText(text)
+      draw(surface, root)
+      local height = input.page.height
+      assert(height > input._textView.height, 'Read-only multiline text must retain its full scroll extent')
+      assert(input.scrollbar.vbar.viewport.visibility is VIS_VISIBLE,
+         'Overflowing read-only text must show a scrollbar')
+
+      input.viewport.width = 120
+      draw(surface, root)
+      assert(input.page.height > height, 'Resizing a read-only multiline input must refit its wrapped text')
+      input.scrollbar.scrollPage(0, -10000)
+      assert(input.page.y < 0, 'Read-only multiline text must remain scrollable')
+
+      sendKey(KEY_Q, 0, 113)
+      sendKey(KEY_BACKSPACE)
+      assert(input.getText() is text, 'Keeping caret geometry must not enable editing of read-only text')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Window theme updates
+
+@Test function InputsFollowTheWindowTheme()
+   local surface <close> = obj.new('Surface', { width=400, height=400 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { width='100%', height='100%' })
+   local light = gui.setTheme(scene, 'light')
+   local dark = gui.themes.dark
+   local plain = gui.input({ target=root, x=10, y=10, width=200, label='Name', placeholder='Type here' })
+   local multi = gui.input({ target=root, x=10, y=60, width=200, multiline=true, text=lines(20) })
+   local disabled = gui.input({ target=root, x=10, y=220, width=200, text='Fixed', disabled=true })
+   local styled = gui.input({ target=root, x=10, y=260, width=200, theme={ bkgd={ fill='#ff0000' } } })
+   check surface.acShow()
+   draw(surface, root)
+
+   local bar = multi.scrollbar.vbar
+   assert(bar.barBkgd.rounding, 'The multi-line scrollbar must follow the rounded border')
+   local margin = bar.sliderHostVP.y
+   assert(margin > 0, 'The multi-line scrollbar must have a margin for the rounded border')
+
+   gui.broadcastTheme(scene, gui.setTheme(scene, 'dark'))
+   assert(plain.bkgd.fill is dark.input.bkgd.fill, 'The background must take the dark theme')
+   assert(plain.text.fill is dark.input.text.fill and plain.placeholder.fill is dark.input.text.fill,
+      'The text and placeholder must take the dark text fill')
+   assert(plain.labelText.fill is dark.window.text.fill, 'The label must take the dark window text fill')
+   assert(disabled.bkgd.fill is dark.input.bkgd.fill and disabled.bkgd.opacity is dark.input.disabled.opacity,
+      'A disabled input must keep its disabled style')
+   assert(styled.bkgd.fill is '#ff0000', 'Options.theme must survive the broadcast')
+   assert(bar.theme is multi.scrollbar.theme.scrollbar_v, 'The dark multi-line scrollbar must use scrollbar_v')
+   assert(bar.barBkgd.fill is dark.scrollbar_v.bkgd.fill, 'The multi-line scrollbar must take the dark theme')
+   assert(bar.barBkgd.rounding and bar.sliderHostVP.y is margin, 'The scrollbar must keep its rounding and margin')
+
+   styled.setTheme({ bkgd={ fill='#00ff00' } })
+   assert(styled.bkgd.fill is '#00ff00', 'setTheme() must apply the per-instance override')
+
+   -- The light theme has no scrollbar_v section, so a dark section left in the scrollbar override would win.
+
+   gui.broadcastTheme(scene, gui.setTheme(scene, 'light'))
+   assert(plain.bkgd.fill is light.input.bkgd.fill and plain.text.fill is light.input.text.fill,
+      'Returning to the light theme must restore the input')
+   assert(multi.scrollbar.theme.scrollbar_v is nil, 'A stale scrollbar_v section must not survive the light theme')
+   assert(bar.barBkgd.fill is light.scrollbar.bkgd.fill, 'The multi-line scrollbar must return to the light theme')
+   assert(bar.barBkgd.rounding and bar.sliderHostVP.y is margin, 'The light scrollbar must keep its rounding')
+   assert(styled.bkgd.fill is '#00ff00', 'The override must survive the broadcast')
+   styled.setTheme(nil)
+   assert(styled.bkgd.fill is '#ff0000', 'setTheme(nil) must restore Options.theme')
+end
+
 @Test function KeypressCanConsumeBeforeAnAncestor()
    local surface <close>, widget, root = fixture({ text='abc', events={
       keypress=function(Event)

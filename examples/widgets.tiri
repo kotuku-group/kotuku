@@ -325,11 +325,11 @@ end
             gui.dialog.font({
                modal    = true,
                popOver  = win.surface,
-               feedback = function(Accepted)
-                  if not Accepted then
+               feedback = function(Result)
+                  if not Result then
                      print('Dialog was cancelled.')
                   else
-                     print("The user selected '" .. &face .. "', size " .. &pointSize .. ", style '" .. &style .. "'")
+                     print(f"The user selected '{Result.face}', size {Result.pointSize}, style '{Result.style}'")
                   end
                end
             })
