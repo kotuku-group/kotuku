@@ -133,6 +133,10 @@ static RQ shape_rendering_to_render_quality(const std::string_view Value)
 static const char * text_property_initial(uint32_t Hash)
 {
    switch (Hash) {
+      case SVF_letter_spacing:
+      case SVF_word_spacing:
+      case SVF_line_height:
+      case SVF_font_variant: return "normal";
       case SVF_font_family: return "Noto Sans";
       case SVF_font_size: return "12pt";
       case SVF_font_weight: return "400";
@@ -147,6 +151,157 @@ static const char * text_property_initial(uint32_t Hash)
       case SVF_text_decoration: return "none";
       default: return nullptr;
    }
+}
+
+// Read complete CSS numeric tokens, including exponents, before converting only the supported units.
+// ex uses the CSS half-em fallback: VectorText exposes no unrounded x-height metric.  Other metric units
+// (ch, cap, ic) and viewport units are rejected rather than assigned an unrelated reference.
+
+static bool text_length(std::string_view Value, double FontSize, double RootSize, bool Percentage, double &Pixels)
+{
+   Value = kt::font_traits::trim(Value);
+   auto number_text = Value;
+   if (number_text.starts_with('+')) number_text.remove_prefix(1);
+   double number;
+   auto [end, error] = std::from_chars(number_text.data(), number_text.data() + number_text.size(), number);
+   if ((error != std::errc()) or not std::isfinite(number)) return false;
+   auto unit = number_text.substr(end - number_text.data());
+   if (unit IS "%") {
+      if (not Percentage) return false;
+      Pixels = number * FontSize * 0.01;
+   }
+   else if (unit.empty() or iequals(unit, "px")) Pixels = number;
+   else if (iequals(unit, "rem")) Pixels = number * RootSize;
+   else if (iequals(unit, "em")) Pixels = number * FontSize;
+   else if (iequals(unit, "ex")) Pixels = number * FontSize * 0.5;
+   else if (iequals(unit, "in")) Pixels = number * 96;
+   else if (iequals(unit, "cm")) Pixels = number * (96 / 2.54);
+   else if (iequals(unit, "mm")) Pixels = number * (96 / 25.4);
+   else if (iequals(unit, "q")) Pixels = number * (96 / 101.6);
+   else if (iequals(unit, "pt")) Pixels = number * (96.0 / 72);
+   else if (iequals(unit, "pc")) Pixels = number * 16;
+   else return false;
+   return std::isfinite(Pixels);
+}
+
+static std::string text_number(double Number)
+{
+   char buffer[64];
+   auto end = std::to_chars(buffer, buffer + sizeof(buffer), Number).ptr;
+   return std::string(buffer, end);
+}
+
+// Face consumes CSV rather than CSS strings.  Reject names that cannot be represented without changing the list.
+
+static bool text_family(std::string_view Value, std::string &Result)
+{
+   Result.clear();
+   while (not Value.empty()) {
+      Value = kt::font_traits::trim(Value);
+      if (Value.empty()) return false;
+      std::string name;
+      if ((Value.front() IS '\'') or (Value.front() IS '"')) {
+         const char quote = Value.front();
+         Value.remove_prefix(1);
+         auto end = Value.find(quote);
+         if (end IS std::string_view::npos) return false;
+         name = Value.substr(0, end);
+         Value = kt::font_traits::trim(Value.substr(end + 1));
+         if (not Value.empty() and Value.front() != ',') return false;
+      }
+      else {
+         auto end = Value.find(',');
+         auto family = kt::font_traits::trim(Value.substr(0, end));
+         bool space = false;
+         for (auto c : family) {
+            if ((c IS ' ') or (c IS '\t') or (c IS '\r') or (c IS '\n')) space = true;
+            else {
+               if (not ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+                   (c >= '0' and c <= '9') or c IS '-' or c IS '_' or (unsigned char)c >= 128)) return false;
+               if (space and not name.empty()) name.push_back(' ');
+               name.push_back(c);
+               space = false;
+            }
+         }
+         Value = end IS std::string_view::npos ? std::string_view() : Value.substr(end);
+      }
+      if (name.empty() or name.find_first_of(",\\\"'") != std::string::npos) return false;
+      if (not Result.empty()) Result.push_back(',');
+      Result.append(name);
+      if (Value.empty()) return true;
+      Value.remove_prefix(1);
+      if (kt::font_traits::trim(Value).empty()) return false;
+   }
+   return false;
+}
+
+// Expand the supported ordinary font grammar atomically, retaining its declaration position in the cascade.
+
+static bool expand_text_font(std::string_view Value, std::vector<XMLAttrib> &Result)
+{
+   using kt::font_traits::trim;
+   Value = trim(Value);
+   const char *names[] = { "font-style", "font-variant", "font-weight", "font-stretch", "font-size",
+      "line-height", "font-family", "font-kerning", "font-variation-settings", "font-optical-sizing" };
+   std::string values[] = { "normal", "normal", "normal", "normal", "", "normal", "", "auto", "normal", "auto" };
+   if (iequals(Value, "inherit") or iequals(Value, "initial") or iequals(Value, "unset")) {
+      for (auto name : names) Result.push_back(XMLAttrib { name, std::string(Value) });
+      return true;
+   }
+   auto token = [&Value]() {
+      Value = trim(Value);
+      auto end = Value.find_first_of(" \t\r\n/");
+      auto word = Value.substr(0, end);
+      Value.remove_prefix(word.size());
+      return word;
+   };
+   bool assigned[4] = {};
+   int normals = 0;
+   while (not Value.empty()) {
+      auto word = token();
+      if (word.empty()) return false;
+      double size;
+      const bool size_keyword = iequals(word, "xx-small") or iequals(word, "x-small") or
+         iequals(word, "small") or iequals(word, "medium") or iequals(word, "large") or iequals(word, "x-large") or
+         iequals(word, "xx-large") or iequals(word, "xxx-large") or iequals(word, "larger") or iequals(word, "smaller");
+      // Percentages in this position are font sizes, never font-stretch.
+      if (size_keyword or (not kt::font_traits::parse_number(word) and
+          text_length(word, 16, 16, true, size))) {
+         values[4] = word;
+         break;
+      }
+      int component;
+      if (iequals(word, "normal")) { if (++normals > 4) return false; continue; }
+      if (iequals(word, "italic") or iequals(word, "oblique")) component = 0;
+      else if (iequals(word, "bold") or iequals(word, "bolder") or iequals(word, "lighter") or
+               kt::font_traits::parse_number(word)) component = 2;
+      else if (kt::font_traits::parse_width(word)) component = 3;
+      else return false; // Includes unrenderable small-caps and system-font forms.
+      if (assigned[component]) return false;
+      assigned[component] = true;
+      values[component] = word;
+      if ((component IS 0) and iequals(word, "oblique")) {
+         auto remaining = Value;
+         auto angle = token();
+         if (angle.ends_with("deg")) values[0].append(" ").append(angle);
+         else Value = remaining;
+      }
+   }
+   if (values[4].empty()) return false;
+   int components = normals;
+   for (auto assigned_component : assigned) if (assigned_component) ++components;
+   if (components > 4) return false;
+   Value = trim(Value);
+   if (Value.starts_with('/')) {
+      Value.remove_prefix(1);
+      values[5] = token();
+      if (values[5].empty()) return false;
+   }
+   std::string family;
+   if (not text_family(trim(Value), family)) return false;
+   values[6] = trim(Value);
+   for (size_t i = 0; i < std::size(names); ++i) Result.push_back(XMLAttrib { names[i], values[i] });
+   return true;
 }
 
 static constexpr auto glDecorationMask = VTXF::UNDERLINE | VTXF::OVERLINE | VTXF::LINE_THROUGH | VTXF::BLINK;
@@ -396,27 +551,49 @@ ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const
          if (not decoration_flags(Value, flags)) return ERR::InvalidValue;
          break;
       }
-      case SVF_font_family: m_font_family = computed; break;
+      case SVF_font_variant:
+         if (not iequals(Value, "normal")) return ERR::NoSupport;
+         break;
+      case SVF_font_family:
+         if (not text_family(Value, computed)) return ERR::InvalidValue;
+         m_font_family = computed;
+         break;
       case SVF_font_size: {
-         // Context-sensitive size computation is phase 2.  Reject malformed lengths before they can erase defaults.
-         auto end = Value.find_first_not_of("+-.0123456789");
-         auto number = ft::parse_number(Value.substr(0, end));
-         auto unit = (end IS std::string_view::npos) ? std::string_view() : Value.substr(end);
-         if ((not number) or (*number <= 0)) return ERR::InvalidValue;
-         if (not unit.empty() and unit != "px" and unit != "pt" and unit != "pc" and unit != "in" and
-             unit != "cm" and unit != "mm" and unit != "em" and unit != "ex" and unit != "%") {
+         double size;
+         const std::string_view keywords[] = { "xx-small", "x-small", "small", "medium", "large",
+            "x-large", "xx-large", "xxx-large" };
+         const double sizes[] = { 9, 10, 13, 16, 18, 24, 32, 48 };
+         bool keyword = false;
+         for (size_t i = 0; i < std::size(keywords); ++i) {
+            if (iequals(Value, keywords[i])) { size = sizes[i]; keyword = true; break; }
+         }
+         if (iequals(Value, "larger")) { size = Parent.m_font_size_px * 1.2; keyword = true; }
+         else if (iequals(Value, "smaller")) { size = Parent.m_font_size_px / 1.2; keyword = true; }
+         if (not keyword and not text_length(Value, Parent.m_font_size_px, m_root_font_size, true, size)) {
             return ERR::InvalidValue;
          }
-         // Match the backend's rounding threshold, including its current percentage-size limitation.
-         double used_size = SVGUnit(Value);
-         if (unit IS "em") used_size = *number * 16;
-         else if (unit IS "ex") used_size = *number * 8;
-         if (not std::isfinite(used_size) or (std::round(used_size) < 1)) return ERR::InvalidValue;
-         // The backend length reader requires a leading digit, even for valid CSS fractions such as .5em.
-         if (computed.front() IS '.') computed.insert(0, "0");
-         else if (computed.starts_with("+.")) computed.insert(1, "0");
-         m_font_size = computed;
-         m_font_size_px = SVGUnit(Value);
+         if (std::round(size) < 1) return ERR::NoSupport;
+         m_font_size_px = size;
+         m_font_size = computed = text_number(size) + "px";
+         break;
+      }
+      case SVF_letter_spacing:
+      case SVF_word_spacing:
+      case SVF_line_height: {
+         if (iequals(Value, "normal")) { computed = "normal"; break; }
+         double length;
+         if (Hash IS SVF_line_height) {
+            if (auto multiple = ft::parse_number(Value)) {
+               if (*multiple <= 0) return ERR::NoSupport; // Zero is the backend's natural-pitch sentinel.
+               computed = text_number(*multiple); // Inherit the multiplier, not this element's computed distance.
+               break;
+            }
+         }
+         if (not text_length(Value, m_font_size_px, m_root_font_size, Hash IS SVF_line_height, length)) {
+            return ERR::InvalidValue;
+         }
+         if ((Hash IS SVF_line_height) and (length <= 0)) return ERR::NoSupport;
+         computed = text_number(length) + "px";
          break;
       }
    }
@@ -432,6 +609,19 @@ ERR svgState::apply_text_properties(objVectorText *Text) const noexcept
    if (auto error = Text->setWeight(m_font_weight ? m_font_weight : 400); error != ERR::Okay) return error;
    if (auto error = Text->setFontStyle(m_font_style.empty() ? "Regular" : m_font_style); error != ERR::Okay) {
       return error;
+   }
+
+   for (auto hash : { SVF_letter_spacing, SVF_word_spacing, SVF_line_height }) {
+      Unit length(0);
+      auto it = m_text_properties.find(hash);
+      if ((it != m_text_properties.end()) and (it->second != "normal")) {
+         auto multiple = kt::font_traits::parse_number(it->second);
+         if ((hash IS SVF_line_height) and multiple) length = Unit(*multiple, FD_SCALED);
+         else length = Unit(it->second);
+      }
+      auto error = hash IS SVF_line_height ? Text->setLineHeight(length) :
+         (hash IS SVF_letter_spacing ? Text->setLetterSpacing(length) : Text->setWordSpacing(length));
+      if (error != ERR::Okay) return error;
    }
 
    auto anchor = m_text_properties.find(SVF_text_anchor);
@@ -509,12 +699,33 @@ void svgState::applyTag(const XTag &Tag) noexcept
 
    const auto parent = *this;
    m_text_properties.erase(SVF_text_decoration); // Decoration propagation needs a future styled-run model.
-   for (size_t a=1; a < Tag.Attribs.size(); a++) {
+   std::vector<XMLAttrib> declarations;
+   for (size_t a = 1; a < Tag.Attribs.size(); ++a) {
       const auto &attr = Tag.Attribs[a];
-      if (text_property_initial(strhash(attr.Name))) {
-         if (auto error = resolve_text_property(strhash(attr.Name), attr.Value, parent); error != ERR::Okay) {
+      if (strhash(attr.Name) IS SVF_font) {
+         std::vector<XMLAttrib> expanded;
+         bool valid = expand_text_font(attr.Value, expanded);
+         auto candidate = *this;
+         for (const auto &item : expanded) {
+            if (candidate.resolve_text_property(strhash(item.Name), item.Value, parent) != ERR::Okay) valid = false;
+         }
+         if (valid) declarations.insert(declarations.end(), expanded.begin(), expanded.end());
+         else log.warning("Invalid or unsupported font shorthand: %s", attr.Value.c_str());
+      }
+      else if (text_property_initial(strhash(attr.Name))) declarations.push_back(attr);
+   }
+   // Compute font-size first: spacing lengths use this element's final computed size regardless of source order.
+   for (bool sizes : { true, false }) {
+      for (const auto &attr : declarations) {
+         auto hash = strhash(attr.Name);
+         if ((hash IS SVF_font_size) != sizes) continue;
+         if (auto error = resolve_text_property(hash, attr.Value, parent); error != ERR::Okay) {
             log.warning("Invalid or unsupported text property '%s': %s", attr.Name.c_str(), attr.Value.c_str());
          }
+      }
+      if (sizes and not m_has_root_font_size and iequals(Tag.name(), "svg")) {
+         m_root_font_size = m_font_size_px;
+         m_has_root_font_size = true;
       }
    }
 
@@ -3606,7 +3817,8 @@ void svgState::process_attrib(XTag &Tag, objVector *Vector) noexcept
       if (name.find(':') != std::string::npos) continue; // Do not interpret non-SVG attributes, e.g. 'inkscape:dx'
       if (name == "_id") continue; // Ignore temporary private attribs like '_id'
 
-      if (text_property_initial(strhash(name))) continue; // Resolved once by applyTag(), including on groups.
+      // Resolved once by applyTag(), including on groups.
+      if (text_property_initial(strhash(name)) or (strhash(name) IS SVF_font)) continue;
 
       log.trace("%s = %.40s", name.c_str(), value.c_str());
 
@@ -3968,23 +4180,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                //else vt->VT.SpacingAndGlyphs = FALSE;
                return ERR::NoSupport;
 
-            case SVF_font: {
-               // Officially accepted examples for the 'font' attribute:
-               //
-               //    12pt/14pt sans-serif
-               //    80% sans-serif
-               //    x-large/110% "new century schoolbook", serif
-               //    bold italic large Palatino, serif
-               //    normal small-caps 120%/120% fantasy
-               //    oblique 12pt "Helvetica Nue", serif; font-stretch: condensed
-               //
-               // [ [ <'font-style'> || <'font-variant'> || <'font-weight'> ]? <'font-size'> [ / <'line-height'> ]? <'font-family'> ] | caption | icon | menu | message-box | small-caption | status-bar | inherit
-               // TODO Add support for text font attribute
-               return ERR::NoSupport;
-            }
-
-            case SVF_font_size_adjust:
-            case SVF_font_variant: return ERR::NoSupport;
+            case SVF_font_size_adjust: return ERR::NoSupport;
 
             case SVF_rotate: {
                // SVG defines rotate as a comma or whitespace separated list of <number> values.
@@ -4005,9 +4201,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             //case SVF_xlink_href:  // Used for drawing text along a path.
             //   return ERR::Okay;
 
-            //case SVF_letter_spacing: vt->set(FID_LetterSpacing, StrValue); return ERR::Okay;
             //case SVF_pathLength:     vt->set(FID_PathLength, StrValue); return ERR::Okay;
-            //case SVF_word_spacing:   vt->set(FID_WordSpacing, StrValue); return ERR::Okay;
 
          }
          break;
