@@ -12,6 +12,8 @@
       bkgd      = '#203040',            -- fill for the preview's background
       fontDef   = 'face=Noto Sans; ...',  -- font definition; its keys override the options above
       resultFilter = { 'face', 'size' },  -- table or array of the key names to include in the Result
+      features  = { 'list', 'preview' },  -- table or array of the panels to show; all of them if omitted.  The names
+                                          -- are list, preview, sizing, style, glyphs, fill, stroke, effects, alignment
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
 
@@ -31,7 +33,6 @@
    gui.dialog ?= { }
 
 COLUMN_WIDTHS <const> = array<int> { 312, 584, 284 }
-CLIENT_WIDTH  <const> = 1180
 BODY_HEIGHT   <const> = 700
 FOOTER_HEIGHT <const> = 42
 CLIENT_HEIGHT <const> = BODY_HEIGHT + FOOTER_HEIGHT
@@ -56,10 +57,22 @@ CENTRE_INNER <const> = COLUMN_WIDTHS[1] - (SIDE_PAD * 2)
 RIGHT_INNER  <const> = COLUMN_WIDTHS[2] - SIDE_PAD - EDGE_PAD
 SCROLL_THICKNESS <const> = 10 -- The right column's scrollbar, which sits in its edge padding
 
--- The least body height at which the centre column fits.  A shorter window scales the layout down to this height.
+-- Layouts without the preview.  Up to SLIM_PANELS small panels form a single column in a slim dialog, and any more are
+-- arranged in two columns.  SLIM_INNER gives a lone column the room that the footer's three buttons need.
 
-MIN_BODY_HEIGHT <const> = EDGE_PAD + MIN_PREVIEW + GAP + fontdialog_sizing.HEIGHT + EDGE_PAD
-MIN_CLIENT_HEIGHT <const> = MIN_BODY_HEIGHT + FOOTER_HEIGHT
+SLIM_PANELS    <const> = 3
+SLIM_INNER     <const> = 312
+DOUBLE_INNER   <const> = 280 -- Width of each panel when the small panels form two columns
+MIN_LIST_BODY  <const> = 360 -- Least body height that leaves the font list usable
+MIN_STACK_BODY <const> = 200 -- Least body height of a layout that only has the scrolling stack
+
+ALL_FEATURES <const> = array<str> {
+   'list', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment'
+}
+
+-- The small panels in stacking order.  Sizing and Style are only part of the stack when there is no preview.
+
+STACK_ORDER <const> = array<str> { 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment' }
 
 DEFAULT_FACE <const> = 'Noto Sans'
 
@@ -81,6 +94,82 @@ PRESETS <const> = array<table> {
    { name = 'Code listing', faces = array<str> { 'Source Code Pro', 'Inconsolata', 'Courier Prime' },
       def = 'size=15px; Regular' }
 }
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert the features option to a set of names.  Every feature is enabled if the option is omitted.
+
+function readFeatures(Features:any):table
+   enabled = { }
+   if Features is nil then Features = ALL_FEATURES end
+   for name in values(Features) do
+      assert(name in ALL_FEATURES, f'Unknown font dialog feature \'{name}\'')
+      enabled[name] = true
+   end
+   assert(not table.empty(enabled), 'The features option must name at least one feature')
+   return enabled
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Calculate the column layout for a set of features.  The columns abut and those that are present are positioned from
+-- the left: the font list, the preview with the Sizing and Style panels below it, then the scrolling stack of small
+-- panels.  Each column has `x`, `width`, `left` (the inset of its content) and `inner` (the width of its content).
+
+function planLayout(Has:table!):table
+   stack = array<str>
+   for name in values(STACK_ORDER) do
+      if Has[name] and not (Has.preview and ((name is 'sizing') or (name is 'style'))) then stack.push(name) end
+   end
+
+   plan = { enabled = Has, stackNames = stack, stackColumns = 1, stackInner = COLUMN_WIDTHS[2] - SIDE_PAD - EDGE_PAD }
+   plan.slim = (not Has.preview) and (#stack <= SLIM_PANELS)
+
+   if not Has.preview then
+      if not plan.slim then
+         plan.stackColumns = 2
+         plan.stackInner = DOUBLE_INNER
+      elseif not Has.list then
+         plan.stackInner = SLIM_INNER
+      end
+   end
+
+   spans = array<table>
+   if Has.list then
+      plan.list = { inner = (#stack is 0 and not Has.preview) ? SLIM_INNER : LEFT_INNER }
+      spans.push(plan.list)
+   end
+   if Has.preview then
+      plan.centre = { inner = CENTRE_INNER }
+      spans.push(plan.centre)
+   end
+   if #stack > 0 then
+      plan.stack = { inner = (plan.stackInner * plan.stackColumns) + (GAP * (plan.stackColumns - 1)) }
+      spans.push(plan.stack)
+   end
+
+   x = 0
+   for i, span in spans do
+      span.x = x
+      span.left = (i is 0) ? EDGE_PAD : SIDE_PAD
+      span.width = span.left + span.inner + ((i is #spans - 1) ? EDGE_PAD : SIDE_PAD)
+      x += span.width
+   end
+
+   plan.spans = spans
+   plan.width = x
+
+   -- The least body height at which the layout fits.  A shorter window scales the layout down to this height.
+
+   plan.lowerHeight = (Has.preview and (Has.sizing or Has.style)) ? fontdialog_sizing.HEIGHT : 0
+
+   if Has.preview then
+      plan.minBody = (EDGE_PAD * 2) + MIN_PREVIEW + ((plan.lowerHeight > 0) ? plan.lowerHeight + GAP : 0)
+   else
+      plan.minBody = Has.list ? MIN_LIST_BODY : MIN_STACK_BODY
+   end
+
+   plan.minClient = plan.minBody + FOOTER_HEIGHT
+   return plan
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- The settings for a family with everything else at its default.  Fill is the page text colour of the window theme.
@@ -124,6 +213,9 @@ end
 
 gui.dialog.font = function(Options:table)
    Options ??= { }
+
+   plan = planLayout(readFeatures(Options.features))
+   client_width = plan.width
 
    self = entity {
       feedback  = Options.feedback,
@@ -296,9 +388,9 @@ gui.dialog.font = function(Options:table)
          &isTyping = Typing
       end
 
-      -- Sizing.  The layout is CLIENT_WIDTH units wide and is scaled to the width of the window.  The window's height
+      -- Sizing.  The layout is client_width units wide and is scaled to the width of the window.  The window's height
       -- is not scaled: the layout reflows to fill it, with the font list, the Preview panel and the right column's
-      -- scrolling stack taking up the difference.  A window too short for MIN_CLIENT_HEIGHT scales the layout down
+      -- scrolling stack taking up the difference.  A window too short for plan.minClient scales the layout down
       -- to fit instead.
 
       &layout = function(BodyHeight:num!)
@@ -306,12 +398,14 @@ gui.dialog.font = function(Options:table)
          &bodyHeight = BodyHeight
 
          for col in values(&columns) do col.height = BodyHeight end
-         &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2)
+         if &fontList then &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2) end
 
-         lower_y = BodyHeight - EDGE_PAD - fontdialog_sizing.HEIGHT
-         &preview.setHeight(lower_y - GAP - EDGE_PAD)
-         &sizing.panel.viewport.y = lower_y
-         &style.panel.viewport.y = lower_y
+         if &preview then
+            lower_y = BodyHeight - EDGE_PAD - plan.lowerHeight
+            &preview.setHeight(lower_y - ((plan.lowerHeight > 0) ? GAP : 0) - EDGE_PAD)
+            if &sizing then &sizing.panel.viewport.y = lower_y end
+            if &style then &style.panel.viewport.y = lower_y end
+         end
 
          &footer.y = BodyHeight
          &viewport.acDraw()
@@ -321,7 +415,7 @@ gui.dialog.font = function(Options:table)
          if &finished then return end
          surface = &window.surface
          if (surface.width <= 0) or (surface.height <= 0) then return end
-         height = math.max(MIN_CLIENT_HEIGHT, math.round(surface.height * CLIENT_WIDTH / surface.width))
+         height = math.max(plan.minClient, math.round(surface.height * client_width / surface.width))
 
          -- After a zoom, the layout keeps its height unless the window was resized by more than rounding allows.
 
@@ -337,29 +431,44 @@ gui.dialog.font = function(Options:table)
 
       function setScale(Scale:num!)
          surface = &window.surface
-         current = surface.width / CLIENT_WIDTH
+         current = surface.width / client_width
          monitor_width, monitor_height = &window.parentSize()
          upper = MAX_SCALE
-         if (monitor_width ?? 0) > 0 then upper = math.min(upper, monitor_width * SCREEN_FILL / CLIENT_WIDTH) end
+         if (monitor_width ?? 0) > 0 then upper = math.min(upper, monitor_width * SCREEN_FILL / client_width) end
          scale = math.clamp(Scale, MIN_SCALE, math.max(MIN_SCALE, upper))
          if math.abs(scale - current) < 0.001 then return end
 
          &zoomHeight = &bodyHeight + FOOTER_HEIGHT
          height = &zoomHeight * scale
          if (monitor_height ?? 0) > 0 then height = math.min(height, monitor_height * SCREEN_FILL) end
-         &window.resizeClientArea(math.round(CLIENT_WIDTH * scale), math.round(height))
+         &window.resizeClientArea(math.round(client_width * scale), math.round(height))
       end
 
-      -- Stack the right column's panels and size the scrolled page to fit them.
+      -- Stack the right column's panels and size the scrolled page to fit them.  A panel's stackColumn is only set
+      -- when the small panels form two columns.
 
       &layoutRight = function()
          if #&rightPanels is 0 then return end
-         y = EDGE_PAD
+         next_y = array<double> { EDGE_PAD, EDGE_PAD }
          for p in values(&rightPanels) do
-            p.panel.viewport.y = y
-            y += p.height + GAP
+            column = p.stackColumn ?? 0
+            p.panel.viewport.{ x = plan.stack.left + (column * (plan.stackInner + GAP)), y = next_y[column] }
+            next_y[column] += p.height + GAP
          end
-         &rightPage.height = y - GAP + EDGE_PAD
+         &rightPage.height = math.max(next_y[0], next_y[1]) - GAP + EDGE_PAD
+      end
+
+      -- Assign the panels to the shorter of the two columns.  This is done once so that a panel doesn't change columns
+      -- when its height changes.
+
+      function assignStackColumns()
+         if plan.stackColumns < 2 then return end
+         heights = array<double> { 0, 0 }
+         for p in values(&rightPanels) do
+            column = (heights[1] < heights[0]) ? 1 : 0
+            p.stackColumn = column
+            heights[column] += p.height + GAP
+         end
       end
 
       -- Close the window and notify the client once.  Result is nil for a cancellation.
@@ -417,11 +526,11 @@ gui.dialog.font = function(Options:table)
       end
 
       &window = gui.window({
-         insideWidth  = CLIENT_WIDTH,
+         insideWidth  = client_width,
          insideHeight = CLIENT_HEIGHT,
          quit         = false,
-         minWidth     = math.round(CLIENT_WIDTH * MIN_SCALE),
-         minHeight    = math.round(MIN_CLIENT_HEIGHT * MIN_SCALE),
+         minWidth     = math.round(client_width * MIN_SCALE),
+         minHeight    = math.round(plan.minClient * MIN_SCALE),
          popOver      = Options.popOver,
          icon         = Options.icon ?? 'items/font',
          title        = Options.title ?? 'Select Font',
@@ -482,83 +591,136 @@ gui.dialog.font = function(Options:table)
       &initialState = table.clone(&state)
 
       &viewport = &window.clientViewport({
-         viewX = 0, viewY = 0, viewWidth = CLIENT_WIDTH, viewHeight = CLIENT_HEIGHT
+         viewX = 0, viewY = 0, viewWidth = client_width, viewHeight = CLIENT_HEIGHT
       })
 
       &columns = array<obj>
-      x = 0
-      for _, width in COLUMN_WIDTHS do
-         &columns.push(&viewport.new('VectorViewport', { x = x, y = 0, width = width, height = BODY_HEIGHT }))
-         x += width
+      for span in values(plan.spans) do
+         span.viewport = &viewport.new('VectorViewport', {
+            x = span.x, y = 0, width = span.width, height = BODY_HEIGHT
+         })
+         &columns.push(span.viewport)
       end
+
+      enabled = plan.enabled
 
       -- Left column
 
-      &fontList = fontdialog_list.new(&&, &columns[0], {
-         x = EDGE_PAD, y = EDGE_PAD, width = LEFT_INNER, height = BODY_HEIGHT - (EDGE_PAD * 2)
-      })
-
-      -- Centre column: the preview above the Sizing and Style panels
-
-      lower_y = BODY_HEIGHT - EDGE_PAD - fontdialog_sizing.HEIGHT
-      half = math.floor((CENTRE_INNER - GAP) * 0.5)
-
-      &preview = fontdialog_preview.new(&&, &columns[1], {
-         x = SIDE_PAD, y = EDGE_PAD, width = CENTRE_INNER, height = lower_y - GAP - EDGE_PAD
-      })
-
-      &sizing = fontdialog_sizing.new(&&, &columns[1], { x = SIDE_PAD, y = lower_y, width = half })
-
-      &style = fontdialog_style.new(&&, &columns[1], {
-         x = SIDE_PAD + half + GAP, y = lower_y, width = CENTRE_INNER - half - GAP, height = fontdialog_sizing.HEIGHT
-      })
+      if enabled.list then
+         &fontList = fontdialog_list.new(&&, plan.list.viewport, {
+            x = plan.list.left, y = EDGE_PAD, width = plan.list.inner, height = BODY_HEIGHT - (EDGE_PAD * 2)
+         })
+      end
 
       -- Right column: a scrolling stack of panels.  The scrollbar sits in the column's edge padding.
 
-      col = &columns[2]
-      &rightView = col.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN })
-      &rightPage = &rightView.new('VectorViewport', {
-         x = 0, y = 0, width = COLUMN_WIDTHS[2] - SCROLL_THICKNESS, height = BODY_HEIGHT
-      })
-      &rightBar = gui.scrollbar({
-         target = col, view = &rightView, page = &rightPage, direction = 'vertical',
-         theme = { scrollbar = { thickness = SCROLL_THICKNESS } }
-      })
+      stack_options = nil
+      if plan.stack then
+         col = plan.stack.viewport
+         &rightView = col.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN })
+         &rightPage = &rightView.new('VectorViewport', {
+            x = 0, y = 0, width = plan.stack.width - SCROLL_THICKNESS, height = BODY_HEIGHT
+         })
+         &rightBar = gui.scrollbar({
+            target = col, view = &rightView, page = &rightPage, direction = 'vertical',
+            theme = { scrollbar = { thickness = SCROLL_THICKNESS } }
+         })
 
-      right = { x = SIDE_PAD, y = 0, width = RIGHT_INNER }
-      &glyphs    = fontdialog_glyphs.new(&&, &rightPage, table.merge(right, {
-         onResize = function[<weak> &&]() &layoutRight() end
-      }))
-      &fill      = fontdialog_fill.new(&&, &rightPage, right)
-      &stroke    = fontdialog_stroke.new(&&, &rightPage, right)
-      &effects   = fontdialog_effects.new(&&, &rightPage, table.merge(right, {
-         onResize = function[<weak> &&]() &layoutRight() end
-      }))
-      &alignment = fontdialog_alignment.new(&&, &rightPage, right)
+         stack_options = { x = plan.stack.left, y = 0, width = plan.stackInner }
+      end
 
-      &rightPanels = array<table> { &glyphs, &fill, &stroke, &effects, &alignment }
-      &panels = array<table> {
-         &fontList, &sizing, &style, &glyphs, &fill, &stroke, &effects, &alignment, &preview
-      }
+      -- Centre column: the preview above the Sizing and Style panels, which join the stack if there is no preview.
+
+      sizing_target, sizing_options, style_target, style_options = nil, nil, nil, nil
+
+      if enabled.preview then
+         centre = plan.centre
+         lower_y = BODY_HEIGHT - EDGE_PAD - plan.lowerHeight
+
+         &preview = fontdialog_preview.new(&&, centre.viewport, {
+            x = centre.left, y = EDGE_PAD, width = centre.inner,
+            height = lower_y - ((plan.lowerHeight > 0) ? GAP : 0) - EDGE_PAD
+         })
+
+         -- Sizing and Style share the width of the column, unless only one of them is present.
+
+         half = (enabled.sizing and enabled.style) ? math.floor((centre.inner - GAP) * 0.5) : centre.inner
+         sizing_target = centre.viewport
+         style_target  = centre.viewport
+         sizing_options = { x = centre.left, y = lower_y, width = half }
+         style_options  = {
+            x = centre.left + (enabled.sizing ? half + GAP : 0), y = lower_y,
+            width = enabled.sizing ? centre.inner - half - GAP : centre.inner
+         }
+      elseif plan.stack then
+         sizing_target = &rightPage
+         style_target  = &rightPage
+         sizing_options = table.clone(stack_options)
+         style_options  = table.clone(stack_options)
+      end
+
+      if enabled.sizing then
+         &sizing = fontdialog_sizing.new(&&, sizing_target, sizing_options)
+         &sizing.height = fontdialog_sizing.HEIGHT
+      end
+
+      if enabled.style then
+         style_options.height = fontdialog_sizing.HEIGHT
+         &style = fontdialog_style.new(&&, style_target, style_options)
+         &style.height = fontdialog_sizing.HEIGHT
+      end
+
+      function restack(Options:table!):table
+         return table.merge(Options, { onResize = function[<weak> &&]() &layoutRight() end })
+      end
+
+      if enabled.glyphs    then &glyphs    = fontdialog_glyphs.new(&&, &rightPage, restack(stack_options)) end
+      if enabled.fill      then &fill      = fontdialog_fill.new(&&, &rightPage, stack_options) end
+      if enabled.stroke    then &stroke    = fontdialog_stroke.new(&&, &rightPage, stack_options) end
+      if enabled.effects   then &effects   = fontdialog_effects.new(&&, &rightPage, restack(stack_options)) end
+      if enabled.alignment then &alignment = fontdialog_alignment.new(&&, &rightPage, stack_options) end
+
+      for name in values(plan.stackNames) do &rightPanels.push(self[name]) end
+
+      for name in values(array<str> {
+         'fontList', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment', 'preview'
+      }) do
+         if self[name] then &panels.push(self[name]) end
+      end
+
       &layoutRight()
 
       -- Footer: key hints and the dialog buttons
 
       t = &tokens
       &footer = &viewport.new('VectorViewport', {
-         x = 0, y = BODY_HEIGHT, width = CLIENT_WIDTH, height = FOOTER_HEIGHT
+         x = 0, y = BODY_HEIGHT, width = client_width, height = FOOTER_HEIGHT
       })
       &footer.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = 1, fill = t.border })
 
-      fontdialog_parts.hints(&footer, {
-         x = FOOTER_PAD, y = 0, height = FOOTER_HEIGHT, tokens = t.onWindow,
-         items = array<table> {
-            { key = 'Tab', text = 'next control' },
-            { key = 'Ctrl+F', text = 'search' },
-            { key = 'S', text = 'pin' },
-            { key = 'C', text = 'compare' }
-         }
-      })
+      -- Hints are limited to the keys that have an effect.  A slim dialog needs its width for the buttons, and in other
+      -- layouts the hints that don't fit beside the buttons are dropped.
+
+      hints = array<table>
+      if not plan.slim then
+         hints.push({ key = 'Tab', text = 'next control' })
+         if enabled.list then
+            hints.push({ key = 'Ctrl+F', text = 'search' })
+            hints.push({ key = 'S', text = 'pin' })
+         end
+         if enabled.preview then hints.push({ key = 'C', text = 'compare' }) end
+      end
+
+      hint_room = client_width - (FOOTER_PAD * 2) - FOOTER_GAP - (3 * (100 + FOOTER_GAP))
+      while #hints > 0 do
+         hint_group = &footer.new('VectorViewport', { x = 0, y = 0, width = hint_room, height = FOOTER_HEIGHT })
+         width = fontdialog_parts.hints(hint_group, {
+            x = FOOTER_PAD, y = 0, height = FOOTER_HEIGHT, tokens = t.onWindow, items = hints
+         })
+         if width <= hint_room then break end
+         hint_group.free()
+         hints.pop()
+      end
 
       function footerButton(Text:str, Primary:bool, Activate:func):table
          return gui.button({
@@ -571,7 +733,7 @@ gui.dialog.font = function(Options:table)
       &btnCancel = footerButton(Options.cancelLabel ?? 'Cancel', false, function[&&]() &cancel() end)
       &btnReset  = footerButton('Reset', false, function[&&]() &reset() end)
 
-      x = CLIENT_WIDTH - FOOTER_PAD
+      x = client_width - FOOTER_PAD
       for btn in values(array<table> { &btnSelect, &btnCancel, &btnReset }) do
          x -= btn.viewport.width
          btn.viewport.x = x
@@ -598,9 +760,8 @@ gui.dialog.font = function(Options:table)
          if (Value is KEY_F) and (Qualifiers has KQ_CTRL) then
             processing.delayedCall(function() &fontList?.focusSearch() end)
          elseif Value is KEY_ESCAPE then
-            for box in values(array<table> { &fontList.presets, &effects.blend }) do
-               if box.menu?.visible then return end
-            end
+            if &fontList and &fontList.presets.menu?.visible then return end
+            if &effects and &effects.blend.menu?.visible then return end
             processing.delayedCall(function() &cancel() end)
          elseif &isTyping then
             return
@@ -615,25 +776,33 @@ gui.dialog.font = function(Options:table)
       end)
 
       &refresh('init')
+      assignStackColumns()
+      &layoutRight()
 
       -- The window's zoom keys change the scale (see setScale()) rather than the window's view box.
 
-      &window.zoomIn    = function[<weak> &&]() setScale(&window.surface.width * ZOOM_STEP / CLIENT_WIDTH) end
-      &window.zoomOut   = function[<weak> &&]() setScale(&window.surface.width / ZOOM_STEP / CLIENT_WIDTH) end
+      &window.zoomIn    = function[<weak> &&]() setScale(&window.surface.width * ZOOM_STEP / client_width) end
+      &window.zoomOut   = function[<weak> &&]() setScale(&window.surface.width / ZOOM_STEP / client_width) end
       &window.resetZoom = function[<weak> &&]() setScale(1) end
 
       &window.surface.subscribe('redimension', function[<weak> &&]() &fit() end)
 
-      -- Fit the window to the monitor: the width by scaling the layout down, and the height by reflowing it.
+      -- Fit the window to the monitor: the width by scaling the layout down, and the height by reflowing it.  A dialog
+      -- that only has small panels opens at the height of its content.
+
+      preferred = CLIENT_HEIGHT
+      if plan.stack and not (enabled.list or enabled.preview) then
+         preferred = math.clamp(&rightPage.height, plan.minBody, BODY_HEIGHT) + FOOTER_HEIGHT
+      end
 
       monitor_width, monitor_height = &window.parentSize()
       scale = 1
-      height = CLIENT_HEIGHT
-      if (monitor_width ?? 0) > 0 then scale = math.min(1, monitor_width * SCREEN_FILL / CLIENT_WIDTH) end
+      height = preferred
+      if (monitor_width ?? 0) > 0 then scale = math.min(1, monitor_width * SCREEN_FILL / client_width) end
       height *= scale
       if (monitor_height ?? 0) > 0 then height = math.min(height, monitor_height * SCREEN_FILL) end
-      if (scale < 1) or (height < CLIENT_HEIGHT) then
-         &window.resizeClientArea(math.floor(CLIENT_WIDTH * scale), math.floor(height))
+      if (scale < 1) or (height != CLIENT_HEIGHT) then
+         &window.resizeClientArea(math.floor(client_width * scale), math.floor(height))
       end
       &fit()
 
@@ -656,6 +825,7 @@ end
 @if(imported=false)
    script = obj.find('self')
    modal = arg('modal')
+   features = arg('features')
 
    dlg = gui.dialog.font({
       face      = arg('face'),
@@ -669,6 +839,7 @@ end
       icon      = arg('icon'),
       theme     = arg('theme'),
       modal     = (modal is '1') or (modal is 'true'),
+      features  = (features??) ? features.split(',').map(N => N.trim()) : nil,
       popOver   = tonumber(arg('popOver')),
       feedback  = function(Result:table)
          if Result then

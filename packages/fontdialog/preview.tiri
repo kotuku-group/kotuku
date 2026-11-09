@@ -50,7 +50,24 @@ SAMPLES <const> = array<table> {
    { id = 'glyphs',    label = 'Glyphs',
       text = 'ABCDEFGHIJKLM nopqrstuvwxyz\nĀĒĪŌŪ āēīōū ÆØÅ æøå ß Œœ\n0123456789 ½ ¼ → ← ≠ ≤ ≥ € £ ¥ @ & §' },
    { id = 'code',      label = 'Code',
-      text = 'fn main() -> Result<(), Error> {\n    let x = 0x1F; // != 0O1l |> =>\n}' }
+      text = [[
+gui.strToRGB = function(Value:str!):table
+   assert(Value, 'Empty value passed to strToRGB()')
+   try<trace>
+      mVec.ReadPainter(nil, Value, glPainter)
+      nrgb = glPainter.colour
+      return setmetatable({
+         r = math.clamp(nrgb.red, 0, 1),
+         g = math.clamp(nrgb.green, 0, 1),
+         b = math.clamp(nrgb.blue, 0, 1),
+         a = nrgb.alpha
+      }, gui.mtRGB)
+   except ex
+      raise f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}'
+   end
+end
+]]
+   }
 }
 
 ----------------------------------------------------------------------------------------------------------------------
