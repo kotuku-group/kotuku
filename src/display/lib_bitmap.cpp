@@ -43,6 +43,46 @@ inline void blend_srgb32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, uint
    }
 }
 
+// The linear light equivalent of blend_srgb32().  A translucent destination weights its colour by its own alpha,
+// without which it would be treated as fully opaque and darken the result.
+
+inline void blend_linear32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, uint8_t dA,
+   uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha)
+{
+   const uint32_t alpha_inv  = 0xff - Alpha;
+   const uint32_t dest_alpha = Dest[dA];
+
+   if ((dest_alpha IS 0xff) or (!dest_alpha)) {
+      auto mix = [&](uint8_t Source, uint8_t Target) -> uint8_t {
+         return glLinearRGB.invert(((glLinearRGB.convert(Source) * Alpha) +
+            (glLinearRGB.convert(Target) * alpha_inv) + 0xff)>>8);
+      };
+
+      Dest[dR] = mix(Red, Dest[dR]);
+      Dest[dG] = mix(Green, Dest[dG]);
+      Dest[dB] = mix(Blue, Dest[dB]);
+      Dest[dA] = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8);
+   }
+   else {
+      const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8); // Always >= 1
+      const uint64_t src_weight  = 0xff * Alpha;
+      const uint64_t dest_weight = alpha_inv * dest_alpha;
+      const uint64_t divisor     = src_weight + dest_weight; // Normalise before rounding the stored alpha.
+      const uint64_t round       = divisor>>1;
+
+      auto mix = [&](uint8_t Source, uint8_t Target) -> uint8_t {
+         const uint64_t value = (glLinearRGB.convert16(Source) * src_weight +
+            glLinearRGB.convert16(Target) * dest_weight + round) / divisor;
+         return glLinearRGB.invert16(uint16_t(std::min<uint64_t>(0xffff, value)));
+      };
+
+      Dest[dR] = mix(Red, Dest[dR]);
+      Dest[dG] = mix(Green, Dest[dG]);
+      Dest[dB] = mix(Blue, Dest[dB]);
+      Dest[dA] = uint8_t(final_alpha);
+   }
+}
+
 #ifdef KOTUKU_SSE2
 
 // SIMD helpers for the 32-bit blitting routines.  All arithmetic is performed on 16-bit lanes so that the
@@ -561,20 +601,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            if (dp[dA]) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
-                                 auto slR = glLinearRGB.convert(sp[sR]);
-                                 auto slG = glLinearRGB.convert(sp[sG]);
-                                 auto slB = glLinearRGB.convert(sp[sB]);
-
-                                 auto dlR = glLinearRGB.convert(dp[dR]);
-                                 auto dlG = glLinearRGB.convert(dp[dG]);
-                                 auto dlB = glLinearRGB.convert(dp[dB]);
-
-                                 const uint8_t ca = 0xff - a;
-
-                                 dp[dR] = glLinearRGB.invert(((slR * a) + (dlR * ca) + 0xff)>>8);
-                                 dp[dG] = glLinearRGB.invert(((slG * a) + (dlG * ca) + 0xff)>>8);
-                                 dp[dB] = glLinearRGB.invert(((slB * a) + (dlB * ca) + 0xff)>>8);
-                                 dp[dA] = 0xff - ((ca * (0xff - dp[dA]))>>8);
+                                 blend_linear32(dp, dR, dG, dB, dA, sp[sR], sp[sG], sp[sB], a);
                               }
                            }
                            else ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
@@ -629,20 +656,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            for (i=0; i < Width; i++) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
-                                 auto slR = glLinearRGB.convert(sp[sR]);
-                                 auto slG = glLinearRGB.convert(sp[sG]);
-                                 auto slB = glLinearRGB.convert(sp[sB]);
-
-                                 auto dlR = glLinearRGB.convert(dp[dR]);
-                                 auto dlG = glLinearRGB.convert(dp[dG]);
-                                 auto dlB = glLinearRGB.convert(dp[dB]);
-
-                                 const uint8_t ca = 0xff - a;
-
-                                 dp[dR] = glLinearRGB.invert(((slR * a) + (dlR * ca) + 0xff)>>8);
-                                 dp[dG] = glLinearRGB.invert(((slG * a) + (dlG * ca) + 0xff)>>8);
-                                 dp[dB] = glLinearRGB.invert(((slB * a) + (dlB * ca) + 0xff)>>8);
-                                 dp[dA] = 0xff - ((ca * (0xff - dp[dA]))>>8);
+                                 blend_linear32(dp, dR, dG, dB, dA, sp[sR], sp[sG], sp[sB], a);
                               }
 
                               sp += 4;
@@ -684,20 +698,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         for (i=0; i < Width; i++) {
                            if (auto a = sp[sA]) {
                               a = (a * src->Opacity + 0xff)>>8;
-                              auto slR = glLinearRGB.convert(sp[sR]);
-                              auto slG = glLinearRGB.convert(sp[sG]);
-                              auto slB = glLinearRGB.convert(sp[sB]);
-
-                              auto dlR = glLinearRGB.convert(dp[dR]);
-                              auto dlG = glLinearRGB.convert(dp[dG]);
-                              auto dlB = glLinearRGB.convert(dp[dB]);
-
-                              const uint8_t ca = 0xff - a;
-
-                              dp[dR] = glLinearRGB.invert(((slR * a) + (dlR * ca) + 0xff)>>8);
-                              dp[dG] = glLinearRGB.invert(((slG * a) + (dlG * ca) + 0xff)>>8);
-                              dp[dB] = glLinearRGB.invert(((slB * a) + (dlB * ca) + 0xff)>>8);
-                              dp[dA] = 0xff - ((ca * (0xff - dp[dA]))>>8);
+                              blend_linear32(dp, dR, dG, dB, dA, sp[sR], sp[sG], sp[sB], a);
                            }
 
                            sp += 4;
