@@ -1,10 +1,10 @@
--- Font list panel: search and classification filters, the list of installed families with pinned families first,
--- and the preset controls.  Each row draws the family name in its own face.
+-- Font list panel: search and classification filters and the list of installed families with pinned families first.
+-- Each row draws the family name in its own face.
 --
 -- The list is a gui.listView with custom rows.  Section headings ('Pinned', 'All fonts') are rows of their own,
 -- which can't be selected.  Clicking a row's star pins or unpins the family; so does S while the list has the focus.
 
-   import 'gui', 'gui/panel', 'gui/input', 'gui/button', 'gui/combobox', 'gui/listview'
+   import 'gui', 'gui/panel', 'gui/input', 'gui/listview'
    import './theme', './parts', './controls', './sizing'
    include 'vector', 'display'
 
@@ -14,8 +14,6 @@ PAD_X     <const> = 8   -- Inset of the search row and the list rows
 SEARCH_H  <const> = 24
 FILTER_Y  <const> = 8 + SEARCH_H + 6
 TOP_H     <const> = FILTER_Y + fontdialog_controls.SEG_H + 8 -- The search and filter rows and their padding
-BOTTOM_H  <const> = 46 -- The preset row and its padding, below the lower divider
-BUTTON_H  <const> = 26
 ROW_H     <const> = 30
 VIEW_EDGE <const> = 4   -- Inset of the rows within a listview
 STAR_X    <const> = 8
@@ -149,8 +147,7 @@ end
 @Doc(text=[[
 @desc Create the font list panel.
 @input Picker table.  The picker provides `fonts` (the catalogue), `pins` (name = true), `selectFont(Font)`,
-`applyPreset(Name)`, `savePreset()`, `deletePreset(Name)`, `presets` (array of { name, user }), `persist()` and
-`typing(Bool)`.
+`persist(Panel)` and `typing(Bool)`.
 @input Target viewport
 @input Options: x, y, width, height.  The list follows the panel's height if the panel viewport is resized.
 @result Table with `panel`, `view`, `update(Source)`, `rebuild()`, `focusSearch()` and `togglePin(Font)`
@@ -158,7 +155,7 @@ end
 fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    t = Picker.tokens
 
-   self = { query = '', classes = { }, techs = { }, allScripts = false, selectedPreset = Picker.presets[0]?.name }
+   self = { query = '', classes = { }, techs = { }, allScripts = false }
 
    self.panel = gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
@@ -219,14 +216,13 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    -- The list insets its rows by VIEW_EDGE, so it is enlarged by that amount to keep the rows at the list padding.
 
    list_top = TOP_H + 1
-   list_h = body_h - list_top - BOTTOM_H - 1
 
    self.view = gui.listView({
       target     = body,
       x          = edge,
       y          = list_top,
       xOffset    = edge,
-      yOffset    = BOTTOM_H,
+      height     = math.max(ROW_H, body_h - list_top - fontdialog_parts.LIST_INSET),
       borderless = true,
       showIcons  = false,
       rowHeight  = ROW_H,
@@ -282,77 +278,10 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       end
    end)
 
-   -- Bottom row: the preset selector, Save and Delete.  The row has a viewport of its own, so that it can follow the
-   -- bottom of the panel when the dialog is resized vertically.
-
-   self.bottom = body.new('VectorViewport', { x = 0, y = body_h - BOTTOM_H, width = body_w, height = BOTTOM_H })
-   bottom = self.bottom
-   bottom.new('VectorRectangle', { x = edge, y = 0, xOffset = edge, height = 1, fill = t.border })
-   button_y = 1 + ((BOTTOM_H - 1 - BUTTON_H) * 0.5)
-
-   function presetItems():array<table>
-      items = array<table>
-      for preset in values(Picker.presets) do items.push({ label = preset.name }) end
-      return items
-   end
-
-   -- Only presets saved by the user can be deleted.
-
-   function trackPreset(Name:str)
-      self.selectedPreset = Name
-      preset = Picker.presets.find(P => P.name is Name)
-      if preset?.user then self.btnDelete.enable() else self.btnDelete.disable() end
-   end
-
-   self.btnDelete = gui.button({
-      target = bottom, y = button_y, height = BUTTON_H, icon = 'items/trash', tip = 'Delete saved preset',
-      disabled = true,
-      events = {
-         activate = function()
-            name = self.selectedPreset
-            if not Picker.deletePreset(name) then return end
-            self.presets.setItems(presetItems())
-            trackPreset(Picker.presets[0].name)
-            self.presets.setText(self.selectedPreset)
-            self.panel.flash('deleted ' .. name)
-         end
-      }
-   })
-   self.btnDelete.viewport.x = body_w - PAD_X - self.btnDelete.viewport.width
-
-   self.btnSave = gui.button({
-      target = bottom, y = button_y, height = BUTTON_H, icon = 'items/file_save', tip = 'Save as preset',
-      events = {
-         activate = function()
-            name = Picker.savePreset()
-            self.presets.setItems(presetItems())
-            self.presets.setText(name)
-            trackPreset(name)
-            self.panel.flash('saved as ' .. name)
-         end
-      }
-   })
-   self.btnSave.viewport.x = self.btnDelete.viewport.x - 6 - self.btnSave.viewport.width
-
-   self.presets = gui.combobox({
-      target = bottom, x = PAD_X, y = button_y, width = self.btnSave.viewport.x - 6 - PAD_X, height = BUTTON_H,
-      items = presetItems(), text = Picker.presets[0]?.name,
-      theme = { input = fontdialog_parts.monoText(BUTTON_H, 9) },
-      events = {
-         activate = function(Item)
-            name = (Item is <table>) ? Item.label : Item
-            trackPreset(name)
-            Picker.applyPreset(name)
-         end
-      }
-   })
-   fontdialog_parts.smallCaret(self.presets, t)
-
-   -- Fit the list between the search row and the bottom row for a body of the given height.
+   -- Fit the list below the search row for a body of the given height.
 
    self.layoutBody = function(BodyHeight:num!)
-      self.view.viewport.height = math.max(ROW_H, BodyHeight - list_top - BOTTOM_H - 1)
-      self.bottom.y = math.max(list_top + ROW_H, BodyHeight - BOTTOM_H)
+      self.view.viewport.height = math.max(ROW_H, BodyHeight - list_top - fontdialog_parts.LIST_INSET)
    end
 
    ----------------------------------------------------------------------------------------------------------------
@@ -413,7 +342,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    self.togglePin = function(Font:table!)
       Picker.pins[Font.name] = (not Picker.pins[Font.name]) ? true : nil
-      Picker.persist()
+      Picker.persist(self)
       self.rebuild()
       if self.view.sItem then self.view.revealItem(self.view.sItem) end
    end

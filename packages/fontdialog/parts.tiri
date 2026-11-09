@@ -41,6 +41,10 @@ fontdialog_parts.text = text
 
 fontdialog_parts.PANEL_PADDING = { left = 0, right = 0, top = 0, bottom = 0 }
 
+-- Space to leave below an opaque list that ends a panel, so that it doesn't cover the panel's rounded corners.
+
+fontdialog_parts.LIST_INSET = math.ceil(gui.sizing.widget.edgeRound)
+
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[

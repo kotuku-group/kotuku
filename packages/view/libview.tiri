@@ -27,6 +27,7 @@ end
 -- committed before either item is notified so that handlers observe the final state.
 
 function highlightItem(View:table!, Item:table)
+   View._keyHighlight = nil
    if Item is View.hItem then return end
 
    local previous = View.hItem
@@ -609,6 +610,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
 
    function navigateTo(Item:table!)
       highlightItem(vw, Item)
+      vw._keyHighlight = true -- Unlike a pointer hover, this highlight has no other event to end it when focus is lost
       setKeyboardTarget(vw, Item)
       vw.revealItem(Item)
    end
@@ -1243,6 +1245,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       if Event is FM_LOST_FOCUS then
          vw.hasFocus = false
          vw.qualifiers = 0
+         if vw._keyHighlight then highlightItem(vw, nil) end
          vw.events?.lostFocus(vw)
       else
          vw.hasFocus = true

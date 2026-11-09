@@ -97,10 +97,11 @@ gui.panel = function(Options:table!)
          &padding.bottom ?= gui.sizing.widget.margin
       end
 
-      -- Vertical position of a header item, centred in the header.
+      -- Vertical position of a header item, centred in the visible part of the header: the band between the top border
+      -- and the divider.
 
       function itemY(Viewport:obj!):num
-         return math.floor((&headerHeight - Viewport.height) * 0.5)
+         return math.floor(edge + ((&headerHeight - edge - Viewport.height) * 0.5))
       end
 
       -- Place a meta item at X and stretch it to Width.
@@ -581,9 +582,9 @@ gui.panel = function(Options:table!)
             &headerFill.height = fill_height
          end
 
-         -- The title's capitals are centred in the header and the meta shares its baseline.
+         -- The title's capitals are centred in the visible part of the header and the meta shares its baseline.
 
-         baseline = math.round((&headerHeight + title_ascent) * 0.5)
+         baseline = math.round(edge + ((&headerHeight - edge + title_ascent) * 0.5))
          &titleText.y = baseline
          &metaText.y  = baseline
 

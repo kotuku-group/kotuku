@@ -1,0 +1,141 @@
+-- Presets panel: a list of the built-in and saved presets, with buttons in the header to save the current settings
+-- and to delete a saved preset.  Clicking a row applies its preset.  A row stays selected until the settings no longer match the
+-- preset, so that clicking the same row again restores them.
+
+   import 'gui', 'gui/panel', 'gui/button', 'gui/listview'
+   import './theme', './parts', './style'
+   include 'vector'
+
+   namespace fontdialog_presets { }
+
+ROW_H       <const> = 26
+VISIBLE_ROWS <const> = 5
+BUTTON_H    <const> = 24 -- Fits within the panel header
+LIST_H      <const> = ROW_H * VISIBLE_ROWS
+
+fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialog_parts.LIST_INSET
+
+@Doc(text=[[
+@desc Create the Presets panel.
+@input Picker table.  The picker provides `presets` (array of { name, user }), `activePreset`, `applyPreset(Name)`,
+`savePreset()`, `deletePreset(Name)` and `state`.
+@input Target viewport
+@input Options: x, y, width
+@result Table with `panel`, `height`, `view`, `btnSave`, `btnDelete` and `update(Source)`
+]])
+fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):table
+   self = { height = fontdialog_presets.HEIGHT, appliedDef = nil, appliedParagraph = nil }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      title = 'Presets', padding = fontdialog_parts.PANEL_PADDING
+   })
+
+   body = self.panel.body
+   edge = math.ceil(self.panel.bkgd.strokeWidth ?? 0) -- Matches the panel's whole-pixel body inset
+
+   function listItems():array<table>
+      items = array<table>
+      for preset in values(Picker.presets) do items.push({ id = preset.name, name = preset.name }) end
+      return items
+   end
+
+   -- Only presets saved by the user can be deleted.
+
+   function trackSelection()
+      name = self.view.sItem?.name
+      preset = name ? Picker.presets.find(P => P.name is name) : nil
+      if preset?.user then self.btnDelete.enable() else self.btnDelete.disable() end
+   end
+
+   -- Select a preset's row without reporting it as a user selection, and record the settings that it stands for.
+
+   function selectRow(Name:str!)
+      if self.view.sItem?.name != Name then
+         self.view.deselectAll()
+         self.view.selectItems(Item => Item.name is Name)
+      end
+      if self.view.sItem then self.view.revealItem(self.view.sItem) end
+      self.appliedDef = fontdialog_style.fontDef(Picker.state)
+      -- Paragraph settings are reset by presets but are not part of a font definition.
+      self.appliedParagraph = {
+         align = Picker.state.align, letterCase = Picker.state.letterCase, paraSpace = Picker.state.paraSpace
+      }
+      trackSelection()
+   end
+
+   self.view = gui.listView({
+      target     = body,
+      x          = edge,
+      y          = 0,
+      xOffset    = edge,
+      height     = LIST_H,
+      borderless = true,
+      showIcons  = false,
+      rowHeight  = ROW_H,
+      rowSpacing = 0,
+      scrollDirection = 'vertical',
+      items      = listItems(),
+      theme      = { page = { text = { face = fontdialog_parts.FACE_UI, fontSize = 11, fontStyle = 'Medium' } } },
+
+      events = {
+         itemSelected = function(View:table, Reason:str, Item:table)
+            if Reason != 'user' then return end
+            trackSelection()
+            Picker.applyPreset(Item.name)
+         end
+      }
+   })
+
+   -- Trail items are placed from the right edge, so Delete is the rightmost.
+
+   self.btnDelete = gui.button({
+      target   = self.panel.header,
+      height   = BUTTON_H,
+      icon     = 'items/trash',
+      tip      = 'Delete saved preset',
+      disabled = true,
+      events   = {
+         activate = function()
+            name = self.view.sItem?.name
+            name ?! return
+            if not Picker.deletePreset(name) then return end
+            self.view.loadItems(listItems())
+            trackSelection()
+            self.panel.flash('deleted ' .. name)
+         end
+      }
+   })
+   self.panel.headerItem('trail', self.btnDelete)
+
+   self.btnSave = gui.button({
+      target   = self.panel.header,
+      height   = BUTTON_H,
+      icon     = 'items/file_save',
+      tip      = 'Save as preset',
+      events   = {
+         activate = function()
+            name = Picker.savePreset()
+            self.view.loadItems(listItems())
+            selectRow(name)
+            self.panel.flash('saved as ' .. name)
+         end
+      }
+   })
+
+   self.panel.headerItem('trail', self.btnSave)
+
+   self.update = function(Source:str)
+      if Source is 'preset' then
+         selectRow(Picker.activePreset)
+      elseif self.view.sItem and ((fontdialog_style.fontDef(Picker.state) != self.appliedDef)
+         or (Picker.state.align != self.appliedParagraph.align)
+         or (Picker.state.letterCase != self.appliedParagraph.letterCase)
+         or (Picker.state.paraSpace != self.appliedParagraph.paraSpace)) then
+         self.view.deselectAll()
+         trackSelection()
+      end
+   end
+
+   return self
+end

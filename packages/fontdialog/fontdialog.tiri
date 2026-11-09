@@ -13,7 +13,8 @@
       fontDef   = 'face=Noto Sans; ...',  -- font definition; its keys override the options above
       resultFilter = { 'face', 'size' },  -- table or array of the key names to include in the Result
       features  = { 'list', 'preview' },  -- table or array of the panels to show; all of them if omitted.  The names
-                                          -- are list, preview, sizing, style, glyphs, fill, stroke, effects, alignment
+                                          -- are list, presets, preview, sizing, style, glyphs, fill, stroke,
+                                          -- effects, alignment
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
 
@@ -23,8 +24,8 @@
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
 
-   import './theme', './parts', './catalogue', './controls', './fontlist', './preview', './sizing', './style'
-   import './glyphs', './fill', './stroke', './effects', './alignment'
+   import './theme', './parts', './catalogue', './controls', './fontlist', './presets', './preview', './sizing'
+   import './style', './glyphs', './fill', './stroke', './effects', './alignment'
    import 'gui/fontdialog/storage'
 
    include 'display'
@@ -68,12 +69,13 @@ MIN_LIST_BODY  <const> = 360 -- Least body height that leaves the font list usab
 MIN_STACK_BODY <const> = 200 -- Least body height of a layout that only has the scrolling stack
 
 ALL_FEATURES <const> = array<str> {
-   'list', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment'
+   'list', 'presets', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment'
 }
 
--- The small panels in stacking order.  Sizing and Style are only part of the stack when there is no preview.
+-- The small panels in stacking order.  Sizing and Style are only part of the stack when there is no preview, and
+-- Presets is only part of it when there is no font list to sit under.
 
-STACK_ORDER <const> = array<str> { 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment' }
+STACK_ORDER <const> = array<str> { 'presets', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment' }
 
 DEFAULT_FACE <const> = 'Noto Sans'
 
@@ -119,6 +121,7 @@ function planLayout(Has:table!):table
    stack = array<str>
    for name in values(STACK_ORDER) do
       if (name is 'stroke') and Has.fill then continue end
+      if (name is 'presets') and Has.list then continue end
       if Has[name] and not (Has.preview and ((name is 'sizing') or (name is 'style'))) then stack.push(name) end
    end
 
@@ -168,6 +171,11 @@ function planLayout(Has:table!):table
    else
       plan.minBody = Has.list ? MIN_LIST_BODY : MIN_STACK_BODY
    end
+
+   -- The presets take their height from the font list in the column that they share.
+
+   plan.listReserve = (Has.list and Has.presets) ? fontdialog_presets.HEIGHT + GAP : 0
+   if Has.list then plan.minBody = math.max(plan.minBody, MIN_LIST_BODY + plan.listReserve) end
 
    plan.minClient = plan.minBody + FOOTER_HEIGHT
    return plan
@@ -226,6 +234,7 @@ gui.dialog.font = function(Options:table)
       finished  = false,
       isTyping  = false,
       presets   = PRESETS.clone(),
+      activePreset = nil, -- Name of the preset most recently applied
       pins      = { },
       database  = fontdialog_storage.load(),
       fonts     = nil,
@@ -320,10 +329,10 @@ gui.dialog.font = function(Options:table)
          return state
       end
 
-      -- Write the user's pins and presets.  A failure is reported in the font list, and the change lasts for the life
-      -- of the dialog.
+      -- Write the user's pins and presets.  A failure is reported in the panel that made the change, and the change
+      -- lasts for the life of the dialog.
 
-      &persist = function()
+      &persist = function(Reporter:table)
          pins = array<str>
          for name in &pins do pins.push(name) end
          pins.sort()
@@ -334,7 +343,7 @@ gui.dialog.font = function(Options:table)
          end
 
          ok, message = fontdialog_storage.save(&database, pins, presets)
-         if not ok then &fontList.panel.flash(message) end
+         if not ok then Reporter?.panel?.flash(message) end
       end
 
       &addSavedPreset = function(Name:str!, Def:str!, Face:str!)
@@ -349,7 +358,7 @@ gui.dialog.font = function(Options:table)
             number++
          until not &presets.find(P => P.name is name)
          &addSavedPreset(name, fontdialog_style.fontDef(&state), &state.font.name)
-         &persist()
+         &persist(&presetPanel)
          return name
       end
 
@@ -360,7 +369,7 @@ gui.dialog.font = function(Options:table)
          index ?= -1
          if index < 0 then return false end
          &presets.remove(index)
-         &persist()
+         &persist(&presetPanel)
          return true
       end
 
@@ -378,11 +387,12 @@ gui.dialog.font = function(Options:table)
       &applyPreset = function(Name:str!)
          state = &presetState(Name)
          if not state then
-            &fontList.panel.flash('preset font missing')
+            &presetPanel?.panel?.flash('preset font missing')
             return
          end
          state.text = fontdialog_preview.textFor(state.font, &state.text)
          &state = state
+         &activePreset = Name
          &refresh('preset')
       end
 
@@ -400,7 +410,10 @@ gui.dialog.font = function(Options:table)
          &bodyHeight = BodyHeight
 
          for col in values(&columns) do col.height = BodyHeight end
-         if &fontList then &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2) end
+         if &fontList then &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2) - plan.listReserve end
+         if &presetPanel and &fontList then
+            &presetPanel.panel.viewport.y = BodyHeight - EDGE_PAD - fontdialog_presets.HEIGHT
+         end
 
          if &preview then
             lower_y = BodyHeight - EDGE_PAD - plan.lowerHeight
@@ -490,7 +503,7 @@ gui.dialog.font = function(Options:table)
          &panels = array<table>
          &rightPanels = array<table>
          for field in values(array<str> {
-            'fontList', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment',
+            'fontList', 'presetPanel', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment',
             'rightBar', 'rightPage', 'rightView', 'columns', 'footer', 'btnSelect', 'btnCancel', 'btnReset',
             'viewport', 'window'
          }) do self[field] = nil end
@@ -607,12 +620,19 @@ gui.dialog.font = function(Options:table)
 
       enabled = plan.enabled
 
-      -- Left column
+      -- Left column: the font list, above the presets if both are present.
 
       if enabled.list then
          &fontList = fontdialog_list.new(&&, plan.list.viewport, {
-            x = plan.list.left, y = EDGE_PAD, width = plan.list.inner, height = BODY_HEIGHT - (EDGE_PAD * 2)
+            x = plan.list.left, y = EDGE_PAD, width = plan.list.inner,
+            height = BODY_HEIGHT - (EDGE_PAD * 2) - plan.listReserve
          })
+
+         if enabled.presets then
+            &presetPanel = fontdialog_presets.new(&&, plan.list.viewport, {
+               x = plan.list.left, y = BODY_HEIGHT - EDGE_PAD - fontdialog_presets.HEIGHT, width = plan.list.inner
+            })
+         end
       end
 
       -- Right column: a scrolling stack of panels.  The scrollbar sits in the column's edge padding.
@@ -677,6 +697,10 @@ gui.dialog.font = function(Options:table)
          return table.merge(Options, { onResize = function[<weak> &&]() &layoutRight() end })
       end
 
+      if enabled.presets and not enabled.list then
+         &presetPanel = fontdialog_presets.new(&&, &rightPage, stack_options)
+      end
+
       if enabled.glyphs then &glyphs = fontdialog_glyphs.new(&&, &rightPage, restack(stack_options)) end
 
       if enabled.fill then &fill = fontdialog_fill.new(&&, &rightPage, stack_options) end
@@ -697,10 +721,14 @@ gui.dialog.font = function(Options:table)
 
       if enabled.alignment then &alignment = fontdialog_alignment.new(&&, &rightPage, stack_options) end
 
-      for name in values(plan.stackNames) do &rightPanels.push(self[name]) end
+      -- The presets field of the picker holds the preset definitions, so that panel has a field name of its own.
+
+      for name in values(plan.stackNames) do
+         &rightPanels.push(self[(name is 'presets') ? 'presetPanel' : name])
+      end
 
       for name in values(array<str> {
-         'fontList', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment', 'preview'
+         'fontList', 'presetPanel', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment', 'preview'
       }) do
          if self[name] then &panels.push(self[name]) end
       end
@@ -778,7 +806,6 @@ gui.dialog.font = function(Options:table)
          if (Value is KEY_F) and (Qualifiers has KQ_CTRL) then
             processing.delayedCall(function() &fontList?.focusSearch() end)
          elseif Value is KEY_ESCAPE then
-            if &fontList and &fontList.presets.menu?.visible then return end
             if &effects and &effects.blend.menu?.visible then return end
             processing.delayedCall(function() &cancel() end)
          elseif &isTyping then
