@@ -373,6 +373,22 @@ gui.dialog.font = function(Options:table)
          return true
       end
 
+      -- Rename a saved preset.  Surrounding white space is removed.  Returns false and the reason if the preset is not
+      -- a saved preset, or the new name is blank or taken by another preset.
+
+      &renamePreset = function(Name:str!, NewName:str!):<bool, str>
+         preset = &presets.find(P => (P.name is Name) and P.user)
+         if not preset then return false, 'not a saved preset' end
+         new_name = NewName.trim()
+         if new_name is '' then return false, 'name is blank' end
+         if new_name is Name then return true end
+         if &presets.find(P => P.name is new_name) then return false, 'name in use' end
+         preset.name = new_name
+         if &activePreset is Name then &activePreset = new_name end
+         &persist(&presetPanel)
+         return true
+      end
+
       -- Saved presets with a duplicate name or an invalid definition are skipped.
 
       for saved in values(&database.presets) do
@@ -397,7 +413,8 @@ gui.dialog.font = function(Options:table)
       end
 
       &typing = function(Typing:bool)
-         &isTyping = Typing
+         -- Either editor can still hold the focus when the other finishes on a delayed callback.
+         &isTyping = Typing or (&presetPanel?.editing() ?? false) or (&preview?.typing ?? false)
       end
 
       -- Sizing.  The layout is client_width units wide and is scaled to the width of the window.  The window's height
@@ -803,6 +820,7 @@ gui.dialog.font = function(Options:table)
             processing.delayedCall(function() &fontList?.focusSearch() end)
          elseif Value is KEY_ESCAPE then
             if &effects and &effects.blend.menu?.visible then return end
+            if &presetPanel?.editing() then return end -- Escape cancels the preset name edit instead
             processing.delayedCall(function() &cancel() end)
          elseif &isTyping then
             return

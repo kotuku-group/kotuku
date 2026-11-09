@@ -1,6 +1,6 @@
 -- Presets panel: a list of the built-in and saved presets, with buttons in the header to save the current settings
 -- and to delete a saved preset.  Clicking a row applies its preset.  A row stays selected until the settings no longer match the
--- preset, so that clicking the same row again restores them.
+-- preset, so that clicking the same row again restores them.  Double-clicking a saved preset edits its name in place.
 
    import 'gui', 'gui/panel', 'gui/button', 'gui/listview'
    import './theme', './parts', './style'
@@ -11,6 +11,9 @@
 ROW_H       <const> = 20
 VISIBLE_ROWS <const> = 4
 BUTTON_H    <const> = 24 -- Fits within the panel header
+FONT_SIZE   <const> = 11
+NAME_LIMIT  <const> = 40 -- Characters in an edited preset name
+EDIT_PAD    <const> = 4  -- Inset of the editor text from the editor's left edge
 LIST_H      <const> = ROW_H * VISIBLE_ROWS
 
 fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialog_parts.LIST_INSET
@@ -18,10 +21,10 @@ fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialo
 @Doc(text=[[
 @desc Create the Presets panel.
 @input Picker table.  The picker provides `presets` (array of { name, user }), `activePreset`, `applyPreset(Name)`,
-`savePreset()`, `deletePreset(Name)` and `state`.
+`savePreset()`, `deletePreset(Name)`, `renamePreset(Name, NewName)`, `typing(Bool)`, `tokens`, `theme` and `state`.
 @input Target viewport
 @input Options: x, y, width
-@result Table with `panel`, `height`, `view`, `btnSave`, `btnDelete` and `update(Source)`
+@result Table with `panel`, `height`, `view`, `btnSave`, `btnDelete`, `update(Source)` and `editing()`
 ]])
 fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):table
    self = { height = fontdialog_presets.HEIGHT, appliedDef = nil, appliedParagraph = nil }
@@ -48,20 +51,125 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       if preset?.user then self.btnDelete.enable() else self.btnDelete.disable() end
    end
 
-   -- Select a preset's row without reporting it as a user selection, and record the settings that it stands for.
+   -- Select a preset's row without reporting it as a user selection.
 
-   function selectRow(Name:str!)
+   function markRow(Name:str!)
       if self.view.sItem?.name != Name then
          self.view.deselectAll()
          self.view.selectItems(Item => Item.name is Name)
       end
       if self.view.sItem then self.view.revealItem(self.view.sItem) end
+      trackSelection()
+   end
+
+   -- Select a preset's row and record the settings that it stands for.
+
+   function selectRow(Name:str!)
+      markRow(Name)
       self.appliedDef = fontdialog_style.fontDef(Picker.state)
       -- Paragraph settings are reset by presets but are not part of a font definition.
       self.appliedParagraph = {
          align = Picker.state.align, letterCase = Picker.state.letterCase, paraSpace = Picker.state.paraSpace
       }
-      trackSelection()
+   end
+
+   -- Inline editing of a saved preset's name.  The editor is drawn over the row in the panel body rather than in the
+   -- list, so that the list's navigation keys do not act on the keys typed into it.  Enter commits, Escape cancels
+   -- and a focus loss commits.  The edit ends on the next message cycle, so that other handlers of the same key
+   -- press (such as the dialog's Escape key) still see the edit in progress.
+
+   self.editing = function():bool
+      return self.editor != nil
+   end
+
+   -- Cancel an edit in progress, e.g. because the preset is about to be deleted.
+
+   function cancelEdit()
+      self.editor?.finish(nil)
+   end
+
+   function endEdit(Name:str!, Text:str)
+      Picker.typing(false)
+      Text ?! return
+      if not Picker.presets.find(P => P.name is Name) then return end -- Deleted during the edit
+      renamed, reason = Picker.renamePreset(Name, Text)
+      if not renamed then
+         self.panel.flash(reason)
+         return
+      end
+      new_name = Text.trim()
+      if new_name is Name then return end
+      was_selected = self.view.sItem?.name is Name
+      self.view.loadItems(listItems())
+      if was_selected then markRow(new_name) else trackSelection() end
+   end
+
+   function beginEdit(Name:str!)
+      if self.editor then return end
+      preset = Picker.presets.find(P => P.name is Name)
+      if not preset?.user then return end
+      local item:table = nil
+      for row in values(self.view.items) do
+         if row.name is Name then
+            item = row
+            break
+         end
+      end
+      item ?! return
+
+      t = Picker.tokens
+      dims = self.view.itemDimensions(item)
+      list = self.view
+      x = list.viewport.x + list.frame.x + list.page.x + dims.x
+      y = list.viewport.y + list.frame.y + list.page.y + dims.y
+
+      ed = { done = false }
+      ed.clip = body.new('VectorViewport', {
+         x = x, y = y, width = dims.width, height = dims.height, overflow = VOF_HIDDEN, cursor = 'text'
+      })
+      ed.clip.new('VectorRectangle', {
+         x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+         fill = t.sunk, stroke = Picker.theme.palette.prime, strokeWidth = 1
+      })
+      ed.text = ed.clip.new('VectorText', {
+         x = EDIT_PAD, y = fontdialog_parts.baseline(0, dims.height, FONT_SIZE),
+         face = fontdialog_parts.FACE_UI, fontSize = FONT_SIZE, fill = t.fg0, string = Name,
+         lineLimit = 1, charLimit = NAME_LIMIT, textFlags = VTXF_EDITABLE
+      })
+      self.editor = ed
+
+      local function finish(Text:str)
+         if ed.done then return end
+         ed.done = true
+         processing.delayedCall(function()
+            if self.editor is ed then self.editor = nil end
+            if Picker.finished then return end
+            if ed.clip.exists() then
+               ed.clip.free()
+               body.acDraw()
+            end
+            endEdit(Name, Text)
+         end)
+      end
+      ed.finish = finish
+
+      ed.clip.mtSubscribeKeyboard(function(Clip:obj!, Qualifiers:num!, Value:num!, Unicode)
+         if not (Qualifiers has KQ_PRESSED) then return end
+         if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+            finish(ed.text.string ?? '')
+         elseif Value is KEY_ESCAPE then
+            finish(nil)
+         end
+      end)
+
+      ed.clip.mtSubscribeFeedback(FM_LOST_FOCUS, function(Clip:obj!, Event:num!)
+         finish(ed.text.string ?? '')
+      end)
+
+      Picker.typing(true) -- Suspends the dialog's Enter and single-key shortcuts
+      ed.text.mtSelectArea(0, 0, -1, -1) -- Typing replaces the name
+      ed.clip.acFocus()
+      body.acDraw()
    end
 
    self.view = gui.listView({
@@ -76,13 +184,17 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       rowSpacing = 0,
       scrollDirection = 'vertical',
       items      = listItems(),
-      theme      = { page = { text = { face = fontdialog_parts.FACE_UI, fontSize = 11 } } },
+      theme      = { page = { text = { face = fontdialog_parts.FACE_UI, fontSize = FONT_SIZE } } },
 
       events = {
          itemSelected = function(View:table, Reason:str, Item:table)
             if Reason != 'user' then return end
             trackSelection()
             Picker.applyPreset(Item.name)
+         end,
+
+         itemActivated = function(View:table, Reason:str, Item:table)
+            if Reason is 'user' then beginEdit(Item.name) end
          end
       }
    })
@@ -97,6 +209,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       disabled = true,
       events   = {
          activate = function()
+            cancelEdit()
             name = self.view.sItem?.name
             name ?! return
             if not Picker.deletePreset(name) then return end
