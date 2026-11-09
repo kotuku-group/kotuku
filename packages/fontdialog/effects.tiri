@@ -74,6 +74,12 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       { key = 'glowRadius', label = 'Radius', min = 0.01, max = 2 }
    })
 
+   self.glowColour = fontdialog_controls.colourButton(Picker, body, {
+      x = PAD + 22, width = inner - 22, colour = state.glowColour ?? state.fill,
+      dialogTitle = 'Outer Glow Colour', label = 'Glow', preserveAlpha = true,
+      onChange = function(Colour) Picker.update({ glowColour = Colour }, 'effects') end
+   })
+
    self.blendLabel = fontdialog_controls.text(body, { x = PAD, size = 12, fill = t.fg1, string = 'Blend' })
 
    self.blend = gui.combobox({
@@ -109,7 +115,11 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       self.glowBox.viewport.y = y + ((CHECK_H - self.glowBox.viewport.height) * 0.5)
       y += CHECK_H
       showGroup(self.glow, glow_on)
+      self.glowColour.button.viewport.visibility = glow_on ? VIS_VISIBLE : VIS_HIDDEN
+      fontdialog_controls.setEnabled(array<table> { self.glowColour }, glow_on)
       if glow_on then
+         self.glowColour.button.viewport.y = y
+         y += fontdialog_controls.COLOUR_H + 4
          self.glow.viewport.y = y
          y += self.glow.viewport.height
       end
@@ -144,6 +154,8 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       else
          self.panel.setMeta((#parts > 0) ? parts.concat(' · ') : 'None')
       end
+
+      self.glowColour.set(s.glowColour ?? s.fill)
 
       if (Source is 'effects') or (Source is 'effects-layout') then
          if Source is 'effects-layout' then layout() end

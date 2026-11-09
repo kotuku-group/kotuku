@@ -202,7 +202,7 @@ end
 
 OUTLINE_SETTINGS <const> = array<str> {
    'opacity', 'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY',
-   'shadowBlur', 'shadowOpacity', 'glowOn', 'glowRadius', 'blend', 'tracking', 'wordSpace'
+   'shadowBlur', 'shadowOpacity', 'glowOn', 'glowColour', 'glowRadius', 'blend', 'tracking', 'wordSpace'
 }
 
 @Doc(text=[[
@@ -272,7 +272,11 @@ function paintParts(State:table!):array<str>
       parts.push('shadow=none')
    end
 
-   if State.glowOn then parts.push(f'glow={tidy(State.glowRadius)}em {State.fill}') else parts.push('glow=none') end
+   if State.glowOn then
+      parts.push(f'glow={tidy(State.glowRadius)}em {State.glowColour}')
+   else
+      parts.push('glow=none')
+   end
    parts.push(f'blend={State.blend}')
    return parts
 end
@@ -450,7 +454,11 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
 
    if settings.glow then
       State.glowOn = settings.glow != 'none'
-      if State.glowOn then State.glowRadius = lengthEm(settings.glow.split(' ')[0], State.size) end
+      if State.glowOn then
+         glow = settings.glow.split(' ')
+         State.glowRadius = lengthEm(glow[0], State.size)
+         State.glowColour = glow.concat(' ', nil, 1)
+      end
    end
 
    if settings.blend then State.blend = (settings.blend is 'burn') ? 'Colour Burn' : settings.blend.cap() end

@@ -512,9 +512,10 @@ so that it is loaded once per control.
 @input Target: an object of the font dialog; the picker is closed if it is freed first
 @input Colour: the initial colour, as a CSS string
 @input Title: the dialog's title
-@result The chosen colour as `#RRGGBB`, or nil if the dialog was cancelled.
+@input PreserveAlpha: include the chosen opacity in the returned colour
+@result The chosen colour as `#RRGGBB` (or `#RRGGBBAA` with PreserveAlpha), or nil if cancelled.
 ]])
-fontdialog_controls.pickColour = function(Owner:table!, Target:obj!, Colour:str!, Title:str!):str
+fontdialog_controls.pickColour = function(Owner:table!, Target:obj!, Colour:str!, Title:str!, PreserveAlpha:bool):str
    -- Using a script to open the colour picker is more resource efficient (no pre-loading of the import)
    -- The parent dependency ensures the picker window is closed if the font dialog is closed first
 
@@ -548,13 +549,16 @@ fontdialog_controls.pickColour = function(Owner:table!, Target:obj!, Colour:str!
    check script.acActivate()
    _, result = script.acGetKey('result')
    if not result?? then return nil end
-   return hexColour(json.decode(result))
+   chosen = json.decode(result)
+   colour = hexColour(chosen)
+   if PreserveAlpha then colour ..= string.format('%02X', math.round(chosen.a * 255)) end
+   return colour
 end
 
 @Doc(text=[[
 @desc Create a colour button: a swatch, the hex value and a `Colour Picker` note.  Clicking it opens the colour picker
 dialog with the current colour, and a chosen colour replaces it.
-@input Options: x, y, width, colour (CSS string), dialogTitle, onChange(Hex)
+@input Options: x, y, width, colour (CSS string), dialogTitle, preserveAlpha, onChange(Hex)
 @result Table with `button`, `colour` and `set(Colour)`
 ]])
 fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
@@ -572,7 +576,8 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
       },
       events = {
          activate = function()
-            chosen = fontdialog_controls.pickColour(cb, Target, cb.colour, Options.dialogTitle ?? 'Select font colour')
+            chosen = fontdialog_controls.pickColour(cb, Target, cb.colour,
+               Options.dialogTitle ?? 'Select font colour', Options.preserveAlpha)
             if chosen then
                cb.set(chosen)
                Options.onChange?(cb.colour)

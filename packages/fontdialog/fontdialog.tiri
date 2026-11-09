@@ -209,6 +209,7 @@ function freshState(Font:table!, Size:num, Fill:str):table
       shadowBlur   = 0,
       shadowOpacity = 40,
       glowOn       = false,
+      glowColour   = nil, -- Inherits the fill when first enabled
       glowRadius   = 0.5, -- Multiple of the font size (em)
       blend        = 'Normal',
       align        = 'left',
@@ -288,6 +289,7 @@ gui.dialog.font = function(Options:table)
       &update = function(Patch:table!, Source:str)
          if &finished then return end
          for k, v in Patch do &state[k] = v end
+         if &state.glowOn and (&state.glowColour is nil) then &state.glowColour = &state.fill end
          &refresh(Source)
       end
 
