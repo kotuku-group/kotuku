@@ -2570,6 +2570,12 @@ static ERR update_text_effects(extVectorText *Self)
    objVectorFilter *filter;
    if (NewObject(CLASSID::VECTORFILTER, &filter) != ERR::Okay) return log.warning(ERR::NewObject);
    SetOwner(filter, Self->Scene);
+
+   // The effects are composited to the target in linear light, so they must also be merged in linear light.  Otherwise
+   // a glow is visibly weaker where it overlaps an opaque shadow than where it falls directly on the backdrop.
+
+   filter->setColourSpace(VCS::LINEAR_RGB);
+
    if (filter->init() != ERR::Okay) {
       FreeResource(filter);
       return log.warning(ERR::Init);
