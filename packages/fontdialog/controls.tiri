@@ -62,11 +62,115 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[
+@desc Open a single line text editor over part of a panel, e.g. to edit a preset name or a slider value in place.
+The editor takes the focus with its text selected, so typing replaces it.  Enter commits, Escape cancels and a focus
+loss commits.  The edit ends on the next message cycle, so that other handlers of the same key press (such as the
+dialog's Escape key) still see the edit in progress; the editor is then freed and `done(Text)` is called with the
+edited text, or nil if the edit was cancelled.  Only one editor is open at a time: it is `Picker.inlineEditor` while
+it is open, and the dialog's Enter, Escape and single-key shortcuts are suspended.
+
+The editor is created in Target, so it is freed with Target.  It should not be created in a viewport whose own
+keyboard handling would act on the keys typed into it, such as a list.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width, height, text, face, size, charLimit, done(Text)
+@result The editor: a table with `clip` (its viewport), `text` (the VectorText) and `finish(Text)`, which ends the edit
+as a commit of Text, or a cancellation if Text is nil.  Nil if another edit is in progress.
+]])
+fontdialog_controls.inlineEdit = function(Picker:table!, Target:obj!, Options:table!):table
+   if Picker.inlineEditor then return nil end
+
+   EDIT_PAD <const> = 4 -- Inset of the text from the editor's left edge
+   t    = Picker.tokens
+   size = Options.size ?? 11
+
+   ed = { done = false }
+   ed.clip = Target.new('VectorViewport', {
+      x = Options.x, y = Options.y, width = Options.width, height = Options.height, overflow = VOF_HIDDEN,
+      cursor = 'text'
+   })
+   ed.clip.new('VectorRectangle', {
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+      fill = t.sunk, stroke = Picker.theme.palette.prime, strokeWidth = 1
+   })
+
+   -- Right-aligned text isn't placed correctly while it is edited, so the text is left-aligned.
+
+   ed.text = ed.clip.new('VectorText', {
+      x = EDIT_PAD, y = fontdialog_parts.baseline(0, Options.height, size),
+      face = Options.face ?? fontdialog_parts.FACE_UI, fontSize = size, fill = t.fg0, string = Options.text ?? '',
+      lineLimit = 1, charLimit = Options.charLimit, textFlags = VTXF_EDITABLE
+   })
+
+   ed.finish = function(Text:str)
+      if ed.done then return end
+      ed.done = true
+      processing.delayedCall(function()
+         if Picker.inlineEditor is ed then Picker.inlineEditor = nil end
+         if Picker.finished then return end
+         Picker.typing(false)
+         if ed.clip.exists() then
+            ed.clip.free()
+            Target.acDraw()
+         end
+         Options.done(Text)
+      end)
+   end
+
+   ed.clip.mtSubscribeKeyboard(function(Clip:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+      if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+         ed.finish(ed.text.string ?? '')
+      elseif Value is KEY_ESCAPE then
+         ed.finish(nil)
+      end
+   end)
+
+   ed.clip.mtSubscribeFeedback(FM_LOST_FOCUS, function(Clip:obj!, Event:num!)
+      ed.finish(ed.text.string ?? '')
+   end)
+
+   -- Rebuilding a panel frees its editor without a focus-loss notification.  Cancel without reading the freed text.
+
+   ed.clip.subscribe('free', function()
+      ed.finish(nil)
+   end)
+
+   Picker.inlineEditor = ed
+   Picker.typing(true)
+   ed.text.mtSelectArea(0, 0, -1, -1)
+   ed.clip.acFocus()
+   Target.acDraw()
+   return ed
+end
+
+-- Read the first number in a slider's value text, ignoring any unit, e.g. `12.5` in `12.5 pt` or `-5` in `-5%`.
+
+NUMBER_RX <const> = r'[\-+]?(\d+\.?\d*|\.\d+)'
+
+function parseNumber(Text:str!):num
+   start, stop = NUMBER_RX.findFirst(Text)
+   if start is nil then return nil end
+   return tonumber(Text.sub(start, stop))
+end
+
+fontdialog_controls.parseNumber = parseNumber
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
 @desc Create a slider row: a label, a slider in the colour picker's channel style and a right-aligned value.
 @input Picker table
 @input Target viewport
-@input Options: x, y, width, label, min, max, step, value, format(Value):str, onChange(Value), labelWidth, valueWidth
-@result Table with `slider`, `valueText`, `set(Value)` (silent) and `setRange(Min, Max)`
+@input Options: x, y, width, label, min, max, step, value, format(Value):str, parse(Text):num, onChange(Value),
+labelWidth, valueWidth
+@result Table with `slider`, `valueText`, `set(Value)` (silent), `setRange(Min, Max)` and `editValue()`
+
+Double-clicking the value edits it in place.  The typed text is converted to a slider value by `parse()`, which
+returns nil for text that is not a value; the default reads the first number in the text and ignores any unit, which
+suits values that are formatted as a number in the slider's own units.  The value is clamped and snapped to the
+slider's range and step, and reported through onChange() as if the slider had been moved.  editValue() starts the
+edit as a double-click does.
 ]])
 fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:table!):table
    t       = Picker.tokens
@@ -140,6 +244,49 @@ fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:tab
       end)
 
    row.valueText.string = row.format(row.slider.value)
+
+   -- Double-clicking the value edits it.  The edit starts after the click has been handled, so that the click does
+   -- not take the focus back from the editor.  The editor covers at least the value column and extends a little to the
+   -- right of the row, so that the text keeps its position.
+
+   parse = Options.parse ?? parseNumber
+   value_right = x + width
+   value_y = y + ((ROW_H - SEG_H) * 0.5)
+
+   row.valueHit = Target.new('VectorViewport', {
+      x = value_right - value_w, y = y, width = value_w, height = ROW_H, cursor = 'text'
+   })
+   row.valueHit.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)' })
+
+   function editValue()
+      if Picker.finished or row.slider.disabled or not row.slider.viewport.exists() then return end
+      text_w = math.ceil(row.valueText.textWidth)
+      edit_w = math.max(value_w, text_w) + 8
+      ed = fontdialog_controls.inlineEdit(Picker, Target, {
+         x = value_right + 4 - edit_w, y = value_y, width = edit_w, height = SEG_H,
+         text = row.valueText.string, face = fontdialog_parts.FACE_MONO, size = VALUE_SIZE, charLimit = 16,
+         done = function(Text:str)
+            if row.valueText.exists() then row.valueText.visibility = VIS_VISIBLE end
+            Text ?! return
+            if not row.slider.viewport.exists() then return end
+            value = parse(Text.trim())
+            if value is nil then return end -- NB: ?! would also reject zero
+            row.slider.setValue(math.clamp(value, row.slider.min, row.slider.max))
+            row.valueText.string = row.format(row.slider.value) -- Unchanged values still restore the format
+         end
+      })
+      if ed then row.valueText.visibility = VIS_HIDDEN end
+   end
+   row.editValue = editValue
+
+   row.valueHit.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value is 0) and (Msg.flags has JTYPE_DBL_CLICK) then
+            processing.delayedCall(editValue)
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
 
    row.set = function(Value:num)
       row.pending = nil -- A value set by the picker supersedes a queued drag position

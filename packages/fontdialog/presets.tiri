@@ -3,7 +3,7 @@
 -- preset, so that clicking the same row again restores them.  Double-clicking a saved preset edits its name in place.
 
    import 'gui', 'gui/panel', 'gui/button', 'gui/listview'
-   import './theme', './parts', './style'
+   import './theme', './parts', './controls', './style'
    include 'vector'
 
    namespace fontdialog_presets { }
@@ -13,7 +13,6 @@ VISIBLE_ROWS <const> = 4
 BUTTON_H    <const> = 24 -- Fits within the panel header
 FONT_SIZE   <const> = 11
 NAME_LIMIT  <const> = 40 -- Characters in an edited preset name
-EDIT_PAD    <const> = 4  -- Inset of the editor text from the editor's left edge
 LIST_H      <const> = ROW_H * VISIBLE_ROWS
 
 fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialog_parts.LIST_INSET
@@ -74,12 +73,10 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
    end
 
    -- Inline editing of a saved preset's name.  The editor is drawn over the row in the panel body rather than in the
-   -- list, so that the list's navigation keys do not act on the keys typed into it.  Enter commits, Escape cancels
-   -- and a focus loss commits.  The edit ends on the next message cycle, so that other handlers of the same key
-   -- press (such as the dialog's Escape key) still see the edit in progress.
+   -- list, so that the list's navigation keys do not act on the keys typed into it.
 
    self.editing = function():bool
-      return self.editor != nil
+      return (self.editor != nil) and (Picker.inlineEditor is self.editor)
    end
 
    -- Cancel an edit in progress, e.g. because the preset is about to be deleted.
@@ -89,7 +86,6 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
    end
 
    function endEdit(Name:str!, Text:str)
-      Picker.typing(false)
       Text ?! return
       if not Picker.presets.find(P => P.name is Name) then return end -- Deleted during the edit
       renamed, reason = Picker.renamePreset(Name, Text)
@@ -105,7 +101,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
    end
 
    function beginEdit(Name:str!)
-      if self.editor then return end
+      if self.editor or Picker.inlineEditor then return end
       preset = Picker.presets.find(P => P.name is Name)
       if not preset?.user then return end
       local item:table = nil
@@ -117,59 +113,17 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       end
       item ?! return
 
-      t = Picker.tokens
       dims = self.view.itemDimensions(item)
       list = self.view
-      x = list.viewport.x + list.frame.x + list.page.x + dims.x
-      y = list.viewport.y + list.frame.y + list.page.y + dims.y
-
-      ed = { done = false }
-      ed.clip = body.new('VectorViewport', {
-         x = x, y = y, width = dims.width, height = dims.height, overflow = VOF_HIDDEN, cursor = 'text'
-      })
-      ed.clip.new('VectorRectangle', {
-         x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
-         fill = t.sunk, stroke = Picker.theme.palette.prime, strokeWidth = 1
-      })
-      ed.text = ed.clip.new('VectorText', {
-         x = EDIT_PAD, y = fontdialog_parts.baseline(0, dims.height, FONT_SIZE),
-         face = fontdialog_parts.FACE_UI, fontSize = FONT_SIZE, fill = t.fg0, string = Name,
-         lineLimit = 1, charLimit = NAME_LIMIT, textFlags = VTXF_EDITABLE
-      })
-      self.editor = ed
-
-      local function finish(Text:str)
-         if ed.done then return end
-         ed.done = true
-         processing.delayedCall(function()
-            if self.editor is ed then self.editor = nil end
-            if Picker.finished then return end
-            if ed.clip.exists() then
-               ed.clip.free()
-               body.acDraw()
-            end
+      self.editor = fontdialog_controls.inlineEdit(Picker, body, {
+         x = list.viewport.x + list.frame.x + list.page.x + dims.x,
+         y = list.viewport.y + list.frame.y + list.page.y + dims.y,
+         width = dims.width, height = dims.height, text = Name, size = FONT_SIZE, charLimit = NAME_LIMIT,
+         done = function(Text:str)
+            self.editor = nil
             endEdit(Name, Text)
-         end)
-      end
-      ed.finish = finish
-
-      ed.clip.mtSubscribeKeyboard(function(Clip:obj!, Qualifiers:num!, Value:num!, Unicode)
-         if not (Qualifiers has KQ_PRESSED) then return end
-         if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
-            finish(ed.text.string ?? '')
-         elseif Value is KEY_ESCAPE then
-            finish(nil)
          end
-      end)
-
-      ed.clip.mtSubscribeFeedback(FM_LOST_FOCUS, function(Clip:obj!, Event:num!)
-         finish(ed.text.string ?? '')
-      end)
-
-      Picker.typing(true) -- Suspends the dialog's Enter and single-key shortcuts
-      ed.text.mtSelectArea(0, 0, -1, -1) -- Typing replaces the name
-      ed.clip.acFocus()
-      body.acDraw()
+      })
    end
 
    self.view = gui.listView({

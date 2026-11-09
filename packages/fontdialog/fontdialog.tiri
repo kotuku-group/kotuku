@@ -233,6 +233,7 @@ gui.dialog.font = function(Options:table)
       previewBkgd = Options.bkgd, -- Overrides the fill of the preview's background
       finished  = false,
       isTyping  = false,
+      inlineEditor = nil, -- The open fontdialog_controls.inlineEdit() editor
       presets   = PRESETS.clone(),
       activePreset = nil, -- Name of the preset most recently applied
       pins      = { },
@@ -414,7 +415,7 @@ gui.dialog.font = function(Options:table)
 
       &typing = function(Typing:bool)
          -- Either editor can still hold the focus when the other finishes on a delayed callback.
-         &isTyping = Typing or (&presetPanel?.editing() ?? false) or (&preview?.typing ?? false)
+         &isTyping = Typing or (&inlineEditor != nil) or (&preview?.typing ?? false)
       end
 
       -- Sizing.  The layout is client_width units wide and is scaled to the width of the window.  The window's height
@@ -820,7 +821,7 @@ gui.dialog.font = function(Options:table)
             processing.delayedCall(function() &fontList?.focusSearch() end)
          elseif Value is KEY_ESCAPE then
             if &effects and &effects.blend.menu?.visible then return end
-            if &presetPanel?.editing() then return end -- Escape cancels the preset name edit instead
+            if &inlineEditor then return end -- Escape cancels the inline edit instead
             processing.delayedCall(function() &cancel() end)
          elseif &isTyping then
             return

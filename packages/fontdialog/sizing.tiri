@@ -127,9 +127,26 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
       return result
    end
 
+   -- The slider's value for a pixel size: a position in the list of strikes if there is one, otherwise the size.
+
+   function sliderValue(Pixels:num!):num
+      if not self.strikes then return Pixels end
+      best = 0
+      for i, size in self.strikes do
+         if math.abs(size - Pixels) < math.abs(self.strikes[best] - Pixels) then best = i end
+      end
+      return best
+   end
+
    self.size = row({
       label = 'Size', min = MIN_SIZE, max = MAX_SIZE, step = PT_STEP / PT_PER_PX, value = state.size,
       format = function(V):str return fontdialog_sizing.formatSize(self.strikes ? self.strikes[V] : V) end,
+      parse = function(Text:str):num -- A typed size is in points, as shown, unless it has another unit
+         points = fontdialog_controls.parseNumber(Text)
+         if points is nil then return nil end
+         pixels = (Text.endsWith('px')) ? points : (points / PT_PER_PX)
+         return sliderValue(pixels)
+      end,
       onChange = function(V)
          if self.strikes then
             Picker.update({ size = self.strikes[V] }, 'size')
@@ -163,17 +180,6 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
       x = PAD, y = y, label = 'Kerning', items = KERNING_ITEMS, selected = state.kerning,
       onChange = function(ID) Picker.update({ kerning = ID }, 'sizing') end
    })
-
-   -- The slider's value for a pixel size: a position in the list of strikes if there is one, otherwise the size.
-
-   function sliderValue(Pixels:num!):num
-      if not self.strikes then return Pixels end
-      best = 0
-      for i, size in self.strikes do
-         if math.abs(size - Pixels) < math.abs(self.strikes[best] - Pixels) then best = i end
-      end
-      return best
-   end
 
    -- A change of family resets the size range.  Several fixed sizes are selected by their position in the list of
    -- strikes, so the thumb can only rest on a size that exists.  Scalable families step by half points; the step
