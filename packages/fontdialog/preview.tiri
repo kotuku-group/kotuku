@@ -204,10 +204,10 @@ fontdialog_preview.applyCase = function(Text:str!, Case:str):str
    return parts.concat('')
 end
 
--- A one-line summary of a settings table, e.g. `Noto Sans · 20 px · Regular`.
+-- A one-line summary of a settings table, e.g. `Noto Sans · 15 pt · Regular`.
 
 fontdialog_preview.summary = function(State:table!):str
-   return f'{State.font.name} · {fontdialog_sizing.formatSize(State.size, State.unit)} · ' ..
+   return f'{State.font.name} · {fontdialog_sizing.formatSize(State.size)} · ' ..
       fontdialog_style.describe(State)
 end
 
@@ -519,7 +519,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
             sample.y = y
             fontdialog_parts.text(pane, {
                x = PANE_PAD_X, y = y, size = 10, face = fontdialog_parts.FACE_MONO, fill = t.fg3,
-               string = fontdialog_sizing.formatValue(size, Settings.unit ?? 'px')
+               string = fontdialog_sizing.formatValue(size)
             })
             y += math.ceil(size * 0.35) + 8
          end

@@ -201,14 +201,14 @@ end
 -- Settings that exist only for families with glyph outlines.
 
 OUTLINE_SETTINGS <const> = array<str> {
-   'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur',
-   'shadowOpacity', 'glowOn', 'glowRadius', 'blend', 'tracking', 'wordSpace'
+   'opacity', 'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY',
+   'shadowBlur', 'shadowOpacity', 'glowOn', 'glowRadius', 'blend', 'tracking', 'wordSpace'
 }
 
 @Doc(text=[[
 @desc True if a family has glyph outlines.  Bitmap families are drawn as a textured block, to which a stroke or effect
-would apply as a whole, so the Stroke and Effects panels are unavailable for them.  Bitmap text is also drawn a line at
-a time, so tracking, word spacing and justification are unavailable.
+would apply as a whole, so fill opacity and the Stroke and Effects panels are unavailable for them.  Bitmap text is also
+drawn a line at a time, so tracking, word spacing and justification are unavailable.
 ]])
 fontdialog_style.hasOutlines = function(Font:table!):bool
    return Font.tech != 'bitmap'
@@ -250,8 +250,12 @@ end
 
 function paintParts(State:table!):array<str>
    parts = array<str>
+   if not fontdialog_style.hasOutlines(State.font) then
+      parts.push(f'fill={fontdialog_controls.withAlpha(State.fill, 100)}')
+      return parts
+   end
+
    parts.push(f'fill={fontdialog_controls.withAlpha(State.fill, State.opacity)}')
-   if not fontdialog_style.hasOutlines(State.font) then return parts end
 
    if State.strokeOn then
       parts.push(f'stroke={fontdialog_controls.withAlpha(State.strokeColour, State.strokeOpacity)}')
@@ -327,11 +331,7 @@ fontdialog_style.fontDef = function(State:table!):str
    parts = array<str>
    parts.push(f'face={font.name}')
 
-   if State.unit is 'pt' then
-      parts.push(f'size={State.size * 0.75}pt')
-   else
-      parts.push(f'size={State.size}px')
-   end
+   parts.push(f'size={State.size * 0.75}pt')
 
    parts.push(fontdialog_style.fontStyle(State)) -- Includes any axis that is away from its default
 
@@ -366,10 +366,7 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
    settings = fontdialog_style.readDef(Def)
    font = State.font
 
-   if settings.size then
-      State.unit = settings.size.endsWith('pt') ? 'pt' : 'px'
-      State.size = fontdialog_sizing_pixels(settings.size)
-   end
+   if settings.size then State.size = fontdialog_sizing_pixels(settings.size) end
 
    if font.variable then
       if settings.style then

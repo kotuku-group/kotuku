@@ -162,7 +162,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[
-@desc Create a segmented group of buttons that abut, as used for Paragraph / Waterfall and the px / pt units.  A
+@desc Create a segmented group of buttons that abut, as used for Paragraph / Waterfall.  A
 pressed button takes the primary button style.  In the default radio mode exactly one button is pressed; with
 `multi`, each button toggles independently.
 @input Picker table

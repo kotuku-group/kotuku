@@ -8,8 +8,8 @@
 
    namespace fontdialog_presets { }
 
-ROW_H       <const> = 26
-VISIBLE_ROWS <const> = 5
+ROW_H       <const> = 20
+VISIBLE_ROWS <const> = 4
 BUTTON_H    <const> = 24 -- Fits within the panel header
 LIST_H      <const> = ROW_H * VISIBLE_ROWS
 
@@ -76,7 +76,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       rowSpacing = 0,
       scrollDirection = 'vertical',
       items      = listItems(),
-      theme      = { page = { text = { face = fontdialog_parts.FACE_UI, fontSize = 11, fontStyle = 'Medium' } } },
+      theme      = { page = { text = { face = fontdialog_parts.FACE_UI, fontSize = 11 } } },
 
       events = {
          itemSelected = function(View:table, Reason:str, Item:table)

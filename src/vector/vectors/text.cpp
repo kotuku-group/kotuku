@@ -2657,7 +2657,9 @@ static ERR reset_font(extVectorText *Vector, bool Force)
          &Vector->txHandle); !error) {
       if (Vector->txHandle->type IS CF_BITMAP) {
          Vector->txBitmapFont = ((bmp_font *)Vector->txHandle)->font;
-         Vector->txFontSize = std::trunc(double(Vector->txBitmapFont->Height) * (DISPLAY_DPI / 72.0));
+         // The em size is taken from the selected strike's point size.  Glyph metrics can't be used here because
+         // different strikes can have the same metrics, and TEXT_SET_FontSize() would then ignore a change of strike.
+         Vector->txFontSize = std::max(1.0, std::round(Vector->txBitmapFont->Point * (DISPLAY_DPI / 72.0)));
       }
       mark_dirty(Vector, RC::DIRTY);
       if (Vector->txEffectsPending) return update_text_effects(Vector);

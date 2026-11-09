@@ -187,8 +187,7 @@ end
 function freshState(Font:table!, Size:num, Fill:str):table
    return {
       font         = Font,
-      size         = fontdialog_sizing.snap(Font, Size ?? 20),
-      unit         = 'px',
+      size         = fontdialog_sizing.quantise(Font, Size ?? 20),
       lineHeight   = 1.45,
       tracking     = 0,
       wordSpace    = 0,
@@ -305,7 +304,7 @@ gui.dialog.font = function(Options:table)
          if Font is &state.font then return end
          &update({
             font     = Font,
-            size     = fontdialog_sizing.snap(Font, &state.size),
+            size     = fontdialog_sizing.quantise(Font, &state.size),
             axes     = fontdialog_style.defaultAxes(Font),
             italic   = false,
             style    = fontdialog_style.defaultStyle(Font),
@@ -326,7 +325,7 @@ gui.dialog.font = function(Options:table)
 
          state = freshState(font, nil, &defaultFill)
          fontdialog_style.applyDef(state, preset.def)
-         state.size = fontdialog_sizing.snap(font, state.size)
+         state.size = fontdialog_sizing.quantise(font, state.size)
          return state
       end
 
@@ -518,7 +517,7 @@ gui.dialog.font = function(Options:table)
          result = {
             face      = s.font.name,
             style     = fontdialog_style.fontStyle(s),
-            size     = s.size,
+            size      = s.size,
             pointSize = fontdialog_sizing.points(s.size),
             fill      = s.fill,
             fontFeatures = fontdialog_style.featureList(s),
@@ -571,8 +570,9 @@ gui.dialog.font = function(Options:table)
       &tokens = fontdialog_theme.tokens(&themeName)
       &defaultFill = fontdialog_controls.toHex(&theme.page.text.fill ?? '#000000')
 
-      -- Initial settings: the requested family, or the first preset.  A requested size overrides the preset's, and
-      -- is shown in points if it is a whole number of points once snapped to the family's fixed sizes.  The other options are then applied, and fontDef last so that its keys take precedence.
+      -- Initial settings: the requested family, or the first preset.  A requested size overrides the preset's.  The
+      -- other options are then applied, and fontDef last so that its keys take precedence.  The final size is
+      -- converted to a selectable point size, whatever unit it was given in.
 
       size = fontdialog_sizing.parse(Options.size)
 
@@ -587,10 +587,7 @@ gui.dialog.font = function(Options:table)
             &defaultFill)
       end
 
-      if size then
-         &state.size = fontdialog_sizing.snap(&state.font, size)
-         &state.unit = fontdialog_sizing.preferredUnit(&state.size)
-      end
+      if size then &state.size = size end
 
       if Options.style?? then fontdialog_style.applyDef(&state, Options.style) end
       if Options.fill?? then &state.fill = fontdialog_controls.toHex(Options.fill) end
@@ -600,10 +597,8 @@ gui.dialog.font = function(Options:table)
          &state.text = fontdialog_preview.sampleFor(&state.font)
       end
 
-      if definition then
-         fontdialog_style.applyDef(&state, Options.fontDef)
-         &state.size = fontdialog_sizing.snap(&state.font, &state.size)
-      end
+      if definition then fontdialog_style.applyDef(&state, Options.fontDef) end
+      &state.size = fontdialog_sizing.quantise(&state.font, &state.size)
 
       &initialState = table.clone(&state)
 

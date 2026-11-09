@@ -1,6 +1,7 @@
--- Fill panel: the text colour and the opacity of the fill, which is its alpha channel.
+-- Fill panel: the text colour and the opacity of the fill, which is its alpha channel.  Opacity is disabled for bitmap
+-- families, which are drawn as a textured block.
 
-   import 'gui', 'gui/panel', 'gui/toggle', './theme', './parts', './controls'
+   import 'gui', 'gui/panel', 'gui/toggle', './theme', './parts', './controls', './style'
 
    namespace fontdialog_fill { }
 
@@ -56,6 +57,12 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
    })
 
    self.update = function(Source:str)
+      outlined = fontdialog_style.hasOutlines(Picker.state.font)
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.opacity }, outlined)
+      end
+
       fill_on = Picker.state.fill != 'none'
       self.enabled.setState(fill_on)
       if Source is 'fill' then return end

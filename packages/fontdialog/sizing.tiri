@@ -1,5 +1,5 @@
--- Sizing panel: font size, line height, tracking, word spacing and kerning, with a px / pt unit switch in the
--- header.  Tracking and word spacing are disabled for bitmap families, which are drawn a line at a time.
+-- Sizing panel: font size in points, line height, tracking, word spacing and kerning.  Tracking and word spacing are
+-- disabled for bitmap families, which are drawn a line at a time.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls', './style'
 
@@ -11,7 +11,7 @@ ROW_H <const> = fontdialog_controls.ROW_H
 MIN_SIZE <const> = 6
 MAX_SIZE <const> = 144
 PT_PER_PX <const> = 0.75
-PT_STEP   <const> = 0.5 -- Size increment in pt mode, in points
+PT_STEP   <const> = 0.5 -- Size increment, in points
 
 fontdialog_sizing.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 8 + (ROW_H * 5) + 8
 
@@ -28,18 +28,17 @@ function trimZero(Text:str!):str
 end
 
 @Doc(text=[[
-@desc Format a pixel size as a number in the given unit, e.g. `16` for px or `12` for pt.
+@desc Format a pixel size as a number of points, e.g. `12` for 16 pixels.
 ]])
-fontdialog_sizing.formatValue = function(Pixels:num!, Unit:str!):str
-   if Unit is 'pt' then return trimZero(string.format('%.1f', Pixels * PT_PER_PX)) end
-   return tostring(math.round(Pixels))
+fontdialog_sizing.formatValue = function(Pixels:num!):str
+   return trimZero(string.format('%.1f', Pixels * PT_PER_PX))
 end
 
 @Doc(text=[[
-@desc Format a pixel size in the given unit, e.g. `16 px` or `12 pt`.
+@desc Format a pixel size in points, e.g. `12 pt`.
 ]])
-fontdialog_sizing.formatSize = function(Pixels:num!, Unit:str!):str
-   return f'{fontdialog_sizing.formatValue(Pixels, Unit)} {Unit}'
+fontdialog_sizing.formatSize = function(Pixels:num!):str
+   return f'{fontdialog_sizing.formatValue(Pixels)} pt'
 end
 
 @Doc(text=[[
@@ -59,14 +58,6 @@ end
 ]])
 fontdialog_sizing.points = function(Pixels:num!):num
    return Pixels * PT_PER_PX
-end
-
-@Doc(text=[[
-@desc The unit to show a pixel size in: `pt` if the size is a whole number of points, otherwise `px`.
-]])
-fontdialog_sizing.preferredUnit = function(Pixels:num!):str
-   points = Pixels * PT_PER_PX
-   return (math.abs(points - math.round(points)) < 0.0001) ? 'pt' : 'px'
 end
 
 -- True if the family is restricted to a fixed list of sizes.  Bitmap families list their strikes, and scalable
@@ -98,12 +89,11 @@ fontdialog_sizing.snap = function(Font:table!, Pixels:num!):num
    return best
 end
 
--- Quantise a pixel size for display in a unit.  Families with fixed sizes snap to them; otherwise sizes in pt mode
--- are rounded to the nearest half point, so that only half point values can be selected.
+-- Quantise a pixel size to a selectable point size.  Families with fixed sizes snap to them; otherwise sizes are
+-- rounded to the nearest half point.
 
-fontdialog_sizing.quantise = function(Font:table!, Pixels:num!, Unit:str!):num
+fontdialog_sizing.quantise = function(Font:table!, Pixels:num!):num
    if fontdialog_sizing.fixed(Font) then return fontdialog_sizing.snap(Font, Pixels) end
-   if Unit != 'pt' then return Pixels end
    points = math.round(Pixels * PT_PER_PX / PT_STEP) * PT_STEP
    return math.clamp(points, MIN_SIZE * PT_PER_PX, MAX_SIZE * PT_PER_PX) / PT_PER_PX
 end
@@ -121,23 +111,12 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
    state = Picker.state
    inner = Options.width - (PAD * 2)
 
-   self = { outlined = true }
+   self = { outlined = true, sizeLocked = false }
 
    self.panel = gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = fontdialog_sizing.HEIGHT,
       title = 'Sizing', padding = fontdialog_parts.PANEL_PADDING
    })
-
-   self.units = fontdialog_controls.segmented(Picker, self.panel.header, {
-      height = 20, size = 10,
-      items = array<table> { { id = 'px', label = 'px' }, { id = 'pt', label = 'pt' } },
-      selected = state.unit,
-      onChange = function(ID)
-         Picker.update({ unit = ID, size = fontdialog_sizing.quantise(Picker.state.font, Picker.state.size, ID) },
-            'unit')
-      end
-   })
-   self.panel.headerItem('trail', self.units)
 
    body = self.panel.body
    y = 8
@@ -149,10 +128,14 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
    end
 
    self.size = row({
-      label = 'Size', min = MIN_SIZE, max = MAX_SIZE, step = 1, value = state.size,
-      format = function(V):str return fontdialog_sizing.formatSize(V, Picker.state.unit) end,
+      label = 'Size', min = MIN_SIZE, max = MAX_SIZE, step = PT_STEP / PT_PER_PX, value = state.size,
+      format = function(V):str return fontdialog_sizing.formatSize(self.strikes ? self.strikes[V] : V) end,
       onChange = function(V)
-         snapped = fontdialog_sizing.quantise(Picker.state.font, V, Picker.state.unit)
+         if self.strikes then
+            Picker.update({ size = self.strikes[V] }, 'size')
+            return
+         end
+         snapped = fontdialog_sizing.quantise(Picker.state.font, V)
          if snapped != V then self.size.set(snapped) end
          Picker.update({ size = snapped }, 'size')
       end
@@ -181,10 +164,21 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
       onChange = function(ID) Picker.update({ kerning = ID }, 'sizing') end
    })
 
-   -- A change of family resets the size range: families with fixed sizes are limited to them.  Fixed sizes are not
-   -- whole pixels, so the slider is made continuous and the size is snapped by onChange instead.  Scalable families
-   -- step by whole pixels in px mode and by half points in pt mode; the step counts from MIN_SIZE, which is a whole
-   -- number of half points.
+   -- The slider's value for a pixel size: a position in the list of strikes if there is one, otherwise the size.
+
+   function sliderValue(Pixels:num!):num
+      if not self.strikes then return Pixels end
+      best = 0
+      for i, size in self.strikes do
+         if math.abs(size - Pixels) < math.abs(self.strikes[best] - Pixels) then best = i end
+      end
+      return best
+   end
+
+   -- A change of family resets the size range.  Several fixed sizes are selected by their position in the list of
+   -- strikes, so the thumb can only rest on a size that exists.  Scalable families step by half points; the step
+   -- counts from MIN_SIZE, which is a whole number of half points.  A family with a single fixed size has nothing to
+   -- choose from, so the slider is disabled.
 
    self.update = function(Source:str)
       s = Picker.state
@@ -195,26 +189,34 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
          fontdialog_controls.setEnabled(array<table> { self.tracking, self.wordSpace }, outlined)
       end
 
-      if (Source is 'reset') or (Source is 'preset') then self.units.select(s.unit) end
-      if (Source is 'font') or (Source is 'init') or (Source is 'reset') or (Source is 'preset') or (Source is 'unit')
-      then
+      if (Source is 'font') or (Source is 'init') or (Source is 'reset') or (Source is 'preset') then
+         locked = false
+         self.strikes = nil
          if fontdialog_sizing.fixed(s.font) then
-            self.size.slider.step = 0
             strikes = fontdialog_sizing.strikes(s.font)
-            if #strikes > 1 then
-               self.size.setRange(strikes.first(), strikes.last())
-            else
+            locked = #strikes is 1
+            if locked then
+               self.size.slider.step = 0
                self.size.setRange(math.max(1, strikes.first() - 1), strikes.first() + 1)
+            else
+               self.strikes = strikes
+               self.size.slider.step = 1
+               self.size.setRange(0, #strikes - 1)
             end
             self.panel.setMeta((s.font.tech is 'bitmap') ? 'bitmap strikes' : 'fixed sizes')
          else
-            self.size.slider.step = (s.unit is 'pt') ? (PT_STEP / PT_PER_PX) : 1
+            self.size.slider.step = PT_STEP / PT_PER_PX
             self.size.setRange(MIN_SIZE, MAX_SIZE)
             self.panel.setMeta('')
          end
+
+         if locked != self.sizeLocked then
+            self.sizeLocked = locked
+            fontdialog_controls.setEnabled(array<table> { self.size }, not locked)
+         end
       end
 
-      if Source != 'size' then self.size.set(s.size) end
+      if Source != 'size' then self.size.set(sliderValue(s.size)) end
       if Source != 'sizing' then
          self.lineHeight.set(s.lineHeight)
          self.tracking.set(s.tracking)
