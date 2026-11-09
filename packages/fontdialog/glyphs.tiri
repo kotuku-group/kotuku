@@ -64,16 +64,21 @@ end
 @result Table with `panel`, `height` and `update(Source)`
 ]])
 fontdialog_glyphs.new = function(Picker:table!, Target:obj!, Options:table!):table
-   t = Picker.tokens
+   t     = Picker.tokens
    inner = Options.width - (PAD * 2)
-   mono = fontdialog_parts.FACE_MONO
-   text = fontdialog_controls.text
+   mono  = fontdialog_parts.FACE_MONO
+   text  = fontdialog_controls.text
 
    self = { height = fontdialog_glyphs.HEIGHT, rows = array<table>, font = nil }
 
    self.panel = gui.panel({
-      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
-      title = 'Glyph report', padding = fontdialog_parts.PANEL_PADDING
+      target  = Target,
+      x       = Options.x,
+      y       = Options.y,
+      width   = Options.width,
+      height  = self.height,
+      title   = 'Glyph report',
+      padding = fontdialog_parts.PANEL_PADDING
    })
 
    body = self.panel.body
@@ -146,19 +151,23 @@ fontdialog_glyphs.new = function(Picker:table!, Target:obj!, Options:table!):tab
             hidden.push(set.label)
             continue
          end
+
          row = self.rows[shown]
          row.viewport.visibility = VIS_VISIBLE
          row.label.string = set.label
          row.bar.width = math.max(1, row.barWidth * pct / 100)
          row.bar.fill = blendOKLCH(bar_low, bar_high, math.clamp(pct / 100, 0, 1))
-         row.value.string = f'{pct}%'
-         row.value.fill = (pct is 100) ? t.fg2 : t.fg0
+         row.value.{ string = f'{pct}%', fill = t.fg2 }
          shown++
       end
-      for i in {shown to #self.rows} do self.rows[i].viewport.visibility = VIS_HIDDEN end
+
+      for i in {shown to #self.rows} do
+         self.rows[i].viewport.visibility = VIS_HIDDEN
+      end
 
       note_y = self.covTop + (shown * COV_ROW) + NOTE_GAP
       self.note.y = note_y
+
       if #hidden > 0 then
          self.note.string = f'Not shown (under {HIDE_BELOW}%): {hidden.concat(", ")}.'
       else

@@ -1,6 +1,6 @@
 -- Fill panel: the text colour and the opacity of the fill, which is its alpha channel.
 
-   import 'gui', 'gui/panel', './theme', './parts', './controls'
+   import 'gui', 'gui/panel', 'gui/toggle', './theme', './parts', './controls'
 
    namespace fontdialog_fill { }
 
@@ -28,9 +28,23 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
    })
 
    body = self.panel.body
+   toggle_size = 16
+   toggle_gap = 8
+
+   self.enabled = gui.toggle({
+      target = body, x = PAD + inner - toggle_size,
+      y = 10 + ((fontdialog_controls.COLOUR_H - toggle_size) * 0.5),
+      value = state.fill != 'none', width = toggle_size, height = toggle_size,
+      events = {
+         activate = function()
+            Picker.update({ fill = &value ? self.colour.colour : 'none' }, 'fill')
+         end
+      }
+   })
 
    self.colour = fontdialog_controls.colourButton(Picker, body, {
-      x = PAD, y = 10, width = inner, colour = state.fill, title = 'Text Fill',
+      x = PAD, y = 10, width = inner - toggle_size - toggle_gap,
+      colour = (state.fill != 'none') ? state.fill : Picker.defaultFill, title = 'Text Fill', label = 'Fill',
       onChange = function(Colour) Picker.update({ fill = Colour }, 'fill') end
    })
 
@@ -42,8 +56,10 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
    })
 
    self.update = function(Source:str)
+      fill_on = Picker.state.fill != 'none'
+      self.enabled.setState(fill_on)
       if Source is 'fill' then return end
-      self.colour.set(Picker.state.fill)
+      if fill_on then self.colour.set(Picker.state.fill) end
       self.opacity.set(Picker.state.opacity)
    end
 

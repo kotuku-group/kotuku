@@ -15,10 +15,10 @@ JOIN_ITEMS <const> = array<table> {
 }
 
 @Doc(text=[[
-@desc Create the Stroke panel.  The toggle in the header enables the stroke.
+@desc Create the stroke controls with an unlabelled toggle beside the colour selector.
 @input Picker table
 @input Target viewport
-@input Options: x, y, width
+@input Options: x, y, width, panel (optional shared panel), contentY (top of the controls in a shared panel)
 @result Table with `panel`, `height` and `update(Source)`
 ]])
 fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):table
@@ -27,25 +27,30 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
 
    self = { height = fontdialog_stroke.HEIGHT }
 
-   self.panel = gui.panel({
+   self.panel = Options.panel ?? gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
       title = 'Stroke', padding = fontdialog_parts.PANEL_PADDING
    })
 
-   self.enabled = self.panel.headerItem('trail', gui.toggle({
-      target = self.panel.header, value = state.strokeOn, height = 16,
+   body = self.panel.body
+   y = Options.contentY ?? 10
+   toggle_size = 16
+   toggle_gap = 8
+
+   self.enabled = gui.toggle({
+      target = body, x = PAD + inner - toggle_size,
+      y = y + ((fontdialog_controls.COLOUR_H - toggle_size) * 0.5),
+      value = state.strokeOn, width = toggle_size, height = toggle_size,
       events = {
          activate = function()
             Picker.update({ strokeOn = &value }, 'stroke')
          end
       }
-   }))
-
-   body = self.panel.body
-   y = 10
+   })
 
    self.colour = fontdialog_controls.colourButton(Picker, body, {
-      x = PAD, y = y, width = inner, colour = state.strokeColour, title = 'Stroke Colour',
+      x = PAD, y = y, width = inner - toggle_size - toggle_gap,
+      colour = state.strokeColour, title = 'Stroke Colour', label = 'Stroke',
       onChange = function(Colour) Picker.update({ strokeColour = Colour, strokeOn = true }, 'stroke') end
    })
    y += fontdialog_controls.COLOUR_H + 4
@@ -81,7 +86,7 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
       end
 
       if outlined then
-         self.panel.setMeta(s.strokeOn ? f'{s.strokeWidth} px' : 'Off')
+         self.panel.setMeta(s.strokeOn ? f'{s.strokeWidth} px' : '')
       else
          self.panel.setMeta('Scalable fonts only')
       end

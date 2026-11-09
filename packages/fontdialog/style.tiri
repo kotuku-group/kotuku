@@ -1,7 +1,8 @@
 -- Style panel: the axes of a variable family, or the styles of a static or bitmap family, followed by the OpenType
 -- feature switches.  The content is rebuilt whenever the family changes.  Weight, width, italic and the static style
--- and the other axes are applied to the preview.  The feature switches are recorded but not yet rendered.  This file
--- also composes the font definitions: fontDef() for the result, and paintDef() for the preview.
+-- and the other axes are applied to the preview.  The feature switches are passed to the result and the samples, but
+-- VectorText does not render them yet.  This file also composes the font definitions: fontDef() for the result, and
+-- paintDef() for the preview.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 
@@ -47,6 +48,17 @@ FEATURES <const> = array<table> {
    { id = 'frac', label = 'frac', tip = 'Fractions' },
    { id = 'zero', label = 'zero', tip = 'Slashed zero' }
 }
+
+-- Features that apply unless they are turned off, so that switching one off has to be stated as `tag 0`.
+
+DEFAULT_FEATURES <const> = { liga = true, kern = true }
+
+@Doc(text=[[
+@desc Return the feature settings that a family starts with, as a table that the caller may change.
+]])
+fontdialog_style.defaultFeatures = function():table
+   return table.clone(DEFAULT_FEATURES)
+end
 
 WEIGHT_KEYWORDS <const> = {
    thin = 100, hairline = 100, extralight = 200, ultralight = 200, light = 300, regular = 400, normal = 400, book = 400,
@@ -264,7 +276,7 @@ fontdialog_style.paintDef = function(State:table!):str
    return paintParts(State).concat('; ')
 end
 
--- The definition keys for the line height and spacing.  Slider steps are rounded, as accumulated floating point error
+-- The definition keys for the line height, spacing and OpenType features.  Slider steps are rounded, as accumulated floating point error
 -- would otherwise appear in the definition.
 
 function tidy(Value:num!):num
@@ -277,12 +289,28 @@ function layoutParts(State:table!):array<str>
    if not fontdialog_style.hasOutlines(State.font) then return parts end
    parts.push(f'letterSpacing={tidy(State.tracking / 1000)}em')
    parts.push(f'wordSpacing={tidy(State.wordSpace)}em')
+   parts.push(f'features={fontdialog_style.featureList(State)}') -- Stated when empty, so that an existing text clears
    return parts
 end
 
 @Doc(text=[[
+@desc Return the OpenType feature settings of the picker state in the canonical form of a definition's `features` key,
+e.g. `kern 1, liga 0, smcp 1`.  Only features that the family provides are listed, and the result is `none` if there
+are no such settings.
+]])
+fontdialog_style.featureList = function(State:table!):str
+   tags = array<str>
+   for tag, on in State.features do
+      if tag in State.font.features then tags.push(f'{tag} {on ? 1 : 0}') end
+   end
+   if #tags is 0 then return 'none' end
+   tags.sort()
+   return tags.concat(', ')
+end
+
+@Doc(text=[[
 @desc Return the font definition that a sample is drawn with, for the VectorText `textStyle` field: the paint settings
-of `paintDef()` and the line height and spacing.
+of `paintDef()`, the line height and spacing, and the OpenType features.
 ]])
 fontdialog_style.sampleDef = function(State:table!):str
    parts = paintParts(State)
@@ -305,10 +333,6 @@ fontdialog_style.fontDef = function(State:table!):str
    end
 
    parts.push(fontdialog_style.fontStyle(State)) -- Includes any axis that is away from its default
-
-   features = array<str>
-   for tag, on in State.features do features.push(f'{tag} {on ? 1 : 0}') end
-   if #features > 0 then parts.push('features=' .. features.concat(', ')) end
 
    for part in values(layoutParts(State)) do parts.push(part) end
    parts.push(f'kerning={State.kerning}')
@@ -375,7 +399,7 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
    if settings.italic then State.italic = settings.italic is 'yes' end
 
    if settings.features and (settings.features != 'none') then
-      State.features = { }
+      State.features = fontdialog_style.defaultFeatures() -- A feature that the definition omits keeps its default
       for entry in values(settings.features.split(', ')) do
          feature = entry.split(' ')
          State.features[feature[0]] = feature[1] != '0'
@@ -533,7 +557,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
                x = PAD, y = y, wrap = inner, items = items, multi = true, selected = s.features,
                onChange = function(ID, Pressed)
                   features = table.clone(Picker.state.features)
-                  features[ID] = Pressed ? true : nil
+                  features[ID] = (Pressed or DEFAULT_FEATURES[ID]) ? Pressed : nil
                   Picker.update({ features = features }, 'style')
                end
             })

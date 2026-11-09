@@ -65,7 +65,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
    })
 
    self.glow = sliders(array<table> {
-      { key = 'glowRadius', label = 'Radius', min = 0, max = 40 }
+      { key = 'glowRadius', label = 'Radius', min = 1, max = 40 }
    })
 
    self.blendLabel = fontdialog_controls.text(body, { x = PAD, size = 12, fill = t.fg1, string = 'Blend' })

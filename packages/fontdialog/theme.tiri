@@ -41,7 +41,7 @@ PANEL_HEADER <const> = 31 -- Panel header, excluding the divider
 fontdialog_theme.PANEL_HEADER_H = PANEL_HEADER + 1 -- Panel header including its divider
 
 THUMB_WIDTH  <const> = 3  -- Channel slider thumb bar
-THUMB_HEIGHT <const> = 18
+THUMB_HEIGHT <const> = 12
 
 TEXT_CONTRAST <const> = 4.5   -- WCAG 2 AA minimum for normal text; no picker text reaches the large-text size
 MID_LUMINANCE <const> = 0.179 -- Background luminance at which black and white text have equal contrast

@@ -324,6 +324,7 @@ end
 unchanged.
 ]])
 fontdialog_controls.toHex = function(Colour:str!):str
+   if Colour is 'none' then return Colour end
    try
       return hexColour(gui.strToRGB(Colour))
    except ex
@@ -372,7 +373,6 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
 
    cb.button = gui.button({
       target = Target, x = Options.x ?? 0, y = Options.y ?? 0, width = Options.width, height = height,
-      tip = 'Opens the Colour Picker',
       theme = {
          bkgd = { fill = t.sunk, stroke = t.border, roundX = 4, roundY = 4 },
          highlight = { fill = t.accentSoft }
@@ -431,7 +431,7 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
 
    fontdialog_parts.text(vp, {
       x = vp.width - 10, y = fontdialog_parts.baseline(0, height, 11), size = 11, fill = t.fg3, align = 'right',
-      string = 'Colour Picker  ›'
+      string = Options.label ?? 'Colour Picker  ›'
    })
 
    cb.set = function(Colour:str!)

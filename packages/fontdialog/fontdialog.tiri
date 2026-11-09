@@ -17,7 +17,8 @@
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
 
-   Result holds face, style, size (px), pointSize, fill, fontDef and settings, or only the keys named by resultFilter.
+   Result holds face, style, size (px), pointSize, fill, fontFeatures, fontDef and settings, or only the keys named by
+   resultFilter.  fontFeatures is the value of the definition's features key, e.g. 'kern 1, liga 0, smcp 1'.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
@@ -79,7 +80,7 @@ DEFAULT_FACE <const> = 'Noto Sans'
 -- The keys returned in the result when the client does not specify a resultFilter.
 
 glDefaultFilter <const> = array<str> {
-   'face', 'style', 'size', 'pointSize', 'fill', 'fontDef'
+   'face', 'style', 'size', 'pointSize', 'fill', 'fontFeatures', 'fontDef'
    -- Not included: settings
 }
 
@@ -117,6 +118,7 @@ end
 function planLayout(Has:table!):table
    stack = array<str>
    for name in values(STACK_ORDER) do
+      if (name is 'stroke') and Has.fill then continue end
       if Has[name] and not (Has.preview and ((name is 'sizing') or (name is 'style'))) then stack.push(name) end
    end
 
@@ -186,7 +188,7 @@ function freshState(Font:table!, Size:num, Fill:str):table
       axes         = fontdialog_style.defaultAxes(Font),
       italic       = false,
       style        = fontdialog_style.defaultStyle(Font),
-      features     = { liga = true, kern = true },
+      features     = fontdialog_style.defaultFeatures(),
       fill         = Fill,
       opacity      = 100, -- Alpha of the fill
       strokeOn     = false,
@@ -297,7 +299,7 @@ gui.dialog.font = function(Options:table)
             axes     = fontdialog_style.defaultAxes(Font),
             italic   = false,
             style    = fontdialog_style.defaultStyle(Font),
-            features = { liga = true, kern = true },
+            features = fontdialog_style.defaultFeatures(),
             text     = fontdialog_preview.textFor(Font, &state.text)
          }, 'font')
       end
@@ -505,6 +507,7 @@ gui.dialog.font = function(Options:table)
             size     = s.size,
             pointSize = fontdialog_sizing.points(s.size),
             fill      = s.fill,
+            fontFeatures = fontdialog_style.featureList(s),
             fontDef   = fontdialog_style.fontDef(s),
             settings  = fontdialog_style.resultSettings(s)
          }
@@ -674,10 +677,24 @@ gui.dialog.font = function(Options:table)
          return table.merge(Options, { onResize = function[<weak> &&]() &layoutRight() end })
       end
 
-      if enabled.glyphs    then &glyphs    = fontdialog_glyphs.new(&&, &rightPage, restack(stack_options)) end
-      if enabled.fill      then &fill      = fontdialog_fill.new(&&, &rightPage, stack_options) end
-      if enabled.stroke    then &stroke    = fontdialog_stroke.new(&&, &rightPage, stack_options) end
-      if enabled.effects   then &effects   = fontdialog_effects.new(&&, &rightPage, restack(stack_options)) end
+      if enabled.glyphs then &glyphs = fontdialog_glyphs.new(&&, &rightPage, restack(stack_options)) end
+
+      if enabled.fill then &fill = fontdialog_fill.new(&&, &rightPage, stack_options) end
+
+      if enabled.stroke then
+         stroke_options = table.clone(stack_options)
+         if enabled.fill then
+            stroke_options.panel = &fill.panel
+            stroke_options.contentY = &fill.height - fontdialog_theme.PANEL_HEADER_H + 4
+            &fill.height += fontdialog_stroke.HEIGHT - fontdialog_theme.PANEL_HEADER_H
+            &fill.panel.setTitle('Paint')
+            &fill.panel.viewport.height = &fill.height
+         end
+         &stroke = fontdialog_stroke.new(&&, &rightPage, stroke_options)
+      end
+
+      if enabled.effects then &effects = fontdialog_effects.new(&&, &rightPage, restack(stack_options)) end
+
       if enabled.alignment then &alignment = fontdialog_alignment.new(&&, &rightPage, stack_options) end
 
       for name in values(plan.stackNames) do &rightPanels.push(self[name]) end
@@ -696,6 +713,7 @@ gui.dialog.font = function(Options:table)
       &footer = &viewport.new('VectorViewport', {
          x = 0, y = BODY_HEIGHT, width = client_width, height = FOOTER_HEIGHT
       })
+
       &footer.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = 1, fill = t.border })
 
       -- Hints are limited to the keys that have an effect.  A slim dialog needs its width for the buttons, and in other
@@ -819,8 +837,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- This sub-routine is provided for languages other than Tiri to use the interface.  Options are passed as script keys
 -- and the window ID is returned.  The outcome is written back to the script's keys before the window closes:
--- 'response' is 'select' or 'cancel', and on Select 'face', 'style', 'size' (px), 'pointSize', 'fill' and 'fontDef'
--- describe the font.  'fontDef' is the string equivalent of the Tiri result's settings table.
+-- 'response' is 'select' or 'cancel', and on Select 'face', 'style', 'size' (px), 'pointSize', 'fill', 'fontFeatures'
+-- and 'fontDef' describe the font.  'fontDef' is the string equivalent of the Tiri result's settings table.
 
 @if(imported=false)
    script = obj.find('self')
@@ -848,6 +866,7 @@ end
             script.setKey('size', tostring(Result.size))
             script.setKey('pointSize', tostring(Result.pointSize))
             script.setKey('fill', Result.fill)
+            script.setKey('fontFeatures', Result.fontFeatures)
             script.setKey('fontDef', Result.fontDef)
          end
          script.setKey('response', Result ? 'select' : 'cancel')
