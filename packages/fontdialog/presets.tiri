@@ -1,6 +1,6 @@
--- Presets panel: a list of the built-in and saved presets, with buttons in the header to save the current settings
--- and to delete a saved preset.  Clicking a row applies its preset.  A row stays selected until the settings no longer match the
--- preset, so that clicking the same row again restores them.  Double-clicking a saved preset edits its name in place.
+-- Presets panel: a list of the user's presets, with buttons in the header to save the current settings
+-- and to delete a preset.  Clicking a row applies its preset.  A row stays selected until the settings no longer match the
+-- preset, so that clicking the same row again restores them.  Double-clicking a preset edits its name in place.
 
    import 'gui', 'gui/panel', 'gui/button', 'gui/listview'
    import './theme', './parts', './controls', './style'
@@ -19,7 +19,7 @@ fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialo
 
 @Doc(text=[[
 @desc Create the Presets panel.
-@input Picker table.  The picker provides `presets` (array of { name, user }), `activePreset`, `applyPreset(Name)`,
+@input Picker table.  The picker provides `presets` (array of { name }), `activePreset`, `applyPreset(Name)`,
 `savePreset()`, `deletePreset(Name)`, `renamePreset(Name, NewName)`, `typing(Bool)`, `tokens`, `theme` and `state`.
 @input Target viewport
 @input Options: x, y, width
@@ -42,12 +42,12 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       return items
    end
 
-   -- Only presets saved by the user can be deleted.
+   -- Delete is available while a preset is selected.
 
    function trackSelection()
       name = self.view.sItem?.name
       preset = name ? Picker.presets.find(P => P.name is name) : nil
-      if preset?.user then self.btnDelete.enable() else self.btnDelete.disable() end
+      if preset then self.btnDelete.enable() else self.btnDelete.disable() end
    end
 
    -- Select a preset's row without reporting it as a user selection.
@@ -103,7 +103,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
    function beginEdit(Name:str!)
       if self.editor or Picker.inlineEditor then return end
       preset = Picker.presets.find(P => P.name is Name)
-      if not preset?.user then return end
+      preset ?! return
       local item:table = nil
       for row in values(self.view.items) do
          if row.name is Name then
@@ -159,7 +159,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       target   = self.panel.header,
       height   = BUTTON_H,
       icon     = 'items/trash',
-      tip      = 'Delete saved preset',
+      tip      = 'Delete preset',
       disabled = true,
       events   = {
          activate = function()

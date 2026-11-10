@@ -36,16 +36,18 @@ end
 
 @Doc(text=[[
 @desc Read the user's saved settings.  The result holds `pins` (array of family names) and `presets` (array of
-`{ name, def }`), and is given to `save()`.  A file that can't be read, or that isn't understood, is reported and marked
+`{ name, def }`), and is given to `save()`.  `empty` is true if the file is missing or holds only white space.  A file that can't be read, or that isn't understood, is reported and marked
 `damaged` so that it will not be overwritten.
 ]])
 fontdialog_storage.load = function():table
-   database = { pins = array<str>, presets = array<table>, damaged = false }
+   database = { pins = array<str>, presets = array<table>, damaged = false, empty = false }
    path = fontdialog_storage.FILE
    try
       text = readFile(path)
       database.sourcePath, database.sourceText = path, text
-      if text?? then
+      if (text is nil) or (text.trim() is '') then
+         database.empty = true
+      else
          data = json.decode(text.trim())
          if (not (data is <table>)) or ((data.version ?? 0) > FORMAT_VERSION) then raise 'Unsupported format' end
          for name in values(data.pins ?? { }) do

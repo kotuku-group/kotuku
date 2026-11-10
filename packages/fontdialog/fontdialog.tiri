@@ -86,10 +86,12 @@ glDefaultFilter <const> = array<str> {
    -- Not included: settings
 }
 
--- Presets.  The first available face of each is used.  A preset's `def` is a font definition.  Presets saved by the
--- user follow these, and are kept in fontdialog_storage.FILE along with the user's pins.
+-- Default presets.  These populate the user's presets when the settings file in fontdialog_storage.FILE is missing
+-- or empty, after which they are ordinary saved presets that can be renamed or deleted.  The first available face
+-- of each is used, and a preset is left out if none of its faces are installed.  A preset's `def` is a font
+-- definition without the face.  The first preset also provides the dialog's initial settings.
 
-PRESETS <const> = array<table> {
+DEFAULT_PRESETS <const> = array<table> {
    { name = 'Body copy',    faces = array<str> { 'Noto Serif', 'PT Serif', 'Crimson Pro' },
       def = 'size=19px; Regular' },
    { name = 'Headline',     faces = array<str> { 'Noto Sans', 'Inconsolata' }, def = 'size=56px; Extra Bold' },
@@ -142,10 +144,12 @@ function planLayout(Has:table!):table
       plan.list = { inner = (#stack is 0 and not Has.preview) ? SLIM_INNER : LEFT_INNER }
       spans.push(plan.list)
    end
+
    if Has.preview then
       plan.centre = { inner = CENTRE_INNER }
       spans.push(plan.centre)
    end
+
    if #stack > 0 then
       plan.stack = { inner = (plan.stackInner * plan.stackColumns) + (GAP * (plan.stackColumns - 1)) }
       spans.push(plan.stack)
@@ -235,7 +239,7 @@ gui.dialog.font = function(Options:table)
       finished  = false,
       isTyping  = false,
       inlineEditor = nil, -- The open fontdialog_controls.inlineEdit() editor
-      presets   = PRESETS.clone(),
+      presets   = array<table>, -- The user's presets as { name, faces, def }
       activePreset = nil, -- Name of the preset most recently applied
       pins      = { },
       database  = fontdialog_storage.load(),
@@ -316,20 +320,24 @@ gui.dialog.font = function(Options:table)
          }, 'font')
       end
 
-      &presetState = function(Name:str!):table
-         preset = &presets.find(P => P.name is Name)
-         preset ?! return nil
+      function presetStateFor(Preset:table!):table
          font = nil
-         for face in values(preset.faces) do
+         for face in values(Preset.faces) do
             font = findFont(face)
             if font then break end
          end
          font ?! return nil
 
          state = freshState(font, nil, &defaultFill)
-         fontdialog_style.applyDef(state, preset.def)
+         fontdialog_style.applyDef(state, Preset.def)
          state.size = fontdialog_sizing.quantise(font, state.size)
          return state
+      end
+
+      &presetState = function(Name:str!):table
+         preset = &presets.find(P => P.name is Name)
+         preset ?! return nil
+         return presetStateFor(preset)
       end
 
       -- Write the user's pins and presets.  A failure is reported in the panel that made the change, and the change
@@ -342,7 +350,7 @@ gui.dialog.font = function(Options:table)
 
          presets = array<table>
          for preset in values(&presets) do
-            if preset.user then presets.push({ name = preset.name, def = preset.def }) end
+            presets.push({ name = preset.name, def = preset.def })
          end
 
          ok, message = fontdialog_storage.save(&database, pins, presets)
@@ -350,7 +358,7 @@ gui.dialog.font = function(Options:table)
       end
 
       &addSavedPreset = function(Name:str!, Def:str!, Face:str!)
-         &presets.push({ name = Name, faces = array<str> { Face }, def = Def, user = true })
+         &presets.push({ name = Name, faces = array<str> { Face }, def = Def })
       end
 
       &savePreset = function():str
@@ -365,10 +373,10 @@ gui.dialog.font = function(Options:table)
          return name
       end
 
-      -- Returns true if the named preset was a saved preset and has been deleted.
+      -- Returns true if the named preset existed and has been deleted.
 
       &deletePreset = function(Name:str!):bool
-         index = &presets.findIndex(P => (P.name is Name) and P.user)
+         index = &presets.findIndex(P => P.name is Name)
          index ?= -1
          if index < 0 then return false end
          &presets.remove(index)
@@ -376,23 +384,35 @@ gui.dialog.font = function(Options:table)
          return true
       end
 
-      -- Rename a saved preset.  Surrounding white space is removed.  Returns false and the reason if the preset is not
-      -- a saved preset, or the new name is blank or taken by another preset.
+      -- Rename a preset.  Surrounding white space is removed.  Returns false and the reason if the preset does not
+      -- exist, or the new name is blank or taken by another preset.
 
       &renamePreset = function(Name:str!, NewName:str!):<bool, str>
-         preset = &presets.find(P => (P.name is Name) and P.user)
-         if not preset then return false, 'not a saved preset' end
+         preset = &presets.find(P => P.name is Name)
+         if not preset then return false, 'no such preset' end
+
          new_name = NewName.trim()
          if new_name is '' then return false, 'name is blank' end
          if new_name is Name then return true end
+
          if &presets.find(P => P.name is new_name) then return false, 'name in use' end
          preset.name = new_name
+
          if &activePreset is Name then &activePreset = new_name end
+
          &persist(&presetPanel)
          return true
       end
 
-      -- Saved presets with a duplicate name or an invalid definition are skipped.
+      -- Saved presets with a duplicate name or an invalid definition are skipped.  A missing or empty settings file
+      -- is populated from the default presets, which are written with the first change that is saved.
+
+      if &database.empty then
+         for preset in values(DEFAULT_PRESETS) do
+            face = preset.faces.find(Face => findFont(Face) != nil)
+            if face then &addSavedPreset(preset.name, f'face={face}; {preset.def}', face) end
+         end
+      end
 
       for saved in values(&database.presets) do
          try
@@ -409,6 +429,7 @@ gui.dialog.font = function(Options:table)
             &presetPanel?.panel?.flash('preset font missing')
             return
          end
+
          state.text = fontdialog_preview.textFor(state.font, &state.text)
          &state = state
          &activePreset = Name
@@ -427,9 +448,11 @@ gui.dialog.font = function(Options:table)
 
       &layout = function(BodyHeight:num!)
          if BodyHeight is &bodyHeight then return end
+
          &bodyHeight = BodyHeight
 
          for col in values(&columns) do col.height = BodyHeight end
+
          if &fontList then &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2) - plan.listReserve end
          if &presetPanel and &fontList then
             &presetPanel.panel.viewport.y = BodyHeight - EDGE_PAD - fontdialog_presets.HEIGHT
@@ -511,10 +534,12 @@ gui.dialog.font = function(Options:table)
       &finish = function(Result:table)
          if &finished then return end
          &finished = true
+
          defer
             gui.dialog.active[&&] = nil
             processing.collect('defer')
          end
+
          local surface = &window?.surface
          defer surface?.free() end
 
@@ -522,6 +547,7 @@ gui.dialog.font = function(Options:table)
          &feedback = nil
          &panels = array<table>
          &rightPanels = array<table>
+
          for field in values(array<str> {
             'fontList', 'presetPanel', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment',
             'rightBar', 'rightPage', 'rightView', 'columns', 'footer', 'btnSelect', 'btnCancel', 'btnReset',
@@ -590,7 +616,7 @@ gui.dialog.font = function(Options:table)
       &tokens = fontdialog_theme.tokens(&themeName)
       &defaultFill = fontdialog_controls.toHex(&theme.page.text.fill ?? '#000000')
 
-      -- Initial settings: the requested family, or the first preset.  A requested size overrides the preset's.  The
+      -- Initial settings: the requested family, or the first default preset.  A requested size overrides the preset's.  The
       -- other options are then applied, and fontDef last so that its keys take precedence.  The final size is
       -- converted to a selectable point size, whatever unit it was given in.
 
@@ -600,10 +626,11 @@ gui.dialog.font = function(Options:table)
       if Options.fontDef?? then definition = fontdialog_style.readDef(Options.fontDef) end
 
       font = findFace(definition?.face) ?? findFace(Options.face)
+
       if font then
          &state = freshState(font, size, &defaultFill)
       else
-         &state = &presetState(PRESETS[0].name) ?? freshState(findFont(DEFAULT_FACE) ?? &fonts[0], size,
+         &state = presetStateFor(DEFAULT_PRESETS[0]) ?? freshState(findFont(DEFAULT_FACE) ?? &fonts[0], size,
             &defaultFill)
       end
 
@@ -618,6 +645,7 @@ gui.dialog.font = function(Options:table)
       end
 
       if definition then fontdialog_style.applyDef(&state, Options.fontDef) end
+
       &state.size = fontdialog_sizing.quantise(&state.font, &state.size)
 
       &initialState = table.clone(&state)

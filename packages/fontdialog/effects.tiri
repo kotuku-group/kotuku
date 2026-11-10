@@ -71,7 +71,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
    })
 
    self.glow = sliders(array<table> {
-      { key = 'glowRadius', label = 'Radius', min = 0.01, max = 2 }
+      { key = 'glowRadius', label = 'Radius', min = 0.01, max = 1 }
    })
 
    self.glowColour = fontdialog_controls.colourButton(Picker, body, {
