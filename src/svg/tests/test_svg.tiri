@@ -610,6 +610,7 @@ end
    local svg <close> = obj.new('svg', {
       target=host, statement=compositeDocument('<rect width="40" height="40" fill-opacity="0.5"/>')
    })
+   assert(svg.viewport.id is host.child.id, 'SVG.Viewport should reference the document root beneath the target')
    local bmp <close> = obj.new('bitmap', {
       width=COMPOSITE_SIZE, height=COMPOSITE_SIZE, bitsPerPixel=32, bkgd='255,255,255,255'
    })
