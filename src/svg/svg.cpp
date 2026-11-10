@@ -125,6 +125,8 @@ class extSVG : public objSVG {
    ankerl::unordered_dense::map<uint32_t, std::vector<anim_base *>> StartOnEnd; // When the animation indicated by uint32_t ends, it must activate() the referenced anim_base
    SVGStringLookupMap<std::string> Params;      // Client values from SetKey(); highest document-level priority
    SVGStringLookupMap<std::string> QueryParams; // Parsed from the Path query string; rebuilt on each parse
+   SVGStringLookupMap<std::string> ParsedParams; // Document values used by the original paint definitions
+   std::list<XTag> SymbolInstances; // Parameterised symbol copies; retained if animations reference them
    ankerl::unordered_dense::map<int, kt::vector<XMLAttrib>> ParamAttribs; // Raw attribs of param() tags, by XTag.ID
    SVGStringLookupMap<kt::vector<std::string>> ParamDeps; // Parameter names referenced by a definition's subtree
    TIMER AnimationTimer;

@@ -1,0 +1,52 @@
+<svg xmlns='http://www.w3.org/2000/svg' 
+     xmlns:xlink='http://www.w3.org/1999/xlink' 
+     width='100%' height='100%' viewBox='0 0 190 70'>
+
+  <title>Reusable Button</title>
+  <desc>Takes parameters from parent document's embedding element.</desc>
+      
+  <defs>       
+    <filter id="buttonBlur">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+      <feOffset in="blur" dy="2" result="offsetBlur"/>
+      <feMerge>
+        <feMergeNode in="offsetBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <linearGradient id="overlayGrad" gradientUnits="userSpaceOnUse" 
+        x1="95" y1="-20" x2="95" y2="70">
+        <stop offset="0" stop-color="#000000" stop-opacity="0.5" />
+        <stop offset="1" stop-color="#000000" stop-opacity="0" />
+    </linearGradient>
+
+    <filter id="topshineBlur">
+      <feGaussianBlur stdDeviation="0.93"/>
+    </filter>
+    
+    <linearGradient id="topshineGrad" gradientUnits="userSpaceOnUse" 
+        x1="95" y1="0" x2="95" y2="40">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+    
+    <filter id="bottomshine">
+      <feGaussianBlur stdDeviation="0.95" />
+    </filter>
+  </defs>
+
+  <g role="button" cursor="pointer">
+    <rect id="button" x="5" y="5" width="180" height="56" ry="26" rx="26" fill="param(color) black" filter="url(#buttonBlur)"/>
+
+    <rect id="buttongrad" x="5" y="5" width="180" height="56" ry="26" rx="26" fill="url(#overlayGrad)"/>
+    <text id="label" x="95" y="43" font-size="33" font-weight="bold" font-family="Arial" text-anchor="middle" 
+    fill="whitesmoke" content-value="param(label)">button</text>
+    
+    <rect id="buttontop" x="15" y="10.5" width="160" height="25" ry="24" rx="24" fill="url(#topshineGrad)" filter="url(#topshineBlur)" />
+    <rect id="buttonbottom" x="25" y="50" width="140" height="7" fill="#ffffff" ry="24" rx="24" fill-opacity="0.3"  filter="url(#bottomshine)"/>
+  </g>
+
+  <script type="text/ecmascript" xlink:href="param.js" />
+
+</svg>

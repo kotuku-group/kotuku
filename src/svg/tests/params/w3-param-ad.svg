@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 100 50" width="100%" height="100%">
+
+   <title>Reusable Button</title>
+   <desc>Takes parameters from parent document's embedding element.</desc>
+      
+   <defs>
+     <path id="tp" d="M10,55 C10,5 90,5 90,55" />
+   </defs>
+
+   <a xlink:href="param(buylink)" target="_new">
+     <text fill="crimson" text-anchor="middle" font-family="Impact, sans-serif" font-size="18"><textPath xlink:href="#tp" startOffset="50%">BUY NOW!!!</textPath></text>
+     <text fill="black" font-family="Impact, sans-serif" font-size="9">
+       <tspan x="50" y="30" text-anchor="middle">This offer</tspan>
+       <tspan x="50" y="40" text-anchor="middle">is unrepeatable!</tspan>
+     </text>
+   </a>
+   
+   <script type="text/ecmascript" xlink:href="param.js" />
+</svg>

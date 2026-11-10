@@ -434,3 +434,86 @@ end
    assertPixel(bmp, 50, 0, 255, 0, 'Second <use> scope forwarded')
    assertPixel(bmp, 70, 0, 0, 255, 'Repeated scope values')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Regression coverage for shared symbol trees and document paint definitions.
+
+@Test function NestedSymbolUseRetainsLocalOverrides()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <g id="inner"><rect width="10" height="10" fill="param(c) red" stroke="param(s) black"/></g>
+         <symbol id="sym"><use href="#inner"><param name="c" value="orange"/></use></symbol>
+      </defs>
+      <g id="first"><use href="#sym"><param name="c" value="blue"/><param name="s" value="navy"/></use></g>
+      <g id="second"><use href="#sym"><param name="c" value="lime"/><param name="s" value="purple"/></use></g>
+   ]])
+   for name, expected in { first='navy', second='purple' } do
+      local v:obj = obj.find(name)
+      while v.child do v = v.child end
+      assert(v.fill is 'orange', f'{name}: nested override must survive repeated instances, got {v.fill}')
+      assert(v.stroke is expected, f'{name}: outer scope must still be inherited, got {v.stroke}')
+   end
+
+   for _ in {0 to 2} do
+      local vp = scene.new('VectorViewport', { width=10, height=10 })
+      check svg.mtParseSymbol('sym', vp)
+      local v:obj = vp
+      while v.child do v = v.child end
+      assert(v.fill is 'orange', f'ParseSymbol must retain nested overrides, got {v.fill}')
+      assert(v.stroke is 'black', 'ParseSymbol must not inherit a previous instance scope')
+   end
+end
+
+@Test function ParameterisedPatternsRetainDocumentScope()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <pattern id="pat" width="10" height="10" patternUnits="userSpaceOnUse">
+            <rect width="10" height="10" fill="param(c) red"/>
+         </pattern>
+         <g id="tpl"><rect width="10" height="10" fill="url(#pat)"/></g>
+      </defs>
+      <g id="scoped"><use href="#tpl"><param name="c" value="blue"/></use></g>
+   ]])
+   assert(useChild('scoped').fill is 'url(#pat)', 'A scoped use must retain the document pattern reference')
+   local bmp = obj.new('bitmap', { width=20, height=20, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   check scene.acDraw()
+   local p = pixel(bmp, 5, 5)
+   assert((p.red is 255) and (p.green is 0) and (p.blue is 0), 'The pattern must keep its document colour')
+end
+
+@Test function ParseSymbolUsesLaterGradientValues()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <linearGradient id="base"><stop offset="0" stop-color="param(c) red"/>
+            <stop offset="1" stop-color="black"/></linearGradient>
+         <linearGradient id="derived" href="#base"/>
+         <symbol id="sym"><rect width="10" height="10" fill="url(#derived)"/></symbol>
+      </defs>
+   ]], { c='red' })
+   local vp1 = scene.new('VectorViewport', { width=10, height=10 })
+   check svg.mtParseSymbol('sym', vp1)
+   local initial_fill = vp1.child.fill
+
+   check svg.acSetKey('c', 'blue')
+   local vp2 = scene.new('VectorViewport', { width=10, height=10 })
+   check svg.mtParseSymbol('sym', vp2)
+   assert(vp2.child.fill != initial_fill, 'Updated parameters must create a separate gradient')
+   local err, gradient:obj = scene.mtFindDef(vp2.child.fill.sub(5, -1))
+   assert(err is ERR_Okay, 'The updated gradient must exist')
+   local stop = gradient.stops[0].rgb
+   assert((stop.red is 0) and (stop.blue is 1), 'The href chain must use the updated parameter')
+
+   local _, original:obj = scene.mtFindDef(initial_fill.sub(5, -1))
+   stop = original.stops[0].rgb
+   assert((stop.red is 1) and (stop.blue is 0), 'Existing instances must retain the original gradient')
+   assert(vp1.child.fill is initial_fill, 'Existing instances must keep their paint references')
+
+   local vp3 = scene.new('VectorViewport', { width=10, height=10 })
+   check svg.mtParseSymbol('sym', vp3)
+   assert(vp3.child.fill is vp2.child.fill, 'Equal updated values must share a gradient')
+   check svg.acSetKey('c', 'red')
+   local vp4 = scene.new('VectorViewport', { width=10, height=10 })
+   check svg.mtParseSymbol('sym', vp4)
+   assert(vp4.child.fill is initial_fill, 'Returning to the original value must reuse the document gradient')
+end

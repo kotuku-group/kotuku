@@ -21,6 +21,15 @@ void svgState::proc_paint_server(const XTag &Tag) noexcept
 
 std::string svgState::scoped_paint_id(const XTag &Tag, const std::string &ID) noexcept
 {
+   // Other definitions, including patterns, retain their document values.
+
+   switch (svg_tag_hash(Tag)) {
+      case SVF_contourGradient: case SVF_distalGradient: case SVF_radialGradient: case SVF_diamondGradient:
+      case SVF_conicGradient: case SVF_linearGradient: case SVF_meshgradient: case SVF_diffusionGradient:
+         break;
+      default: return std::string();
+   }
+
    auto deps = Self->ParamDeps.find(ID);
    if (deps IS Self->ParamDeps.end()) {
       kt::vector<std::string> names;
@@ -47,7 +56,8 @@ std::string svgState::scoped_paint_id(const XTag &Tag, const std::string &ID) no
    bool differs = false;
    for (auto &name : deps->second) {
       auto scoped = find_param(Self, m_param_scope, name);
-      auto document = find_param(Self, nullptr, name);
+      auto original = Self->ParsedParams.find(name);
+      auto document = (original != Self->ParsedParams.end()) ? &original->second : nullptr;
       if ((scoped != document) and ((not scoped) or (not document) or (*scoped != *document))) differs = true;
 
       key.append(name).push_back('\x1f');
@@ -3227,10 +3237,11 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
 
       objVectorViewport *viewport = nullptr;
 
-      // The symbol tree is shared, so its parameters are resolved for this instance and restored afterwards.  This
-      // also applies values set with SetKey() after initialisation.
+      // Parameterised documents process a private copy so that every instance applies its own nested parameter
+      // declarations.
 
-      ParamGuard param_guard(Self, *tagref, m_param_scope);
+      SymbolInstance symbol(Self, *tagref, m_param_scope);
+      tagref = symbol.tag;
 
       auto state = *this;
       state.applyTag(Tag); // Apply all attribute values to the current state.

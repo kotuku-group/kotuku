@@ -276,9 +276,11 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
    if ((!Args) or (Args->ID.empty()) or (!Args->Viewport)) return log.warning(ERR::NullArgs);
 
    if (auto tagref = find_href_tag(Self, Args->ID)) {
-      ParamGuard param_guard(Self, *tagref, nullptr); // Apply the current parameter values to the symbol
+      SymbolInstance symbol(Self, *tagref, nullptr);
+      ParamScope scope;
       svgState state(Self);
-      state.process_children(*tagref, Args->Viewport);
+      state.m_param_scope = &scope;
+      state.process_children(*symbol.tag, Args->Viewport);
       return ERR::Okay;
    }
    else {
