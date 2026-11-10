@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="pidcolour_spaceblend" patternUnits="userSpaceOnUse" width="16" height="16">
+      <rect width="16" height="16" fill="red"/>
+      <rect width="16" height="16" fill="blue" opacity="0.5"/>
+    </pattern>
+  </defs>
+</svg>
