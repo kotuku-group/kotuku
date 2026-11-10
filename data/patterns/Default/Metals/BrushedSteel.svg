@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100" viewBox="0 0 160 100">
+  <title>Brushed steel</title>
+  <desc>A small repeating tile of cool grey horizontal brush marks.</desc>
+  <defs>
+    <pattern id="pidMetalsBrushedSteel" patternUnits="userSpaceOnUse" width="16" height="8" viewBox="0 0 16 8">
+      <rect width="16" height="8" fill="#aeb5bc"/>
+      <path d="M0 1h12 M4 5h12" stroke="#d4d9de" stroke-width="1"/>
+      <path d="M2 3h14 M0 7h10" stroke="#929ba4" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="160" height="100" fill="url(#pidMetalsBrushedSteel)"/>
+</svg>
