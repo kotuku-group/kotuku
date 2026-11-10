@@ -389,6 +389,7 @@ static ERR MODExpunge(void)
    if (clTiri)      { FreeResource(clTiri); clTiri = nullptr; }
    if (modDisplay)  { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modRegex)    { FreeResource(modRegex); modRegex = nullptr; }
+   if (modVector)   { FreeResource(modVector); modVector = nullptr; }
    expunge_package_index();
    return ERR::Okay;
 }

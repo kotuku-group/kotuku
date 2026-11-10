@@ -1,4 +1,4 @@
--- LightingFX kernel units (UnitX/UnitY, equivalent to SVG kernelUnitLength)
+-- LightingFX kernel units (UnitX/UnitY, equivalent to SVG kernelUnitLength) and light colour assignment
 
    include 'display', 'vector'
    module display as mGfx
@@ -137,4 +137,67 @@ end
    assert(maxDifference(clockwise, anticlockwise) > 40, 'Opposite diagonal kernel orientations must differ')
    local diff = maxDifference(clockwise, swapped)
    assert(diff <= 2, f'Swapping the diagonal kernel axes must preserve the lighting (max difference {diff})')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Colour struct fields accept colour strings from Tiri as well as numeric CSV values.  Each component must match
+-- Expected within a small tolerance.
+
+function assertColour(Colour:struct, Expected:array<double>, Label:str)
+   local actual = array<double> { Colour.red, Colour.green, Colour.blue, Colour.alpha }
+   for i, value in Expected do
+      assert(math.abs(actual[i] - value) < 0.002,
+         f'{Label}: expected {Expected.join(",")}, got {actual.join(",")}')
+   end
+end
+
+@Test function LightColourAcceptsColourStrings()
+   local scene <close> = obj.new('VectorScene', { pageWidth=10, pageHeight=10 })
+   local filter = scene.new('VectorFilter', { })
+   local light = filter.new('LightingFX', { colour='#ff0000' })
+   assertColour(light.colour, array<double> { 1, 0, 0, 1 }, 'Hex initialiser')
+
+   light.colour = '#00ff0080'
+   assertColour(light.colour, array<double> { 0, 1, 0, 128/255 }, 'Hex with alpha')
+
+   light.colour = 'rgb(0,0,255)'
+   assertColour(light.colour, array<double> { 0, 0, 1, 1 }, 'rgb() function')
+
+   light.colour = 'hsl(60,100%,50%)'
+   assertColour(light.colour, array<double> { 1, 1, 0, 1 }, 'hsl() function')
+
+   light.colour = 'white'
+   assertColour(light.colour, array<double> { 1, 1, 1, 1 }, 'Named colour')
+end
+
+@Test function LightColourKeepsNumericValues()
+   local scene <close> = obj.new('VectorScene', { pageWidth=10, pageHeight=10 })
+   local filter = scene.new('VectorFilter', { })
+   local light = filter.new('LightingFX', { colour='0.25,0.5,0.75,1' })
+   assertColour(light.colour, array<double> { 0.25, 0.5, 0.75, 1 }, 'CSV initialiser')
+
+   local other = filter.new('LightingFX', { colour='#ff0000' })
+   other.colour = light.colour
+   assertColour(other.colour, array<double> { 0.25, 0.5, 0.75, 1 }, 'Struct assignment')
+end
+
+@Test function InvalidLightColourIsRejected()
+   local scene <close> = obj.new('VectorScene', { pageWidth=10, pageHeight=10 })
+   local filter = scene.new('VectorFilter', { })
+   local light = filter.new('LightingFX', { colour='#0000ff' })
+   local raised = false
+   try
+      light.colour = 'notacolour'
+   except e
+      raised = true
+   end
+   assert(raised, 'An unrecognised colour string must raise an exception')
+   assertColour(light.colour, array<double> { 0, 0, 1, 1 }, 'Unchanged after a failed assignment')
+end
+
+@Test function FloodColourAcceptsColourStrings()
+   local scene <close> = obj.new('VectorScene', { pageWidth=10, pageHeight=10 })
+   local filter = scene.new('VectorFilter', { })
+   local flood = filter.new('FloodFX', { colour='#00ff00' })
+   assertColour(flood.colour, array<double> { 0, 1, 0, 1 }, 'FloodFX hex initialiser')
 end

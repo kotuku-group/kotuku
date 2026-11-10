@@ -834,7 +834,7 @@ set (TIRI_SOURCES "${MOD}.cpp" "bytecode_storage.cpp" "packaging/cache_manifest.
    "tiri_module.cpp"
    "tiri_async.cpp" "tiri_struct.cpp"
    "tiri_processing.cpp"
-   "tiri_functions.cpp" "tiri_regex.cpp"
+   "tiri_functions.cpp" "tiri_regex.cpp" "tiri_colour.cpp"
    "tiri_io.cpp" "tiri_class.cpp"
    "${JIT_SRC}/lib/lib.cpp"
    "${JIT_SRC}/lib/load.cpp"
@@ -965,6 +965,10 @@ endif ()
 
 if (DISABLE_DISPLAY)
    target_compile_definitions (${MOD} PRIVATE DISABLE_DISPLAY)
+endif ()
+
+if (DISABLE_VECTOR)
+   target_compile_definitions (${MOD} PRIVATE DISABLE_VECTOR)
 endif ()
 
 # Register Flute tests
