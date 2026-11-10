@@ -525,10 +525,7 @@ end
    loadActions()
 
    if parseTDLFile(glSource) is ERR_Okay then
-      if glAbort then
-         print('TDL processing cancelled, reason: ' .. glAbort)
-         return
-      end
+      if glAbort then raise 'TDL processing cancelled, reason: ' .. glAbort end
 
       parseSourceFiles()
       saveOutput()
