@@ -103,6 +103,7 @@ Run `origo` with `--jit-options` to pass JIT engine flags as a CSV list:
 |Option|Purpose|
 |-|-|
 |`off`|Disable the JIT compiler|
+|`trace-on-error`|Append a stack traceback to the first runtime error in each protected call|
 |`trace-tokens`|Trace tokenisation|
 |`trace-expect`|Trace parser expectations|
 |`trace-boundary`|Trace boundary crossings between interpreted and JIT code|

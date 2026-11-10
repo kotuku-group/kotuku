@@ -18,6 +18,7 @@ static const struct FieldDef clTiriJOF[] = {
    { "TraceAssignments", 0x00004000 },
    { "TraceValueCategory", 0x00008000 },
    { "Trace", 0x0000ff80 },
+   { "TraceOnError", 0x00010000 },
    { nullptr, 0 }
 };
 

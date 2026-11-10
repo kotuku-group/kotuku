@@ -36,6 +36,7 @@ function()
      "TRACE_REGISTERS: Trace RegisterAllocator reservations and releases.",
      "TRACE_ASSIGNMENTS:    Trace PreparedAssignment lifecycle and hazard handling.",
      "TRACE_VALUE_CATEGORY: Trace ValueUse/ValueSlot/LValue operations.",
+     "TRACE_ON_ERROR:  Append a stack traceback to the first runtime error message raised in each protected call.",
      { TRACE = "TRACE_TOKENS|TRACE_EXPECT|TRACE_BOUNDARY|TRACE_OPERATORS|TRACE_REGISTERS|TRACE_CFG|TRACE_ASSIGNMENTS|TRACE_VALUE_CATEGORY|TRACE_TYPES" }
   )
 

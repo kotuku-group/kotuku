@@ -92,6 +92,7 @@ constexpr auto HASH_TRACE                = kt::strhash("trace");
 constexpr auto HASH_TOP_TIPS             = kt::strhash("top-tips");
 constexpr auto HASH_TIPS                 = kt::strhash("tips");
 constexpr auto HASH_ALL_TIPS             = kt::strhash("all-tips");
+constexpr auto HASH_TRACE_ON_ERROR       = kt::strhash("trace-on-error");
 constexpr auto HASH_OFF                  = kt::strhash("off");
 
 #include "module_def.cpp"
@@ -350,6 +351,7 @@ static void expunge_package_index()
                   else if (hash IS HASH_TOP_TIPS)      glJitOptions |= JOF::TOP_TIPS;
                   else if (hash IS HASH_TIPS)          glJitOptions |= JOF::TIPS;
                   else if (hash IS HASH_ALL_TIPS)      glJitOptions |= JOF::ALL_TIPS;
+                  else if (hash IS HASH_TRACE_ON_ERROR) glJitOptions |= JOF::TRACE_ON_ERROR;
                   else if (hash IS HASH_OFF)           glJitOptions |= JOF::DISABLE_JIT;
                   else log.warning("Unknown JIT option \"%s\" specified.", trimmed.c_str());
                }
