@@ -423,7 +423,8 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TSTRING: {
          // The user can provide a CSV list of values for the struct.  This is only valid for structs that consist of
-         // primitive numeric values.  Each CSV value is mapped positionally to the struct's fields.
+         // primitive numeric values.  Each CSV value is mapped positionally to the struct's fields.  FRGB and RGB8
+         // structs also accept colour strings such as '#ff0000' or 'rgb(255,0,0)'.
 
          auto struct_def = lookup_struct_field_def(Lua, Field);
          if (not struct_def) return ERR::SetValueNotStruct;
@@ -433,7 +434,10 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
          const auto aligned_size = ALIGN64(struct_def->Size);
          auto structbuf = std::make_unique<uint8_t[]>(aligned_size);
          clearmem(structbuf.get(), aligned_size);
-         if (auto error = parse_csv_struct(source, *struct_def, structbuf.get()); error != ERR::Okay) return error;
+         if (auto error = read_colour_struct(source, struct_def->Name, structbuf.get()); error IS ERR::NoSupport) {
+            if (error = parse_csv_struct(source, *struct_def, structbuf.get()); error != ERR::Okay) return error;
+         }
+         else if (error != ERR::Okay) return error;
 
          if (Field->SetValue) return Object->set(Field, structbuf.get());
          else { // The struct is embedded, we can write to it directly because we know the struct size.

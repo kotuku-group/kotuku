@@ -91,6 +91,7 @@ extern struct ActionTable *glActions;
 extern OBJECTPTR modDisplay; // Required by tiri_input.c
 extern OBJECTPTR modTiri;
 extern OBJECTPTR modRegex;
+extern OBJECTPTR modVector;
 extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
@@ -480,6 +481,7 @@ int MAKESTRUCT(lua_State *);
 void remove_struct(std::string_view);
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key);
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name);
+[[nodiscard]] ERR read_colour_struct(std::string_view Value, std::string_view StructName, APTR Dest);
 [[nodiscard]] struct_record * find_registered_resource_struct(lua_State *Lua, std::string_view Name);
 [[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key);
 [[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
