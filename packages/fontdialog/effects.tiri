@@ -27,7 +27,7 @@ end
 ]])
 fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):table
    state = Picker.state
-   t = Picker.tokens
+   t     = Picker.tokens
    inner = Options.width - (PAD * 2)
 
    self = { height = 100 }
@@ -60,7 +60,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
    self.shadow = sliders(array<table> {
       { key = 'shadowX', label = 'X', min = -1, max = 1 },
       { key = 'shadowY', label = 'Y', min = -1, max = 1 },
-      { key = 'shadowBlur', label = 'Blur', min = 0, max = 2 },
+      { key = 'shadowBlur', label = 'Blur', min = 0, max = 1 },
       { key = 'shadowOpacity', label = 'Opacity', min = 0, max = 100, step = 1,
          format = function(V):str return f'{math.round(V)}%' end }
    })
@@ -104,25 +104,30 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       s = Picker.state
       outlined = fontdialog_style.hasOutlines(s.font)
       shadow_on, glow_on = s.shadowOn and outlined, s.glowOn and outlined
+
       y = 8
       self.shadowBox.viewport.y = y + ((CHECK_H - self.shadowBox.viewport.height) * 0.5)
       y += CHECK_H
       showGroup(self.shadow, shadow_on)
+
       if shadow_on then
          self.shadow.viewport.y = y
          y += self.shadow.viewport.height
       end
+
       self.glowBox.viewport.y = y + ((CHECK_H - self.glowBox.viewport.height) * 0.5)
       y += CHECK_H
       showGroup(self.glow, glow_on)
       self.glowColour.button.viewport.visibility = glow_on ? VIS_VISIBLE : VIS_HIDDEN
       fontdialog_controls.setEnabled(array<table> { self.glowColour }, glow_on)
+
       if glow_on then
          self.glowColour.button.viewport.y = y
          y += fontdialog_controls.COLOUR_H + 4
          self.glow.viewport.y = y
          y += self.glow.viewport.height
       end
+
       y += 6
       self.blend.viewport.y = y
       self.blendLabel.y = fontdialog_parts.baseline(y, BLEND_H, 12)
@@ -149,6 +154,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       if s.shadowOn then parts.push('Shadow') end
       if s.glowOn then parts.push('Glow') end
       if s.blend != 'Normal' then parts.push(s.blend) end
+
       if not outlined then
          self.panel.setMeta('Scalable fonts only')
       else
@@ -164,8 +170,10 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
 
       self.shadowBox.setState(s.shadowOn and outlined)
       self.glowBox.setState(s.glowOn and outlined)
+
       for key, row in self.shadow.rows do row.set(s[key]) end
       for key, row in self.glow.rows do row.set(s[key]) end
+
       self.blend.setText(outlined ? s.blend : 'Normal')
       layout()
    end

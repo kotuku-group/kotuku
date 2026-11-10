@@ -178,6 +178,7 @@ gui.button = function(Options)
          if &iconRender then
             try
                _, settings = iconPattern(&icon)
+               settings.x = nil -- Horizontal placement belongs to arrange(), which centres an icon without a label
                gui.applyStyle(&iconRender, settings)
             except e
                msg(f'Failed to restyle button icon "{&icon}": {e.message}')

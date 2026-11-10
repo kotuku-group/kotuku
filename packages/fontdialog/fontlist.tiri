@@ -27,7 +27,7 @@ CLASS_ITEMS <const> = array<table> {
    { id = 'serif', icon = 'layout/text_serif', tip = 'Serif' },
    { id = 'sans',  icon = 'layout/text_sans',  tip = 'Sans-serif' },
    { id = 'mono',  icon = 'dev/braces',        tip = 'Monospace' },
-   { id = 'other', icon = 'items/font',        tip = 'Other: script, display, symbol and unclassified' }
+   { id = 'other', icon = 'technical/greek_sigma_upper', tip = 'Other: script, display, symbol and unclassified' }
 }
 
 -- Classifications with a filter of their own.  Every other family, classified or not, belongs to 'other'.

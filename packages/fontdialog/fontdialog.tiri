@@ -211,10 +211,10 @@ function freshState(Font:table!, Size:num, Fill:str):table
       shadowX      = 0.15, -- Multiple of the font size (em)
       shadowY      = 0.2,
       shadowBlur   = 0,
-      shadowOpacity = 40,
+      shadowOpacity = 66,
       glowOn       = false,
       glowColour   = nil, -- Inherits the fill when first enabled
-      glowRadius   = 0.5, -- Multiple of the font size (em)
+      glowRadius   = 0.1, -- Multiple of the font size (em)
       blend        = 'Normal',
       align        = 'left',
       letterCase   = 'none',
