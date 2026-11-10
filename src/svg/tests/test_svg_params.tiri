@@ -1,0 +1,436 @@
+-- $TIRI
+-- SVG Parameters: param() substitution, content-value, SetKey/GetKey, query strings and <use> parameter scopes.
+
+   include 'svg', 'vector', 'display'
+   module display as mGfx
+
+local glFiles = array<str>
+
+@AfterAll function removeFiles()
+   for path in values(glFiles) do
+      mSys.DeleteFile(path)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parses Body with staged initialisation so that parameters can be set before the document is processed.
+
+function loadParams(Body:str!, Keys:table):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local svg = obj.new('svg')
+   svg.target = scene
+   svg.statement = f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">{Body}</svg>'
+   if Keys then
+      for k, v in Keys do check svg.acSetKey(k, v) end
+   end
+   check svg.init()
+   return scene, svg
+end
+
+function writeFile(Path:str!, Content:str!)
+   io.writeAll(Path, Content)
+   glFiles.push(Path)
+end
+
+-- Elements inside a <use> instance are not named, so tests wrap each <use> in a named group and walk down from it.
+-- For a <use> of a <g>, the path is wrapper -> generated group -> cloned group -> first child.
+
+function useChild(Name:str!):obj
+   return obj.find(Name).child.child.child
+end
+
+function pixel(Bitmap:obj, X:num, Y:num):table
+   local p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return { red=p.red, green=p.green, blue=p.blue } -- Copy, the result buffer is shared between reads
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Phase 1: document parameters
+
+@Test function SuppliedValueReplacesAttribute()
+   local scene, svg <close> = loadParams([[<rect id="r" width="10" height="10" fill="param(colour) red"/>]],
+      { colour='#00ff00' })
+   assert(obj.find('r').fill is '#00ff00', f"Expected #00ff00, got {obj.find('r').fill}")
+end
+
+@Test function UnmatchedNameUsesFallback()
+   local scene, svg <close> = loadParams([[<rect id="r" width="10" height="10" fill="param(missing) blue"/>]])
+   assert(obj.find('r').fill is 'blue', f"Expected the fallback, got {obj.find('r').fill}")
+end
+
+@Test function UnmatchedNameWithoutFallbackUsesInitialValue()
+   local scene, svg <close> = loadParams([[
+      <rect id="control" width="10" height="10"/>
+      <rect id="r" width="10" height="10" fill="param(missing)" stroke="param(missing)"/>
+      <rect id="malformed" width="10" height="10" fill="param(missing"/>
+   ]])
+   local control = obj.find('control')
+   for id in values({ 'r', 'malformed' }) do
+      local r = obj.find(id)
+      assert(r.fill is control.fill, f'{id}: fill should be the initial value, got {r.fill}')
+      assert(r.stroke is control.stroke, f'{id}: stroke should be the initial value, got {r.stroke}')
+   end
+end
+
+@Test function EmptyValueIsNotReplacedByFallback()
+   local scene, svg <close> = loadParams([[
+      <rect id="control" width="10" height="10"/>
+      <rect id="r" width="10" height="10" fill="param(colour) red"/>
+   ]], { colour='' })
+   assert(obj.find('r').fill is obj.find('control').fill, f"Expected no fill override, got {obj.find('r').fill}")
+end
+
+@Test function NamesAreCaseSensitive()
+   local scene, svg <close> = loadParams([[<rect id="r" width="10" height="10" fill="param(colour) red"/>]],
+      { Colour='blue' })
+   assert(obj.find('r').fill is 'red', f"Colour must not match colour, got {obj.find('r').fill}")
+end
+
+@Test function GeometryResolves()
+   local scene, svg <close> = loadParams([[
+      <circle id="c" cx="param(cx) 5" cy="param(cy) 6" r="param(radius)" stroke="black" stroke-width="param(sw) 3"/>
+   ]], { cx='40', radius='12' })
+   local c = obj.find('c')
+   assert(c.cx is 40, f'cx: expected 40, got {c.cx}')
+   assert(c.cy is 6, f'cy: expected the fallback of 6, got {c.cy}')
+   assert(c.radius is 12, f'radius: expected 12, got {c.radius}')
+   assert(c.strokeWidth is 3, f'strokeWidth: expected the fallback of 3, got {c.strokeWidth}')
+end
+
+@Test function StyleAttributeAndSheetResolve()
+   local scene, svg <close> = loadParams([[
+      <style>.themed { fill: param(colour) red } .plain { fill: param(missing) navy }</style>
+      <rect id="inline" width="10" height="10" style="fill: param(colour) red"/>
+      <rect id="sheet" width="10" height="10" class="themed"/>
+      <rect id="sheet_fallback" width="10" height="10" class="plain"/>
+   ]], { colour='#123456' })
+   assert(obj.find('inline').fill is '#123456', f"style attribute: got {obj.find('inline').fill}")
+   assert(obj.find('sheet').fill is '#123456', f"style sheet: got {obj.find('sheet').fill}")
+   assert(obj.find('sheet_fallback').fill is 'navy', f"sheet fallback: got {obj.find('sheet_fallback').fill}")
+end
+
+@Test function ContentValueReplacesText()
+   local scene, svg <close> = loadParams([[
+      <text id="set" content-value="param(label)">Original</text>
+      <text id="unset" content-value="param(missing)">Original</text>
+      <text id="fallback" content-value="param(missing) Fallback text">Original</text>
+   ]], { label='Buy now' })
+   assert(obj.find('set').string is 'Buy now', f"Expected the parameter, got {obj.find('set').string}")
+   assert(obj.find('unset').string is 'Original', f"Expected the element text, got {obj.find('unset').string}")
+   assert(obj.find('fallback').string is 'Fallback text', f"Expected the fallback, got {obj.find('fallback').string}")
+end
+
+@Test function EmptyContentValueReplacesText()
+   local scene, svg <close> = loadParams([[
+      <text id="empty" content-value="param(label) Fallback">Original</text>
+      <text id="missing" content-value="param(missing)">Original</text>
+   ]], { label='' })
+   assert((obj.find('empty').string ?? '') is '', 'A defined empty parameter must clear the text')
+   assert(obj.find('missing').string is 'Original', 'An undefined parameter must retain the text')
+end
+
+@Test function IdIsNotSubstituted()
+   local scene, svg <close> = loadParams([[
+      <defs><rect id="param(x) target" width="10" height="10" fill="lime"/></defs>
+      <g id="holder"><use xlink:href="#param(x) target"/></g>
+   ]], { x='other' })
+   assert(obj.find('target') is nil, 'The id must not be substituted with its fallback')
+   local rect = obj.find('holder').child.child
+   assert(rect != nil, 'The <use> must resolve the unsubstituted id')
+   assert(rect.fill is 'lime', f'Unexpected fill {rect.fill}')
+end
+
+@Test function GetKeyReturnsDocumentValues()
+   local scene, svg <close> = loadParams('<rect width="1" height="1"/>', { colour='teal', empty='' })
+   assert(svg.getKey('colour', 'none') is 'teal', 'GetKey should return the SetKey value')
+   assert(svg.getKey('missing', 'dflt') is 'dflt', 'GetKey should fail for an undefined key')
+   assert(svg.acGetKey('missing') is ERR_UnsupportedField, 'GetKey should report UnsupportedField')
+   local err, value = svg.acGetKey('empty')
+   assert(err is ERR_Okay, 'An empty value is defined')
+end
+
+@Test function SetKeyRejectsInvalidNames()
+   local svg <close> = obj.new('svg')
+   assert(svg.acSetKey('', 'x') is ERR_NullArgs, 'An empty key must be rejected')
+   assert(svg.acSetKey('a b', 'x') is ERR_InvalidValue, 'White-space must be rejected')
+   assert(svg.acSetKey('a(', 'x') is ERR_InvalidValue, 'Parentheses must be rejected')
+   assert(svg.acSetKey('a)', 'x') is ERR_InvalidValue, 'Parentheses must be rejected')
+   assert(svg.acSetKey('ok', '') is ERR_Okay, 'Zero-length values are permitted')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Phase 2: query string parameters
+
+@Test function QueryStringParameters()
+   writeFile('temp:svg_params_query.svg', [[<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+      <rect id="q_rect" width="20" height="20" fill="param(colour) red"/>
+      <text id="q_text" content-value="param(label)">none</text></svg>]])
+
+   local scene = obj.new('VectorScene', { pageWidth=20, pageHeight=20 })
+   local svg <close> = obj.new('svg', {
+      target=scene, path='temp:svg_params_query.svg?colour=%2300ff00&label=OK%20now&link=http%3A%2F%2Fa.b%2Fc'
+   })
+   assert(obj.find('q_rect').fill is '#00ff00', f"Expected the decoded query value, got {obj.find('q_rect').fill}")
+   assert(obj.find('q_text').string is 'OK now', f"Expected decoded text, got {obj.find('q_text').string}")
+   assert(svg.getKey('link', '') is 'http://a.b/c', f"Expected a decoded URL, got {svg.getKey('link', '')}")
+end
+
+@Test function SetKeyOverridesQueryString()
+   writeFile('temp:svg_params_override.svg', [[<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+      <rect id="o_rect" width="20" height="20" fill="param(colour) red"/></svg>]])
+
+   local scene = obj.new('VectorScene', { pageWidth=20, pageHeight=20 })
+   local svg <close> = obj.new('svg')
+   svg.target = scene
+   svg.path = 'temp:svg_params_override.svg?colour=blue'
+   check svg.acSetKey('colour', 'navy')
+   check svg.init()
+   assert(obj.find('o_rect').fill is 'navy', f"SetKey should take precedence, got {obj.find('o_rect').fill}")
+   assert(svg.getKey('colour', '') is 'navy', 'GetKey should report the SetKey value')
+end
+
+-- A 20x20 nested document filled with param(colour), defaulting to red.
+
+function writeChildSVG()
+   writeFile('temp:svg_params_child.svg', [[<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+      <rect width="20" height="20" fill="param(colour) red"/></svg>]])
+end
+
+-- Renders a parent document from a file in temp: and returns the bitmap.
+
+function renderFile(Path:str!, Content:str!, Keys:table):obj
+   writeFile(Path, Content)
+   local scene = obj.new('VectorScene', { pageWidth=80, pageHeight=20 })
+   local svg = obj.new('svg')
+   svg.target = scene
+   svg.path = Path
+   if Keys then
+      for k, v in Keys do check svg.acSetKey(k, v) end
+   end
+   check svg.init()
+   local bmp = obj.new('bitmap', { width=80, height=20, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   scene.acDraw()
+   return bmp
+end
+
+function assertPixel(Bitmap:obj, X:num, Red:num, Green:num, Blue:num, Message:str)
+   local p = pixel(Bitmap, X, 10)
+   assert((p.red is Red) and (p.green is Green) and (p.blue is Blue),
+      f'{Message}: expected {Red},{Green},{Blue}, got {p.red},{p.green},{p.blue}')
+end
+
+@Test function ImageHrefPassesQueryToNestedSVG()
+   writeChildSVG()
+   writeFile('temp:svg_params_parent.svg', [[<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"
+      xmlns:xlink="http://www.w3.org/1999/xlink">
+      <image x="0" width="20" height="20" xlink:href="svg_params_child.svg?colour=blue"/>
+      <image x="20" width="20" height="20" xlink:href="svg_params_child.svg"/></svg>]])
+
+   local scene = obj.new('VectorScene', { pageWidth=40, pageHeight=20 })
+   local svg <close> = obj.new('svg', { target=scene, path='temp:svg_params_parent.svg' })
+   local bmp = obj.new('bitmap', { width=40, height=20, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   scene.acDraw()
+
+   local left = pixel(bmp, 10, 10)
+   local right = pixel(bmp, 30, 10)
+   assert((left.red is 0) and (left.blue is 255), f'Parameterised image: {left.red},{left.green},{left.blue}')
+   assert((right.red is 255) and (right.blue is 0), f'Relative image: {right.red},{right.green},{right.blue}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Phase 3: <use> parameter scopes
+
+@Test function UseInstancesAreScoped()
+   local scene, svg <close> = loadParams([[
+      <defs><g id="tpl"><rect width="10" height="10" fill="param(c) red"/></g></defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="u1"><use xlink:href="#tpl"><param name="c" value="blue"/></use></g>
+      <g id="u2"><use xlink:href="#tpl">
+         <param name="c" value="#00ff00"/>
+      </use></g>
+      <g id="u3"><use xlink:href="#tpl"><param name="c"/></use></g>
+   ]])
+   assert(useChild('doc').fill is 'red', f"Document scope: got {useChild('doc').fill}")
+   assert(useChild('u1').fill is 'blue', f"First instance: got {useChild('u1').fill}")
+   assert(useChild('u2').fill is '#00ff00', f"Second instance: got {useChild('u2').fill}")
+   assert(useChild('u3').fill is 'red', f"A <param> without a value must be ignored: got {useChild('u3').fill}")
+end
+
+@Test function UseParamsOverrideDocumentValues()
+   local scene, svg <close> = loadParams([[
+      <defs><g id="tpl"><rect width="10" height="10" fill="param(c) red"/></g></defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="u1"><use xlink:href="#tpl"><param name="c" value="blue"/></use></g>
+   ]], { c='green' })
+   assert(useChild('doc').fill is 'green', f"Document value: got {useChild('doc').fill}")
+   assert(useChild('u1').fill is 'blue', f"<param> should override SetKey: got {useChild('u1').fill}")
+end
+
+@Test function NestedUseInheritsScope()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <g id="inner"><rect width="10" height="10" fill="param(c) red" stroke="param(s) black"/></g>
+         <g id="outer"><g id="in1"><use xlink:href="#inner"/></g>
+            <g id="in2"><use xlink:href="#inner"><param name="c" value="lime"/>
+               <param name="s" value="param(c) purple"/></use></g></g>
+      </defs>
+      <g id="o1"><use xlink:href="#outer"><param name="c" value="blue"/><param name="s" value="navy"/></use></g>
+   ]])
+   -- o1 -> use group -> cloned outer -> in1 wrapper -> use group -> cloned inner -> rect
+   local outer = obj.find('o1').child.child
+   local inherited = outer.child.child.child.child
+   local overridden = outer.child.next.child.child.child
+   assert(inherited.fill is 'blue', f'Inherited fill: got {inherited.fill}')
+   assert(inherited.stroke is 'navy', f'Inherited stroke: got {inherited.stroke}')
+   assert(overridden.fill is 'lime', f'Inner <param> should override: got {overridden.fill}')
+   assert(overridden.stroke is 'blue', f'An inner value resolves against the outer scope: got {overridden.stroke}')
+end
+
+@Test function SymbolInstancesAreScopedAndRestored()
+   local scene, svg <close> = loadParams([[
+      <defs><symbol id="sym"><rect width="10" height="10" fill="param(c) red"/></symbol></defs>
+      <g id="s1"><use xlink:href="#sym"><param name="c" value="blue"/></use></g>
+      <g id="s2"><use xlink:href="#sym"/></g>
+      <g id="s3"><use xlink:href="#sym"><param name="c" value="lime"/></use></g>
+   ]])
+   -- Wrapper -> optional group -> viewport -> rect.  The rectangle is the deepest vector.
+   local function symbolRect(Name:str):obj
+      local v:obj = obj.find(Name)
+      while v.child do v = v.child end
+      return v
+   end
+   assert(symbolRect('s1').fill is 'blue', f"First symbol instance: got {symbolRect('s1').fill}")
+   assert(symbolRect('s2').fill is 'red', f"The shared tree must be restored: got {symbolRect('s2').fill}")
+   assert(symbolRect('s3').fill is 'lime', f"Third symbol instance: got {symbolRect('s3').fill}")
+end
+
+@Test function GradientsAreScopedPerValueSet()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <linearGradient id="grad"><stop offset="0" stop-color="param(c) red"/>
+            <stop offset="1" stop-color="black"/></linearGradient>
+         <g id="tpl"><rect width="10" height="10" fill="url(#grad)"/></g>
+      </defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="u1"><use xlink:href="#tpl"><param name="c" value="blue"/></use></g>
+      <g id="u2"><use xlink:href="#tpl"><param name="c" value="lime"/></use></g>
+      <g id="u3"><use xlink:href="#tpl"><param name="c" value="blue"/></use></g>
+      <g id="u4"><use xlink:href="#tpl"><param name="other" value="blue"/></use></g>
+   ]])
+   assert(useChild('doc').fill is 'url(#grad)', f"Document scope: got {useChild('doc').fill}")
+   assert(useChild('u4').fill is 'url(#grad)', 'Unrelated parameters must not clone the gradient')
+
+   local u1 = useChild('u1').fill
+   local u2 = useChild('u2').fill
+   assert(u1 != 'url(#grad)', 'A scoped value should produce a separate gradient')
+   assert(u1 != u2, 'Different values should produce different gradients')
+   assert(u1 is useChild('u3').fill, 'Equal values should share one gradient')
+
+   local err:any, scoped:obj = scene.mtFindDef(u1.sub(5, -1))
+   assert(err is ERR_Okay, f'The scoped gradient {u1} should be registered')
+   local stop = scoped.stops[0].rgb
+   assert((stop.red is 0) and (stop.blue is 1), f'Scoped stop colour: {stop.red},{stop.green},{stop.blue}')
+
+   local _, original:obj = scene.mtFindDef('grad')
+   stop = original.stops[0].rgb
+   assert((stop.red is 1) and (stop.blue is 0), 'The document gradient keeps its fallback')
+end
+
+@Test function InheritedGradientsAreScopedAndRestored()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <linearGradient id="base"><stop offset="0" stop-color="param(c) red"/>
+            <stop offset="1" stop-color="black"/></linearGradient>
+         <linearGradient id="middle" xlink:href="#base"/>
+         <linearGradient id="derived" href="#middle"/>
+         <g id="tpl"><rect width="10" height="10" fill="url(#derived)"/></g>
+      </defs>
+      <g id="blue"><use href="#tpl"><param name="c" value="blue"/></use></g>
+      <g id="lime"><use href="#tpl"><param name="c" value="lime"/></use></g>
+      <g id="same"><use href="#tpl"><param name="c" value="blue"/></use></g>
+      <g id="document"><use href="#tpl"/></g>
+   ]])
+   local blue = useChild('blue').fill
+   local lime = useChild('lime').fill
+   assert(blue != 'url(#derived)', 'Inherited parameters must create a scoped gradient')
+   assert(blue != lime, 'Different inherited values must create different gradients')
+   assert(blue is useChild('same').fill, 'Equal inherited values must share a gradient')
+   assert(useChild('document').fill is 'url(#derived)', 'Document instances must retain the original gradient')
+
+   for name, expected in { [blue]= { 0, 0, 1 }, [lime]= { 0, 1, 0 }, ['url(#derived)']= { 1, 0, 0 } } do
+      local err, gradient:obj = scene.mtFindDef(name.sub(5, -1))
+      assert(err is ERR_Okay, f'Gradient {name} must exist')
+      local stop = gradient.stops[0].rgb
+      assert((stop.red is expected[0]) and (stop.green is expected[1]) and (stop.blue is expected[2]),
+         f'Unexpected inherited stop colour for {name}: {stop.red},{stop.green},{stop.blue}')
+   end
+end
+
+@Test function CyclicGradientReferencesTerminate()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <linearGradient id="first" href="#second"/>
+         <linearGradient id="second" href="#first">
+            <stop offset="0" stop-color="param(c) red"/><stop offset="1" stop-color="black"/>
+         </linearGradient>
+         <g id="tpl"><rect width="10" height="10" fill="url(#first)"/></g>
+      </defs>
+      <g id="scoped"><use href="#tpl"><param name="c" value="blue"/></use></g>
+   ]])
+   local fill = useChild('scoped').fill
+   assert(fill != 'url(#first)', 'A cyclic href chain must still collect referenced parameters')
+   local err, gradient:obj = scene.mtFindDef(fill.sub(5, -1))
+   assert(err is ERR_Okay, 'The cyclic gradient must finish initialisation')
+   local stop = gradient.stops[0].rgb
+   assert((stop.red is 0) and (stop.blue is 1), 'The cyclic chain must resolve scoped stop colours')
+end
+
+@Test function ParseSymbolUsesLaterSetKey()
+   local scene, svg <close> = loadParams([[
+      <defs><symbol id="sym"><rect width="10" height="10" fill="param(c) red"/></symbol></defs>
+   ]])
+   local vp1 = scene.new('VectorViewport', { width=10, height=10 })
+   check svg.mtParseSymbol('sym', vp1)
+   assert(vp1.child.fill is 'red', f'Initial symbol: got {vp1.child.fill}')
+
+   check svg.acSetKey('c', 'purple')
+   local vp2 = scene.new('VectorViewport', { width=10, height=10 })
+   check svg.mtParseSymbol('sym', vp2)
+   assert(vp2.child.fill is 'purple', f'Symbol after SetKey: got {vp2.child.fill}')
+   assert(vp1.child.fill is 'red', 'Existing content is not altered')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Phase 4: <param> children of <image>
+
+@Test function ImageParamsPassToNestedSVG()
+   writeChildSVG()
+   local bmp = renderFile('temp:svg_params_image.svg', [[<svg xmlns="http://www.w3.org/2000/svg" width="80" height="20">
+      <image x="0" width="20" height="20" href="svg_params_child.svg"><param name="colour" value="blue"/></image>
+      <image x="20" width="20" height="20" href="svg_params_child.svg?colour=blue">
+         <param name="colour" value="lime"/></image>
+      <image x="40" width="20" height="20" href="svg_params_child.svg"><param name="colour"/></image>
+      <image x="60" width="20" height="20" href="svg_params_child.svg"/></svg>]])
+   assertPixel(bmp, 10, 0, 0, 255, '<param> value')
+   assertPixel(bmp, 30, 0, 255, 0, '<param> overrides the href query')
+   assertPixel(bmp, 50, 255, 0, 0, '<param> without a value is ignored')
+   assertPixel(bmp, 70, 255, 0, 0, 'Image without parameters')
+end
+
+@Test function ImageParamsForwardScopes()
+   writeChildSVG()
+   local bmp = renderFile('temp:svg_params_image_scope.svg', [[<svg xmlns="http://www.w3.org/2000/svg"
+      xmlns:xlink="http://www.w3.org/1999/xlink" width="80" height="20">
+      <defs><g id="tpl"><image width="20" height="20" href="svg_params_child.svg">
+         <param name="colour" value="param(c) red"/></image></g></defs>
+      <use xlink:href="#tpl"/>
+      <use x="20" xlink:href="#tpl"><param name="c" value="blue"/></use>
+      <use x="40" xlink:href="#tpl"><param name="c" value="lime"/></use>
+      <use x="60" xlink:href="#tpl"><param name="c" value="blue"/></use></svg>]], { c='#ffff00' })
+   assertPixel(bmp, 10, 255, 255, 0, 'SetKey value forwarded')
+   assertPixel(bmp, 30, 0, 0, 255, 'First <use> scope forwarded')
+   assertPixel(bmp, 50, 0, 255, 0, 'Second <use> scope forwarded')
+   assertPixel(bmp, 70, 0, 0, 255, 'Repeated scope values')
+end

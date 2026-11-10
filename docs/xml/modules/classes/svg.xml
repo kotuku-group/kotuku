@@ -28,6 +28,33 @@
 </list>
 <p>The class supports both file-based loading via <fl>Path</fl> and direct string-based parsing via <fl>Statement</fl>.  SVG documents can be integrated into existing scene graphs by setting the <fl>Target</fl> field, or rendered independently through the automatically created scene structure.</p>
 <p>SVG content is composited in sRGB, as in web browsers.  The top-level <class name="VectorViewport">VectorViewport</class> of each parsed document has its <class name="Vector" field="ColourSpace">Vector.ColourSpace</class> set to <code>SRGB</code>, and the <code>color-interpolation=&quot;linearRGB&quot;</code> attribute opts an element and its descendants into gamma-correct blending.  Symbols instantiated with <method>ParseSymbol</method> inherit the colour space of the target viewport instead, as does a document parsed into a <fl>Target</fl> scene that already has a viewport.</p>
+<header>Parameters</header>
+<p>SVG documents can be parameterised in accordance with the W3C SVG Parameters draft, allowing a client to alter colours, text and other values without editing the source document.  A document declares a substitution point by writing <code>param(name)</code> at the start of an attribute value, optionally followed by a fallback:</p>
+<pre>&lt;rect fill=&quot;param(colour) red&quot; stroke=&quot;param(outline) black&quot;/&gt;
+&lt;text content-value=&quot;param(label)&quot;&gt;Default label&lt;/text&gt;
+</pre>
+<p>Values are supplied with <action>SetKey</action> prior to initialisation, or through the query string of the <fl>Path</fl>, for example <code>button.svg?colour=seagreen&amp;label=Buy%20now</code>.  Query values are percent-decoded.  If a name is defined by both <action>SetKey</action> and the query string, the <action>SetKey</action> value takes precedence.</p>
+<p>The following rules apply:</p>
+<list type="bullet">
+<li>Only an attribute value that starts with <code>param(</code> is substituted, and the entire value is replaced.  A parameter
+reference cannot be embedded in a list value such as <code>points</code> or <code>transform</code>.</li>
+<li>Names are case sensitive.  If a name is undefined, the fallback is used.  If there is no fallback, the attribute
+is treated as though it were absent and its initial value applies.  A parameter that is defined with an empty value
+is not replaced by the fallback.</li>
+<li>Declarations in <code>style</code> attributes and <code>&lt;style&gt;</code> sheets are supported.</li>
+<li>The <code>id</code> attribute is never substituted, so that references to the element remain stable.</li>
+<li>The <code>content-value</code> attribute of a <code>&lt;text&gt;</code> element replaces its text content.  If the parameter is
+undefined and there is no fallback, the element's own text is retained.</li>
+<li>A <code>&lt;use&gt;</code> element may contain <code>&lt;param name=&quot;...&quot; value=&quot;...&quot;/&gt;</code> children that apply to that instance
+only.  They override document values and are inherited by nested <code>&lt;use&gt;</code> instances.  Gradients that reference
+parameters are instantiated separately for each distinct set of values.  Clip paths, masks, filters, markers and
+patterns use document values.</li>
+<li>An <code>&lt;image&gt;</code> element that references an SVG document may also contain <code>&lt;param&gt;</code> children.  They are
+appended to the href as query parameters, overriding values of the same name in the href, and are resolved against the
+active scope so that values can be forwarded, e.g. <code>&lt;param name=&quot;colour&quot; value=&quot;param(colour) red&quot;/&gt;</code>.
+<code>&lt;param&gt;</code> children are ignored for other image formats.</li>
+</list>
+<p>Values set with <action>SetKey</action> after initialisation do not alter the existing scene graph.  They are applied by the next parse, e.g. via <action>DataFeed</action>, and to symbols instantiated with <method>ParseSymbol</method>.</p>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>
@@ -79,6 +106,25 @@
     </action>
 
     <action>
+      <name>GetKey</name>
+      <comment>Retrieves the value of a document parameter.</comment>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
+        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
+      </input>
+      <description>
+<p>GetKey() returns the document-level value of a parameter that was defined with <action>SetKey</action> or the query string of the <fl>Path</fl>.  A value defined by <action>SetKey</action> takes precedence.  Values declared by <code>&lt;param&gt;</code> elements are scoped to their <code>&lt;use&gt;</code> instance and cannot be retrieved.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="UnsupportedField">The parameter is not defined.</error>
+      </result>
+    </action>
+
+    <action>
       <name>Init</name>
       <comment>Initialises the SVG object and processes source content.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
@@ -121,6 +167,26 @@
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
+    </action>
+
+    <action>
+      <name>SetKey</name>
+      <comment>Defines a document parameter.</comment>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
+      </input>
+      <description>
+<p>SetKey() defines a parameter value for substitution into <code>param()</code> references in the SVG document.  Please refer to the Parameters section of the class documentation for the syntax and rules.  An existing value of the same name is replaced, and zero-length values are permitted.</p>
+<p>Parameters should be set prior to initialisation.  Setting a value afterwards does not alter the existing scene graph; the value is applied by the next parse and by <method>ParseSymbol</method>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">The key is empty.</error>
+        <error code="InvalidValue">The key contains white-space or parentheses, so cannot be referenced by <code>param()</code>.</error>
+      </result>
     </action>
 
   </actions>

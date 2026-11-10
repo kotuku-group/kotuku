@@ -64,6 +64,12 @@ class objSVG : public Object {
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
+      auto error = Action(AC::GetKey, this, &args);
+      if (error != ERR::Okay) Value.clear();
+      return error;
+   }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR saveImage(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
       struct acSaveImage args = { Dest, { ClassID } };
@@ -72,6 +78,10 @@ class objSVG : public Object {
    inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
       struct acSaveToObject args = { Dest, { ClassID } };
       return Action(AC::SaveToObject, this, &args);
+   }
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
+      struct acSetKey args = { FieldName, Value };
+      return Action(AC::SetKey, this, &args);
    }
    inline ERR render(objBitmap * Bitmap, int X, int Y, int Width, int Height) noexcept {
       struct svg::Render args = { Bitmap, X, Y, Width, Height };
@@ -136,8 +146,7 @@ class objSVG : public Object {
 
    inline ERR getFrameCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
 
