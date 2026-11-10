@@ -503,6 +503,59 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Without MULTI_CONNECT a second connection from an IP is refused while the first is open.  Once the client closes
+-- its socket, the server must forget it so that the same IP can connect again (the closed ClientSocket previously
+-- stayed registered and every later connection was refused).
+
+@Test function ReconnectAfterClientClose()
+   local state = { reads=0, disconnects=0 }
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0,
+      feedback = function(Server, Client, State)
+         if State is NTC_DISCONNECTED then state.disconnects += 1 end
+      end,
+      incoming = function(Server, Client)
+         local buffer = string.alloc(1024)
+         local err, size = Client.acRead(buffer)
+         if err is ERR_Okay and size > 0 then state.reads += 1 end
+      end
+   })
+
+   local function connect()
+      local socket = obj.new('netsocket', {
+         feedback = function(Socket, State)
+            if State is NTC_CONNECTED then Socket.acWrite('hello') end
+         end
+      })
+      check socket.mtConnect('127.0.0.1', server.port)
+      return socket
+   end
+
+   local first = connect()
+   for i in {0 to 300} do
+      if state.reads is 1 then break end
+      processing.sleep(0.01)
+   end
+   assert(state.reads is 1, 'The server did not receive data from the first client')
+
+   first.free()
+   for i in {0 to 300} do
+      if server.totalClients is 0 then break end
+      processing.sleep(0.01)
+   end
+   assert(state.disconnects is 1, f'Expected one DISCONNECTED notification, got {state.disconnects}')
+   assert(server.totalClients is 0, f'The closed client is still registered ({server.totalClients} clients)')
+
+   local second <close> = connect()
+   for i in {0 to 300} do
+      if state.reads is 2 then break end
+      processing.sleep(0.01)
+   end
+   assert(state.reads is 2, 'The server refused or ignored the reconnection from the same IP')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- A script can remove its Outgoing callback by assigning nil.  Outgoing is write-only, so the test checks that the
 -- assignment succeeds (it previously dereferenced a null value).
 

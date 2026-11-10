@@ -239,7 +239,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
       else if ((client->TLS.Handle) and (client->State IS NTC::CONNECTED) and
           (!ssl_has_decrypted_data(client->TLS.Handle))) {
          if (auto error = tls_receive_encrypted(client); error IS ERR::Disconnected) {
-            disconnect(client);
+            FreeResource(client); // Disconnect, send Feedback and unlink from the NetClient
             return;
          }
          else if (error != ERR::Okay) {
@@ -314,6 +314,12 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
    if (error IS ERR::Terminate) {
       log.trace("Terminating socket, failed to read incoming data.");
       FreeResource(client); // Disconnect & send Feedback message
+   }
+   else if (client->State IS NTC::DISCONNECTED) {
+      // The peer closed the connection during the read.  The socket has to be freed so that it is unlinked from
+      // its NetClient, otherwise it blocks new connections from the same IP and counts against the SocketLimit.
+      log.trace("Client closed the connection, freeing socket.");
+      FreeResource(client);
    }
 
    Server->InUse--;
