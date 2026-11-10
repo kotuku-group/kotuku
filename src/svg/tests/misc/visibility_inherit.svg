@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="768" viewBox="0 0 256 192">
+   <!-- Expected result: twelve green squares on white, with no red visible.  Cases run left to right, top to bottom.
+        Integer coordinates and opaque rectangles keep the checksum independent of fonts and curve rasterisation. -->
+   <rect width="256" height="192" fill="#ffffff"/>
+
+   <defs>
+      <g id="reused_visibility">
+         <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+      </g>
+   </defs>
+
+   <!-- Omitted visibility inherits hidden. -->
+   <g transform="translate(16 16)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <rect width="40" height="40" fill="#ff0000"/>
+      </g>
+   </g>
+
+   <!-- Explicit inherit follows hidden. -->
+   <g transform="translate(76 16)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+      </g>
+   </g>
+
+   <!-- Explicit inherit follows collapse. -->
+   <g transform="translate(136 16)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="collapse">
+         <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+      </g>
+   </g>
+
+   <!-- An explicitly inheriting group passes hidden to a child with omitted visibility. -->
+   <g transform="translate(196 16)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <g visibility="inherit">
+            <rect width="40" height="40" fill="#ff0000"/>
+         </g>
+      </g>
+   </g>
+
+   <!-- Unstyled groups preserve inheritance from hidden ancestors. -->
+   <g transform="translate(16 76)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <g>
+            <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+         </g>
+      </g>
+   </g>
+
+   <!-- An explicitly visible child overrides its hidden group. -->
+   <g transform="translate(76 76)">
+      <rect width="40" height="40" fill="#ff0000"/>
+      <g visibility="hidden">
+         <rect width="40" height="40" fill="#00ff00" visibility="visible"/>
+      </g>
+   </g>
+
+   <!-- An explicitly visible group restores visibility for inheriting descendants. -->
+   <g transform="translate(136 76)">
+      <rect width="40" height="40" fill="#ff0000"/>
+      <g visibility="hidden">
+         <g visibility="visible">
+            <rect width="40" height="40" fill="#00ff00" visibility="inherit"/>
+         </g>
+      </g>
+   </g>
+
+   <!-- Inline styles preserve inheritance through an unstyled group. -->
+   <g transform="translate(196 76)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g style="visibility:hidden">
+         <g>
+            <rect width="40" height="40" fill="#ff0000" style="visibility:inherit"/>
+         </g>
+      </g>
+   </g>
+
+   <!-- Groups created for links preserve inheritance. -->
+   <g transform="translate(16 136)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <a href="#reused_visibility">
+            <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+         </a>
+      </g>
+   </g>
+
+   <!-- A switch with attributes creates a group that must preserve inheritance. -->
+   <g transform="translate(76 136)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <switch transform="translate(0 0)">
+            <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+         </switch>
+      </g>
+   </g>
+
+   <!-- Reused groups preserve inheritance from the use element's ancestors. -->
+   <g transform="translate(136 136)">
+      <rect width="40" height="40" fill="#00ff00"/>
+      <g visibility="hidden">
+         <use href="#reused_visibility"/>
+      </g>
+   </g>
+
+   <!-- A hidden sibling must not alter the state inherited by the next sibling. -->
+   <g transform="translate(196 136)">
+      <rect width="40" height="40" fill="#ff0000"/>
+      <g visibility="hidden">
+         <rect width="40" height="40" fill="#ff0000" visibility="inherit"/>
+      </g>
+      <g visibility="inherit">
+         <rect width="40" height="40" fill="#00ff00" visibility="inherit"/>
+      </g>
+   </g>
+</svg>

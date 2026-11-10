@@ -3103,6 +3103,7 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       if (need_group) {
          if (!NewObject(CLASSID::VECTORGROUP, &group)) {
             SetOwner(group, Parent);
+            group->setVisibility(VIS::INHERIT);
             Parent = group;
             group->init();
          }
@@ -3305,8 +3306,12 @@ void svgState::proc_link(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
    objVector *group;
    if (!NewObject(CLASSID::VECTORGROUP, &group)) {
       SetOwner(group, Parent);
+      group->setVisibility(VIS::INHERIT);
 
-      process_children(Tag, group);
+      auto state = *this;
+      state.applyTag(Tag);
+      state.process_attrib(Tag, group);
+      state.process_children(Tag, group);
 
       kt::vector<ChildEntry> list;
       if (!ListChildren(group->UID, &list)) {
@@ -3365,6 +3370,7 @@ void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noe
             objVector *group;
             if (NewObject(CLASSID::VECTORGROUP, &group) != ERR::Okay) return;
             SetOwner(group, Parent);
+            group->setVisibility(VIS::INHERIT);
             state.applyTag(Tag);
             state.process_attrib(Tag, group);
 
@@ -3396,6 +3402,8 @@ void svgState::proc_group(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noex
    objVector *group;
    if (NewObject(CLASSID::VECTORGROUP, &group) != ERR::Okay) return;
    SetOwner(group, Parent);
+   // SVG visibility inherits through groups unless an attribute overrides it.
+   group->setVisibility(VIS::INHERIT);
    state.applyTag(Tag); // Apply all group attribute values to the current state.
    state.process_attrib(Tag, group);
    state.process_children(Tag, group);

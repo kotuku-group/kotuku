@@ -951,20 +951,17 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          shape->RequiresRedraw = false;
       }
 
-      // Visibility management.  NB: Under SVG rules VectorGroup objects are always visible as they are not
-      // classed as a graphics element.
+      // Groups and inheriting viewports must still be traversed when hidden so that a descendant can explicitly
+      // restore visibility.  Explicitly hidden viewports retain their subtree-hiding behaviour.
 
-      {
-         bool visible = true;
-         if (shape->Visibility IS VIS::INHERIT) {
-            if (ParentState.mVisible != VIS::VISIBLE) visible = false;
-         }
-         else if (shape->Visibility != VIS::VISIBLE) visible = false;
+      if (shape->Visibility != VIS::INHERIT) state.mVisible = shape->Visibility;
 
-         if (((not visible) or (not shape->ValidState)) and (shape->classID() != CLASSID::VECTORGROUP)) {
-            log.trace("%s: #%d, Not Visible", get_name(shape), shape->UID);
-            continue;
-         }
+      const bool inherited_viewport = (shape->classID() IS CLASSID::VECTORVIEWPORT) and
+         (shape->Visibility IS VIS::INHERIT);
+      if ((shape->classID() != CLASSID::VECTORGROUP) and
+          ((not shape->ValidState) or ((state.mVisible != VIS::VISIBLE) and (not inherited_viewport)))) {
+         log.trace("%s: #%d, Not Visible", get_name(shape), shape->UID);
+         continue;
       }
 
       mObjectCount++;
@@ -1114,12 +1111,13 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                // For viewports that read user input, we record the collision box for the cursor.
 
-               if (has_input_boundary(shape)) {
+               if ((state.mVisible IS VIS::VISIBLE) and has_input_boundary(shape)) {
                   clip.shrinking(view);
                   mInputBounds.emplace_back(shape->UID, view->Cursor, clip, view->vpBounds.left, view->vpBounds.top);
                }
 
-               if ((Scene->Flags & VPF::OUTLINE_VIEWPORTS) != VPF::NIL) { // Debug option: Draw the viewport's path with a green outline
+               if ((state.mVisible IS VIS::VISIBLE) and ((Scene->Flags & VPF::OUTLINE_VIEWPORTS) != VPF::NIL)) {
+                  // Debug option: Draw the viewport's path with a green outline.
                   agg::renderer_scanline_bin_solid renderer(mRenderBase);
                   renderer.color(agg::rgba(0, 1, 0));
                   agg::rasterizer_scanline_aa stroke_raster;
@@ -1129,7 +1127,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   agg::render_scanlines(stroke_raster, mScanLine, renderer);
                }
 
-               if (has_fill_pattern) {
+               if ((state.mVisible IS VIS::VISIBLE) and has_fill_pattern) {
                   // Viewports can use FillPattern objects to render a different scene graph internally.
                   // This is useful for creating common graphics that can be re-used multiple times without
                   // them being pre-rendered to a cache as they would be for filled vector paths.
@@ -1190,7 +1188,11 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   const int buffer_width  = int(std::ceil(view->vpBounds.right)) - buffer_left;
                   const int buffer_height = int(std::ceil(view->vpBounds.bottom)) - buffer_top;
 
-                  if ((view->vpBuffered) and (buffer_width > 0) and (buffer_height > 0) and
+                  // Hidden inheriting viewports traverse children directly so their visibility overrides apply
+                  // without reusing a bitmap cached while the viewport was visible.
+
+                  if ((view->vpBuffered) and (state.mVisible IS VIS::VISIBLE) and
+                      (buffer_width > 0) and (buffer_height > 0) and
                       (int64_t(buffer_width) * int64_t(buffer_height) < MAX_AREA)) {
                      // In buffered mode, children will be drawn to an independent bitmap that is permanently
                      // cached.

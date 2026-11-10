@@ -419,6 +419,7 @@ end
 @Test global function W3TransformAttr05() hashTestSVG('transforms/w3-coords-transformattr-05-f.svg', 0xae4a35e3) end
 
 @Test global function CSS()                hashTestSVG('misc/css.svg', 0x29b444d1) end
+@Test global function VisibilityInheritance() hashTestSVG('misc/visibility_inherit.svg', 0x821f7b3a) end
 @Test; @Disabled global function BrushStrokes()       hashTestSVG('misc/brush-strokes.svg', 0x656a5e37) end
 
 @Test global function BottleTree()         hashTestSVG('images/bottletree.svg', 0xd7fb84ff) end
@@ -540,6 +541,31 @@ end
 
 function assertRed(Pixel:table, Low:num, High:num, Message:str)
    assert(Pixel.red >= Low and Pixel.red <= High, f'{Message}: expected red {Low}-{High}, got {Pixel.red}')
+end
+
+@Test function LinkVisibilityOverridesHiddenAncestors()
+   for attribs in values(array<str> { 'visibility="visible"', 'style="visibility:visible"' }) do
+      for child_attribs in values(array<str> { '', 'visibility="inherit"' }) do
+         local px = renderStatementPixel(compositeDocument(
+            '<g visibility="hidden"><a href="#test" ' .. attribs .. '>' ..
+            '<rect width="40" height="40" ' .. child_attribs .. '/></a></g>'))
+         assertRed(px, 0, 0, 'Visible links must restore visibility for their descendants')
+      end
+   end
+end
+
+@Test function LinkVisibilityDoesNotAffectSiblings()
+   for attribs in values(array<str> { 'visibility="hidden"', 'style="visibility:hidden"',
+      'visibility="collapse"' }) do
+      local px = renderStatementPixel(compositeDocument(
+         '<a href="#test" ' .. attribs .. '><rect width="40" height="40"/></a>'))
+      assertRed(px, 255, 255, 'Hidden links must suppress descendants with omitted visibility')
+
+      px = renderStatementPixel(compositeDocument(
+         '<a href="#test" ' .. attribs .. '><rect width="40" height="40"/></a>' ..
+         '<rect width="40" height="40" visibility="inherit"/>'))
+      assertRed(px, 0, 0, 'Link visibility must not leak into its following sibling')
+   end
 end
 
 @Test function FillOpacityCompositesInSRGB()

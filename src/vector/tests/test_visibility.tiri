@@ -1,0 +1,129 @@
+-- Visibility inheritance must follow the resolved parent state.  Hidden groups still allow explicitly visible
+-- descendants, and one sibling's visibility must not affect the next sibling.
+
+   include 'vector', 'display'
+   module display as mGfx
+
+function newScene():<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=20, pageHeight=20 })
+   local root = scene.new('VectorViewport', { width=20, height=20 })
+   return scene, root
+end
+
+function rectangle(Parent:obj, Visibility:num):obj
+   return Parent.new('VectorRectangle', { width=20, height=20, fill='white', visibility=Visibility })
+end
+
+function expectVisible(Scene:obj, Visible:bool)
+   local bmp <close> = obj.new('bitmap', {
+      width=20, height=20, bitsPerPixel=32, bkgd='0,0,0,255'
+   })
+   check bmp.acClear()
+   Scene.bitmap = bmp
+   check Scene.acDraw()
+   local red = mGfx.ReadRGBPixel(bmp, 10, 10).red
+   assert(red is (Visible ? 255 : 0), f'Expected visible={Visible}, got red={red}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InheritedChildFollowsParent()
+   for visibility in values(array<int> { VIS_VISIBLE, VIS_HIDDEN, VIS_COLLAPSE }) do
+      local scene <close>, root = newScene()
+      local group = root.new('VectorGroup', { visibility=visibility })
+      rectangle(group, VIS_INHERIT)
+      expectVisible(scene, visibility is VIS_VISIBLE)
+   end
+end
+
+@Test function ExplicitChildOverridesParent()
+   for visibility in values(array<int> { VIS_VISIBLE, VIS_HIDDEN, VIS_COLLAPSE }) do
+      local scene <close>, root = newScene()
+      local group = root.new('VectorGroup', { visibility=visibility })
+      local child = rectangle(group, VIS_VISIBLE)
+      expectVisible(scene, true)
+      child.visibility = VIS_HIDDEN
+      expectVisible(scene, false)
+   end
+end
+
+@Test function NestedGroupsPreserveInheritance()
+   local scene <close>, root = newScene()
+   local parent = root.new('VectorGroup', { visibility=VIS_HIDDEN })
+   local child = parent.new('VectorGroup', { visibility=VIS_INHERIT })
+   local grandchild = child.new('VectorGroup', { visibility=VIS_INHERIT })
+   rectangle(grandchild, VIS_INHERIT)
+   expectVisible(scene, false)
+   child.visibility = VIS_VISIBLE
+   expectVisible(scene, true)
+end
+
+@Test function SiblingsResolveVisibilityIndependently()
+   local scene <close>, root = newScene()
+   local hidden = root.new('VectorGroup', { visibility=VIS_HIDDEN })
+   rectangle(hidden, VIS_INHERIT)
+   local inherited = root.new('VectorGroup', { visibility=VIS_INHERIT })
+   rectangle(inherited, VIS_INHERIT)
+   expectVisible(scene, true)
+end
+
+@Test function RootInheritanceDefaultsToVisible()
+   local scene <close>, root = newScene()
+   root.visibility = VIS_INHERIT
+   rectangle(root, VIS_INHERIT)
+   expectVisible(scene, true)
+end
+
+@Test function ParentChangesUpdateInheritedChildren()
+   local scene <close>, root = newScene()
+   local group = root.new('VectorGroup', { visibility=VIS_VISIBLE })
+   rectangle(group, VIS_INHERIT)
+   expectVisible(scene, true)
+   check group.acHide()
+   expectVisible(scene, false)
+   check group.acShow()
+   expectVisible(scene, true)
+   group.visibility = VIS_COLLAPSE
+   expectVisible(scene, false)
+end
+
+@Test function BufferedChildrenFollowParentChanges()
+   local scene <close>, root = newScene()
+   local view = root.new('VectorViewport', { width=20, height=20, buffered=true })
+   local group = view.new('VectorGroup', { visibility=VIS_VISIBLE })
+   rectangle(group, VIS_INHERIT)
+   expectVisible(scene, true)
+   group.visibility = VIS_HIDDEN
+   expectVisible(scene, false)
+   group.visibility = VIS_VISIBLE
+   expectVisible(scene, true)
+end
+
+@Test function InheritedViewportsAllowVisibleDescendants()
+   for buffered in {0 to 2} do
+      for visibility in values(array<int> { VIS_HIDDEN, VIS_COLLAPSE }) do
+         local scene <close>, root = newScene()
+         local group = root.new('VectorGroup', { visibility=visibility })
+         local view = group.new('VectorViewport', {
+            width=20, height=20, visibility=VIS_INHERIT, buffered=(buffered is 1)
+         })
+         local child = rectangle(view, VIS_VISIBLE)
+         expectVisible(scene, true)
+         child.visibility = VIS_INHERIT
+         expectVisible(scene, false)
+         group.visibility = VIS_VISIBLE
+         expectVisible(scene, true)
+         group.visibility = visibility
+         expectVisible(scene, false)
+         child.visibility = VIS_VISIBLE
+         expectVisible(scene, true)
+      end
+   end
+end
+
+@Test function ExplicitlyHiddenViewportsHideTheirSubtree()
+   local scene <close>, root = newScene()
+   local view = root.new('VectorViewport', { width=20, height=20, visibility=VIS_HIDDEN })
+   rectangle(view, VIS_VISIBLE)
+   expectVisible(scene, false)
+end
