@@ -629,6 +629,37 @@ public:
 };
 
 //********************************************************************************************************************
+// Selects the tree to process for one instance of a <symbol>.  Expanding nested <use> elements mutates the tree, so
+// a document with parameters processes a private copy that is resolved against the instance scope.  The copy is
+// released on destruction unless an animation was created from it, because animations retain their tag pointers.
+
+class SymbolInstance {
+   extSVG *m_svg;
+   std::list<XTag>::iterator m_copy;
+   size_t m_animations = 0;
+   bool m_copied = false;
+
+public:
+   XTag *tag;
+
+   SymbolInstance(extSVG *Self, XTag &Symbol, const ParamScope *Scope) : m_svg(Self), tag(&Symbol) {
+      if (Self->ParamAttribs.empty()) return;
+      m_copy = Self->SymbolInstances.emplace(Self->SymbolInstances.end(), Symbol);
+      rescope_params(Self, *m_copy, Scope);
+      tag = &*m_copy;
+      m_animations = Self->Animations.size();
+      m_copied = true;
+   }
+
+   ~SymbolInstance() {
+      if ((m_copied) and (m_svg->Animations.size() IS m_animations)) m_svg->SymbolInstances.erase(m_copy);
+   }
+
+   SymbolInstance(const SymbolInstance &) = delete;
+   SymbolInstance & operator=(const SymbolInstance &) = delete;
+};
+
+//********************************************************************************************************************
 // Collects the sorted names of all parameters referenced by a tag and its descendants.
 
 static void collect_param_names(extSVG *Self, const XTag &Tag, kt::vector<std::string> &Names)
@@ -833,6 +864,9 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
       parse_query_params(Self, query);
       Path = file;
    }
+
+   Self->ParsedParams = Self->QueryParams;
+   for (auto &[name, value] : Self->Params) Self->ParsedParams[name] = value;
 
    objXML *xml;
    ERR error = ERR::Okay;

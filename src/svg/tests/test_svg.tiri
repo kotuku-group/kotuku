@@ -422,7 +422,29 @@ end
 @Test global function VisibilityInheritance() hashTestSVG('misc/visibility_inherit.svg', 0x821f7b3a) end
 @Test; @Disabled global function BrushStrokes()       hashTestSVG('misc/brush-strokes.svg', 0x656a5e37) end
 
-@Test global function BottleTree()         hashTestSVG('images/bottletree.svg', 0xd7fb84ff) end
+-- Examples from the W3C SVG Parameters Primer.  Object <param> values are passed as query strings.
+
+@Test global function W3ParamButton()      hashTestSVG('params/w3-param-button.svg', 0x60823983) end
+@Test global function W3ParamButtonStop()  hashTestSVG('params/w3-param-button.svg?color=red&label=stop', 0x40abc8cf) end
+@Test global function W3ParamButtonFnord() hashTestSVG('params/w3-param-button.svg?color=cornflowerblue&label=fnord', 0x909d53c7) end
+@Test global function W3ParamMapA()        hashTestSVG('params/w3-param-map.svg?x=255&y=172', 0x6b3ebefb) end
+@Test global function W3ParamMapB()        hashTestSVG('params/w3-param-map.svg?y=167&x=655', 0x13e35bbf) end
+@Test global function W3ParamFlowers()     hashTestSVG('params/w3-param-flowers.svg', 0x6d868310) end
+
+-- The parameterised <a> href has no visual effect, and the text is misrendered because <tspan> is unsupported
+-- and the textPath is mispositioned.
+
+@Test global function W3ParamAd() hashTestSVG('params/w3-param-ad.svg?buylink=http%3A%2F%2Fexample.com%2Fshop', -1) end
+
+-- Bar heights are correct.  Known faults: the percentage labels are <tspan> content-value targets, which are not
+-- rendered, and the bezel filter leaves faint grey boxes over its filter region.
+
+@Test global function W3ParamYearChart()
+   hashTestSVG('params/w3-param-year-chart.svg?jan=10&feb=30&mar=30&apr=100&may=80&jun=20&jul=55&aug=71&sep=6' ..
+      '&oct=89&nov=45&dec=8', 0x6aac862b)
+end
+
+@Test global function BottleTree()        hashTestSVG('images/bottletree.svg', 0xd7fb84ff) end
 @Test global function Button()             hashTestSVG('images/button.svg', 0x94043eac) end
 @Test global function Clock()              hashTestSVG('images/clock.svg', 0xab90cfbb) end
 @Test global function IceCube()            hashTestSVG('images/icecube.svg', 0x99b4e379) end
