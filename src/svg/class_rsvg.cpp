@@ -71,7 +71,9 @@ static ERR RSVG_Init(extRSVG *Self)
 
    std::span<int8_t> header;
 
-   if (wildcmp("*.svg|*.svgz", path));
+   std::string_view file, query; // SVG paths may carry a parameter query string, e.g. "button.svg?colour=red"
+
+   if (wildcmp("*.svg|*.svgz", path) or split_svg_query(path, file, query));
    else if (!Self->getHeader(header)) {
       if (strisearch("<svg", std::string_view((CSTRING)header.data(), header.size())) >= 0) {
       }

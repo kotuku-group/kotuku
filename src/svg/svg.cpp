@@ -86,6 +86,13 @@ struct SVGStringHash {
 template<typename Value> using SVGStringLookupMap =
    ankerl::unordered_dense::map<std::string, Value, SVGStringHash, std::equal_to<>>;
 
+// A <use> parameter scope (SVG Parameters).  Holds the values inherited from enclosing <use> elements together with
+// those declared by the <use> element's own <param> children.
+
+struct ParamScope {
+   SVGStringLookupMap<std::string> Values;
+};
+
 struct svgAnimState {
    VectorMatrix *matrix = nullptr;
    std::vector<class anim_transform *> transforms;
@@ -116,6 +123,10 @@ class extSVG : public objSVG {
    std::vector<OBJECTID> Resources; // Resources to terminate if ENFORCE_TRACKING was enabled.
    ankerl::unordered_dense::map<uint32_t, std::vector<anim_base *>> StartOnBegin; // When the animation indicated by uint32_t begins, it must activate() the referenced anim_base
    ankerl::unordered_dense::map<uint32_t, std::vector<anim_base *>> StartOnEnd; // When the animation indicated by uint32_t ends, it must activate() the referenced anim_base
+   SVGStringLookupMap<std::string> Params;      // Client values from SetKey(); highest document-level priority
+   SVGStringLookupMap<std::string> QueryParams; // Parsed from the Path query string; rebuilt on each parse
+   ankerl::unordered_dense::map<int, kt::vector<XMLAttrib>> ParamAttribs; // Raw attribs of param() tags, by XTag.ID
+   SVGStringLookupMap<kt::vector<std::string>> ParamDeps; // Parameter names referenced by a definition's subtree
    TIMER AnimationTimer;
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
    bool  PreserveWS; // Preserve white-space
@@ -155,6 +166,8 @@ struct svgState {
    VLJ     m_line_join;
    VLC     m_line_cap;
    VIJ     m_inner_join;
+   const ParamScope *m_param_scope = nullptr; // Active <use> parameter scope, if any
+   std::vector<const XTag *> m_gradient_refs; // Active href chain, used to stop cyclic gradient references
 
 private:
    class extSVG *Self;
@@ -217,7 +230,9 @@ private:
    void process_attrib(XTag &, objVector *) noexcept;
    void process_inherit_refs(XTag &) noexcept;
    void process_shape_children(XTag &, OBJECTPTR) noexcept;
-   void resolve_paint_server(const std::string &) noexcept;
+   std::string resolve_paint_server(const std::string &) noexcept;
+   std::string scoped_paint_id(const XTag &, const std::string &) noexcept;
+   void proc_paint_server(const XTag &) noexcept;
    bool current_colour(objVector *, FRGB &) noexcept;
 
    void parse_contourgradient(const XTag &, objGradientContour *, std::string &) noexcept;
@@ -307,6 +322,7 @@ static constexpr auto SVF_colourise           = strhash("colourise");
 static constexpr auto SVF_colourmap           = strhash("colourmap");
 static constexpr auto SVF_condensed           = strhash("condensed");
 static constexpr auto SVF_conicGradient       = strhash("conicGradient");
+static constexpr auto SVF_content_value       = strhash("content-value");
 static constexpr auto SVF_contourGradient     = strhash("contourGradient");
 static constexpr auto SVF_diffusionGradient   = strhash("diffusionGradient");
 static constexpr auto SVF_contrast            = strhash("contrast");
@@ -490,6 +506,7 @@ static constexpr auto SVF_n                   = strhash("n");
 static constexpr auto SVF_n1                  = strhash("n1");
 static constexpr auto SVF_n2                  = strhash("n2");
 static constexpr auto SVF_n3                  = strhash("n3");
+static constexpr auto SVF_name                = strhash("name");
 static constexpr auto SVF_narrower            = strhash("narrower");
 static constexpr auto SVF_none                = strhash("none");
 static constexpr auto SVF_noise               = strhash("noise");
@@ -507,6 +524,7 @@ static constexpr auto SVF_over                = strhash("over");
 static constexpr auto SVF_overflow            = strhash("overflow");
 static constexpr auto SVF_overlay             = strhash("overlay");
 static constexpr auto SVF_overline            = strhash("overline");
+static constexpr auto SVF_param               = strhash("param");
 static constexpr auto SVF_path                = strhash("path");
 static constexpr auto SVF_pathLength          = strhash("pathLength");
 static constexpr auto SVF_pattern             = strhash("pattern");
@@ -618,6 +636,7 @@ static constexpr auto SVF_ultra_expanded   = strhash("ultra_expanded");
 static constexpr auto SVF_underline        = strhash("underline");
 static constexpr auto SVF_units            = strhash("units");
 static constexpr auto SVF_use              = strhash("use");
+static constexpr auto SVF_value            = strhash("value");
 static constexpr auto SVF_values           = strhash("values");
 static constexpr auto SVF_version          = strhash("version");
 static constexpr auto SVF_vertices         = strhash("vertices");
@@ -672,6 +691,7 @@ static ERR  init_svg(void);
 static ERR  init_rsvg(void);
 
 static void prepare_styles(objXML::TAGS &);
+static bool split_svg_query(std::string_view, std::string_view &, std::string_view &) noexcept;
 
 static ERR  save_svg_scan(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_defs(extSVG *, objXML *, objVectorScene *, int, int * = nullptr);

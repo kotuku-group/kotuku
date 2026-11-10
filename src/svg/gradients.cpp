@@ -190,6 +190,10 @@ bool svgState::parse_gradient_href(const std::string &Value, objGradient *Gradie
       }
    }
    else if (auto other = find_href_tag(Self, Value)) {
+      if (std::ranges::find(m_gradient_refs, other) != m_gradient_refs.end()) return true;
+      m_gradient_refs.push_back(other);
+      auto restore_refs = deferred_call([this] { m_gradient_refs.pop_back(); });
+      ParamGuard param_guard(Self, *other, m_param_scope);
       std::string dummy;
 
       if (svg_tag_is(*other, SVF_radialGradient)) {

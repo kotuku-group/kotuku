@@ -29,6 +29,46 @@ SVG content is composited in sRGB, as in web browsers.  The top-level @VectorVie
 descendants into gamma-correct blending.  Symbols instantiated with #ParseSymbol() inherit the colour space of the
 target viewport instead, as does a document parsed into a #Target scene that already has a viewport.
 
+<header>Parameters</header>
+
+SVG documents can be parameterised in accordance with the W3C SVG Parameters draft, allowing a client to alter
+colours, text and other values without editing the source document.  A document declares a substitution point by
+writing `param(name)` at the start of an attribute value, optionally followed by a fallback:
+
+<pre>
+&lt;rect fill="param(colour) red" stroke="param(outline) black"/&gt;
+&lt;text content-value="param(label)"&gt;Default label&lt;/text&gt;
+</pre>
+
+Values are supplied with #SetKey() prior to initialisation, or through the query string of the #Path, for example
+`button.svg?colour=seagreen&amp;label=Buy%20now`.  Query values are percent-decoded.  If a name is defined by both
+#SetKey() and the query string, the #SetKey() value takes precedence.
+
+The following rules apply:
+
+<list type="bullet">
+<li>Only an attribute value that starts with `param(` is substituted, and the entire value is replaced.  A parameter
+reference cannot be embedded in a list value such as `points` or `transform`.</li>
+<li>Names are case sensitive.  If a name is undefined, the fallback is used.  If there is no fallback, the attribute
+is treated as though it were absent and its initial value applies.  A parameter that is defined with an empty value
+is not replaced by the fallback.</li>
+<li>Declarations in `style` attributes and `&lt;style&gt;` sheets are supported.</li>
+<li>The `id` attribute is never substituted, so that references to the element remain stable.</li>
+<li>The `content-value` attribute of a `&lt;text&gt;` element replaces its text content.  If the parameter is
+undefined and there is no fallback, the element's own text is retained.</li>
+<li>A `&lt;use&gt;` element may contain `&lt;param name="..." value="..."/&gt;` children that apply to that instance
+only.  They override document values and are inherited by nested `&lt;use&gt;` instances.  Gradients that reference
+parameters are instantiated separately for each distinct set of values.  Clip paths, masks, filters, markers and
+patterns use document values.</li>
+<li>An `&lt;image&gt;` element that references an SVG document may also contain `&lt;param&gt;` children.  They are
+appended to the href as query parameters, overriding values of the same name in the href, and are resolved against the
+active scope so that values can be forwarded, e.g. `&lt;param name="colour" value="param(colour) red"/&gt;`.
+`&lt;param&gt;` children are ignored for other image formats.</li>
+</list>
+
+Values set with #SetKey() after initialisation do not alter the existing scene graph.  They are applied by the next
+parse, e.g. via #DataFeed(), and to symbols instantiated with #ParseSymbol().
+
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
 enhanced programmatic access unique to Kotuku.
@@ -130,6 +170,34 @@ static ERR SVG_DataFeed(extSVG *Self, struct acDataFeed *Args)
 
 /*********************************************************************************************************************
 -ACTION-
+GetKey: Retrieves the value of a document parameter.
+
+GetKey() returns the document-level value of a parameter that was defined with #SetKey() or the query string of
+the #Path.  A value defined by #SetKey() takes precedence.  Values declared by `&lt;param&gt;` elements are scoped
+to their `&lt;use&gt;` instance and cannot be retrieved.
+
+-ERRORS-
+Okay
+Args
+UnsupportedField: The parameter is not defined.
+-END-
+*********************************************************************************************************************/
+
+static ERR SVG_GetKey(extSVG *Self, struct acGetKey *Args)
+{
+   if ((not Args) or (not Args->Value)) return ERR::Args;
+
+   if (auto value = find_param(Self, nullptr, Args->Key)) {
+      Args->Value->assign(*value);
+      return ERR::Okay;
+   }
+
+   Args->Value->clear();
+   return ERR::UnsupportedField;
+}
+
+/*********************************************************************************************************************
+-ACTION-
 Init: Initialises the SVG object and processes source content.
 
 The initialisation process establishes the scene graph structure and processes any specified SVG source content.  If
@@ -208,6 +276,7 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
    if ((!Args) or (Args->ID.empty()) or (!Args->Viewport)) return log.warning(ERR::NullArgs);
 
    if (auto tagref = find_href_tag(Self, Args->ID)) {
+      ParamGuard param_guard(Self, *tagref, nullptr); // Apply the current parameter values to the symbol
       svgState state(Self);
       state.process_children(*tagref, Args->Viewport);
       return ERR::Okay;
@@ -438,6 +507,37 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
       }
       else return ERR::CreateObject;
    }
+}
+
+/*********************************************************************************************************************
+-ACTION-
+SetKey: Defines a document parameter.
+
+SetKey() defines a parameter value for substitution into `param()` references in the SVG document.  Please refer to
+the Parameters section of the class documentation for the syntax and rules.  An existing value of the same name is
+replaced, and zero-length values are permitted.
+
+Parameters should be set prior to initialisation.  Setting a value afterwards does not alter the existing scene graph;
+the value is applied by the next parse and by #ParseSymbol().
+
+-ERRORS-
+Okay
+NullArgs: The key is empty.
+InvalidValue: The key contains white-space or parentheses, so cannot be referenced by `param()`.
+-END-
+*********************************************************************************************************************/
+
+static ERR SVG_SetKey(extSVG *Self, struct acSetKey *Args)
+{
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
+
+   for (auto ch : Args->Key) {
+      if ((unsigned(ch) <= 0x20) or (ch IS '(') or (ch IS ')')) return ERR::InvalidValue;
+   }
+
+   if (auto it = Self->Params.find(Args->Key); it != Self->Params.end()) it->second.assign(Args->Value);
+   else Self->Params.emplace(std::string(Args->Key), std::string(Args->Value));
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

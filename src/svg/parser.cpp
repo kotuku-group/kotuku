@@ -1,33 +1,97 @@
 //********************************************************************************************************************
-// If the value is a url() then the referenced paint server will be initialised if it has not been already.
 
-void svgState::resolve_paint_server(const std::string &Value) noexcept
+void svgState::proc_paint_server(const XTag &Tag) noexcept
 {
-   if (Value.starts_with("url(")) {
-      if (Value[4] IS '#') {
-         int i;
-         for (i=5; (Value[i] != ')') and Value[i]; i++);
-         std::string lookup;
-         lookup.assign(Value, 5, i-5);
+   switch(svg_tag_hash(Tag)) {
+      case SVF_contourGradient:   proc_contourgradient(Tag); break;
+      case SVF_distalGradient:    proc_distalgradient(Tag); break;
+      case SVF_radialGradient:    proc_radialgradient(Tag); break;
+      case SVF_diamondGradient:   proc_diamondgradient(Tag); break;
+      case SVF_conicGradient:     proc_conicgradient(Tag); break;
+      case SVF_linearGradient:    proc_lineargradient(Tag); break;
+      case SVF_meshgradient:      proc_meshgradient(Tag); break;
+      case SVF_diffusionGradient: proc_diffusiongradient(Tag); break;
+   }
+}
 
-         if (Self->Scene->findDef(lookup, nullptr) != ERR::Okay) {
-            if (auto tag = Self->IDs.find(lookup); tag != Self->IDs.end()) {
-               auto tagref = tag->second;
+//********************************************************************************************************************
+// Within a <use> parameter scope, a paint server whose subtree or href chain references parameters must be instantiated
+// separately for each distinct set of values.  Returns the ID of the scoped instance, or an empty string if the
+// document-scope definition can be used as-is.  Instances with equal values share one definition.
 
-               switch(svg_tag_hash(*tagref)) {
-                  case SVF_contourGradient:  proc_contourgradient(*tagref); break;
-                  case SVF_distalGradient:   proc_distalgradient(*tagref); break;
-                  case SVF_radialGradient:   proc_radialgradient(*tagref); break;
-                  case SVF_diamondGradient:  proc_diamondgradient(*tagref); break;
-                  case SVF_conicGradient:    proc_conicgradient(*tagref); break;
-                  case SVF_linearGradient:   proc_lineargradient(*tagref); break;
-                  case SVF_meshgradient:     proc_meshgradient(*tagref); break;
-                  case SVF_diffusionGradient: proc_diffusiongradient(*tagref); break;
-               }
+std::string svgState::scoped_paint_id(const XTag &Tag, const std::string &ID) noexcept
+{
+   auto deps = Self->ParamDeps.find(ID);
+   if (deps IS Self->ParamDeps.end()) {
+      kt::vector<std::string> names;
+      std::vector<const XTag *> referenced = { &Tag };
+      for (size_t i=0; i < referenced.size(); i++) {
+         auto &tag = *referenced[i];
+         collect_param_names(Self, tag, names);
+         for (int a=1; a < std::ssize(tag.Attribs); a++) {
+            auto hash = strhash(tag.Attribs[a].Name);
+            if ((hash != SVF_href) and (hash != SVF_xlink_href)) continue;
+            if (auto other = find_href_tag(Self, tag.Attribs[a].Value)) {
+               if (std::ranges::find(referenced, other) IS referenced.end()) referenced.push_back(other);
             }
          }
       }
+      std::sort(names.begin(), names.end());
+      names.erase(std::unique(names.begin(), names.end()), names.end());
+      deps = Self->ParamDeps.emplace(ID, std::move(names)).first;
    }
+
+   if (deps->second.empty()) return std::string();
+
+   std::string key;
+   bool differs = false;
+   for (auto &name : deps->second) {
+      auto scoped = find_param(Self, m_param_scope, name);
+      auto document = find_param(Self, nullptr, name);
+      if ((scoped != document) and ((not scoped) or (not document) or (*scoped != *document))) differs = true;
+
+      key.append(name).push_back('\x1f');
+      if (scoped) key.append(*scoped);
+      else key.push_back('\x1e');
+      key.push_back('\x1d');
+   }
+
+   if (not differs) return std::string();
+   return std::format("{}~p{:x}", ID, uint64_t(ankerl::unordered_dense::hash<std::string>{}(key)));
+}
+
+//********************************************************************************************************************
+// If the value is a url() then the referenced paint server will be initialised if it has not been already.  Returns
+// the effective paint value, which differs from the input if a parameter-scoped instance of the paint server is used.
+
+std::string svgState::resolve_paint_server(const std::string &Value) noexcept
+{
+   if (not Value.starts_with("url(#")) return Value;
+
+   auto end = Value.find(')', 5);
+   if (end IS std::string::npos) return Value;
+
+   std::string lookup(Value, 5, end - 5);
+   auto tag = Self->IDs.find(lookup);
+   if (tag IS Self->IDs.end()) return Value;
+
+   if ((m_param_scope) and (not Self->ParamAttribs.empty())) {
+      if (auto scoped_id = scoped_paint_id(*tag->second, lookup); not scoped_id.empty()) {
+         if (Self->Scene->findDef(scoped_id, nullptr) != ERR::Okay) {
+            XTag clone = *tag->second;
+            rescope_params(Self, clone, m_param_scope);
+            for (int a=1; a < std::ssize(clone.Attribs); a++) {
+               if (clone.Attribs[a].Name IS "id") { clone.Attribs[a].Value = scoped_id; break; }
+            }
+            proc_paint_server(clone);
+         }
+
+         return "url(#" + scoped_id + Value.substr(end);
+      }
+   }
+
+   if (Self->Scene->findDef(lookup, nullptr) != ERR::Okay) proc_paint_server(*tag->second);
+   return Value;
 }
 
 //********************************************************************************************************************
@@ -756,15 +820,19 @@ void svgState::applyTag(const XTag &Tag) noexcept
             m_color = val;
             break;
 
+         // Within a parameter scope, inherited paint server references must point to the scoped instance.
+
          case SVF_fill:
             if ("inherit" IS val);
             else if ("currentColor" IS val) m_fill = m_color;
+            else if (m_param_scope) m_fill = resolve_paint_server(val);
             else m_fill = val;
             break;
 
          case SVF_stroke:
             if ("inherit" IS val);
             else if ("currentColor" IS val) m_stroke = m_color;
+            else if (m_param_scope) m_stroke = resolve_paint_server(val);
             else m_stroke = val;
             if (!m_stroke_width) m_stroke_width = 1;
             break;
@@ -842,6 +910,7 @@ void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
          case SVF_animateMotion:    proc_animate_motion(child, Vector); break;
          case SVF_set:              proc_set(child, Tag, Vector); break;
          case SVF_kotuku_guidePath: proc_guide_path(child, Vector); break;
+         case SVF_param:            break; // Consumed by proc_image()
 
          case SVF_textPath:
             if (Vector->classID() IS CLASSID::VECTORTEXT) {
@@ -2531,12 +2600,18 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       case SVF_text: {
          if (auto error = proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector); error != ERR::Okay) return error;
          else {
-            if (!Tag.Children.empty()) {
+            // SVG Parameters: a resolved content-value replaces the element's text, which otherwise serves as the
+            // fallback.
+
+            auto content_value = Tag.attrib("content-value");
+
+            if ((content_value) or (!Tag.Children.empty())) {
                std::string existing_str;
                if (auto error = ((objVectorText *)Vector)->getString(existing_str); error != ERR::Okay) return error;
 
-               if (auto buffer = Tag.getContent(); !buffer.empty()) {
-                  kt::ltrim(buffer);
+               auto buffer = content_value ? *content_value : Tag.getContent();
+               if ((content_value) or (not buffer.empty())) {
+                  if (not content_value) kt::ltrim(buffer);
                   if (not existing_str.empty()) buffer.insert(0, existing_str.data(), existing_str.size());
                   if (auto error = ((objVectorText *)Vector)->setString(buffer); error != ERR::Okay) return error;
                }
@@ -2547,6 +2622,7 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       }
 
       case SVF_desc: break; // Ignore descriptions
+      case SVF_param: break; // Parameters are only meaningful as children of <use>; see proc_use()
 
       case 0: break;
 
@@ -2637,6 +2713,13 @@ static std::string resolve_image_href(extSVG *Self, XTag &Tag, const std::string
 
 //********************************************************************************************************************
 
+// Proxy for creating the RSVG class through kt::Create, which has no public C++ interface.
+
+struct objRSVGImage : public objImage {
+   static constexpr CLASSID CLASS_ID = CLASSID::RSVG;
+   static constexpr CSTRING CLASS_NAME = "RSVG";
+};
+
 static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width = Unit(), Unit Height = Unit())
 {
    kt::Log log(__FUNCTION__);
@@ -2684,8 +2767,19 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width
    else log.branch("%s", Path.c_str());
 
    if (!error) {
+      // IdentifyFile() cannot resolve a path that carries an SVG parameter query string, so the RSVG class is
+      // targeted directly in that case.  The query is then interpreted by the nested SVG object.
+
+      std::string_view file, query;
+      if (split_svg_query(Path, file, query)) {
+         if (!(*Image = kt::Create<objRSVGImage>::global(
+            fl::Owner(Self->Scene->UID),
+            fl::Path(Path),
+            fl::DisplayWidth(Width.defined() ? int(Width) : 0), fl::DisplayHeight(Height.defined() ? int(Height) : 0),
+            fl::Flags(PCF::FORCE_ALPHA_32)))) error = ERR::CreateObject;
+      }
       // Note: A Width/Height of 0 will use the image's actual width/height.
-      if (!(*Image = objImage::create::global(
+      else if (!(*Image = objImage::create::global(
          fl::Owner(Self->Scene->UID),
          fl::Path(Path),
          fl::BitsPerPixel(32),
@@ -2749,6 +2843,8 @@ void svgState::proc_def_image(XTag &Tag) noexcept
       }
 
       if ((!id.empty()) and (!src.empty())) {
+         src = apply_image_params(Self, Tag, src, m_param_scope);
+
          objImage *pic;
          if (!load_pic(Self, resolve_image_href(Self, Tag, src), &pic, width, height)) {
             image->setImage(pic);
@@ -2811,14 +2907,22 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
    if (src.empty()) return ERR::FieldNotSet;
 
+   // <param> children are passed to an SVG image as query parameters.  Each distinct href needs its own cached image,
+   // so the ID cannot be stored in the tag as it may be reused by other <use> instances.
+
+   auto param_src = apply_image_params(Self, Tag, src, m_param_scope);
+   const bool has_params = param_src != src;
+   if (has_params) src = std::move(param_src);
+
    if (id.empty()) {
       // An image always has an ID; this ensures that if the image bitmap is referenced repeatedly via a <symbol> then
       // we won't keep reloading it into the cache.
       id = "img_" + std::to_string(strhash(src));
       if (width.defined()) id += "_" + std::to_string(width);
       if (height.defined()) id += "_" + std::to_string(height);
-      xml::NewAttrib(Tag, "id", id);
+      if (not has_params) xml::NewAttrib(Tag, "id", id);
    }
+   else if (has_params) id += std::format("~p{:x}", uint64_t(ankerl::unordered_dense::hash<std::string>{}(src)));
 
    if (Self->Scene->findDef(id, nullptr) != ERR::Okay) {
       // Load the image and add it to the vector definition.  It will be rendered as a rectangle within the scene.
@@ -3079,6 +3183,41 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       Self->Cloning--;
    });
 
+   // SVG Parameters: <param> children define values for this instance only.  They inherit the enclosing scope and
+   // their values are resolved against it, so <param name="a" value="param(b) red"/> is permitted.  Whitespace and
+   // <param> children do not count as content for the purpose of choosing the cloning strategy below.
+
+   ParamScope scope;
+   bool has_params = false, has_content = false;
+   for (auto &child : Tag.Children) {
+      if (child.isContent()) {
+         if (not trim_ws(child.Attribs[0].Value).empty()) has_content = true;
+         continue;
+      }
+      else if (not svg_tag_is(child, SVF_param)) {
+         has_content = true;
+         continue;
+      }
+
+      std::string name;
+      std::optional<std::string> value;
+      if (not read_param_element(Self, child, m_param_scope, name, value)) continue;
+
+      if (not has_params) {
+         if (m_param_scope) scope = *m_param_scope;
+         has_params = true;
+      }
+
+      if (value) scope.Values[name] = std::move(*value);
+      else scope.Values.erase(name);
+   }
+
+   auto saved_scope = m_param_scope;
+   if (has_params) m_param_scope = &scope;
+   auto restore_scope = deferred_call([this, saved_scope] {
+      m_param_scope = saved_scope;
+   });
+
    if ((iequals("symbol", tagref->name())) or (iequals("svg", tagref->name()))) {
       // SVG spec requires that we create a VectorGroup and then create a Viewport underneath that.  However if there
       // are no attributes to apply to the group then there is no sense in creating an empty one.
@@ -3087,6 +3226,11 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       // handling, as seen further below in this routine.
 
       objVectorViewport *viewport = nullptr;
+
+      // The symbol tree is shared, so its parameters are resolved for this instance and restored afterwards.  This
+      // also applies values set with SetKey() after initialisation.
+
+      ParamGuard param_guard(Self, *tagref, m_param_scope);
 
       auto state = *this;
       state.applyTag(Tag); // Apply all attribute values to the current state.
@@ -3178,8 +3322,9 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       Tag.Attribs[0].Name = "g";
       if (Tag.Attribs.size() > 1) Tag.Attribs.erase(Tag.Attribs.begin()+1, Tag.Attribs.end());
 
-      if (Tag.Children.empty()) {
+      if (not has_content) {
          Tag.Children = { *tagref }; // Deep-clone
+         if (not Self->ParamAttribs.empty()) rescope_params(Self, Tag.Children[0], m_param_scope);
 
          // Apply 'use' attributes, making a special case for 'x' and 'y'.
 
@@ -3216,6 +3361,7 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
          auto &subgroup = Tag.Children.emplace_back(XTag(0));
          subgroup.Attribs.push_back(XMLAttrib("g"));
          subgroup.Children.push_back(*tagref);
+         if (not Self->ParamAttribs.empty()) rescope_params(Self, subgroup.Children[0], m_param_scope);
 
          Unit tx, ty;
          for (int t=1; t < std::ssize(use_attribs); t++) {
@@ -4045,8 +4191,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 {
    kt::Log log(__FUNCTION__);
 
-   // Ignore stylesheet attributes
-   if (Hash IS SVF_class) return ERR::Okay;
+   // Ignore stylesheet attributes, and content-value which is applied by process_tag()
+   if ((Hash IS SVF_class) or (Hash IS SVF_content_value)) return ERR::Okay;
 
    switch(Vector->classID()) {
       case CLASSID::VECTORVIEWPORT: {
@@ -4420,10 +4566,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             FRGB rgb;
             if (current_colour(Vector, rgb)) Vector->setStrokeColour(rgb);
          }
-         else {
-            resolve_paint_server(StrValue);
-            Vector->setStroke(StrValue);
-         }
+         else Vector->setStroke(resolve_paint_server(StrValue));
          break;
 
       case SVF_fill:
@@ -4431,10 +4574,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             FRGB rgb;
             if (current_colour(Vector, rgb)) Vector->setFillColour(rgb);
          }
-         else {
-            resolve_paint_server(StrValue);
-            Vector->setFill(StrValue);
-         }
+         else Vector->setFill(resolve_paint_server(StrValue));
          break;
 
       case SVF_transform: parse_transform(Vector, StrValue, MTAG_SVG_TRANSFORM); break;

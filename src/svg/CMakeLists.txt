@@ -40,3 +40,4 @@ flute_test (svg_diffusiongradient_roundtrip "tests/test_diffusiongradient_roundt
 flute_test (svg_defs_export "tests/test_defs_export.tiri")
 flute_test (svg_units "tests/test_units.tiri")
 flute_test (svg_pattern_aspect_ratio "tests/test_pattern_aspect_ratio.tiri")
+flute_test (svg_params "tests/test_svg_params.tiri")

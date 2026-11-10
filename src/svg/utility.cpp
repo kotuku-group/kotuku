@@ -219,9 +219,13 @@ static std::string_view folder(extSVG *Self)
    if (not Self->Folder.empty()) return Self->Folder;
    if (Self->Path.empty()) return std::string_view{};
 
-   // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
+   // Setting a path of "my/house/is/red.svg" results in "my/house/is/".  A query string is excluded because its
+   // values may contain separators.
 
-   if (!ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder)) {
+   std::string_view path(Self->Path), query;
+   split_svg_query(Self->Path, path, query);
+
+   if (!ResolvePath(path, RSF::NO_FILE_CHECK, &Self->Folder)) {
       if (auto last = Self->Folder.find_last_of("/\\"); last != std::string::npos) {
          Self->Folder.resize(last + 1);
          return Self->Folder;
@@ -454,6 +458,354 @@ static void parse_ids(extSVG *Self, XTag &Tag)
 }
 
 //********************************************************************************************************************
+// SVG Parameters: an attribute value of the form "param(name) fallback" is substituted with the value of the named
+// parameter, or the fallback if the parameter is undefined.  Only values that start with "param(" are recognised.
+
+static std::string_view trim_ws(std::string_view Value) noexcept
+{
+   while ((not Value.empty()) and (unsigned(Value.front()) <= 0x20)) Value.remove_prefix(1);
+   while ((not Value.empty()) and (unsigned(Value.back()) <= 0x20)) Value.remove_suffix(1);
+   return Value;
+}
+
+static bool is_param_value(std::string_view Value) noexcept
+{
+   while ((not Value.empty()) and (unsigned(Value.front()) <= 0x20)) Value.remove_prefix(1);
+   return Value.starts_with("param(");
+}
+
+//********************************************************************************************************************
+// Splits a param() expression into its name and fallback.  Returns false if the name is malformed, in which case the
+// fallback still applies.
+
+static bool parse_param_value(std::string_view Value, std::string_view &Name, std::string_view &Fallback) noexcept
+{
+   Name = {};
+   Fallback = {};
+
+   Value = trim_ws(Value);
+   if (not Value.starts_with("param(")) return false;
+   Value.remove_prefix(6);
+
+   auto end = Value.find(')');
+   if (end IS std::string_view::npos) return false;
+
+   Fallback = trim_ws(Value.substr(end + 1));
+   Name = trim_ws(Value.substr(0, end));
+
+   for (auto ch : Name) {
+      if ((unsigned(ch) <= 0x20) or (ch IS '(')) { Name = {}; break; }
+   }
+
+   return not Name.empty();
+}
+
+//********************************************************************************************************************
+// Lookup order: the active <use> scope, then client values from SetKey(), then the Path query string.
+
+static const std::string * find_param(extSVG *Self, const ParamScope *Scope, std::string_view Name) noexcept
+{
+   if (Scope) {
+      if (auto it = Scope->Values.find(Name); it != Scope->Values.end()) return &it->second;
+   }
+
+   if (auto it = Self->Params.find(Name); it != Self->Params.end()) return &it->second;
+   if (auto it = Self->QueryParams.find(Name); it != Self->QueryParams.end()) return &it->second;
+   return nullptr;
+}
+
+// Returns the substituted value, or nullopt if the attribute must be erased (no value and no fallback).
+
+static std::optional<std::string> resolve_param_value(extSVG *Self, std::string_view Value, const ParamScope *Scope)
+{
+   std::string_view name, fallback;
+   if (parse_param_value(Value, name, fallback)) {
+      if (auto value = find_param(Self, Scope, name)) return *value;
+   }
+
+   if (fallback.empty()) return std::nullopt;
+   return std::string(fallback);
+}
+
+//********************************************************************************************************************
+// Rebuilds the attributes of a tag from its raw (unresolved) copy.  The 'id' attribute is never substituted because
+// it must remain stable for href lookups.
+
+static void resolve_tag_params(extSVG *Self, XTag &Tag, const kt::vector<XMLAttrib> &Raw, const ParamScope *Scope)
+{
+   Tag.Attribs.clear();
+   Tag.Attribs.reserve(Raw.size());
+   Tag.Attribs.push_back(Raw[0]);
+
+   for (int a=1; a < std::ssize(Raw); a++) {
+      auto &attrib = Raw[a];
+      if ((attrib.Name != "id") and (is_param_value(attrib.Value))) {
+         if (auto value = resolve_param_value(Self, attrib.Value, Scope)) {
+            Tag.Attribs.emplace_back(attrib.Name, *value);
+         }
+      }
+      else Tag.Attribs.push_back(attrib);
+   }
+}
+
+//********************************************************************************************************************
+// Document pass, performed once after styles are folded into attributes.  The raw attributes of every tag using
+// param() are saved so that they can be re-resolved for <use> scopes and ParseSymbol().
+
+static void apply_document_params(extSVG *Self, objXML::TAGS &Tags)
+{
+   for (auto &tag : Tags) {
+      if (not tag.isTag()) continue;
+
+      for (int a=1; a < std::ssize(tag.Attribs); a++) {
+         if ((tag.Attribs[a].Name != "id") and (is_param_value(tag.Attribs[a].Value))) {
+            auto &raw = Self->ParamAttribs[tag.ID];
+            raw = tag.Attribs;
+            resolve_tag_params(Self, tag, raw, nullptr);
+            break;
+         }
+      }
+
+      apply_document_params(Self, tag.Children);
+   }
+}
+
+//********************************************************************************************************************
+// Re-resolves the param() attributes of a tag and its descendants against a scope.  A tag renamed since the document
+// pass (a <use> expanded to a <g>) keeps its current attributes.
+
+static void rescope_params(extSVG *Self, XTag &Tag, const ParamScope *Scope)
+{
+   if (auto it = Self->ParamAttribs.find(Tag.ID); it != Self->ParamAttribs.end()) {
+      if (Tag.Attribs[0].Name IS it->second[0].Name) resolve_tag_params(Self, Tag, it->second, Scope);
+   }
+
+   for (auto &child : Tag.Children) {
+      if (child.isTag()) rescope_params(Self, child, Scope);
+   }
+}
+
+//********************************************************************************************************************
+// Temporarily re-resolves a shared subtree (e.g. a <symbol>) against a scope, restoring the original attributes on
+// destruction.  The children of <use> elements are not visited because proc_use() rewrites them, which would
+// invalidate the saved tag pointers.  A tag that has been renamed during processing (<use> to <g>) is not restored.
+
+class ParamGuard {
+   struct Saved {
+      XTag *Tag;
+      kt::vector<XMLAttrib> Attribs;
+   };
+
+   std::vector<Saved> m_saved;
+
+   void apply(extSVG *Self, XTag &Tag, const ParamScope *Scope) {
+      if (auto it = Self->ParamAttribs.find(Tag.ID); it != Self->ParamAttribs.end()) {
+         if (Tag.Attribs[0].Name IS it->second[0].Name) {
+            m_saved.push_back({ &Tag, Tag.Attribs });
+            resolve_tag_params(Self, Tag, it->second, Scope);
+         }
+      }
+
+      if (svg_tag_is(Tag, SVF_use)) return;
+
+      for (auto &child : Tag.Children) {
+         if (child.isTag()) apply(Self, child, Scope);
+      }
+   }
+
+public:
+   ParamGuard(extSVG *Self, XTag &Tag, const ParamScope *Scope) {
+      if (not Self->ParamAttribs.empty()) apply(Self, Tag, Scope);
+   }
+
+   ~ParamGuard() {
+      for (auto &saved : m_saved) {
+         if (saved.Tag->Attribs[0].Name IS saved.Attribs[0].Name) saved.Tag->Attribs = std::move(saved.Attribs);
+      }
+   }
+
+   ParamGuard(const ParamGuard &) = delete;
+   ParamGuard & operator=(const ParamGuard &) = delete;
+};
+
+//********************************************************************************************************************
+// Collects the sorted names of all parameters referenced by a tag and its descendants.
+
+static void collect_param_names(extSVG *Self, const XTag &Tag, kt::vector<std::string> &Names)
+{
+   if (auto it = Self->ParamAttribs.find(Tag.ID); it != Self->ParamAttribs.end()) {
+      for (int a=1; a < std::ssize(it->second); a++) {
+         std::string_view name, fallback;
+         if (parse_param_value(it->second[a].Value, name, fallback)) Names.emplace_back(name);
+      }
+   }
+
+   for (auto &child : Tag.Children) {
+      if (child.isTag()) collect_param_names(Self, child, Names);
+   }
+}
+
+//********************************************************************************************************************
+// Reads a <param> element from its raw attributes, resolving the value against Scope.  Returns false if the name or
+// value is missing, in which case the element is ignored.  Value is nullopt if a param() value resolved to nothing.
+
+static bool read_param_element(extSVG *Self, const XTag &Tag, const ParamScope *Scope, std::string &Name,
+   std::optional<std::string> &Value)
+{
+   auto raw_it = Self->ParamAttribs.find(Tag.ID);
+   auto &raw = (raw_it != Self->ParamAttribs.end()) ? raw_it->second : Tag.Attribs;
+
+   const std::string *name = nullptr, *value = nullptr;
+   for (int a=1; a < std::ssize(raw); a++) {
+      switch (strhash(raw[a].Name)) {
+         case SVF_name:  name = &raw[a].Value; break;
+         case SVF_value: value = &raw[a].Value; break;
+      }
+   }
+
+   if ((not name) or (name->empty()) or (not value)) return false;
+
+   Name = *name;
+   if (is_param_value(*value)) Value = resolve_param_value(Self, *value, Scope);
+   else Value = *value;
+   return true;
+}
+
+//********************************************************************************************************************
+// Splits a query string from an SVG path, e.g. "button.svg?color=red".  Because '?' is a legal file name character
+// on some platforms, it is only treated as a separator when the text preceding it names an SVG file.
+
+static bool split_svg_query(std::string_view Path, std::string_view &File, std::string_view &Query) noexcept
+{
+   for (auto q = Path.find('?'); q != std::string_view::npos; q = Path.find('?', q + 1)) {
+      if (wildcmp("*.svg|*.svgz", Path.substr(0, q))) {
+         File  = Path.substr(0, q);
+         Query = Path.substr(q + 1);
+         return true;
+      }
+   }
+   return false;
+}
+
+static std::string percent_decode(std::string_view Value)
+{
+   auto hex = [](char Ch) -> int {
+      if ((Ch >= '0') and (Ch <= '9')) return Ch - '0';
+      if ((Ch >= 'a') and (Ch <= 'f')) return Ch - 'a' + 10;
+      if ((Ch >= 'A') and (Ch <= 'F')) return Ch - 'A' + 10;
+      return -1;
+   };
+
+   std::string result;
+   result.reserve(Value.size());
+   for (size_t i=0; i < Value.size(); i++) {
+      if ((Value[i] IS '%') and (i + 2 < Value.size()) and (hex(Value[i+1]) >= 0) and (hex(Value[i+2]) >= 0)) {
+         result.push_back(char((hex(Value[i+1])<<4) | hex(Value[i+2])));
+         i += 2;
+      }
+      else result.push_back(Value[i]);
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+
+static std::string percent_encode(std::string_view Value)
+{
+   static constexpr char hex[] = "0123456789ABCDEF";
+   std::string result;
+   result.reserve(Value.size());
+   for (auto ch : Value) {
+      if (((ch >= 'a') and (ch <= 'z')) or ((ch >= 'A') and (ch <= 'Z')) or ((ch >= '0') and (ch <= '9')) or
+          (ch IS '-') or (ch IS '.') or (ch IS '_') or (ch IS '~')) {
+         result.push_back(ch);
+      }
+      else {
+         result.push_back('%');
+         result.push_back(hex[uint8_t(ch)>>4]);
+         result.push_back(hex[uint8_t(ch) & 0xf]);
+      }
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+// SVG Parameters: the <param> children of an <image> are appended to an SVG href as a query string, overriding values
+// of the same name already present in the href.  The nested document then resolves them as query parameters.  Values
+// are resolved against Scope, so a <use> or SetKey() value can be forwarded with <param name="a" value="param(a)"/>.
+
+static std::string apply_image_params(extSVG *Self, const XTag &Tag, const std::string &Href, const ParamScope *Scope)
+{
+   std::vector<std::pair<std::string, std::string>> params;
+   for (auto &child : Tag.Children) {
+      if ((not child.isTag()) or (not svg_tag_is(child, SVF_param))) continue;
+
+      std::string name;
+      std::optional<std::string> value;
+      if (not read_param_element(Self, child, Scope, name, value)) continue;
+      if (not value) continue; // A param() value with no result and no fallback is undefined
+
+      auto it = std::ranges::find_if(params, [&](const auto &Param) { return Param.first IS name; });
+      if (it != params.end()) it->second = std::move(*value);
+      else params.emplace_back(std::move(name), std::move(*value));
+   }
+
+   if (params.empty()) return Href;
+
+   std::string_view file, query;
+   if (not split_svg_query(Href, file, query)) {
+      if (not wildcmp("*.svg|*.svgz", Href)) {
+         kt::Log(__FUNCTION__).warning("<param> ignored for non-SVG image '%s' @ line %d", Href.c_str(), Tag.LineNo);
+         return Href;
+      }
+      file = Href;
+   }
+
+   std::string result(file);
+   char sep = '?';
+
+   while (not query.empty()) { // Retain existing pairs that are not overridden
+      auto end = query.find('&');
+      auto pair = query.substr(0, end);
+      query = (end IS std::string_view::npos) ? std::string_view{} : query.substr(end + 1);
+      if (pair.empty()) continue;
+
+      auto name = percent_decode(pair.substr(0, pair.find('=')));
+      if (std::ranges::any_of(params, [&](const auto &Param) { return Param.first IS name; })) continue;
+
+      result.push_back(sep);
+      result.append(pair);
+      sep = '&';
+   }
+
+   for (auto &[name, value] : params) {
+      result.push_back(sep);
+      result.append(percent_encode(name)).push_back('=');
+      result.append(percent_encode(value));
+      sep = '&';
+   }
+
+   return result;
+}
+
+//********************************************************************************************************************
+// Parses "name=value&name=value" into the QueryParams store.  Later duplicates overwrite earlier ones.
+
+static void parse_query_params(extSVG *Self, std::string_view Query)
+{
+   while (not Query.empty()) {
+      auto end = Query.find('&');
+      auto pair = Query.substr(0, end);
+      Query = (end IS std::string_view::npos) ? std::string_view{} : Query.substr(end + 1);
+
+      auto eq = pair.find('=');
+      auto name = percent_decode(pair.substr(0, eq));
+      if (name.empty()) continue;
+      Self->QueryParams[name] = (eq IS std::string_view::npos) ? std::string() : percent_decode(pair.substr(eq + 1));
+   }
+}
+
+//********************************************************************************************************************
 // Parse SVG from a file or string buffer.
 
 static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffer)
@@ -470,7 +822,17 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 #endif
 
    Self->IDs.clear();
+   Self->QueryParams.clear();
+   Self->ParamAttribs.clear();
+   Self->ParamDeps.clear();
    if (Self->XML) { FreeResource(Self->XML); Self->XML = nullptr; }
+
+   // Parameters can be passed in the query string of an SVG path, e.g. "button.svg?color=red&label=OK"
+
+   if (std::string_view file, query; split_svg_query(Path, file, query)) {
+      parse_query_params(Self, query);
+      Path = file;
+   }
 
    objXML *xml;
    ERR error = ERR::Okay;
@@ -506,6 +868,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
          Self->XML = xml;
 
          prepare_styles(xml->Tags);
+         apply_document_params(Self, xml->Tags);
 
          objVector *sibling = nullptr;
          for (auto &scan : xml->Tags) {
@@ -556,6 +919,7 @@ end:
 }
 
 //********************************************************************************************************************
+
 static bool read_integer_value(std::string_view Value, int &Result) noexcept
 {
    Value = next_value(Value);
