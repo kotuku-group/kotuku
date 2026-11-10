@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Canvas</title>
+  <desc>A heavy cotton duck canvas in natural khaki, woven in a tight, even plain weave.</desc>
+  <defs>
+    <pattern id="pidTextilesCanvas" patternUnits="userSpaceOnUse" width="100" height="100" viewBox="0 0 100 100">
+      <rect width="100" height="100" fill="#d3c4a1"/>
+      <g fill="none">
+      <!-- Plain weave: each thread rounds over alternate crossings -->
+      <path stroke="#3a2e18" stroke-opacity=".1" stroke-width="0.6" d="
+        M0,15h100M0,17.5h100M0,30h100M0,32.5h100M0,40h100M0,42.5h100M0,52.5h100M0,72.5h100M0,77.5h100M0,82.5h100
+        M0,85h100M0,87.5h100M0,90h100M0,92.5h100M0,97.5h100M10,0v100M15,0v100M25,0v100M30,0v100M45,0v100M55,0v100
+        M62.5,0v100M65,0v100M70,0v100M75,0v100M82.5,0v100M85,0v100M90,0v100M92.5,0v100M95,0v100M97.5,0v100"/>
+      <path stroke="#3a2e18" stroke-opacity=".14" stroke-width="0.6" d="
+        M0,0h100M0,5h100M0,7.5h100M0,22.5h100M0,35h100M0,37.5h100M0,57.5h100M0,60h100M0,0v100M2.5,0v100M5,0v100
+        M20,0v100M22.5,0v100M32.5,0v100M37.5,0v100M40,0v100M50,0v100M52.5,0v100M60,0v100M72.5,0v100M77.5,0v100
+        M80,0v100"/>
+      <path stroke="#3a2e18" stroke-opacity=".18" stroke-width="0.6" d="
+        M0,2.5h100M0,10h100M0,12.5h100M0,20h100M0,25h100M0,27.5h100M0,45h100M0,47.5h100M0,50h100M0,55h100M0,62.5h100
+        M0,65h100M0,67.5h100M0,70h100M0,75h100M0,80h100M0,95h100M7.5,0v100M12.5,0v100M17.5,0v100M27.5,0v100M35,0v100
+        M42.5,0v100M47.5,0v100M57.5,0v100M67.5,0v100M87.5,0v100"/>
+      <path stroke="#000" stroke-opacity=".03" stroke-width="2" d="
+        M0,11.25h100M0,23.75h100M0,31.25h100M0,36.25h100M0,43.75h100M0,46.25h100M0,48.75h100M0,78.75h100M0,88.75h100
+        M0,98.75h100M13.75,0v100M16.25,0v100M28.75,0v100M41.25,0v100M43.75,0v100M46.25,0v100M56.25,0v100"/>
+      <path stroke="#fff" stroke-opacity=".05" stroke-width="2" d="
+        M0,16.25h100M0,38.75h100M0,41.25h100M0,56.25h100M0,61.25h100M0,68.75h100M0,71.25h100M0,86.25h100M1.25,0v100
+        M3.75,0v100M18.75,0v100M21.25,0v100M48.75,0v100M53.75,0v100M71.25,0v100M81.25,0v100M86.25,0v100M88.75,0v100
+        M93.75,0v100M98.75,0v100"/>
+      <path stroke="#fff" stroke-opacity=".08" stroke-width="2" d="
+        M0,18.75h100M0,21.25h100M0,26.25h100M0,28.75h100M0,91.25h100M0,96.25h100M26.25,0v100M33.75,0v100M36.25,0v100
+        M61.25,0v100M63.75,0v100M91.25,0v100"/>
+      <path stroke="#fff" stroke-opacity=".22" stroke-width="1.2" stroke-dasharray="1.6 3.4" stroke-dashoffset="-0.45"
+        d="
+        M0,1.25h100M0,6.25h100M0,11.25h100M0,16.25h100M0,21.25h100M0,26.25h100M0,31.25h100M0,36.25h100M0,41.25h100
+        M0,46.25h100M0,51.25h100M0,56.25h100M0,61.25h100M0,66.25h100M0,71.25h100M0,76.25h100M0,81.25h100M0,86.25h100
+        M0,91.25h100M0,96.25h100"/>
+      <path stroke="#fff" stroke-opacity=".22" stroke-width="1.2" stroke-dasharray="1.6 3.4" stroke-dashoffset="-2.95"
+        d="
+        M0,3.75h100M0,8.75h100M0,13.75h100M0,18.75h100M0,23.75h100M0,28.75h100M0,33.75h100M0,38.75h100M0,43.75h100
+        M0,48.75h100M0,53.75h100M0,58.75h100M0,63.75h100M0,68.75h100M0,73.75h100M0,78.75h100M0,83.75h100M0,88.75h100
+        M0,93.75h100M0,98.75h100"/>
+      <path stroke="#fff" stroke-opacity=".22" stroke-width="1.2" stroke-dasharray="1.6 3.4" stroke-dashoffset="-0.45"
+        d="
+        M1.25,0v100M6.25,0v100M11.25,0v100M16.25,0v100M21.25,0v100M26.25,0v100M31.25,0v100M36.25,0v100M41.25,0v100
+        M46.25,0v100M51.25,0v100M56.25,0v100M61.25,0v100M66.25,0v100M71.25,0v100M76.25,0v100M81.25,0v100M86.25,0v100
+        M91.25,0v100M96.25,0v100"/>
+      <path stroke="#fff" stroke-opacity=".22" stroke-width="1.2" stroke-dasharray="1.6 3.4" stroke-dashoffset="-2.95"
+        d="
+        M3.75,0v100M8.75,0v100M13.75,0v100M18.75,0v100M23.75,0v100M28.75,0v100M33.75,0v100M38.75,0v100M43.75,0v100
+        M48.75,0v100M53.75,0v100M58.75,0v100M63.75,0v100M68.75,0v100M73.75,0v100M78.75,0v100M83.75,0v100M88.75,0v100
+        M93.75,0v100M98.75,0v100"/>
+      <path stroke="#000" stroke-opacity=".08" stroke-width="2" stroke-linecap="round" d="
+        M3.75,59.84v3.45M35.18,53.75h7.11M94.42,66.25h3.18M53.75,38.84v7.41M66,53.75h5.65M21.96,61.25h8.52"/>
+      <path stroke="#fff" stroke-opacity=".14" stroke-width="2" stroke-linecap="round" d="
+        M19.66,88.75h8.7M66.25,4.74v3.65M63.75,25.7v7.94M28.75,92.92v7.08M28.75,0v1.79M65.35,88.75h6.7
+        M74.9,33.75h3.41M8.75,4.66v4.69M89.09,21.25h8.88M47.48,3.75h5.14M13.66,51.25h3.43M6.25,90.02v7.42
+        M98.75,66.23v5.28M9.06,13.75h3.69M86.25,8.38v7.5M48.1,13.75h4.38M66.01,98.75h5.92M67.81,23.75h4.22
+        M19.85,41.25h5.59M35.07,78.75h8.37M82.19,43.75h3.68M33.75,83.09v5.3M98.75,45.25v3.45M4.15,96.25h7.25
+        M91.25,1.91v3.82"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesCanvas)"/>
+</svg>

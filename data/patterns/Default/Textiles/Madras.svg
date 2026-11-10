@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Madras</title>
+  <desc>A bright summer madras plaid in red, yellow, green, blue and orange, with fine white overchecks.</desc>
+  <defs>
+    <clipPath id="clipTextilesMadrasTwill">
+      <path d="
+        M0,0h1l-70,70h-1ZM2,0h1l-70,70h-1ZM4,0h1l-70,70h-1ZM6,0h1l-70,70h-1ZM8,0h1l-70,70h-1ZM10,0h1l-70,70h-1Z
+        M12,0h1l-70,70h-1ZM14,0h1l-70,70h-1ZM16,0h1l-70,70h-1ZM18,0h1l-70,70h-1ZM20,0h1l-70,70h-1ZM22,0h1l-70,70h-1Z
+        M24,0h1l-70,70h-1ZM26,0h1l-70,70h-1ZM28,0h1l-70,70h-1ZM30,0h1l-70,70h-1ZM32,0h1l-70,70h-1ZM34,0h1l-70,70h-1Z
+        M36,0h1l-70,70h-1ZM38,0h1l-70,70h-1ZM40,0h1l-70,70h-1ZM42,0h1l-70,70h-1ZM44,0h1l-70,70h-1ZM46,0h1l-70,70h-1Z
+        M48,0h1l-70,70h-1ZM50,0h1l-70,70h-1ZM52,0h1l-70,70h-1ZM54,0h1l-70,70h-1ZM56,0h1l-70,70h-1ZM58,0h1l-70,70h-1Z
+        M60,0h1l-70,70h-1ZM62,0h1l-70,70h-1ZM64,0h1l-70,70h-1ZM66,0h1l-70,70h-1ZM68,0h1l-70,70h-1ZM70,0h1l-70,70h-1Z
+        M72,0h1l-70,70h-1ZM74,0h1l-70,70h-1ZM76,0h1l-70,70h-1ZM78,0h1l-70,70h-1ZM80,0h1l-70,70h-1ZM82,0h1l-70,70h-1Z
+        M84,0h1l-70,70h-1ZM86,0h1l-70,70h-1ZM88,0h1l-70,70h-1ZM90,0h1l-70,70h-1ZM92,0h1l-70,70h-1ZM94,0h1l-70,70h-1Z
+        M96,0h1l-70,70h-1ZM98,0h1l-70,70h-1ZM100,0h1l-70,70h-1ZM102,0h1l-70,70h-1ZM104,0h1l-70,70h-1Z
+        M106,0h1l-70,70h-1ZM108,0h1l-70,70h-1ZM110,0h1l-70,70h-1ZM112,0h1l-70,70h-1ZM114,0h1l-70,70h-1Z
+        M116,0h1l-70,70h-1ZM118,0h1l-70,70h-1ZM120,0h1l-70,70h-1ZM122,0h1l-70,70h-1ZM124,0h1l-70,70h-1Z
+        M126,0h1l-70,70h-1ZM128,0h1l-70,70h-1ZM130,0h1l-70,70h-1ZM132,0h1l-70,70h-1ZM134,0h1l-70,70h-1Z
+        M136,0h1l-70,70h-1ZM138,0h1l-70,70h-1Z"/>
+    </clipPath>
+    <pattern id="pidTextilesMadras" patternUnits="userSpaceOnUse" width="140" height="140" viewBox="0 0 70 70">
+      <rect width="70" height="70" fill="#c8323c"/>
+      <!-- Warp -->
+      <path fill="#f4efe6" d="M16,0h2v70h-2Z M56,0h2v70h-2Z"/>
+      <path fill="#f2c14e" d="M22,0h6v70h-6Z M38,0h2v70h-2Z M68,0h2v70h-2Z"/>
+      <path fill="#3f8f5a" d="M28,0h10v70h-10Z M40,0h4v70h-4Z"/>
+      <path fill="#2d5fa0" d="M44,0h12v70h-12Z M58,0h4v70h-4Z"/>
+      <path fill="#e8823a" d="M62,0h6v70h-6Z"/>
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesMadrasTwill)">
+        <path fill="#c8323c" d="M0,0h70v16h-70Z M0,18h70v4h-70Z"/>
+        <path fill="#f4efe6" d="M0,16h70v2h-70Z M0,56h70v2h-70Z"/>
+        <path fill="#f2c14e" d="M0,22h70v6h-70Z M0,38h70v2h-70Z M0,68h70v2h-70Z"/>
+        <path fill="#3f8f5a" d="M0,28h70v10h-70Z M0,40h70v4h-70Z"/>
+        <path fill="#2d5fa0" d="M0,44h70v12h-70Z M0,58h70v4h-70Z"/>
+        <path fill="#e8823a" d="M0,62h70v6h-70Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesMadras)"/>
+</svg>

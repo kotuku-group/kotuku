@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Carbon fibre</title>
+  <desc>A woven carbon fibre in a 2/2 twill, with each tow shaded to catch the light and the warp
+    and weft reflecting differently.</desc>
+  <defs>
+    <linearGradient id="gradTextilesCarbonFibreWarp" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0f1012"/>
+      <stop offset="0.45" stop-color="#3d3f44"/>
+      <stop offset="0.6" stop-color="#33353a"/>
+      <stop offset="1" stop-color="#0d0e10"/>
+    </linearGradient>
+    <linearGradient id="gradTextilesCarbonFibreWeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0d0f"/>
+      <stop offset="0.45" stop-color="#2a2c30"/>
+      <stop offset="0.6" stop-color="#24262a"/>
+      <stop offset="1" stop-color="#0b0c0e"/>
+    </linearGradient>
+    <linearGradient id="gradTextilesCarbonFibreEndsV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0.6"/>
+      <stop offset="0.22" stop-color="#000" stop-opacity="0"/>
+      <stop offset="0.78" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="gradTextilesCarbonFibreEndsH" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity="0.6"/>
+      <stop offset="0.22" stop-color="#000" stop-opacity="0"/>
+      <stop offset="0.78" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.6"/>
+    </linearGradient>
+    <pattern id="pidTextilesCarbonFibre" patternUnits="userSpaceOnUse" width="24" height="24" viewBox="0 0 24 24">
+      <rect width="24" height="24" fill="#060607"/>
+      <g fill="none">
+      <!-- Each tow floats over two crossings, curving under at its ends -->
+      <rect x="0.4" y="0.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreWarp)"/>
+      <rect x="0.4" y="0.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreEndsV)"/>
+      <rect x="6.4" y="18.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreWarp)"/>
+      <rect x="6.4" y="18.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreEndsV)"/>
+      <rect x="6.4" y="-5.6" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreWarp)"/>
+      <rect x="6.4" y="-5.6" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreEndsV)"/>
+      <rect x="12.4" y="12.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreWarp)"/>
+      <rect x="12.4" y="12.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreEndsV)"/>
+      <rect x="18.4" y="6.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreWarp)"/>
+      <rect x="18.4" y="6.4" width="5.2" height="11.2" fill="url(#gradTextilesCarbonFibreEndsV)"/>
+      <rect x="12.4" y="0.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreWeft)"/>
+      <rect x="12.4" y="0.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreEndsH)"/>
+      <rect x="6.4" y="6.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreWeft)"/>
+      <rect x="6.4" y="6.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreEndsH)"/>
+      <rect x="0.4" y="12.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreWeft)"/>
+      <rect x="0.4" y="12.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreEndsH)"/>
+      <rect x="18.4" y="18.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreWeft)"/>
+      <rect x="18.4" y="18.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreEndsH)"/>
+      <rect x="-5.6" y="18.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreWeft)"/>
+      <rect x="-5.6" y="18.4" width="11.2" height="5.2" fill="url(#gradTextilesCarbonFibreEndsH)"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesCarbonFibre)"/>
+</svg>

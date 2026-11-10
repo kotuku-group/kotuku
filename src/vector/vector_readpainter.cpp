@@ -240,6 +240,17 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, OBJ
       return log.warning(ERR::NoSupport);
    }
 
+   // Pattern tiles otherwise blend in the consumer's colour space.  Assets are authored and previewed as SVG, which
+   // composites in sRGB, so the tile content defaults to sRGB to look the same in native scenes.  Content that
+   // declares color-interpolation in the asset keeps its own colour space.
+
+   if (paint->classID() IS CLASSID::VECTORPATTERN) {
+      auto viewport = ((extVectorPattern *)paint)->Viewport;
+      if (VCS colour_space; (viewport->getColourSpace(colour_space) IS ERR::Okay) and (colour_space IS VCS::INHERIT)) {
+         viewport->setColourSpace(VCS::SRGB);
+      }
+   }
+
    if (auto error = SetOwner(*private_scene, Scene); error != ERR::Okay) return log.warning(error);
    private_scene.detach();
    Paint = paint;
@@ -248,6 +259,12 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, OBJ
 
 //********************************************************************************************************************
 // Resolve a url(#pattern:Name) reference.  Paints are cached per scene, and the collection is indexed on first use.
+//
+// Each asset is parsed into its own private scene, so an asset that refers to itself (directly or through another
+// asset) re-enters this function with a different Scene.  The set of names being loaded is therefore tracked per
+// thread rather than per scene, otherwise a cyclic reference would recurse until the stack is exhausted.
+
+static thread_local std::unordered_set<std::string> tlLoadingDatabasePaints;
 
 static ERR resolve_database_paint(extVectorScene *Scene, std::string Name, OBJECTPTR &Paint)
 {
@@ -258,9 +275,9 @@ static ERR resolve_database_paint(extVectorScene *Scene, std::string Name, OBJEC
       return ERR::Okay;
    }
 
-   if (not Scene->LoadingDatabasePaints.insert(Name).second) return ERR::InvalidData;
+   if (not tlLoadingDatabasePaints.insert(Name).second) return ERR::Recursion;
 
-   auto guard = deferred_call([Scene, Name] { Scene->LoadingDatabasePaints.erase(Name); });
+   auto guard = deferred_call([Name] { tlLoadingDatabasePaints.erase(Name); });
 
    if (not Scene->DatabaseIndexed) {
       std::unordered_map<std::string, std::string> paths;
@@ -860,8 +877,8 @@ a linear gradient that belongs to the `Scene`.  Valid colourmap names are `cmap:
 
 To use a paint from the installed pattern collection, use the format `url(#pattern:Name)`, where `Name` is the
 basename of an SVG file in the `patterns:` volume, without its category folder or `.svg` extension.  For example,
-`url(#pattern:Linen)` selects `patterns:Textiles/Linen.svg`.  The name is matched case-insensitively.  The asset's
-paint server, which has the ID `pid` followed by its category and name (e.g. `pidTextilesLinen`), is loaded into the
+`url(#pattern:Canvas)` selects `patterns:Textiles/Canvas.svg`.  The name is matched case-insensitively.  The asset's
+paint server, which has the ID `pid` followed by its category and name (e.g. `pidTextilesCanvas`), is loaded into the
 `Scene` on first use and reused by later references to the same name.  The
 `pattern:` namespace is reserved, so scene definitions cannot shadow collection assets.  `NotFound` is returned if
 the name is not in the collection, and other errors are returned if the asset cannot be imported.

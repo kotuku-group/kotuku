@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Houndstooth</title>
+  <desc>A black and white houndstooth, formed by weaving four dark and four light threads in a 2/2 twill.
+    The diagonal edges of the twill give the broken check its pointed shape.</desc>
+  <defs>
+    <clipPath id="clipTextilesHoundstoothTwill">
+      <path d="
+        M0,0h1l-4,4h-1ZM2,0h1l-4,4h-1ZM4,0h1l-4,4h-1ZM6,0h1l-4,4h-1Z"/>
+    </clipPath>
+    <pattern id="pidTextilesHoundstooth" patternUnits="userSpaceOnUse" width="26" height="26" viewBox="0 0 4 4">
+      <rect width="4" height="4" fill="#f9f9f9"/>
+      <!-- Warp -->
+      <path fill="#060606" d="M2,0h2v4h-2Z"/>
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesHoundstoothTwill)">
+        <path fill="#f9f9f9" d="M0,0h4v2h-4Z"/>
+        <path fill="#060606" d="M0,2h4v2h-4Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesHoundstooth)"/>
+</svg>

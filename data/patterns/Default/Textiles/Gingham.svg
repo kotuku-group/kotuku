@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Gingham</title>
+  <desc>A black and white gingham check.  The squares where black and white cross are woven in a fine 2/2
+    twill.</desc>
+  <defs>
+    <clipPath id="clipTextilesGinghamTwill">
+      <path d="
+        M-16,0h1l16,16h-1ZM-14,0h1l16,16h-1ZM-12,0h1l16,16h-1ZM-10,0h1l16,16h-1ZM-8,0h1l16,16h-1ZM-6,0h1l16,16h-1Z
+        M-4,0h1l16,16h-1ZM-2,0h1l16,16h-1ZM0,0h1l16,16h-1ZM2,0h1l16,16h-1ZM4,0h1l16,16h-1ZM6,0h1l16,16h-1Z
+        M8,0h1l16,16h-1ZM10,0h1l16,16h-1ZM12,0h1l16,16h-1ZM14,0h1l16,16h-1Z"/>
+    </clipPath>
+    <pattern id="pidTextilesGingham" patternUnits="userSpaceOnUse" width="26" height="26" viewBox="0 0 16 16">
+      <rect width="16" height="16" fill="#f1f1f1"/>
+      <!-- Warp -->
+      <path fill="#0f0f0f" d="M8,0h8v16h-8Z"/>
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesGinghamTwill)">
+        <path fill="#f1f1f1" d="M0,0h16v8h-16Z"/>
+        <path fill="#0f0f0f" d="M0,8h16v8h-16Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesGingham)"/>
+</svg>

@@ -1,15 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100" viewBox="0 0 160 100">
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Quilt block</title>
-  <desc>A single square patchwork motif that preserves its aspect ratio and crops (slices) to cover the shape.</desc>
+  <desc>A repeating patchwork quilt block in cream, blue and rust linen, with stitched seams and a coarse plain
+    weave.</desc>
   <defs>
-    <pattern id="pidTextilesQuiltBlock" patternUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
-      viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-      <rect width="100" height="100" fill="#f3e6c8"/>
-      <path d="M0 0H50L0 50Z M100 0V50L50 0Z M0 100V50L50 100Z M100 100H50L100 50Z" fill="#3e6b8a"/>
-      <path d="M50 10L90 50L50 90L10 50Z" fill="#c8553d"/>
-      <rect x="35" y="35" width="30" height="30" fill="#f3e6c8"/>
+    <pattern id="pidTextilesQuiltBlock" patternUnits="userSpaceOnUse" width="100" height="100" viewBox="0 0 100 100">
+      <rect width="100" height="100" fill="#efe2c4"/>
+      <path fill="#3e6b8a" d="M0,0H50L0,50Z M100,0V50L50,0Z M0,100V50L50,100Z M100,100H50L100,50Z"/>
+      <path fill="#c8553d" d="M50,10L90,50L50,90L10,50Z"/>
+      <rect x="35" y="35" width="30" height="30" fill="#efe2c4"/>
       <circle cx="50" cy="50" r="8" fill="#3e6b8a"/>
+      <!-- Linen weave -->
+      <g fill="none">
+      <path stroke="#000" stroke-opacity=".07" stroke-width=".5" d="
+        M0,4h100M0,10h100M0,12h100M0,14h100M0,18h100M0,22h100M0,24h100M0,34h100M0,40h100M0,42h100M0,48h100M0,52h100
+        M0,54h100M0,72h100M0,76h100M0,86h100M0,90h100M0,92h100M8,0v100M14,0v100M28,0v100M36,0v100M38,0v100M40,0v100
+        M44,0v100M50,0v100M60,0v100M62,0v100M64,0v100M66,0v100M70,0v100M74,0v100M88,0v100M96,0v100"/>
+      <path stroke="#000" stroke-opacity=".1" stroke-width=".5" d="
+        M0,0h100M0,2h100M0,8h100M0,16h100M0,32h100M0,38h100M0,44h100M0,62h100M0,66h100M0,70h100M0,78h100M0,80h100
+        M0,84h100M0,94h100M0,0v100M10,0v100M18,0v100M22,0v100M30,0v100M34,0v100M42,0v100M46,0v100M56,0v100M58,0v100
+        M68,0v100M72,0v100M80,0v100M92,0v100M94,0v100"/>
+      <path stroke="#000" stroke-opacity=".14" stroke-width=".5" d="
+        M0,6h100M0,20h100M0,26h100M0,28h100M0,30h100M0,36h100M0,46h100M0,50h100M0,56h100M0,58h100M0,60h100M0,64h100
+        M0,68h100M0,74h100M0,82h100M0,88h100M0,96h100M0,98h100M2,0v100M4,0v100M6,0v100M12,0v100M16,0v100M20,0v100
+        M24,0v100M26,0v100M32,0v100M48,0v100M52,0v100M54,0v100M76,0v100M78,0v100M82,0v100M84,0v100M86,0v100M90,0v100
+        M98,0v100"/>
+      <path stroke="#000" stroke-opacity=".05" stroke-width="1.2" d="
+        M0,5h100M0,7h100M0,13h100M0,17h100M0,19h100M0,29h100M0,33h100M0,35h100M0,57h100M0,59h100M0,87h100M0,95h100
+        M0,97h100M9,0v100M15,0v100M33,0v100M35,0v100M61,0v100M67,0v100M73,0v100"/>
+      <path stroke="#000" stroke-opacity=".1" stroke-width="1.2" d="
+        M0,1h100M0,25h100M0,37h100M0,47h100M0,61h100M0,73h100M0,75h100M31,0v100M45,0v100M59,0v100M63,0v100M81,0v100"/>
+      <path stroke="#fff" stroke-opacity=".06" stroke-width="1.2" d="
+        M0,53h100M0,71h100M0,81h100M0,91h100M1,0v100M3,0v100M23,0v100M27,0v100M37,0v100M49,0v100M53,0v100M71,0v100
+        M77,0v100"/>
+      <path stroke="#fff" stroke-opacity=".12" stroke-width="1.2" d="
+        M0,15h100M0,21h100M0,39h100M0,65h100M0,67h100M0,69h100M0,83h100M0,89h100M0,93h100M5,0v100M7,0v100M11,0v100
+        M25,0v100M29,0v100M41,0v100M43,0v100M47,0v100M51,0v100M55,0v100M75,0v100M89,0v100M93,0v100M95,0v100M97,0v100
+        M99,0v100"/>
+      <path stroke="#fff" stroke-opacity=".16" stroke-width="1" stroke-dasharray="1.2 2.8" stroke-dashoffset="-0.4" d="
+        M0,1h100M0,5h100M0,9h100M0,13h100M0,17h100M0,21h100M0,25h100M0,29h100M0,33h100M0,37h100M0,41h100M0,45h100
+        M0,49h100M0,53h100M0,57h100M0,61h100M0,65h100M0,69h100M0,73h100M0,77h100M0,81h100M0,85h100M0,89h100M0,93h100
+        M0,97h100"/>
+      <path stroke="#fff" stroke-opacity=".16" stroke-width="1" stroke-dasharray="1.2 2.8" stroke-dashoffset="-2.4" d="
+        M0,3h100M0,7h100M0,11h100M0,15h100M0,19h100M0,23h100M0,27h100M0,31h100M0,35h100M0,39h100M0,43h100M0,47h100
+        M0,51h100M0,55h100M0,59h100M0,63h100M0,67h100M0,71h100M0,75h100M0,79h100M0,83h100M0,87h100M0,91h100M0,95h100
+        M0,99h100"/>
+      <path stroke="#fff" stroke-opacity=".16" stroke-width="1" stroke-dasharray="1.2 2.8" stroke-dashoffset="-0.4" d="
+        M1,0v100M5,0v100M9,0v100M13,0v100M17,0v100M21,0v100M25,0v100M29,0v100M33,0v100M37,0v100M41,0v100M45,0v100
+        M49,0v100M53,0v100M57,0v100M61,0v100M65,0v100M69,0v100M73,0v100M77,0v100M81,0v100M85,0v100M89,0v100M93,0v100
+        M97,0v100"/>
+      <path stroke="#fff" stroke-opacity=".16" stroke-width="1" stroke-dasharray="1.2 2.8" stroke-dashoffset="-2.4" d="
+        M3,0v100M7,0v100M11,0v100M15,0v100M19,0v100M23,0v100M27,0v100M31,0v100M35,0v100M39,0v100M43,0v100M47,0v100
+        M51,0v100M55,0v100M59,0v100M63,0v100M67,0v100M71,0v100M75,0v100M79,0v100M83,0v100M87,0v100M91,0v100M95,0v100
+        M99,0v100"/>
+      <path stroke="#000" stroke-opacity=".08" stroke-width="1.3" stroke-linecap="round" d="
+        M9,87.43v5.88M60.23,45h5.11M48.04,59h4.22M75.81,3h4.14M51.84,33h7.5M69,54.16v5.26M85.26,97h6.93M29,19.99v5.21
+        M47.22,35h3.57M11,83.46v3.16M97,19.93v7.39M43,8.67v7.7M15.12,3h7.48M98.03,77h1.97M0,77h4.15M85,58.33v7.47
+        M65,13.08v3.34M18.31,99h2.52M24.85,7h4.02M50.82,57h6.94M92.28,33h7.41M41.66,17h4.66M99,15.44v6.44M8.41,13h4
+        M6.66,29h7.25M97.81,71h2.19M0,71h3.13M65.83,13h6.08M19.86,43h7.35M93,98.47v1.53M93,0v1.79M50.44,97h7.09
+        M79.8,75h6.41M74.57,9h5.11M72.93,31h3.63M79,63.28v3.59M48.96,87h6.4M17,60.34v5.97M91,36.52v5.24M51.1,55h3.54
+        M55,88.43v6.97M71,54.92v6.46M45.09,53h6.64M87.06,95h4.61"/>
+      <path stroke="#fff" stroke-opacity=".11" stroke-width="1.3" stroke-linecap="round" d="
+        M44.06,27h3.1M15.13,73h3.06M74.04,43h5.13M95.1,27h4.9M0,27h0.5M93,98.8v1.2M93,0v6.56M13,22.68v3.58
+        M84.04,79h5.14M95,94.68v5.32M95,0v1.17M71,13.1v2.58M43.38,17h7.29M29.3,27h3.82M53,83.42v2.83M61.91,61h3.16
+        M53.07,67h5.15M2.79,71h7.42M97.34,79h2.66M0,79h3.17M31,42.83v3.67M17,96.75v3.25M17,0v0.46M16.28,63h6.17
+        M99.41,55h0.59M0,55h4.13M41,9.22v4.51M57,70.32v4.61M9,11.28v7.55M81.98,17h7.17M69,91.92v5.64M7,79.96v3.51
+        M63.44,3h6.91M71,41.78v7.53M23.84,91h3.1M20.18,23h4.22M27,29v5.25M99.45,3h0.55M0,3h2.15M51,97.03v2.97
+        M51,0v1.22M98.19,45h1.81M0,45h5.29M87.99,95h4.87M87.05,49h6.19M89,29.31v5.03M26.32,1h7.79M39,21.79v3.51
+        M61,27.89v6.11M9.09,1h6.99M39.4,5h4.15M85.32,67h3.35M89.19,91h5.95M13.31,5h4.48M55.85,57h5.95M45.69,1h2.89
+        M49,7.67v7.51M74.32,83h4.17M48.58,7h7.85M59,76.72v7.96M93.63,11h2.6M65,96.81v3.19M65,0v1.78M27,7.46v3
+        M21,0.36v5.2M93,14.07v4.39M43,0.17v6.63M25,71.3v7.46M9,39.29v7.99M75.57,55h7.2M85,28.56v7.65M71,12.73v5.1
+        M33,73.9v7.87M31,30.08v5.57M83,16.17v3.64M57,90.63v7.98M71,19.24v3M41,23.91v3.92M75.21,43h5.24"/>
+      </g>
+      <!-- Seams pressed into the wadding, then quilted with running stitches -->
+      <path fill="none" stroke="#000" stroke-opacity=".22" stroke-width="1.2"
+        d="M50,0L0,50L50,100L100,50Z M50,10L90,50L50,90L10,50Z M35,35h30v30h-30Z"/>
+      <path fill="none" stroke="#fffaf0" stroke-opacity=".75" stroke-width=".7" stroke-dasharray="2.2 1.6"
+        d="M50,5L5,50L50,95L95,50Z M50,15.7L84.3,50L50,84.3L15.7,50Z M39,39h22v22h-22Z"/>
+      <circle cx="50" cy="50" r="5" fill="none" stroke="#fffaf0" stroke-opacity=".75" stroke-width=".7"
+        stroke-dasharray="1.8 1.34"/>
     </pattern>
   </defs>
-  <rect width="160" height="100" fill="url(#pidTextilesQuiltBlock)"/>
+  <rect width="376" height="376" fill="url(#pidTextilesQuiltBlock)"/>
 </svg>

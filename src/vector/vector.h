@@ -931,7 +931,6 @@ class extVectorScene : public objVectorScene {
    ankerl::unordered_dense::map<std::string, OBJECTPTR> Defs;
    std::unordered_map<std::string, OBJECTPTR> DatabasePaints;
    std::unordered_map<std::string, std::string> DatabasePaths;
-   std::unordered_set<std::string> LoadingDatabasePaints;
    bool DatabaseIndexed = false;
    std::unordered_set<extVectorViewport *> PendingResizeMsgs;
    ankerl::unordered_dense::map<extVector *, JTYPE> InputSubscriptions;
