@@ -727,3 +727,50 @@ end
       'PAD must cut to transparent at the padding edge even with OPAQUE OuterFall (got ' ..
       far.red .. ',' .. far.green .. ',' .. far.blue .. ')')
 end
+
+@Test function FieldFollowsThePathAndNotTheBounds()
+   -- Regression: the field was positioned from the vector's reported bounds, but it is built from the bounds of the
+   -- path.  The two differ for text, whose bounds come from font metrics and exclude the glyph side bearings, so the
+   -- exterior was displaced by the bearing (2-4px for these glyphs).  An exterior that holds full strength out to the
+   -- Radius must reach equally far on every side of the glyphs.
+
+   local RADIUS <const> = 12
+
+   local function darkExtent(Fill:str):table
+      local scene = obj.new('VectorScene', { pageWidth=300, pageHeight=200 })
+      local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+      check scene.mtAddDef('distal_text', scene.new('GradientDistal', {
+         units=VUNIT_BOUNDING_BOX, radius=RADIUS, outerFall=GFALL_OPAQUE, stops=blackStops()
+      }))
+      viewport.new('VectorText', { string='Lj', x=100, y=120, face='Noto Sans', fontSize=80, fill=Fill })
+
+      local bmp = newWhiteBitmap(300, 200)
+      drawScene(scene, bmp)
+
+      local region = { left=300, top=200, right=-1, bottom=-1 }
+      for y in {0 to 200} do
+         for x in {0 to 300} do
+            if mGfx.ReadRGBPixel(bmp, x, y).red < 128 then
+               if x < region.left then region.left = x end
+               if y < region.top then region.top = y end
+               if x > region.right then region.right = x end
+               if y > region.bottom then region.bottom = y end
+            end
+         end
+      end
+      return region
+   end
+
+   local glyphs = darkExtent('#000000')
+   local field = darkExtent('url(#distal_text)')
+   assert(glyphs.right >= 0, 'The reference text must be drawn')
+
+   local reach = {
+      left = glyphs.left - field.left, top = glyphs.top - field.top,
+      right = field.right - glyphs.right, bottom = field.bottom - glyphs.bottom
+   }
+   for edge in values(array<str> { 'left', 'top', 'right', 'bottom' }) do
+      assert(math.abs(reach[edge] - RADIUS) <= 1,
+         f'The exterior must reach {RADIUS}px beyond the {edge} of the glyphs (got {reach[edge]})')
+   end
+end

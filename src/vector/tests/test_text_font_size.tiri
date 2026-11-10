@@ -32,3 +32,36 @@ end
    end
    assert(tonumber(text.fontSize) is 20, 'A rejected size must not change the existing size')
 end
+
+-- Tiny's 5pt and 6pt strikes have identical Height metrics, so the em size must come from the strike's point size.
+
+function tinyText(Parent:obj!, Size:str!, Style:str):obj
+   return Parent.new('VectorText', { face='Tiny', fontSize=Size, string='Hgx', textFlags=VTXF_RASTER, textStyle=Style })
+end
+
+@Test function BitmapStrikesCanBeSwitchedInBothDirections()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   text = tinyText(scene.new('VectorViewport'), '8px')
+   assert(text.displayHeight is 10, f'6pt strike expected, got height {text.displayHeight}')
+   text.fontSize = '5pt'
+   assert(text.displayHeight is 8, f'5pt strike expected, got height {text.displayHeight}')
+   text.fontSize = '6pt'
+   assert(text.displayHeight is 10, f'Returning to the 6pt strike failed, got height {text.displayHeight}')
+end
+
+@Test function BitmapFontSizeReflectsTheStrike()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   viewport = scene.new('VectorViewport')
+   assert(tonumber(tinyText(viewport, '5pt').fontSize) is 7, '5pt must resolve to 7px')
+   assert(tonumber(tinyText(viewport, '6pt').fontSize) is 8, '6pt must resolve to 8px')
+   assert(tonumber(tinyText(viewport, '40px').fontSize) is 8, 'An unavailable size must report the selected strike')
+end
+
+@Test function BitmapLineHeightScalesWithTheStrike()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   viewport = scene.new('VectorViewport')
+   small = tinyText(viewport, '5pt', 'lineHeight=1.45').lineSpacing
+   large = tinyText(viewport, '6pt', 'lineHeight=1.45').lineSpacing
+   assert(small is 10, f'1.45 x 7px must give a pitch of 10, got {small}')
+   assert(large is 12, f'1.45 x 8px must give a pitch of 12, got {large}')
+end
