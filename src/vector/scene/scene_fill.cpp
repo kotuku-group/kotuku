@@ -1685,11 +1685,14 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       // The path is rendered into the SDF buffer at an inset of (origin_x, origin_y) to leave a margin for the
       // exterior field.  Offset the gradient sampling transform by the same amount so the outline stays aligned
       // with the path edge.  The buffer's origin and dimensions are in pixels and are converted to path units.
+      //
+      // The inset is measured from the bounds of the path itself, which is what the buffer was built from.  Bounds
+      // can't be used for this because it doesn't always hug the path, e.g. text bounds are derived from font metrics.
 
       const double margin_x = gradient_func.sdf_origin_x() / pixel_scale;
       const double margin_y = gradient_func.sdf_origin_y() / pixel_scale;
-      const double region_x = Bounds.left - margin_x;
-      const double region_y = Bounds.top - margin_y;
+      const double region_x = gradient_func.sdf_path_x() - margin_x;
+      const double region_y = gradient_func.sdf_path_y() - margin_y;
       const double region_w = gradient_func.sdf_width() / pixel_scale;
       const double region_h = gradient_func.sdf_height() / pixel_scale;
 

@@ -95,6 +95,7 @@ namespace agg
       int m_lut[256]; // Maps signed DT greyscale values directly to gradient results
       int m_width, m_height;
       int m_origin_x, m_origin_y; // Pixel offset of the path bounds within the padded buffer
+      double m_path_x, m_path_y; // Top-left of the path's own bounds (path units), which m_origin_x/y corresponds to
       double m_padding; // Margin (in path units) added around the bounds so the exterior ramp half is visible
       double m_inner_radius; // Interior fade distance from the outline; zero keeps the interior fully opaque
       sdf_falloff_curve m_inner_fall; // Alpha fall-off curve baked into the interior half of m_alpha
@@ -110,13 +111,15 @@ namespace agg
       }
 
    public:
-      gradient_sdf() : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0), m_inner_radius(0),
+      gradient_sdf() : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_path_x(0), m_path_y(0),
+         m_padding(0), m_inner_radius(0),
          m_inner_fall(sdf_falloff_curve::smoothstep), m_outer_fall(sdf_falloff_curve::smoothstep),
          m_spread(sdf_spread::pad), m_fill_extent(0), m_resolution(1.0), m_d1(0), m_d2(1.0) {
          build_lut();
       }
 
-      gradient_sdf(double d1, double d2) : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_padding(0),
+      gradient_sdf(double d1, double d2) : m_width(0), m_height(0), m_origin_x(0), m_origin_y(0), m_path_x(0),
+         m_path_y(0), m_padding(0),
          m_inner_radius(0), m_inner_fall(sdf_falloff_curve::smoothstep), m_outer_fall(sdf_falloff_curve::smoothstep),
          m_spread(sdf_spread::pad), m_fill_extent(0), m_resolution(1.0), m_d2(d2) {
          m_d1 = (d1 > 254) ? 254 : d1;
@@ -132,6 +135,12 @@ namespace agg
       int    sdf_height() { return m_height; }
       int    sdf_origin_x() { return m_origin_x; }
       int    sdf_origin_y() { return m_origin_y; }
+
+      // The top-left of the bounds of the path that the field was built from, in path units.  The field must be
+      // positioned from this point and not from the vector's reported bounds, which need not hug the path.  Text
+      // bounds, for example, are derived from font metrics and exclude the side bearings of the glyphs.
+      double sdf_path_x() { return m_path_x; }
+      double sdf_path_y() { return m_path_y; }
 
       void   padding(double Value) { m_padding = (Value < 0) ? 0 : Value; }
       double padding() const { return m_padding; }
@@ -524,6 +533,8 @@ namespace agg
       m_height   = height;
       m_origin_x = outer_margin;
       m_origin_y = outer_margin;
+      m_path_x   = x1;
+      m_path_y   = y1;
 
       return m_buffer.data();
    }
