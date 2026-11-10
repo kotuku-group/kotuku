@@ -114,3 +114,39 @@ function MixedAssignmentPreservesNativeStructureMetadata()
    assert(display_info.width > 0 and display_info.height > 0,
       'Static structure metadata should preserve access to the display dimensions')
 end
+
+@Test; @Requires(display=true)
+function ObjectIDReturnsResolveFocusedSurfaces()
+   local get_focus = mGfx.GetUserFocus
+   local surface <close> = obj.new('Surface', { width=100, height=100 })
+   check surface.acShow()
+   check surface.acFocus()
+   for pass in {0 to 2} do
+      if pass is 0 then jit.off() else jit.on() end
+      for _ in {0 to 100} do
+         local focused, extra = mGfx.GetUserFocus()
+         assert(focused is <obj> and focused.id is surface.id and extra is nil,
+            'A focused surface ID must return one usable object reference')
+         assert(get_focus().id is surface.id, 'Extracted focus calls must resolve the same surface')
+      end
+   end
+   processing.collect()
+   assert(surface.width is 100, 'Collecting returned references must preserve the borrowed surface')
+end
+
+@Test; @Requires(display=true)
+function ObjectIDReturnsResolveModalSurfaces()
+   local surface <close> = obj.new('Surface', { width=100, height=100 })
+   check surface.acShow()
+   local previous = mGfx.SetModalSurface(nil)
+   defer mGfx.SetModalSurface(previous) end
+   assert(mGfx.GetModalSurface() is nil, 'No modal surface must return nil')
+   assert(mGfx.SetModalSurface(surface) is nil, 'Setting the first modal surface must return nil')
+   local modal, extra = mGfx.GetModalSurface()
+   assert(modal is <obj> and modal.id is surface.id and extra is nil,
+      'A modal surface ID must return one usable object reference')
+   local cleared = mGfx.SetModalSurface(nil)
+   assert(cleared.id is surface.id, 'An object ID returned by a function with arguments must resolve')
+   assert(mGfx.GetModalSurface() is nil, 'Clearing the modal surface must restore nil results')
+   assert(mCore.CurrentTask() is <obj>, 'Native object pointer returns must remain usable')
+end

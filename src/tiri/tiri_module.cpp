@@ -526,7 +526,6 @@ static void profile_arg(const FunctionField &Field, marshalling_profile &Profile
 static ffi_type * callable_return_type(int ResultType)
 {
    if (ResultType & FD_STR) return &ffi_type_pointer;
-   if (ResultType & FD_OBJECT) return &ffi_type_pointer;
    if (ResultType & FD_PTR) return &ffi_type_pointer;
    if (ResultType & (FD_INT|FD_ERROR)) {
       return (ResultType & FD_UNSIGNED) ? &ffi_type_uint32 : &ffi_type_sint32;
@@ -2231,6 +2230,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             lua_pushstring(Lua, (CSTRING)rc.Arg);
             if ((restype & FD_ALLOC) and rc.Arg) { FreeResource((APTR)rc.Arg); rc.Arg = 0; }
          }
+         else if ((restype & FD_OBJECT) and (restype & FD_INT)) {
+            push_object_id(Lua, OBJECTID(rc.Arg));
+         }
          else if (restype & FD_OBJECT) {
             if ((OBJECTPTR)rc.Arg) {
                auto object = push_object(Lua, (OBJECTPTR)rc.Arg, true);
@@ -2553,6 +2555,13 @@ std::string test_module_simple_call(lua_State *Lua, APTR Address, uint32_t Type,
 
 std::string test_module_zero_eligibility()
 {
+   if (callable_return_type(FD_OBJECTID) != &ffi_type_sint32) {
+      return "Object ID returns must use the integer ABI.";
+   }
+   if (callable_return_type(FD_OBJECTPTR) != &ffi_type_pointer) {
+      return "Object pointer returns must retain the pointer ABI.";
+   }
+
    // Preparation must keep rejected families distinct from supported CIF inputs with the same pointer ABI.
    struct descriptor_case { uint32_t Type; bool Supported; };
    const descriptor_case complex[] = {

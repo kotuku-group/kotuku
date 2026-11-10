@@ -698,6 +698,7 @@ static int64_t synthetic_int64() { ++glZeroCalls; return -9007199254740991LL; }
 static double synthetic_double() { ++glZeroCalls; return -1234.125; }
 static ERR synthetic_okay() { ++glZeroCalls; return ERR::Okay; }
 static ERR synthetic_error() { ++glZeroCalls; return ERR::Args; }
+static OBJECTID synthetic_no_object() { ++glZeroCalls; return 0; }
 
 static bool test_zero_arg_calls(kt::Log &Log)
 {
@@ -717,6 +718,7 @@ static bool test_zero_arg_calls(kt::Log &Log)
       { (APTR)synthetic_int64, FD_INT64, "-9007199254740991" },
       { (APTR)synthetic_double, FD_DOUBLE, "-1234.125" },
       { (APTR)synthetic_okay, FD_INT|FD_ERROR, "ERR_Okay" },
+      { (APTR)synthetic_no_object, FD_OBJECTID, "nil" },
       // A modifier outside the allowlist must still work through the bridge.
       { (APTR)synthetic_signed, FD_INT|FD_ALLOC, "-2147483648" }
    };
