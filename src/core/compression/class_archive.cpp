@@ -156,6 +156,12 @@ static ERR ARCHIVE_Activate(objFile *Self)
 
    if (!prv->Archive) return log.warning(ERR::SystemCorrupt);
 
+   if (prv->Info.IsFolder) {
+      Self->Flags |= FL::FOLDER;
+      Self->Size = 0;
+      return ERR::Okay;
+   }
+
    if (prv->FileStream) return ERR::Okay; // Already activated
 
    log.msg("Allocating file stream for item %s", prv->Info.Name.c_str());
@@ -211,6 +217,13 @@ static ERR ARCHIVE_Init(objFile *Self)
          prv->Archive = find_archive(Self->Path.c_str(), file_path);
 
          if (prv->Archive) {
+            if (file_path.empty()) {
+               prv->Info.IsFolder = true;
+               Self->Flags |= FL::FOLDER;
+               Self->Permissions = PERMIT::READ|PERMIT::GROUP_READ|PERMIT::OTHERS_READ;
+               return ERR::Okay;
+            }
+
             // TODO: This is a slow scan and could be improved if a hashed directory structure was
             // generated during add_archive() first; then we could perform a quick lookup here.
 
@@ -549,7 +562,7 @@ static ERR scan_folder(DirInfo *Dir)
       {
          int i;
          for (i=path.size(); (zf.Name[i]) and (zf.Name[i] != '/') and (zf.Name[i] != '\\'); i++);
-         if (zf.Name[i]) continue;
+         if (zf.Name[i] and not (zf.IsFolder and i + 1 IS int(zf.Name.size()))) continue;
       }
 
       if (((Dir->prvFlags & RDF::FILE) != RDF::NIL) and (!zf.IsFolder)) {
@@ -586,8 +599,9 @@ static ERR scan_folder(DirInfo *Dir)
       if (((Dir->prvFlags & RDF::FOLDER) != RDF::NIL) and (zf.IsFolder)) {
          Dir->Info->Flags |= RDF::FOLDER;
 
-         auto offset = zf.Name.find_last_of("/\\");
-         Dir->Info->Name.assign(zf.Name, (offset IS std::string::npos) ? 0 : offset, std::string::npos);
+         auto folder = std::string_view(zf.Name);
+         while (folder.ends_with('/')) folder.remove_suffix(1);
+         Dir->Info->Name.assign(folder.substr(path.size()));
 
          if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) Dir->Info->Name += '/';
 

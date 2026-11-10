@@ -1,3 +1,4 @@
+#include <kotuku/modules/svg.h>
 
 static constexpr auto HASH_URL   = kt::strhash("url");
 static constexpr auto HASH_RGB   = kt::strhash("rgb");
@@ -175,6 +176,108 @@ static void cielab_to_painter(double L, double A, double B, float Alpha, VectorP
 }
 
 //********************************************************************************************************************
+// Catalogue discovery belongs to paint lookup; filesystem paths retain their ordinary semantics.
+
+static ERR index_database_directory(std::string_view Path,
+   std::unordered_map<std::string, std::string> &Paths, unsigned Depth = 0)
+{
+   if (Depth > 32) return ERR::InvalidData;
+
+   DirInfo *dir;
+   if (auto error = OpenDir(Path, RDF::FILE|RDF::FOLDER, &dir); error != ERR::Okay) return error;
+
+   LocalResource free_dir(dir);
+
+   ERR error;
+   while ((error = ScanDir(dir)) IS ERR::Okay) {
+      auto name = dir->Info->Name;
+      if ((name IS ".") or (name IS "..")) continue;
+      auto path = std::string(Path) + name;
+      if ((dir->Info->Flags & RDF::FOLDER) != RDF::NIL) {
+         if (not path.ends_with('/')) path += '/';
+         if (auto result = index_database_directory(path, Paths, Depth + 1); result != ERR::Okay) return result;
+      }
+      else if ((name.size() > 4) and iequals(name.substr(name.size() - 4), ".svg")) {
+         name.resize(name.size() - 4);
+         for (auto &c : name) c = std::tolower((unsigned char)c);
+         if (not Paths.emplace(name, path).second) return ERR::ResourceExists;
+      }
+   }
+
+   return (error IS ERR::EndOfSequence) ? ERR::Okay : error;
+}
+
+//********************************************************************************************************************
+// Load the paint server of a collection SVG file into a private scene owned by the Scene.  Collection files are
+// maintained internally, so they are parsed as ordinary SVG documents without validation.  Each file declares its
+// paint server with an ID derived from its location, e.g. 'pidGradientsSunset' for 'Gradients/Sunset.svg'.
+
+static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, OBJECTPTR &Paint)
+{
+   kt::Log log(__FUNCTION__);
+
+   std::string_view location(Path);
+   if (auto ext = location.rfind('.'); ext != std::string_view::npos) location.remove_suffix(location.size() - ext);
+   auto sep = location.find_last_of("/\\:");
+   if ((sep != std::string_view::npos) and (sep > 0)) sep = location.find_last_of("/\\:", sep - 1);
+   if (sep != std::string_view::npos) location.remove_prefix(sep + 1);
+
+   std::string paint_id("pid");
+   for (auto c : location) {
+      if ((c != '/') and (c != '\\')) paint_id.push_back(c);
+   }
+
+   auto private_scene = objVectorScene::create { fl::Flags(VPF::NIL) };
+   if (not private_scene.ok()) return ERR::CreateObject;
+   private_scene->setCompliance(VSC::SVG2);
+
+   auto svg = objSVG::create { fl::Target(*private_scene), fl::Path(Path) };
+   if (not svg.ok()) return log.warning(ERR::CreateObject);
+
+   OBJECTPTR paint;
+   if (auto error = private_scene->findDef(paint_id, &paint); error != ERR::Okay) return log.warning(error);
+   if ((paint->baseClassID() != CLASSID::GRADIENT) and (paint->classID() != CLASSID::VECTORPATTERN)) {
+      return log.warning(ERR::NoSupport);
+   }
+
+   if (auto error = SetOwner(*private_scene, Scene); error != ERR::Okay) return log.warning(error);
+   private_scene.detach();
+   Paint = paint;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Resolve a url(#pattern:Name) reference.  Paints are cached per scene, and the collection is indexed on first use.
+
+static ERR resolve_database_paint(extVectorScene *Scene, std::string Name, OBJECTPTR &Paint)
+{
+   for (auto &c : Name) c = std::tolower((unsigned char)c);
+
+   if (auto cached = Scene->DatabasePaints.find(Name); cached != Scene->DatabasePaints.end()) {
+      Paint = cached->second;
+      return ERR::Okay;
+   }
+
+   if (not Scene->LoadingDatabasePaints.insert(Name).second) return ERR::InvalidData;
+
+   auto guard = deferred_call([Scene, Name] { Scene->LoadingDatabasePaints.erase(Name); });
+
+   if (not Scene->DatabaseIndexed) {
+      std::unordered_map<std::string, std::string> paths;
+      if (auto error = index_database_directory("patterns:", paths); error != ERR::Okay) return error;
+      Scene->DatabasePaths = std::move(paths);
+      Scene->DatabaseIndexed = true;
+   }
+
+   auto path = Scene->DatabasePaths.find(Name);
+   if (path IS Scene->DatabasePaths.end()) return ERR::NotFound;
+
+   if (auto error = load_database_paint(Scene, path->second, Paint); error != ERR::Okay) return error;
+   Scene->DatabasePaints.emplace(Name, Paint);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 
 static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, VectorPainter *Painter,
    std::string_view &Result)
@@ -199,12 +302,24 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
 
    bool found = false;
    auto ext_scene = (extVectorScene *)Scene;
-   if (auto def_lookup = ext_scene->Defs.find(lookup); def_lookup != ext_scene->Defs.end()) {
+   if (kt::startswith("pattern:", lookup)) {
+      OBJECTPTR paint = nullptr;
+      if (auto error = resolve_database_paint(ext_scene, lookup.substr(8), paint); error != ERR::Okay) {
+         Log.warning("Failed to load database paint '%s': %s", lookup.c_str(), GetErrorMsg(error));
+         return error;
+      }
+      if (paint->baseClassID() IS CLASSID::GRADIENT) Painter->Gradient = (objGradient *)paint;
+      else Painter->Pattern = (objVectorPattern *)paint;
+      found = true;
+   }
+   else if (auto def_lookup = ext_scene->Defs.find(lookup); def_lookup != ext_scene->Defs.end()) {
       auto def = def_lookup->second;
+
       if (def->baseClassID() IS CLASSID::GRADIENT) Painter->Gradient = (objGradient *)def;
       else if (def->classID() IS CLASSID::VECTORIMAGE) Painter->Image = (objVectorImage *)def;
       else if (def->classID() IS CLASSID::VECTORPATTERN) Painter->Pattern = (objVectorPattern *)def;
       else Log.warning("Vector definition '%s' (class $%.8x) not supported.", lookup.c_str(), uint32_t(def->classID()));
+
       found = true;
    }
    else if (auto map_lookup = glColourMaps.find(lookup); map_lookup != glColourMaps.end()) {
@@ -229,6 +344,7 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
             Painter->Gradient = gradient;
          }
       }
+
       found = true;
    }
 
@@ -741,6 +857,14 @@ To access one of the pre-defined colourmaps, use the format `url(#cmap:name)`.  
 a linear gradient that belongs to the `Scene`.  Valid colourmap names are `cmap:crest`,
 `cmap:flare`, `cmap:icefire`, `cmap:inferno`, `cmap:magma`, `cmap:mako`, `cmap:plasma`, `cmap:rocket`,
 `cmap:viridis`.
+
+To use a paint from the installed pattern collection, use the format `url(#pattern:Name)`, where `Name` is the
+basename of an SVG file in the `patterns:` volume, without its category folder or `.svg` extension.  For example,
+`url(#pattern:Linen)` selects `patterns:Textiles/Linen.svg`.  The name is matched case-insensitively.  The asset's
+paint server, which has the ID `pid` followed by its category and name (e.g. `pidTextilesLinen`), is loaded into the
+`Scene` on first use and reused by later references to the same name.  The
+`pattern:` namespace is reserved, so scene definitions cannot shadow collection assets.  `NotFound` is returned if
+the name is not in the collection, and other errors are returned if the asset cannot be imported.
 
 A !VectorPainter structure must be provided by the client and will be used to store the final result.  All pointers
 that are returned will remain valid as long as the provided Scene exists with its registered painter definitions.

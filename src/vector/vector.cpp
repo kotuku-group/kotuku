@@ -13,6 +13,7 @@ the FreeType home page at www.freetype.org.
 #include "idl.h"
 #include "text_coverage_cache.h"
 #include "font_style.h"
+#include <kotuku/modules/compression.h>
 
 JUMPTABLE_DISPLAY
 JUMPTABLE_CORE
@@ -32,6 +33,7 @@ OBJECTPTR clSourceFX = nullptr, clRemapFX = nullptr, clLightingFX = nullptr, clD
 
 static OBJECTPTR modDisplay = nullptr;
 static OBJECTPTR modFont = nullptr;
+static objCompression *glPatternArchive = nullptr;
 OBJECTPTR glVectorModule = nullptr;
 FT_Library glFTLibrary = nullptr;
 
@@ -114,6 +116,32 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if ((error = init_displacementfx()) != ERR::Okay) return error;
    if ((error = init_wavefunctionfx()) != ERR::Okay) return error;
 
+   // Mount the pattern collection used by url(#pattern:Name) paint references.  Caller-owned mappings are preserved,
+   // even when their destination is currently unavailable.
+
+   std::string pattern_path;
+   if (ResolvePath("patterns:", RSF::NO_FILE_CHECK, &pattern_path) != ERR::Okay) {
+      if (ResolvePath("patternsource:", RSF::NO_FILE_CHECK, &pattern_path) != ERR::Okay) {
+         pattern_path = "styles:patterns/";
+      }
+
+      if (not pattern_path.ends_with('/')) pattern_path += '/';
+      pattern_path += "Default.zip";
+
+      auto archive = objCompression::create::local(fl::Path(pattern_path), fl::ArchiveName("patterns"),
+         fl::Flags(CMF::READ_ONLY));
+
+      if (archive) {
+         auto error = SetVolume("patterns", "archive:patterns/", "misc/picture", "", "", VOLUME::HIDDEN);
+         if (error IS ERR::Okay) glPatternArchive = archive;
+         else {
+            log.warning("Optional pattern collection is unavailable: %s", GetErrorMsg(error));
+            FreeResource(archive);
+         }
+      }
+      else log.warning("Optional pattern collection could not be opened: %s", pattern_path.c_str());
+   }
+
    update_dpi();
    return error;
 }
@@ -127,6 +155,15 @@ static ERR MODExpunge(void)
       glBitmapFonts.clear();
       glFreetypeFonts.clear();
       glHintOverrides.clear();
+   }
+
+   if (glPatternArchive) {
+      std::string path;
+      if (ResolvePath("patterns:", RSF::NO_FILE_CHECK, &path) IS ERR::Okay and path IS "archive:patterns/") {
+         DeleteVolume("patterns");
+      }
+      FreeResource(glPatternArchive);
+      glPatternArchive = nullptr;
    }
 
    if (glFTLibrary) { FT_Done_FreeType(glFTLibrary); glFTLibrary = nullptr; }

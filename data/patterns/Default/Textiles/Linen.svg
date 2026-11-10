@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100" viewBox="0 0 160 100">
+  <title>Linen</title>
+  <desc>A small repeating tile of an undyed plain weave, with warm cream threads crossing at right angles.</desc>
+  <defs>
+    <pattern id="pidTextilesLinen" patternUnits="userSpaceOnUse" width="8" height="8" viewBox="0 0 8 8">
+      <rect width="8" height="8" fill="#e9e1cf"/>
+      <path d="M0 1.5h8 M0 5.5h8" stroke="#d6ccb5" stroke-width="1.2"/>
+      <path d="M1.5 0v8 M5.5 0v8" stroke="#f5efe2" stroke-width="0.8"/>
+      <path d="M1.5 1.5h1 M5.5 5.5h1" stroke="#c7bca3" stroke-width="0.6"/>
+    </pattern>
+  </defs>
+  <rect width="160" height="100" fill="url(#pidTextilesLinen)"/>
+</svg>

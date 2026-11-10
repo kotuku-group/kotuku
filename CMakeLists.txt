@@ -1315,6 +1315,20 @@ add_custom_command (
 
 add_custom_target (icon_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip")
 
+# Patterns are installed as a zip file
+
+file (GLOB_RECURSE pattern_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/patterns/Default/*")
+
+add_custom_command (
+   OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/patterns/Default.zip"
+   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/patterns"
+   COMMAND ${CMAKE_COMMAND} -E tar "cf" "${CMAKE_CURRENT_BINARY_DIR}/patterns/Default.zip" --format=zip -- "."
+   DEPENDS ${pattern_files}
+   WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/data/patterns/Default"
+   COMMENT "Zipping patterns")
+
+add_custom_target (pattern_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/patterns/Default.zip")
+
 # --------------------------------------------------------------------------------------------------------------------
 # SSL Certificate Bundle Update
 
@@ -1395,6 +1409,7 @@ if (KOTUKU_INSTALL)
    endif ()
 
    install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/icons")
+   install (FILES "${CMAKE_BINARY_DIR}/patterns/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/patterns")
 
    install (DIRECTORY "${PROJECT_SOURCE_DIR}/apps/data" DESTINATION "${SHARE_TARGET}/apps")
    install (FILES

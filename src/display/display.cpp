@@ -756,7 +756,8 @@ static ERR MODExpunge(void)
 
    if (glRefreshPointerTimer) { UpdateTimer(glRefreshPointerTimer, 0); glRefreshPointerTimer = 0; }
    if (glComposite)           { FreeResource(glComposite); glComposite = nullptr; }
-   if (glCompress)            { FreeResource(glCompress); glCompress = nullptr; }
+   if (glIconArchive) { FreeResource(glIconArchive); glIconArchive = nullptr; }
+   if (glCompress)    { FreeResource(glCompress); glCompress = nullptr; }
    glDemultiply.reset();
 
    DeregisterFD((HOSTHANDLE)-2); // Disable input_event_loop()
@@ -765,7 +766,6 @@ static ERR MODExpunge(void)
    winTerminateClipboard();
 #endif
 
-   if (glIconArchive) { FreeResource(glIconArchive); glIconArchive = nullptr; }
    if (clPointer)     { FreeResource(clPointer);     clPointer     = nullptr; }
    if (clDisplay)     { FreeResource(clDisplay);     clDisplay     = nullptr; }
    if (clBitmap)      { FreeResource(clBitmap);      clBitmap      = nullptr; }
