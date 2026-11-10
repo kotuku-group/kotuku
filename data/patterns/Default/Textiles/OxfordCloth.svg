@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Oxford cloth</title>
+  <desc>A blue and white Oxford shirting, with pairs of fine blue warp threads basket woven over a
+    thick, slubby white weft.</desc>
+  <defs>
+    <pattern id="pidTextilesOxfordCloth" patternUnits="userSpaceOnUse" width="96" height="96" viewBox="0 0 96 96">
+      <rect width="96" height="96" fill="#eef1f6"/>
+      <g fill="none">
+      <!-- Thick white weft, with grooves between the picks -->
+      <path stroke="#8a96a8" stroke-opacity=".12" stroke-width="2.4" d="
+        M0,16.5h96M0,25.5h96M0,31.5h96M0,55.5h96M0,58.5h96M0,64.5h96M0,70.5h96M0,85.5h96"/>
+      <path stroke="#8a96a8" stroke-opacity=".2" stroke-width="2.4" d="
+        M0,10.5h96M0,13.5h96M0,37.5h96M0,46.5h96M0,49.5h96M0,52.5h96M0,61.5h96M0,76.5h96M0,79.5h96M0,91.5h96"/>
+      <path stroke="#fff" stroke-opacity=".5" stroke-width="2.4" d="
+        M0,4.5h96M0,7.5h96M0,19.5h96M0,28.5h96M0,73.5h96M0,88.5h96"/>
+      <path stroke="#5a6a82" stroke-opacity=".18" stroke-width="0.6" d="
+        M0,0h96M0,3h96M0,6h96M0,9h96M0,12h96M0,15h96M0,18h96M0,21h96M0,24h96M0,27h96M0,30h96M0,33h96M0,36h96M0,39h96
+        M0,42h96M0,45h96M0,48h96M0,51h96M0,54h96M0,57h96M0,60h96M0,63h96M0,66h96M0,69h96M0,72h96M0,75h96M0,78h96
+        M0,81h96M0,84h96M0,87h96M0,90h96M0,93h96"/>
+      <!-- Paired blue warp threads, basket woven over alternate picks -->
+      <path stroke="#7a9fd0" stroke-opacity=".75" stroke-width="1.3" stroke-dasharray="2.6 3.4" stroke-dashoffset="-0.2"
+        d="
+        M0.8,0v96M2.2,0v96M6.8,0v96M8.2,0v96M12.8,0v96M14.2,0v96M18.8,0v96M20.2,0v96M24.8,0v96M26.2,0v96M30.8,0v96
+        M32.2,0v96M36.8,0v96M38.2,0v96M42.8,0v96M44.2,0v96M48.8,0v96M50.2,0v96M54.8,0v96M56.2,0v96M60.8,0v96
+        M62.2,0v96M66.8,0v96M68.2,0v96M72.8,0v96M74.2,0v96M78.8,0v96M80.2,0v96M84.8,0v96M86.2,0v96M90.8,0v96
+        M92.2,0v96"/>
+      <path stroke="#5b86bd" stroke-opacity=".35" stroke-width="1.3" stroke-dasharray="2.6 3.4" stroke-dashoffset="-0.2"
+        d="
+        M6.8,0v96M8.2,0v96M18.8,0v96M20.2,0v96M24.8,0v96M26.2,0v96M60.8,0v96M62.2,0v96M72.8,0v96M74.2,0v96M84.8,0v96
+        M86.2,0v96M90.8,0v96M92.2,0v96"/>
+      <path stroke="#7a9fd0" stroke-opacity=".75" stroke-width="1.3" stroke-dasharray="2.6 3.4" stroke-dashoffset="-3.2"
+        d="
+        M3.8,0v96M5.2,0v96M9.8,0v96M11.2,0v96M15.8,0v96M17.2,0v96M21.8,0v96M23.2,0v96M27.8,0v96M29.2,0v96M33.8,0v96
+        M35.2,0v96M39.8,0v96M41.2,0v96M45.8,0v96M47.2,0v96M51.8,0v96M53.2,0v96M57.8,0v96M59.2,0v96M63.8,0v96
+        M65.2,0v96M69.8,0v96M71.2,0v96M75.8,0v96M77.2,0v96M81.8,0v96M83.2,0v96M87.8,0v96M89.2,0v96M93.8,0v96
+        M95.2,0v96"/>
+      <path stroke="#5b86bd" stroke-opacity=".35" stroke-width="1.3" stroke-dasharray="2.6 3.4" stroke-dashoffset="-3.2"
+        d="
+        M21.8,0v96M23.2,0v96M45.8,0v96M47.2,0v96M63.8,0v96M65.2,0v96M75.8,0v96M77.2,0v96M87.8,0v96M89.2,0v96
+        M93.8,0v96M95.2,0v96"/>
+      <!-- Slubs in the weft -->
+      <path stroke="#fff" stroke-opacity=".6" stroke-width="1.8" stroke-linecap="round" d="
+        M71.53,28.5h8.16M91.29,76.5h4.66M83.27,16.5h3.77M76.5,19.08v9.63M0.06,64.5h3.78M78.21,61.5h5.15
+        M10.5,2.44v8.47M46.5,54.34v3.46M48.95,76.5h9.69M55.5,16.42v8.9M34.5,25.24v4.15M4.69,1.5h6.15M1.5,92.78v3.22
+        M1.5,0v2.26M13.18,52.5h3.61M13.5,40.31v4M31.5,63.67v4.92M10.5,26.58v3.9M82.47,43.5h4.42M73.5,7.99v6.84
+        M4.5,55.78v7.1M13.5,84.23v7.02M43.5,69.18v3.72M94.5,85.33v8.09M22.19,88.5h8.76M7.5,59.76v3.59M56.5,79.5h3.57
+        M8.1,34.5h3.21M91.5,2.49v8.43M61.5,0.82v9.68M79.95,91.5h3.74M85.5,74.88v4.35M11.53,10.5h9.57M44.88,4.5h6.65
+        M16.5,22.67v4.79M90.61,49.5h3.16M5.55,79.5h4.76M43.5,61.34v7.77M93.65,34.5h2.35M0,34.5h6.16M58.5,92.88v3.12
+        M58.5,0v0.54M79.5,58v6.44"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesOxfordCloth)"/>
+</svg>

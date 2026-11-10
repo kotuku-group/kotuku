@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Denim</title>
+  <desc>A repeating indigo denim in a 3/1 twill, with white weft ribs, streaky ring-dyed warp, slubs and faint
+    stonewashed fading.</desc>
+  <defs>
+    <radialGradient id="gradTextilesDenimFade">
+      <stop offset="0" stop-color="#fff" stop-opacity=".1"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="pidTextilesDenim" patternUnits="userSpaceOnUse" width="96" height="96" viewBox="0 0 96 96">
+      <rect width="96" height="96" fill="#2f4c78"/>
+      <circle cx="60.23" cy="72.96" r="9.83" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="-4.77" cy="40.16" r="7.16" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="91.23" cy="40.16" r="7.16" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="20.99" cy="25.93" r="12.31" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="77.1" cy="21.55" r="8.17" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="2.7" cy="31.25" r="15.72" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="98.7" cy="31.25" r="15.72" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="53.67" cy="83.55" r="8.09" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="66.29" cy="-5.85" r="13.58" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="66.29" cy="90.15" r="13.58" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="81.58" cy="50.9" r="10.39" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="10.43" cy="30.57" r="11.79" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="106.43" cy="30.57" r="11.79" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="77.92" cy="68.79" r="11.26" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="22.65" cy="37.31" r="11.74" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="54.17" cy="63.28" r="10.38" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="78.67" cy="32.78" r="14.67" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="2.44" cy="11.05" r="11.34" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="2.44" cy="107.05" r="11.34" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="98.44" cy="11.05" r="11.34" fill="url(#gradTextilesDenimFade)"/>
+      <circle cx="98.44" cy="107.05" r="11.34" fill="url(#gradTextilesDenimFade)"/>
+      <g fill="none">
+      <path stroke="#000" stroke-opacity=".1" stroke-width="1.4" d="
+        M1,0v96M7,0v96M31,0v96M33,0v96M49,0v96M51,0v96M55,0v96M69,0v96"/>
+      <path stroke="#000" stroke-opacity=".18" stroke-width="1.4" d="M19,0v96M23,0v96M63,0v96M67,0v96M73,0v96M77,0v96"/>
+      <path stroke="#fff" stroke-opacity=".06" stroke-width="1.4" d="M9,0v96M27,0v96M75,0v96M79,0v96"/>
+      <path stroke="#fff" stroke-opacity=".12" stroke-width="1.4" d="
+        M13,0v96M25,0v96M37,0v96M43,0v96M45,0v96M59,0v96M81,0v96M87,0v96M91,0v96M93,0v96"/>
+      <path stroke="#fff" stroke-opacity=".2" stroke-width="1.4" d="
+        M3,0v96M5,0v96M11,0v96M17,0v96M21,0v96M29,0v96M39,0v96M41,0v96M57,0v96M71,0v96M83,0v96"/>
+      <!-- Weft ribs -->
+      <path stroke="#e8edf2" stroke-opacity=".26" stroke-width="1.4" d="
+        M-64,96l64,-96M-56,96l64,-96M-48,96l64,-96M-40,96l64,-96M-32,96l64,-96M-24,96l64,-96M-16,96l64,-96
+        M-8,96l64,-96M0,96l64,-96M8,96l64,-96M16,96l64,-96M24,96l64,-96M32,96l64,-96M40,96l64,-96M48,96l64,-96
+        M56,96l64,-96M64,96l64,-96M72,96l64,-96M80,96l64,-96M88,96l64,-96M96,96l64,-96"/>
+      <path stroke="#0b1830" stroke-opacity=".22" stroke-width="1" d="
+        M0,6h96M0,12h96M0,15h96M0,18h96M0,24h96M0,69h96M0,78h96M0,93h96"/>
+      <path stroke="#0b1830" stroke-opacity=".3" stroke-width="1" d="
+        M0,3h96M0,9h96M0,21h96M0,27h96M0,33h96M0,39h96M0,42h96M0,48h96M0,54h96M0,63h96M0,72h96M0,81h96"/>
+      <path stroke="#0b1830" stroke-opacity=".38" stroke-width="1" d="
+        M0,0h96M0,30h96M0,36h96M0,45h96M0,51h96M0,57h96M0,60h96M0,66h96M0,75h96M0,84h96M0,87h96M0,90h96"/>
+      <!-- Grooves between warp threads -->
+      <path stroke="#000" stroke-opacity=".12" stroke-width=".4" d="
+        M0,0v96M2,0v96M4,0v96M6,0v96M8,0v96M10,0v96M12,0v96M14,0v96M16,0v96M18,0v96M20,0v96M22,0v96M24,0v96M26,0v96
+        M28,0v96M30,0v96M32,0v96M34,0v96M36,0v96M38,0v96M40,0v96M42,0v96M44,0v96M46,0v96M48,0v96M50,0v96M52,0v96
+        M54,0v96M56,0v96M58,0v96M60,0v96M62,0v96M64,0v96M66,0v96M68,0v96M70,0v96M72,0v96M74,0v96M76,0v96M78,0v96
+        M80,0v96M82,0v96M84,0v96M86,0v96M88,0v96M90,0v96M92,0v96M94,0v96"/>
+      <path stroke="#000" stroke-opacity=".14" stroke-width="1.6" stroke-linecap="round" d="
+        M35,27.36v4.63M61,8.5v12.01M35,48.52v13.99M53,27.99v6.63M49,36.17v12.7M65,26.04v10.34M39,41.99v6.58
+        M33,60.29v6.99M57,77.74v13.61M41,77.45v12.38M29,3.1v8.57M95,49.83v6.89M15,77.78v4.45M89,49.18v5.98
+        M55,55.39v4.13M21,48.31v6.39M17,79.06v4.08M11,49.48v8.9M79,85.11v4.53"/>
+      <path stroke="#fff" stroke-opacity=".16" stroke-width="1.6" stroke-linecap="round" d="
+        M41,92.6v3.4M41,0v9.65M91,62.93v10.33M19,1.93v8.27M15,4.24v10.15M91,56.29v9.51M9,10.38v9.36M43,30.13v13.59
+        M77,65.37v5.03M43,1.1v8.15M3,36.15v9.89M81,60.22v8.66M45,58.45v6.79M75,5.82v10.76M23,34.94v7.13
+        M77,25.36v11.87M3,93.25v2.75M3,0v8.09M65,21.36v12.04M23,65.09v10.5M77,30.91v7.34M95,62.42v12.85M29,75.55v4.34
+        M35,32.65v12.28M79,33.15v5.3M35,44.61v10.34M73,39.31v13.21M1,45.83v12.33M65,41.7v13.5M29,82.71v12.58
+        M69,39.72v13.39M43,12.04v13.72M7,33.78v5.97M15,16.45v11.92M51,4.79v6.71M67,49.89v4.51M1,82.27v11.75
+        M7,6.57v13.75M9,33.72v10.47M47,25.43v13.88M17,53.33v11.16M11,54.41v4.43M83,75.13v7.8"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesDenim)"/>
+</svg>

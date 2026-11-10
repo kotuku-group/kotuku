@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>HerringboneTweed</title>
+  <desc>A grey herringbone tweed: a dark warp and light weft woven in a twill that reverses direction every
+    twelve units to form the chevron columns.</desc>
+  <defs>
+    <clipPath id="clipTextilesHerringboneTweedTwill">
+      <path d="
+        M0,0 0,0 1,0 0,1Z M0,2 2,0 3,0 0,3Z M0,4 4,0 5,0 0,5Z M0,6 5.5,0.5 5.5,1.5 0,7Z M0,8 5.5,2.5 5.5,3.5 0,9Z
+        M0,10 5.5,4.5 5.5,5.5 0,11Z M0,12 5.5,6.5 5.5,7.5 0,13Z M0,14 5.5,8.5 5.5,9.5 0,15Z
+        M0,16 5.5,10.5 5.5,11.5 0,17Z M0,18 5.5,12.5 5.5,13.5 0,19Z M0,20 5.5,14.5 5.5,15.5 0,21Z
+        M0,22 5.5,16.5 5.5,17.5 0,23Z M5.5,18.5 5.5,19.5 1,24 0,24Z M5.5,20.5 5.5,21.5 3,24 2,24Z
+        M5.5,22.5 5.5,23.5 5,24 4,24Z M17.5,0.5 18,0 19,0 17.5,1.5Z M17.5,2.5 20,0 21,0 17.5,3.5Z
+        M17.5,4.5 22,0 23,0 17.5,5.5Z M17.5,6.5 24,0 24,0 24,1 17.5,7.5Z M17.5,8.5 24,2 24,3 17.5,9.5Z
+        M17.5,10.5 24,4 24,5 17.5,11.5Z M17.5,12.5 24,6 24,7 17.5,13.5Z M17.5,14.5 24,8 24,9 17.5,15.5Z
+        M17.5,16.5 24,10 24,11 17.5,17.5Z M17.5,18.5 24,12 24,13 17.5,19.5Z M17.5,20.5 24,14 24,15 17.5,21.5Z
+        M17.5,22.5 24,16 24,17 17.5,23.5Z M24,18 24,19 19,24 18,24Z M24,20 24,21 21,24 20,24Z
+        M24,22 24,23 23,24 22,24Z M5.5,23.5 5.5,22.5 7,24 6,24Z M5.5,21.5 5.5,20.5 9,24 8,24Z
+        M5.5,19.5 5.5,18.5 11,24 10,24Z M5.5,17.5 5.5,16.5 13,24 12,24Z M5.5,15.5 5.5,14.5 15,24 14,24Z
+        M5.5,13.5 5.5,12.5 17,24 16,24Z M17.5,23.5 5.5,11.5 5.5,10.5 17.5,22.5Z
+        M17.5,21.5 5.5,9.5 5.5,8.5 17.5,20.5Z M17.5,19.5 5.5,7.5 5.5,6.5 17.5,18.5Z
+        M17.5,17.5 5.5,5.5 5.5,4.5 17.5,16.5Z M17.5,15.5 5.5,3.5 5.5,2.5 17.5,14.5Z
+        M17.5,13.5 5.5,1.5 5.5,0.5 17.5,12.5Z M17.5,11.5 6,0 7,0 17.5,10.5Z M17.5,9.5 8,0 9,0 17.5,8.5Z
+        M17.5,7.5 10,0 11,0 17.5,6.5Z M17.5,5.5 12,0 13,0 17.5,4.5Z M17.5,3.5 14,0 15,0 17.5,2.5Z
+        M17.5,1.5 16,0 17,0 17.5,0.5Z"/>
+    </clipPath>
+    <pattern id="pidTextilesHerringboneTweed" patternUnits="userSpaceOnUse" width="48" height="48" viewBox="0 0 24 24">
+      <rect width="24" height="24" fill="#3e3a35"/>
+      <!-- Warp -->
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesHerringboneTweedTwill)">
+        <path fill="#a9a294" d="M0,0h24v24h-24Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesHerringboneTweed)"/>
+</svg>

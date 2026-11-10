@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>GlenCheck</title>
+  <desc>A charcoal and cream Glen check, alternating blocks of houndstooth with blocks of fine two-and-two
+    hairline check.</desc>
+  <defs>
+    <clipPath id="clipTextilesGlenCheckTwill">
+      <path d="
+        M0,0h1l-32,32h-1ZM2,0h1l-32,32h-1ZM4,0h1l-32,32h-1ZM6,0h1l-32,32h-1ZM8,0h1l-32,32h-1ZM10,0h1l-32,32h-1Z
+        M12,0h1l-32,32h-1ZM14,0h1l-32,32h-1ZM16,0h1l-32,32h-1ZM18,0h1l-32,32h-1ZM20,0h1l-32,32h-1ZM22,0h1l-32,32h-1Z
+        M24,0h1l-32,32h-1ZM26,0h1l-32,32h-1ZM28,0h1l-32,32h-1ZM30,0h1l-32,32h-1ZM32,0h1l-32,32h-1ZM34,0h1l-32,32h-1Z
+        M36,0h1l-32,32h-1ZM38,0h1l-32,32h-1ZM40,0h1l-32,32h-1ZM42,0h1l-32,32h-1ZM44,0h1l-32,32h-1ZM46,0h1l-32,32h-1Z
+        M48,0h1l-32,32h-1ZM50,0h1l-32,32h-1ZM52,0h1l-32,32h-1ZM54,0h1l-32,32h-1ZM56,0h1l-32,32h-1ZM58,0h1l-32,32h-1Z
+        M60,0h1l-32,32h-1ZM62,0h1l-32,32h-1Z"/>
+    </clipPath>
+    <pattern id="pidTextilesGlenCheck" patternUnits="userSpaceOnUse" width="64" height="64" viewBox="0 0 32 32">
+      <rect width="32" height="32" fill="#2d2c2e"/>
+      <!-- Warp -->
+      <path fill="#dcd8cf" d="
+        M2,0h2v32h-2Z M6,0h2v32h-2Z M10,0h2v32h-2Z M14,0h2v32h-2Z M17,0h1v32h-1Z M19,0h1v32h-1Z M21,0h1v32h-1Z
+        M23,0h1v32h-1Z M25,0h1v32h-1Z M27,0h1v32h-1Z M29,0h1v32h-1Z M31,0h1v32h-1Z"/>
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesGlenCheckTwill)">
+        <path fill="#2d2c2e" d="
+          M0,0h32v2h-32Z M0,4h32v2h-32Z M0,8h32v2h-32Z M0,12h32v2h-32Z M0,16h32v1h-32Z M0,18h32v1h-32Z
+          M0,20h32v1h-32Z M0,22h32v1h-32Z M0,24h32v1h-32Z M0,26h32v1h-32Z M0,28h32v1h-32Z M0,30h32v1h-32Z"/>
+        <path fill="#dcd8cf" d="
+          M0,2h32v2h-32Z M0,6h32v2h-32Z M0,10h32v2h-32Z M0,14h32v2h-32Z M0,17h32v1h-32Z M0,19h32v1h-32Z
+          M0,21h32v1h-32Z M0,23h32v1h-32Z M0,25h32v1h-32Z M0,27h32v1h-32Z M0,29h32v1h-32Z M0,31h32v1h-32Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesGlenCheck)"/>
+</svg>

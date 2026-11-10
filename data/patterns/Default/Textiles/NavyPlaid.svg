@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>NavyPlaid</title>
+  <desc>A repeating navy plaid with ochre bands and a pale grey overcheck, woven in a 2/2 twill so that the
+    colours mix wherever the warp and weft differ.</desc>
+  <defs>
+    <clipPath id="clipTextilesNavyPlaidTwill">
+      <path d="
+        M0,0h1l-94,94h-1ZM2,0h1l-94,94h-1ZM4,0h1l-94,94h-1ZM6,0h1l-94,94h-1ZM8,0h1l-94,94h-1ZM10,0h1l-94,94h-1Z
+        M12,0h1l-94,94h-1ZM14,0h1l-94,94h-1ZM16,0h1l-94,94h-1ZM18,0h1l-94,94h-1ZM20,0h1l-94,94h-1ZM22,0h1l-94,94h-1Z
+        M24,0h1l-94,94h-1ZM26,0h1l-94,94h-1ZM28,0h1l-94,94h-1ZM30,0h1l-94,94h-1ZM32,0h1l-94,94h-1ZM34,0h1l-94,94h-1Z
+        M36,0h1l-94,94h-1ZM38,0h1l-94,94h-1ZM40,0h1l-94,94h-1ZM42,0h1l-94,94h-1ZM44,0h1l-94,94h-1ZM46,0h1l-94,94h-1Z
+        M48,0h1l-94,94h-1ZM50,0h1l-94,94h-1ZM52,0h1l-94,94h-1ZM54,0h1l-94,94h-1ZM56,0h1l-94,94h-1ZM58,0h1l-94,94h-1Z
+        M60,0h1l-94,94h-1ZM62,0h1l-94,94h-1ZM64,0h1l-94,94h-1ZM66,0h1l-94,94h-1ZM68,0h1l-94,94h-1ZM70,0h1l-94,94h-1Z
+        M72,0h1l-94,94h-1ZM74,0h1l-94,94h-1ZM76,0h1l-94,94h-1ZM78,0h1l-94,94h-1ZM80,0h1l-94,94h-1ZM82,0h1l-94,94h-1Z
+        M84,0h1l-94,94h-1ZM86,0h1l-94,94h-1ZM88,0h1l-94,94h-1ZM90,0h1l-94,94h-1ZM92,0h1l-94,94h-1ZM94,0h1l-94,94h-1Z
+        M96,0h1l-94,94h-1ZM98,0h1l-94,94h-1ZM100,0h1l-94,94h-1ZM102,0h1l-94,94h-1ZM104,0h1l-94,94h-1Z
+        M106,0h1l-94,94h-1ZM108,0h1l-94,94h-1ZM110,0h1l-94,94h-1ZM112,0h1l-94,94h-1ZM114,0h1l-94,94h-1Z
+        M116,0h1l-94,94h-1ZM118,0h1l-94,94h-1ZM120,0h1l-94,94h-1ZM122,0h1l-94,94h-1ZM124,0h1l-94,94h-1Z
+        M126,0h1l-94,94h-1ZM128,0h1l-94,94h-1ZM130,0h1l-94,94h-1ZM132,0h1l-94,94h-1ZM134,0h1l-94,94h-1Z
+        M136,0h1l-94,94h-1ZM138,0h1l-94,94h-1ZM140,0h1l-94,94h-1ZM142,0h1l-94,94h-1ZM144,0h1l-94,94h-1Z
+        M146,0h1l-94,94h-1ZM148,0h1l-94,94h-1ZM150,0h1l-94,94h-1ZM152,0h1l-94,94h-1ZM154,0h1l-94,94h-1Z
+        M156,0h1l-94,94h-1ZM158,0h1l-94,94h-1ZM160,0h1l-94,94h-1ZM162,0h1l-94,94h-1ZM164,0h1l-94,94h-1Z
+        M166,0h1l-94,94h-1ZM168,0h1l-94,94h-1ZM170,0h1l-94,94h-1ZM172,0h1l-94,94h-1ZM174,0h1l-94,94h-1Z
+        M176,0h1l-94,94h-1ZM178,0h1l-94,94h-1ZM180,0h1l-94,94h-1ZM182,0h1l-94,94h-1ZM184,0h1l-94,94h-1Z
+        M186,0h1l-94,94h-1Z"/>
+    </clipPath>
+    <pattern id="pidTextilesNavyPlaid" patternUnits="userSpaceOnUse" width="188" height="188" viewBox="0 0 94 94">
+      <rect width="94" height="94" fill="#464a55"/>
+      <!-- Warp -->
+      <path fill="#a8a49a" d="M40,0h6v94h-6Z"/>
+      <path fill="#9a8860" d="M52,0h16v94h-16Z M74,0h4v94h-4Z M82,0h4v94h-4Z M90,0h4v94h-4Z"/>
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesNavyPlaidTwill)">
+        <path fill="#464a55" d="M0,0h94v40h-94Z M0,46h94v6h-94Z M0,68h94v6h-94Z M0,78h94v4h-94Z M0,86h94v4h-94Z"/>
+        <path fill="#a8a49a" d="M0,40h94v6h-94Z"/>
+        <path fill="#9a8860" d="M0,52h94v16h-94Z M0,74h94v4h-94Z M0,82h94v4h-94Z M0,90h94v4h-94Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesNavyPlaid)"/>
+</svg>

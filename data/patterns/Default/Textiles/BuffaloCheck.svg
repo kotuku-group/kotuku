@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>BuffaloCheck</title>
+  <desc>A bold red and black buffalo check of equal squares, with a 2/2 twill where red and black cross.</desc>
+  <defs>
+    <clipPath id="clipTextilesBuffaloCheckTwill">
+      <path d="
+        M0,0h1l-32,32h-1ZM2,0h1l-32,32h-1ZM4,0h1l-32,32h-1ZM6,0h1l-32,32h-1ZM8,0h1l-32,32h-1ZM10,0h1l-32,32h-1Z
+        M12,0h1l-32,32h-1ZM14,0h1l-32,32h-1ZM16,0h1l-32,32h-1ZM18,0h1l-32,32h-1ZM20,0h1l-32,32h-1ZM22,0h1l-32,32h-1Z
+        M24,0h1l-32,32h-1ZM26,0h1l-32,32h-1ZM28,0h1l-32,32h-1ZM30,0h1l-32,32h-1ZM32,0h1l-32,32h-1ZM34,0h1l-32,32h-1Z
+        M36,0h1l-32,32h-1ZM38,0h1l-32,32h-1ZM40,0h1l-32,32h-1ZM42,0h1l-32,32h-1ZM44,0h1l-32,32h-1ZM46,0h1l-32,32h-1Z
+        M48,0h1l-32,32h-1ZM50,0h1l-32,32h-1ZM52,0h1l-32,32h-1ZM54,0h1l-32,32h-1ZM56,0h1l-32,32h-1ZM58,0h1l-32,32h-1Z
+        M60,0h1l-32,32h-1ZM62,0h1l-32,32h-1Z"/>
+    </clipPath>
+    <pattern id="pidTextilesBuffaloCheck" patternUnits="userSpaceOnUse" width="64" height="64" viewBox="0 0 32 32">
+      <rect width="32" height="32" fill="#b5202d"/>
+      <!-- Warp -->
+      <path fill="#1b1516" d="M16,0h16v32h-16Z"/>
+      <!-- Weft, woven through the warp -->
+      <g clip-path="url(#clipTextilesBuffaloCheckTwill)">
+        <path fill="#b5202d" d="M0,0h32v16h-32Z"/>
+        <path fill="#1b1516" d="M0,16h32v16h-32Z"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="376" height="376" fill="url(#pidTextilesBuffaloCheck)"/>
+</svg>

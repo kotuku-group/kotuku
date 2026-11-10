@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="352" height="352" viewBox="0 0 352 352">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Step meander</title>
+  <desc>Black and white bands nested around the corners of square cells, turning between neighbouring cells so the
+    stripes step back and forth down each column and run straight across the joins.</desc>
+  <defs>
+    <pattern id="pidGeometricStepMeander" patternUnits="userSpaceOnUse" width="176" height="176"
+      viewBox="0 0 176 176">
+      <rect width="176" height="176" fill="#f4f3ef"/>
+      <!-- Each quarter nests its bands around one corner: bottom-right, top-left, top-right, bottom-left -->
+      <path fill="#1b1b1b" d="
+        M80,88L72,88L72,72L88,72L88,80L80,80ZM64,88L56,88L56,56L88,56L88,64L64,64Z
+        M48,88L40,88L40,40L88,40L88,48L48,48ZM32,88L24,88L24,24L88,24L88,32L32,32ZM16,88L8,88L8,8L88,8L88,16L16,16Z
+        M96,0L104,0L104,16L88,16L88,8L96,8ZM112,0L120,0L120,32L88,32L88,24L112,24Z
+        M128,0L136,0L136,48L88,48L88,40L128,40ZM144,0L152,0L152,64L88,64L88,56L144,56Z
+        M160,0L168,0L168,80L88,80L88,72L160,72Z
+        M80,88L72,88L72,104L88,104L88,96L80,96ZM64,88L56,88L56,120L88,120L88,112L64,112Z
+        M48,88L40,88L40,136L88,136L88,128L48,128ZM32,88L24,88L24,152L88,152L88,144L32,144Z
+        M16,88L8,88L8,168L88,168L88,160L16,160Z
+        M96,176L104,176L104,160L88,160L88,168L96,168ZM112,176L120,176L120,144L88,144L88,152L112,152Z
+        M128,176L136,176L136,128L88,128L88,136L128,136ZM144,176L152,176L152,112L88,112L88,120L144,120Z
+        M160,176L168,176L168,96L88,96L88,104L160,104Z"/>
+    </pattern>
+  </defs>
+  <rect width="352" height="352" fill="url(#pidGeometricStepMeander)"/>
+</svg>
