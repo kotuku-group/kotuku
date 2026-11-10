@@ -1,4 +1,5 @@
    include 'vector'
+   module display as mGfx
 
 function newPath(Sequence)
    scene = obj.new('VectorScene')
@@ -86,4 +87,38 @@ end
    err = path.mtSetCommand(1000000, commands)
    assert(err is ERR_BufferOverflow, 'SetCommand() should reject an index-plus-extent beyond the command limit.')
    assert(path.totalCommands is 2, 'A rejected SetCommand() call should leave the path unchanged.')
+end
+
+-- Exported relative curves must start at the preceding curve's endpoint, including mixed curve types.
+
+@Test function QuadraticSequenceRoundTrip()
+   for sequence in values(array<str> {
+      'M8,8 Q16,48 32,8 Q48,48 56,8 L56,56 L8,56 Z',
+      'M8,8 Q16,48 32,8 C40,40 48,40 56,8 L56,56 L8,56 Z',
+      'M8,8 Q16,48 32,8 T56,8 L56,56 L8,56 Z'
+   }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=64, pageHeight=64 })
+      local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+      local path = viewport.new('VectorPath', { sequence=sequence, fill='white' })
+      local bitmap <close> = obj.new('Bitmap', { width=64, height=64, bitsPerPixel=32, bkgd='0,0,0,255' })
+      scene.bitmap = bitmap
+      bitmap.acClear()
+      check scene.acDraw()
+      local expected = array<int>
+      for y in {0 to 64} do
+         for x in {0 to 64} do
+            expected.push(mGfx.ReadRGBPixel(bitmap, x, y).red)
+         end
+      end
+
+      path.sequence = path.sequence
+      bitmap.acClear()
+      check scene.acDraw()
+      for y in {0 to 64} do
+         for x in {0 to 64} do
+            local actual = mGfx.ReadRGBPixel(bitmap, x, y).red
+            assert(actual is expected[y * 64 + x], f'Sequence round-trip changed pixel {x},{y}: {sequence}')
+         end
+      end
+   end
 end

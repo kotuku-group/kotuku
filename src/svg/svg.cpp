@@ -674,7 +674,8 @@ static ERR  init_rsvg(void);
 static void prepare_styles(objXML::TAGS &);
 
 static ERR  save_svg_scan(extSVG *, objXML *, objVector *, int);
-static ERR  save_svg_defs(extSVG *, objXML *, objVectorScene *, int);
+static ERR  save_svg_defs(extSVG *, objXML *, objVectorScene *, int, int * = nullptr);
+static ERR  embed_collection_paints(extSVG *, objXML *, int);
 static ERR  save_svg_scan_std(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_transform(VectorMatrix *, std::stringstream &);
 static ERR  save_svg_scan_def(extSVG *, objXML *, objVector *, int, std::string_view);

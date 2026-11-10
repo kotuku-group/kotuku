@@ -2,6 +2,7 @@
 
    include 'svg'
    include 'vector'
+   module display as mGfx
 
 local glSVGFolder
 glFiles = array<str>
@@ -320,4 +321,36 @@ end
    assert(svg.viewport.colourSpace is VCS_SRGB, 'A parsed root should composite in sRGB')
    local saved = saveScene(scene, 'temp:svg_colour_interpolation_default.svg')
    assert(saved.find('color-interpolation', 0, true) is nil, 'The default root colour space should not be written')
+end
+
+@Test function CollectionTileColourSpaceRoundTrip()
+   local _, original = mSys.ResolvePath('patterns:', RSF_NO_FILE_CHECK)
+   check mSys.SetVolume('patterns', glSVGFolder .. 'collection_paints/', '', '', '', VOLUME_REPLACE)
+   defer
+      mSys.SetVolume('patterns', original, '', '', '', VOLUME_REPLACE)
+   end
+
+   local function sample(Scene:obj):num
+      local bitmap <close> = obj.new('Bitmap', { width=32, height=32, bitsPerPixel=32, bkgd='0,0,0,255' })
+      bitmap.acClear()
+      Scene.bitmap = bitmap
+      check Scene.acDraw()
+      return mGfx.ReadRGBPixel(bitmap, 8, 8).red
+   end
+
+   for colour_space in values(array<int> { VCS_SRGB, VCS_LINEAR_RGB }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=32, pageHeight=32 })
+      local viewport = scene.new('VectorViewport', { width=32, height=32, colourSpace=colour_space })
+      viewport.new('VectorRectangle', { width=32, height=32, fill='url(#pattern:blend)' })
+      local expected = sample(scene)
+      assert(math.abs(expected - 127) <= 2, 'Collection tiles should blend in sRGB')
+
+      local saved = saveScene(scene, 'temp:svg_collection_colour_space.svg')
+      assert(saved.lower().find('url(#pattern:', 0, true) is nil, 'Export must embed the collection tile')
+      local loaded_scene <close> = obj.new('VectorScene', { pageWidth=32, pageHeight=32 })
+      local svg <close> = obj.new('svg', { target=loaded_scene, statement=saved })
+      local actual = sample(loaded_scene)
+      assert(math.abs(actual - expected) <= 2,
+         f'Collection tile colour space changed after export: expected {expected}, got {actual}')
+   end
 end

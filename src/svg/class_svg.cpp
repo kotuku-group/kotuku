@@ -384,7 +384,8 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                      save_svg_scan(Self, *xml, scan, index);
                   }
 
-                  error = xml->saveToObject(Args->Dest);
+                  error = embed_collection_paints(Self, *xml, index);
+                  if (!error) error = xml->saveToObject(Args->Dest);
                }
             }
             else {
@@ -424,7 +425,8 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                         save_svg_scan(Self, *xml, scan, index);
                      }
 
-                     error = xml->saveToObject(Args->Dest);
+                     error = embed_collection_paints(Self, *xml, index);
+                     if (!error) error = xml->saveToObject(Args->Dest);
                   }
                }
             }

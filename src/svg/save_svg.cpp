@@ -212,8 +212,21 @@ static ERR save_svg_pattern(extSVG *Self, objXML *XML, objVectorPattern *Pattern
          }
       }
 
+      // The pattern viewport can override the consumer's colour space.  Preserve that inheritance boundary in a
+      // group because SVG pattern attributes do not describe the private viewport used by the renderer.
+
+      int content_index = tag->ID;
+      VCS colour_space;
+      if ((!viewport->getColourSpace(colour_space)) and (colour_space != VCS::INHERIT)) {
+         XTag *group;
+         error = XML->insertStatement(content_index, XMI::CHILD_END, "<g/>", &group);
+         if (error != ERR::Okay) return error;
+         set_vector_colour_space(group, viewport);
+         content_index = group->ID;
+      }
+
       for (auto scan=viewport->Child; (scan) and (!error); scan=scan->Next) {
-         error = save_svg_scan(Self, XML, scan, tag->ID);
+         error = save_svg_scan(Self, XML, scan, content_index);
       }
    }
 
@@ -512,7 +525,7 @@ static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
 
 //*********************************************************************************************************************
 
-static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int Parent)
+static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int Parent, int *Index)
 {
    kt::Log log(__FUNCTION__);
    ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
@@ -522,7 +535,8 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
       int def_index = 0;
       for (auto & [ key, def ] : *defs) {
          if (!def_index) {
-            if ((error = XML->insertXML(Parent, XMI::CHILD_END, "<defs/>", &def_index)) != ERR::Okay) return error;
+            if ((error = XML->insertXML(Parent, Index ? XMI::CHILD : XMI::CHILD_END, "<defs/>", &def_index)) != ERR::Okay) return error;
+            if (Index) *Index = def_index;
          }
 
          log.msg("Processing definition %s (%x)", def->Class->ClassName.c_str(), uint32_t(def->classID()));
@@ -670,9 +684,138 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
          else log.warning("Unrecognised definition class %x", uint32_t(def->classID()));
       }
 
-      return ERR::Okay;
+      return error;
    }
    else return ERR::GetField;
+}
+
+//*********************************************************************************************************************
+
+// Collection definitions live in private scenes.  Copy their serialised definitions into the document and remap
+// identifiers per scene, keeping helper definitions from separate assets and the consuming document independent.
+
+struct collection_export_scope {
+   objVectorScene *Scene;
+   int TagID;
+   std::unordered_map<std::string, std::string> IDs;
+};
+
+static void collect_export_ids(const XTag &Tag, std::unordered_map<std::string, std::string> &IDs)
+{
+   if (auto id = Tag.attrib("id")) IDs.emplace(*id, *id);
+   for (auto &child : Tag.Children) collect_export_ids(child, IDs);
+}
+
+struct collection_export_attribute {
+   int TagID;
+   unsigned Index;
+   std::string Value;
+};
+
+static void collect_export_attributes(const XTag &Tag, std::vector<collection_export_attribute> &Attributes)
+{
+   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
+      Attributes.push_back({ Tag.ID, i, Tag.Attribs[i].Value });
+   }
+   for (auto &child : Tag.Children) collect_export_attributes(child, Attributes);
+}
+
+static ERR embed_collection_paints(extSVG *Self, objXML *XML, int Root)
+{
+   XTag *root;
+   if (auto error = XML->getTag(Root, &root); error != ERR::Okay) return error;
+
+   std::vector<collection_export_scope> scopes { { Self->Scene, Root, {} } };
+   std::unordered_map<std::string, std::string> used_ids;
+   collect_export_ids(*root, used_ids);
+
+   for (size_t i=0; i < scopes.size(); i++) {
+      // Appending definitions can relocate XML tags and the scope array.  Retain IDs and copied attribute values
+      // while resolving references, then look up each tag again before writing it.
+
+      auto scene = scopes[i].Scene;
+      auto ids = scopes[i].IDs;
+      XTag *tag;
+      if (auto error = XML->getTag(scopes[i].TagID, &tag); error != ERR::Okay) return error;
+      std::vector<collection_export_attribute> attributes;
+      collect_export_attributes(*tag, attributes);
+
+      for (auto &attribute : attributes) {
+         auto &value = attribute.Value;
+         if (auto error = XML->getTag(attribute.TagID, &tag); error != ERR::Okay) return error;
+         const auto name = tag->Attribs[attribute.Index].Name;
+         if (name IS "id") {
+            if (auto id = ids.find(value); id != ids.end()) value = id->second;
+         }
+         else if (((name IS "href") or (name IS "xlink:href")) and value.starts_with('#')) {
+            if (auto id = ids.find(value.substr(1)); id != ids.end()) value = "#" + id->second;
+         }
+         else {
+            for (size_t offset=0; offset + 5 < value.size(); offset++) {
+               if (not iequals(std::string_view(value).substr(offset, 5), "url(#")) continue;
+               auto end = value.find(')', offset + 5);
+               if (end IS std::string::npos) break;
+               auto lookup = value.substr(offset + 5, end - offset - 5);
+               std::string replacement;
+               if (((name IS "fill") or (name IS "stroke")) and kt::startswith("pattern:", lookup)) {
+                  VectorPainter painter {};
+                  auto iri = value.substr(offset, end - offset + 1);
+                  if (auto error = vec::ReadPainter(scene, iri, &painter, nullptr); error != ERR::Okay) return error;
+                  OBJECTPTR paint = painter.Gradient ? (OBJECTPTR)painter.Gradient : (OBJECTPTR)painter.Pattern;
+                  if (not paint) return ERR::InvalidObject;
+                  auto owner = paint->Owner;
+                  while (owner and (owner->classID() != CLASSID::VECTORSCENE)) owner = owner->Owner;
+                  if (not owner) return ERR::UnsupportedOwner;
+                  auto source = (objVectorScene *)owner;
+
+                  size_t scope = 0;
+                  for (; scope < scopes.size(); scope++) {
+                     if (scopes[scope].Scene IS source) break;
+                  }
+                  if (scope IS scopes.size()) {
+                     int index = 0;
+                     if (auto error = save_svg_defs(Self, XML, source, Root, &index); error != ERR::Okay) return error;
+                     if (not index) return ERR::NoData;
+                     if (auto error = XML->getTag(index, &tag); error != ERR::Okay) return error;
+                     collection_export_scope imported { source, index, {} };
+                     collect_export_ids(*tag, imported.IDs);
+                     for (auto &[original, exported] : imported.IDs) {
+                        unsigned suffix = 0;
+                        while (used_ids.contains(exported)) {
+                           exported = original + "_collection_" + std::to_string(++suffix);
+                        }
+                        used_ids.emplace(exported, exported);
+                     }
+                     scopes.push_back(std::move(imported));
+                  }
+
+                  ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
+                  if (auto error = source->get(kt::strhash("defs"), defs); error != ERR::Okay) return error;
+                  for (auto &[id, def] : *defs) {
+                     if (def IS paint) {
+                        if (auto found = scopes[scope].IDs.find(id); found != scopes[scope].IDs.end()) {
+                           replacement = found->second;
+                        }
+                        break;
+                     }
+                  }
+                  if (replacement.empty()) return ERR::NotFound;
+               }
+               else if (auto id = ids.find(lookup); id != ids.end()) replacement = id->second;
+
+               if (not replacement.empty()) {
+                  value.replace(offset + 5, end - offset - 5, replacement);
+                  end = offset + 5 + replacement.size();
+               }
+               offset = end;
+            }
+         }
+         if (auto error = XML->getTag(attribute.TagID, &tag); error != ERR::Okay) return error;
+         tag->Attribs[attribute.Index].Value = std::move(value);
+      }
+   }
+
+   return ERR::Okay;
 }
 
 //*********************************************************************************************************************
@@ -805,6 +948,14 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    if ((!error) and (!(error = Vector->getSID(sv))) and not sv.empty()) xml::NewAttrib(tag, "id", sv);
 
    if ((!error) and (!(error = Vector->getFilter(sv))) and not sv.empty()) xml::NewAttrib(tag, "filter", sv);
+
+   OBJECTPTR mask;
+   if ((!error) and (!Vector->getMask(mask)) and mask and (mask->classID() IS CLASSID::VECTORCLIP)) {
+      auto clip = (objVectorClip *)mask;
+      if ((!clip->getSID(sv)) and not sv.empty()) {
+         xml::NewAttrib(tag, "clip-path", std::format("url(#{})", sv));
+      }
+   }
 
    VectorMatrix *transform;
    if ((!error) and (!Vector->getMatrices(transform)) and (transform)) {

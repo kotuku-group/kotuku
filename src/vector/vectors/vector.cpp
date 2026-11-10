@@ -2137,8 +2137,8 @@ static ERR VECTOR_GET_Sequence(extVector *Self, std::string &Value)
             base.vertex(i, &x, &y);
             base.vertex(i+1, &x2, &y2); // End of line
             seq << "q" << x - last_x << ',' << y - last_y << ',' << x2 - last_x << ',' << y2 - last_y;
-            last_x = x;
-            last_y = y;
+            last_x = x2;
+            last_y = y2;
             i += 1;
             break;
 
