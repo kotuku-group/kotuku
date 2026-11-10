@@ -134,7 +134,7 @@ gui.combobox = function(Options:table)
    base_theme = nil
    override = nil -- Per-instance override from setTheme()
 
-   local FONT_MAX_HEIGHT, FONT_HEIGHT, DEFAULT_HEIGHT, MARGIN
+   local FONT_MAX_HEIGHT, FONT_HEIGHT, ASCENT, DEFAULT_HEIGHT, MARGIN
 
    function buildTheme()
       &theme = base_theme
@@ -156,7 +156,7 @@ gui.combobox = function(Options:table)
          &dropdownTheme = table.merge(&dropdownTheme, override.dropdown, true, true)
       end
 
-      FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(&input_theme.text)
+      FONT_MAX_HEIGHT, FONT_HEIGHT, ASCENT = gui.getFontHeight(&input_theme.text)
       DEFAULT_HEIGHT = math.floor(FONT_MAX_HEIGHT * 1.1)
       MARGIN = math.floor(FONT_HEIGHT * 0.5)
    end
@@ -331,13 +331,14 @@ gui.combobox = function(Options:table)
          defaultText = firstItem(Options.items).label
       end
 
-      -- The text is inset from the left by the space above it, so that the margins look even at any box height.
+      -- The baseline centres the capitals in the box, and is relative to the clip viewport.  The text is inset from
+      -- the left by the space above it, so that the margins look even at any box height.
 
       text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (clip_inset * 2)) * 0.5)
 
       &text = &_textClip.new('VectorText', table.merge({
          x         = text_inset,
-         y         = FONT_HEIGHT + text_inset,
+         y         = math.round((BOX_HEIGHT + ASCENT) * 0.5) - clip_inset,
          string    = defaultText,
          lineLimit = 1,
          textFlags = (function()

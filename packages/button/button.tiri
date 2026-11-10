@@ -64,7 +64,7 @@ gui.button = function(Options)
       function labelY(Size:num):num
          ascent = ASCENT
          if Size and (label_size > 0) then ascent *= Size / label_size end
-         return math.floor((HEIGHT + ascent) * 0.5)
+         return math.round((HEIGHT + ascent) * 0.5) -- Baseline that centres the capitals
       end
 
       -- Scale the label down in whole pixel font sizes until it fits.

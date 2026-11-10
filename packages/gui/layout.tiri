@@ -6,30 +6,21 @@ Internal layout helpers shared by the widget packages.
 
    import 'gui'
 
-   module vector as mVec
    include 'vector'
 
    namespace gui
 
-LABEL_GAP <const>    = gui.sizing.widget.labelGap
-TEXT_METRICS <const> = { } -- Cache of line spacing and cap height, keyed by font
+LABEL_GAP <const> = gui.sizing.widget.labelGap
 
 gui.layout = { }
 
--- Measure the font that a text actually renders with.  Theme text styles can override the label font, and
--- gui.getFontHeight() treats numeric gui.fonts sizes as pixels whereas the text renders them as points.
+-- Return the line spacing and cap height of the font that a text actually renders with.  Theme text styles can
+-- override the label font, and gui.getFontHeight() treats numeric gui.fonts sizes as pixels whereas the text renders
+-- them as points, so the text's own pixel size is passed.
 
 gui.layout.textMetrics = function(Text:obj!):<num, num>
-   key = f'{Text.face}|{Text.fontStyle}|{Text.fontSize}'
-   cached = TEXT_METRICS[key]
-   if not cached then
-      _, handle = check mVec.GetFontHandle(Text.face, Text.fontStyle, 0, tonumber(Text.fontSize))
-      metrics = struct<FontMetrics>
-      check mVec.GetFontMetrics(handle, metrics)
-      cached = { lineSpacing = metrics.lineSpacing, ascent = metrics.ascent }
-      TEXT_METRICS[key] = cached
-   end
-   return cached.lineSpacing, cached.ascent
+   spacing, _, ascent = gui.getFontHeight({ face = Text.face, style = Text.fontStyle, size = tonumber(Text.fontSize) })
+   return spacing, ascent
 end
 
 -- Set a VectorText to Prefix, String and Suffix, shortening String with an ellipsis until the text is no wider than

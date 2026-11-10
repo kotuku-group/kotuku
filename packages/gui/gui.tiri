@@ -481,6 +481,8 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+METRIC_SIZE <const> = 1000 -- Pixel size at which a font's ascent is measured for scaling to fractional sizes
+
 @Doc(text=[[
 Returns the line spacing, height and ascent (cap height) of a font in pixels.
 
@@ -492,8 +494,9 @@ Font: Font table with face, fontSize (or size) and fontStyle (or style) fields.
 -RESULTS-
 num: Line spacing in pixels.
 num: Font height in pixels.
-num: Ascent (cap height) in pixels.
+num: Ascent (cap height) in pixels.  This can be fractional, so round the resulting baseline to whole pixels.
 ]])
+
 gui.getFontHeight = function(Font:table):<num,num,num>
    try <trace>
       global _FONT_CACHE ?= { }
@@ -513,9 +516,23 @@ gui.getFontHeight = function(Font:table):<num,num,num>
       metrics = struct<FontMetrics>
       check mVec.GetFontMetrics(handle, metrics)
 
-      _FONT_CACHE[key] = { height = metrics.height, spacing = metrics.lineSpacing, ascent = metrics.ascent }
+      -- FontMetrics are whole pixels measured at a whole pixel size, so the ascent can fall short of the rendered
+      -- capitals by more than a pixel, which places centred text high.  The ascent is measured at a large size and
+      -- scaled down instead.  Fixed size bitmap fonts do not scale, so their ascent is kept if the result is far out.
 
-      return metrics.lineSpacing, metrics.height, metrics.ascent
+      ascent = metrics.ascent
+      err, handle = mVec.GetFontHandle(Font.face, style, 0, METRIC_SIZE)
+      if err is ERR_Okay then
+         ref = struct<FontMetrics>
+         if mVec.GetFontMetrics(handle, ref) is ERR_Okay then
+            scaled = ref.ascent * size / METRIC_SIZE
+            if math.abs(scaled - ascent) <= 2 then ascent = scaled end
+         end
+      end
+
+      _FONT_CACHE[key] = { height = metrics.height, spacing = metrics.lineSpacing, ascent = ascent }
+
+      return metrics.lineSpacing, metrics.height, ascent
    except ex
       raise f'{ex.message}\n{ex.stackTrace}'
    end

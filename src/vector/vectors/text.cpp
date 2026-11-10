@@ -3771,7 +3771,7 @@ static const FieldArray clTextFields[] = {
    { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_Weight, TEXT_SET_Weight },
    { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
-   { "StrokeWidth",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, TEXT_SET_StrokeWidth },
+   { "StrokeWidth",   FDF_VIRTUAL|FDF_SYSTEM|FDF_UNIT|FDF_RW|FDF_PURE, VECTOR_GET_StrokeWidth, TEXT_SET_StrokeWidth },
    { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
    { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Face, TEXT_SET_Face },
    { "FontSize",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },

@@ -403,7 +403,7 @@ gui._dropdown = function(Options)
             mi.{
                text   = vText,
                height = math.round(vText.lineSpacing * ITEM_SPACING),
-               textY  = y + math.floor((mi.height + ascent) * 0.5)
+               textY  = y + math.round((mi.height + ascent) * 0.5)
             }
 
             if bw > widestItem then widestItem = bw end
