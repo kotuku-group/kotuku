@@ -33,6 +33,7 @@ enum class JOF : uint32_t {
    TRACE_ASSIGNMENTS = 0x00004000,
    TRACE_VALUE_CATEGORY = 0x00008000,
    TRACE = 0x0000ff80,
+   TRACE_ON_ERROR = 0x00010000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(JOF)
@@ -73,8 +74,7 @@ class objTiri : public objScript {
    inline ERR getProcedures(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

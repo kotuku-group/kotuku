@@ -91,6 +91,26 @@ end
    assert(caught and cleaned, 'A non-callable entity member must unwind cleanup and reach its handler')
 end
 
+@Test function ForwardDeclaredReceiverAcquiresEntityContext()
+   local window
+   local read = function():any return window.get() end
+   local indexed_read = function():any return window['get']() end
+   window = entity { value = 17, get = function():any return &value end }
+
+   local caller = entity { value = 99 }
+   using caller do
+      assert(read() is 17, 'A closure compiled before entity assignment must establish the receiver context')
+      assert(indexed_read() is 17, 'A computed call through a forward-declared receiver must establish context')
+      assert(&value is 99, 'Forward-declared receiver calls must restore the caller context')
+   end
+
+   window = { value = 23, get = function():any return &value end }
+   using caller do
+      assert(read() is 99, 'An ordinary table assigned later must inherit the caller context')
+      assert(indexed_read() is 99, 'A computed call must check the current receiver designation')
+   end
+end
+
 @Test function UnannotatedFactoryResultSurvivesCapturedNilAssignment()
    local factory = {
       create = function()

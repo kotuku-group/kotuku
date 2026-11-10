@@ -60,6 +60,7 @@
 
 #include <kotuku/main.h>
 
+#include "lauxlib.h"
 #include "lj_obj.h"
 #include "lj_err.h"
 #include "lj_debug.h"
@@ -1351,10 +1352,48 @@ static ptrdiff_t finderrfunc(lua_State *L)
 }
 
 //********************************************************************************************************************
+// When JOF::TRACE_ON_ERROR is enabled, append a stack traceback to the error message at the top of the stack.  This
+// follows the assert() policy: only the first error raised within a protected API call receives a traceback.  The
+// message is left in place beneath the extended copy, which keeps it rooted while the traceback is formatted.
+//
+// Tracebacks are skipped while JIT code is active (the Tiri stack is not synchronised), while a stack overflow is
+// being handled (the reserved space is needed for unwinding) and for non-string error values.
+
+static void err_trace_on_error(lua_State *L)
+{
+   if (L->sent_traceback) return;
+   if ((not L->script) or ((L->script->JitOptions & JOF::TRACE_ON_ERROR) IS JOF::NIL)) return;
+   if (tvref(G(L)->jit_base)) return;
+   if (L->stacksize > LUAI_MAXSTACK) return;
+   if ((L->top <= L->base) or (not tvisstr(L->top - 1))) return;
+
+   // Errors raised by built-in functions are already attributed to the caller's line, so skip the native frame.
+
+   int level = 0;
+   GCobj *top_frame = frame_gc(L->base - 1);
+   if ((top_frame->gch.gct IS ~LJ_TFUNC) and (not isluafunc(&top_frame->fn))) level = 1;
+
+   L->sent_traceback = true;
+   luaL_traceback(L, L, strVdata(L->top - 1), level);
+
+   // Catch handlers prefer structured metadata over the stack message.  Append only the traceback suffix to the
+   // raw message, preserving the source and line separately so rethrows do not duplicate the location prefix.
+   if (L->pending_exception_valid and L->pending_exception_message) {
+      GCstr *formatted = strV(L->top - 1);
+      size_t message_length = strlen(strVdata(L->top - 2));
+      lj_strfmt_pushf(L, "%s%s", strdata(L->pending_exception_message), strdata(formatted) + message_length);
+      L->pending_exception_message = strV(L->top - 1);
+      L->top--;
+   }
+}
+
+//********************************************************************************************************************
 // Runtime error.
 
 LJ_NOINLINE void lj_err_run(lua_State *L)
 {
+   err_trace_on_error(L);
+
    ptrdiff_t ef = tvref(G(L)->jit_base) ? 0 : finderrfunc(L);
    if (ef) {
       TValue *errfunc = restorestack(L, ef);

@@ -102,6 +102,7 @@
       <const name="TRACE_BOUNDARY">Enable log messages for AST boundary crossing.</const>
       <const name="TRACE_CFG">Trace ControlFlowGraph edge creation and patching.</const>
       <const name="TRACE_EXPECT">Enable trace expectation messages during parsing.</const>
+      <const name="TRACE_ON_ERROR">Append a stack traceback to the first runtime error message raised in each protected call.</const>
       <const name="TRACE_OPERATORS">Trace OperatorEmitter method calls and decisions.</const>
       <const name="TRACE_REGISTERS">Trace RegisterAllocator reservations and releases.</const>
       <const name="TRACE_TOKENS">Trace the emission of tokens.</const>

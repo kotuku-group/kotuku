@@ -1903,6 +1903,53 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Bare and legacy rethrows preserve the original object, metadata and nearest lexical handler.
 
+@Test(hotpath=1) function TraceOnErrorSurvivesCatchAndRethrow()
+   local script <close> = obj.new('tiri', { jitOptions='TRACE_ON_ERROR|DISABLE_JIT', statement=[[
+      local original = nil
+      local metadata = nil
+      local caught = false
+      try
+         try
+            local receiver:any = nil
+            receiver()
+         except e
+            assert(e.message.find('stack traceback:') != nil, 'Caught errors must retain their traceback')
+            assert(e.message.startsWith("Attempt to call local 'receiver'"), 'The message must omit location prefixes')
+            original = e
+            metadata = { e.message, e.source, e.line, e.code }
+            processing.collect('full')
+            raise
+         end
+      except e
+         caught = true
+         assert(e is original, 'Rethrow must preserve the original exception object')
+         assert(e.message is metadata[0], 'Rethrow must preserve the original traceback')
+         assert(e.source is metadata[1] and e.line is metadata[2], 'Rethrow must preserve the origin')
+         assert(e.code is metadata[3], 'Rethrow must preserve the error code')
+      end
+      assert(caught, 'The outer handler must receive the rethrown error')
+   ]] })
+   check script.acActivate()
+   assert(script.error is ERR_Okay, script.errorMessage)
+end
+
+@Test(hotpath=1) function TraceOnErrorSurvivesUncaughtRethrow()
+   local script <close> = obj.new('tiri', { jitOptions='TRACE_ON_ERROR|DISABLE_JIT', statement=[[
+      try
+         local receiver:any = nil
+         receiver()
+      except
+         raise
+      end
+   ]] })
+   script.acActivate()
+   assert(script.error != ERR_Okay, 'The rethrown runtime error must escape the script')
+   assert(script.errorMessage.find("Attempt to call local 'receiver'") != nil,
+      'The uncaught rethrow must report the original runtime error')
+   assert(script.errorMessage.find('stack traceback:') != nil,
+      'The uncaught rethrow must report the original traceback')
+end
+
 @Test function BareRethrowPreservesTracedException()
    local original = nil
    local metadata = nil

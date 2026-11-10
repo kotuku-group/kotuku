@@ -4348,9 +4348,9 @@ static TRef rec_object_get(jit_State *J, RecordOps *ops)
             return lj_record_vload(J, tmp_ref, 0, (IRType)field_type);
          }
 
-         // Numeric scalar fields: lock, XLOAD at offset, unlock.
+         // Numeric scalar fields: lock, XLOAD at offset, unlock.  Object IDs require wrapper conversion below.
          constexpr uint32_t supported_numeric = FD_DOUBLE|FD_INT64|FD_INT;
-         if (not (field_flags & FD_POINTER)) {
+         if (not (field_flags & (FD_POINTER|FD_OBJECT|FD_LOCAL))) {
             if (field_flags & supported_numeric) {
                TRef objptr = lj_ir_call(J, IRCALL_jit_object_lock, obj_ref);
 

@@ -2157,6 +2157,9 @@ private:
                value = this->catalogue_.value(binding.value);
                if (binding.is_weak) value.nullable = true;
                if (binding.function_depth != this->function_depth_) {
+                  // A captured mutable nil may be a forward declaration whose first concrete assignment occurs
+                  // after this closure is analysed.  It cannot prove the receiver's runtime type or value.
+                  if (not binding.immutable and value.primary IS TiriType::Nil) value = {};
                   value.contextuality = StaticContextuality::Unknown;
                }
             }

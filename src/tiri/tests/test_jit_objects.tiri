@@ -172,6 +172,44 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Object ID fields contain integers but must resolve to objects on compiled reads.
+
+@Test; @Requires(display=true)
+function JITObjectIDFieldGet()
+   local surface <close> = obj.new('Surface', { width=32, height=32, minWidth=17 })
+   local expected_id = surface.buffer.id
+   local compiled = 0
+
+   function traced_object_id_read(Count)
+      local matches = 0
+      for i in {0 to Count} do
+         local buffer = surface.buffer
+         assert(buffer is <obj>, 'An object ID field must return an object on every hot-loop iteration')
+         assert(buffer.id is expected_id, 'A traced object ID read must resolve the same Bitmap as the interpreter')
+         assert(surface.minWidth is 17, 'Adjacent numeric fields must retain their direct-load offsets')
+         matches++
+      end
+      return matches
+   end
+
+   local function trace_event(Event, TraceNo, Func)
+      if Event is 'stop' and Func is traced_object_id_read then compiled++ end
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   jit.attach(trace_event, 'trace')
+   defer
+      jit.attach(trace_event)
+      jit.opt.start()
+   end
+
+   assert(traced_object_id_read(500) is 500, 'Every object ID read should succeed')
+   assert(compiled > 0, 'The loop reading the object ID field must compile')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test JIT recording of BC_OBSETF (object field set)
 
 @Test(hotpath=50) function JITObjectFieldSet()
