@@ -1215,6 +1215,7 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
    if (NewObject(CLASSID::MERGEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
+   std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
@@ -1224,6 +1225,7 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_y:      fx->setY(SVGUnit(val)); break;
          case SVF_width:  fx->setWidth(SVGUnit(val)); break;
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
+         case SVF_result: result_name = val; break;
       }
    }
 
@@ -1266,7 +1268,10 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (!fx->init()) return ERR::Okay;
+   if (!fx->init()) {
+      if (!result_name.empty()) parse_result(Self, fx, result_name);
+      return ERR::Okay;
+   }
    else {
       FreeResource(fx);
       return log.warning(ERR::Init);
@@ -1882,6 +1887,12 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_in2:    parse_input_mix(Self, fx, val); break;
          case SVF_result: result_name = val; break;
       }
+   }
+
+   // SVG's second input has the same default as 'in': the previous result, or SourceGraphic.
+   if (fx->MixType IS VSF::NIL) {
+      if (fx->Prev) fx->setMix(fx->Prev);
+      else fx->setMixType(VSF::GRAPHIC);
    }
 
    if (!fx->init()) {
