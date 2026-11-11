@@ -154,6 +154,7 @@ static const struct ActionArray clVectorActions[] = {
    { AC::MoveToFront, VECTOR_MoveToFront },
    { AC::New, VECTOR_New },
    { AC::NewOwner, VECTOR_NewOwner },
+   { AC::Refresh, VECTOR_Refresh },
    { AC::Show, VECTOR_Show },
    { AC::NIL, nullptr }
 };

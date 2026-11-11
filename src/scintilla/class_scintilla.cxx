@@ -864,12 +864,23 @@ static void sync_page(extScintilla *Self)
 }
 
 //********************************************************************************************************************
+// The Bitmap is presented through a VectorImage fill, so the scene cannot detect changes to its pixels.  Refreshing the
+// Canvas marks it as dirty, which ensures that a buffered viewport containing the editor redraws its buffer.  Call this
+// whenever the content of the Bitmap is modified.
+
+static void bitmap_modified(extScintilla *Self)
+{
+   if (Self->Canvas) Self->Canvas->refresh();
+}
+
+//********************************************************************************************************************
 
 static void clear_bitmap(extScintilla *Self)
 {
    auto &bkgd = Self->BkgdColour;
    gfx::DrawRectangle(Self->Bitmap, 0, 0, Self->Bitmap->Width, Self->Bitmap->Height,
       Self->Bitmap->packPixel(bkgd.Red, bkgd.Green, bkgd.Blue, 255), BAF::FILL);
+   bitmap_modified(Self);
 }
 
 // The extra row and column cover fractional Canvas offsets but lie outside Scintilla's client clip.  Retained
@@ -1002,6 +1013,7 @@ static ERR resize_bitmap(extScintilla *Self, int Width, int Height)
       gfx::DrawRectangle(bmp, 0, keep_height, bmp->Width, bmp->Height - keep_height, colour, BAF::FILL);
    }
    clear_bitmap_border(Self);
+   bitmap_modified(Self);
    return ERR::Okay;
 }
 
@@ -4802,6 +4814,7 @@ static void paint_dirty(extScintilla *Self)
          Scintilla::Internal::ColourRGBA(SCICOLOUR(bkgd.Red, bkgd.Green, bkgd.Blue)), 160);
    }
 
+   bitmap_modified(Self);
    if ((Self->Canvas) and (Self->Scene) and (Self->Scene->SurfaceID)) acDraw(Self->Canvas);
 }
 

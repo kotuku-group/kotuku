@@ -993,6 +993,7 @@ void ScintillaKTK::ScrollText(Sci::Line LinesToMove)
    gfx::DrawRectangle(bmp, 0, (dy > 0) ? 0 : keep, bmp->Width, std::abs(dy),
       bmp->packPixel(bkgd.Red, bkgd.Green, bkgd.Blue, 255), BAF::FILL);
    clear_bitmap_border(scintilla);
+   bitmap_modified(scintilla);
 
    if (not dirty_empty) {
       auto pending = dirty;

@@ -276,6 +276,7 @@ void PanPopup::redraw()
    SurfacePan surface;
    surface.Init(bitmap, scintilla);
    paint(surface);
+   if (canvas) canvas->refresh(); // The scene cannot detect changes to the Bitmap, see bitmap_modified()
 }
 
 //********************************************************************************************************************

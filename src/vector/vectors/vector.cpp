@@ -692,6 +692,24 @@ static ERR VECTOR_Push(extVector *Self, struct vec::Push *Args)
 
 /*********************************************************************************************************************
 -ACTION-
+Refresh: Marks the vector as dirty so that it is redrawn.
+
+Changes to a vector's fields are detected automatically.  Call Refresh when the vector's appearance changes in a way
+that its fields do not reflect, such as new content in a bitmap that its @VectorImage fill refers to.  Any buffered
+@VectorViewport that contains the vector will redraw its buffer rather than reuse the cached content.
+
+Refresh does not schedule drawing.  Call #Draw() afterwards if the scene must be redrawn.
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTOR_Refresh(extVector *Self)
+{
+   mark_buffers_for_refresh(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-ACTION-
 Show: Changes the vector's visibility setting to visible.
 -END-
 *********************************************************************************************************************/

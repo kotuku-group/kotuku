@@ -360,6 +360,10 @@ Buffering comes at a cost of using extra memory, and rendering may be less effic
 changes frequently (e.g. is animated).  Buffering also enforces overflow (clipping) restrictions, equivalent to
 #Overflow being permanently set to `HIDDEN`.
 
+The buffer is redrawn when a vector within it is marked as dirty, which happens automatically when its fields
+change.  A client that modifies content that the scene cannot observe, such as the pixels of a bitmap that a
+@VectorImage fill refers to, must call @Vector.Refresh() on the vector that displays it.
+
 *********************************************************************************************************************/
 
 static ERR VIEW_GET_Buffered(extVectorViewport *Self, int &Value)
