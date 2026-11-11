@@ -517,3 +517,32 @@ end
    check svg.mtParseSymbol('sym', vp4)
    assert(vp4.child.fill is initial_fill, 'Returning to the original value must reuse the document gradient')
 end
+
+@Test function ParamNamesListsReferencedNames()
+   local scene <close> = obj.new('VectorScene', { pageWidth=64, pageHeight=64 })
+   local svg <close> = obj.new('svg')
+   svg.target = scene
+   svg.statement = [[<svg xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g"><stop offset="0" stop-color="param(zeta) red"/></linearGradient></defs>
+      <rect id="param(notName)" width="8" height="8" fill="param(alpha) red" stroke="param(beta)"/>
+      <rect x="10" width="8" height="8" fill="param(alpha) blue" style="stroke:param(styled) green"/>
+      <rect x="20" width="8" height="8" fill="param(bad name) red"/>
+      <rect x="30" width="8" height="8" fill="red"/>
+   </svg>]]
+   assert(#svg.paramNames is 0, 'No names may be reported before the document is parsed')
+   check svg.acSetKey('alpha', 'lime')
+   check svg.acSetKey('unused', 'lime')
+   check svg.init()
+
+   local names = svg.paramNames
+   local joined = ''
+   for i in {0 to #names} do joined ..= names[i] .. ' ' end
+   assert(joined is 'alpha beta styled zeta ', 'Names must be sorted, unique and referenced only: ' .. joined)
+end
+
+@Test function ParamNamesEmptyWithoutParameters()
+   local scene <close> = obj.new('VectorScene', { pageWidth=64, pageHeight=64 })
+   local svg <close> = obj.new('svg', { target=scene, statement=[[<svg xmlns="http://www.w3.org/2000/svg">
+      <rect width="8" height="8" fill="red"/></svg>]] })
+   assert(#svg.paramNames is 0, 'A document with no param() references must report no names')
+end

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic stars</title>
+  <desc>A charcoal cement tile scattered with chalk eight-point stars, linked by small diamonds and lit by
+    charcoal centres.</desc>
+  <defs>
+    <pattern id="pidEncausticStars" patternUnits="userSpaceOnUse" width="64" height="64"
+      viewBox="0 0 64 64">
+      <rect width="64" height="64" fill="#4a4a4d"/>
+      <!-- Stars -->
+      <path fill="#ecebe6" d="
+        M16,2L19.44,7.69L25.9,6.1L24.31,12.56L30,16L24.31,19.44L25.9,25.9L19.44,24.31L16,30L12.56,24.31L6.1,25.9
+        L7.69,19.44L2,16L7.69,12.56L6.1,6.1L12.56,7.69Z
+        M48,2L51.44,7.69L57.9,6.1L56.31,12.56L62,16L56.31,19.44L57.9,25.9L51.44,24.31L48,30L44.56,24.31L38.1,25.9
+        L39.69,19.44L34,16L39.69,12.56L38.1,6.1L44.56,7.69Z
+        M16,34L19.44,39.69L25.9,38.1L24.31,44.56L30,48L24.31,51.44L25.9,57.9L19.44,56.31L16,62L12.56,56.31L6.1,57.9
+        L7.69,51.44L2,48L7.69,44.56L6.1,38.1L12.56,39.69Z
+        M48,34L51.44,39.69L57.9,38.1L56.31,44.56L62,48L56.31,51.44L57.9,57.9L51.44,56.31L48,62L44.56,56.31L38.1,57.9
+        L39.69,51.44L34,48L39.69,44.56L38.1,38.1L44.56,39.69Z"/>
+      <!-- Star centres -->
+      <path fill="#4a4a4d" d="
+        M12,16 A4,4 0 1,1 20,16 A4,4 0 1,1 12,16Z
+        M44,16 A4,4 0 1,1 52,16 A4,4 0 1,1 44,16Z
+        M12,48 A4,4 0 1,1 20,48 A4,4 0 1,1 12,48Z
+        M44,48 A4,4 0 1,1 52,48 A4,4 0 1,1 44,48Z"/>
+      <!-- Links -->
+      <path fill="#ecebe6" d="
+        M0,-5L5,0L0,5L-5,0Z
+        M32,-5L37,0L32,5L27,0Z
+        M64,-5L69,0L64,5L59,0Z
+        M0,27L5,32L0,37L-5,32Z
+        M32,27L37,32L32,37L27,32Z
+        M64,27L69,32L64,37L59,32Z
+        M0,59L5,64L0,69L-5,64Z
+        M32,59L37,64L32,69L27,64Z
+        M64,59L69,64L64,69L59,64Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidEncausticStars)"/>
+</svg>

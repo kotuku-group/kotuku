@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Bauhaus arcs</title>
+  <desc>Concentric quarter rings in slate blue and brick red on cream, turned so that neighbouring
+    tiles join into circles and waves.</desc>
+  <defs>
+    <pattern id="pidBauhausArcs" patternUnits="userSpaceOnUse" width="128" height="128"
+      viewBox="0 0 128 128">
+      <rect width="128" height="128" fill="#e8dfcb"/>
+      <!-- Quarter rings of radius 32 -->
+      <path fill="#45607e" d="
+        M32,0h-32A32,32 0 0,0 32,32ZM64,32h-32A32,32 0 0,1 64,0ZM64,0h32A32,32 0 0,1 64,32Z
+        M96,32h32A32,32 0 0,0 96,0ZM0,64h32A32,32 0 0,0 0,32ZM64,32h-32A32,32 0 0,0 64,64Z
+        M64,32h32A32,32 0 0,1 64,64ZM96,32h32A32,32 0 0,1 96,64ZM0,64h32A32,32 0 0,1 0,96Z
+        M32,96h32A32,32 0 0,0 32,64ZM96,96h-32A32,32 0 0,1 96,64ZM96,64h32A32,32 0 0,1 96,96Z
+        M32,96h-32A32,32 0 0,0 32,128ZM64,128h-32A32,32 0 0,1 64,96ZM96,128h-32A32,32 0 0,1 96,96Z
+        M128,96h-32A32,32 0 0,0 128,128Z"/>
+      <!-- Quarter rings of radius 24 -->
+      <path fill="#e8dfcb" d="
+        M32,0h-24A24,24 0 0,0 32,24ZM64,32h-24A24,24 0 0,1 64,8ZM64,0h24A24,24 0 0,1 64,24Z
+        M96,32h24A24,24 0 0,0 96,8ZM0,64h24A24,24 0 0,0 0,40ZM64,32h-24A24,24 0 0,0 64,56Z
+        M64,32h24A24,24 0 0,1 64,56ZM96,32h24A24,24 0 0,1 96,56ZM0,64h24A24,24 0 0,1 0,88Z
+        M32,96h24A24,24 0 0,0 32,72ZM96,96h-24A24,24 0 0,1 96,72ZM96,64h24A24,24 0 0,1 96,88Z
+        M32,96h-24A24,24 0 0,0 32,120ZM64,128h-24A24,24 0 0,1 64,104ZM96,128h-24A24,24 0 0,1 96,104Z
+        M128,96h-24A24,24 0 0,0 128,120Z"/>
+      <!-- Quarter rings of radius 16 -->
+      <path fill="#b25841" d="
+        M32,0h-16A16,16 0 0,0 32,16ZM64,32h-16A16,16 0 0,1 64,16ZM64,0h16A16,16 0 0,1 64,16Z
+        M96,32h16A16,16 0 0,0 96,16ZM0,64h16A16,16 0 0,0 0,48ZM64,32h-16A16,16 0 0,0 64,48Z
+        M64,32h16A16,16 0 0,1 64,48ZM96,32h16A16,16 0 0,1 96,48ZM0,64h16A16,16 0 0,1 0,80Z
+        M32,96h16A16,16 0 0,0 32,80ZM96,96h-16A16,16 0 0,1 96,80ZM96,64h16A16,16 0 0,1 96,80Z
+        M32,96h-16A16,16 0 0,0 32,112ZM64,128h-16A16,16 0 0,1 64,112ZM96,128h-16A16,16 0 0,1 96,112Z
+        M128,96h-16A16,16 0 0,0 128,112Z"/>
+      <!-- Quarter rings of radius 8 -->
+      <path fill="#e8dfcb" d="
+        M32,0h-8A8,8 0 0,0 32,8ZM64,32h-8A8,8 0 0,1 64,24ZM64,0h8A8,8 0 0,1 64,8ZM96,32h8A8,8 0 0,0 96,24Z
+        M0,64h8A8,8 0 0,0 0,56ZM64,32h-8A8,8 0 0,0 64,40ZM64,32h8A8,8 0 0,1 64,40ZM96,32h8A8,8 0 0,1 96,40Z
+        M0,64h8A8,8 0 0,1 0,72ZM32,96h8A8,8 0 0,0 32,88ZM96,96h-8A8,8 0 0,1 96,88ZM96,64h8A8,8 0 0,1 96,72Z
+        M32,96h-8A8,8 0 0,0 32,104ZM64,128h-8A8,8 0 0,1 64,120ZM96,128h-8A8,8 0 0,1 96,120Z
+        M128,96h-8A8,8 0 0,0 128,104Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidBauhausArcs)"/>
+</svg>

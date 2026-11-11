@@ -208,11 +208,58 @@ static ERR index_database_directory(std::string_view Path,
 }
 
 //********************************************************************************************************************
+// Decodes a key or value from a collection reference's query.  Malformed escapes are retained literally.
+
+static std::string percent_decode(std::string_view Value)
+{
+   auto hex = [](char Ch) -> int {
+      if ((Ch >= '0') and (Ch <= '9')) return Ch - '0';
+      if ((Ch >= 'a') and (Ch <= 'f')) return Ch - 'a' + 10;
+      if ((Ch >= 'A') and (Ch <= 'F')) return Ch - 'A' + 10;
+      return -1;
+   };
+
+   std::string result;
+   result.reserve(Value.size());
+   for (size_t i=0; i < Value.size(); i++) {
+      if ((Value[i] IS '%') and (i + 2 < Value.size()) and (hex(Value[i+1]) >= 0) and (hex(Value[i+2]) >= 0)) {
+         result.push_back(char((hex(Value[i+1])<<4) | hex(Value[i+2])));
+         i += 2;
+      }
+      else result.push_back(Value[i]);
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+// Parses "key=value&key=value" from a collection reference.  Pairs with an empty key are skipped and later duplicates
+// overwrite earlier ones.  A pair with no '=' defines the key with an empty value.
+
+static KEYVALUE parse_database_query(std::string_view Query)
+{
+   KEYVALUE params;
+
+   while (not Query.empty()) {
+      auto end = Query.find('&');
+      auto pair = Query.substr(0, end);
+      Query = (end IS std::string_view::npos) ? std::string_view{} : Query.substr(end + 1);
+
+      auto eq = pair.find('=');
+      auto key = percent_decode(pair.substr(0, eq));
+      if (key.empty()) continue;
+      params[key] = (eq IS std::string_view::npos) ? std::string() : percent_decode(pair.substr(eq + 1));
+   }
+
+   return params;
+}
+
+//********************************************************************************************************************
 // Load the paint server of a collection SVG file into a private scene owned by the Scene.  Collection files are
 // maintained internally, so they are parsed as ordinary SVG documents without validation.  Each file declares its
-// paint server with an ID derived from its location, e.g. 'pidGradientsSunset' for 'Gradients/Sunset.svg'.
+// paint server with an ID derived from its location, e.g. 'pidGradientsSunset' for 'Gradients/Sunset.svg'.  Params
+// are passed to the SVG object for the resolution of param() references in the asset.
 
-static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, OBJECTPTR &Paint)
+static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, const KEYVALUE &Params, OBJECTPTR &Paint)
 {
    kt::Log log(__FUNCTION__);
 
@@ -231,8 +278,32 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, OBJ
    if (not private_scene.ok()) return ERR::CreateObject;
    private_scene->setCompliance(VSC::SVG2);
 
-   auto svg = objSVG::create { fl::Target(*private_scene), fl::Path(Path) };
+   objSVG::create svg;
    if (not svg.ok()) return log.warning(ERR::CreateObject);
+   if (auto error = svg->setTarget(*private_scene); error != ERR::Okay) return log.warning(error);
+   if (auto error = svg->setPath(Path); error != ERR::Okay) return log.warning(error);
+
+   std::vector<std::string_view> accepted;
+   for (auto &[key, value] : Params) {
+      if (auto error = acSetKey(*svg, key, value); error != ERR::Okay) {
+         log.warning("Ignoring parameter '%s' for '%.*s': %s", key.c_str(), int(Path.size()), Path.data(),
+            GetErrorMsg(error));
+      }
+      else accepted.push_back(key);
+   }
+
+   if (svg->init() != ERR::Okay) return log.warning(ERR::CreateObject);
+
+   // A parameter that the asset does not reference has no effect, which would otherwise hide a misspelt key.
+
+   if (std::span<std::string> names; (not accepted.empty()) and (svg->getParamNames(names) IS ERR::Okay)) {
+      for (auto key : accepted) {
+         if (not std::binary_search(names.begin(), names.end(), key)) {
+            log.warning("Parameter '%.*s' is not used by '%.*s'", int(key.size()), key.data(), int(Path.size()),
+               Path.data());
+         }
+      }
+   }
 
    OBJECTPTR paint;
    if (auto error = private_scene->findDef(paint_id, &paint); error != ERR::Okay) return log.warning(error);
@@ -258,39 +329,92 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, OBJ
 }
 
 //********************************************************************************************************************
-// Resolve a url(#pattern:Name) reference.  Paints are cached per scene, and the collection is indexed on first use.
+
+static ERR index_database(extVectorScene *Scene)
+{
+   if (Scene->DatabaseIndexed) return ERR::Okay;
+
+   std::unordered_map<std::string, std::string> paths;
+   if (auto error = index_database_directory("patterns:", paths); error != ERR::Okay) return error;
+   Scene->DatabasePaths = std::move(paths);
+   Scene->DatabaseIndexed = true;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Returns true if a category-qualified name, e.g. 'metals/chrome', matches the end of an asset's path at a folder
+// boundary.
+
+static bool database_path_matches(std::string_view Path, std::string_view Qualified)
+{
+   if (Path.size() <= Qualified.size() + 4) return false;
+   Path.remove_suffix(4); // Remove '.svg'
+   auto offset = Path.size() - Qualified.size();
+   if ((Path[offset-1] != '/') and (Path[offset-1] != ':')) return false;
+   return iequals(Path.substr(offset), Qualified);
+}
+
+//********************************************************************************************************************
+// Resolve a url(#pattern:[Category/]Name[?Key=Value&...]) reference.  Paints are cached per scene, and the collection
+// is indexed on first use.  Each distinct parameter set is a separate paint, so the cache key combines the lower-cased
+// asset name with the sorted and decoded parameters.  Keys and values retain their case, and an empty set yields the
+// plain name.  A category only verifies the asset's location, so qualified and plain references to an asset share one
+// paint.
 //
 // Each asset is parsed into its own private scene, so an asset that refers to itself (directly or through another
 // asset) re-enters this function with a different Scene.  The set of names being loaded is therefore tracked per
-// thread rather than per scene, otherwise a cyclic reference would recurse until the stack is exhausted.
+// thread rather than per scene, otherwise a cyclic reference would recurse until the stack is exhausted.  Tracking
+// is per asset rather than per cache key, so that an asset cannot evade the check by varying its parameters.
 
 static thread_local std::unordered_set<std::string> tlLoadingDatabasePaints;
 
-static ERR resolve_database_paint(extVectorScene *Scene, std::string Name, OBJECTPTR &Paint)
+static ERR resolve_database_paint(extVectorScene *Scene, std::string_view Name, OBJECTPTR &Paint)
 {
-   for (auto &c : Name) c = std::tolower((unsigned char)c);
+   auto query = Name.find('?');
+   std::string qualified(Name.substr(0, query));
+   for (auto &c : qualified) c = std::tolower((unsigned char)c);
 
-   if (auto cached = Scene->DatabasePaints.find(Name); cached != Scene->DatabasePaints.end()) {
+   auto asset = qualified;
+   if (auto sep = qualified.rfind('/'); sep != std::string::npos) {
+      asset.erase(0, sep + 1);
+
+      // Verified before the cache is consulted, otherwise a wrong category would resolve once the asset is loaded.
+
+      if (auto error = index_database(Scene); error != ERR::Okay) return error;
+      auto path = Scene->DatabasePaths.find(asset);
+      if ((path IS Scene->DatabasePaths.end()) or (not database_path_matches(path->second, qualified))) {
+         return ERR::NotFound;
+      }
+   }
+
+   KEYVALUE params;
+   if (query != std::string_view::npos) params = parse_database_query(Name.substr(query + 1));
+
+   auto cache_key = asset;
+   if (not params.empty()) {
+      cache_key.push_back('?');
+      for (auto &[key, value] : params) {
+         cache_key.append(key).push_back('\x1f');
+         cache_key.append(value).push_back('\x1e');
+      }
+   }
+
+   if (auto cached = Scene->DatabasePaints.find(cache_key); cached != Scene->DatabasePaints.end()) {
       Paint = cached->second;
       return ERR::Okay;
    }
 
-   if (not tlLoadingDatabasePaints.insert(Name).second) return ERR::Recursion;
+   if (not tlLoadingDatabasePaints.insert(asset).second) return ERR::Recursion;
 
-   auto guard = deferred_call([Name] { tlLoadingDatabasePaints.erase(Name); });
+   auto guard = deferred_call([asset] { tlLoadingDatabasePaints.erase(asset); });
 
-   if (not Scene->DatabaseIndexed) {
-      std::unordered_map<std::string, std::string> paths;
-      if (auto error = index_database_directory("patterns:", paths); error != ERR::Okay) return error;
-      Scene->DatabasePaths = std::move(paths);
-      Scene->DatabaseIndexed = true;
-   }
+   if (auto error = index_database(Scene); error != ERR::Okay) return error;
 
-   auto path = Scene->DatabasePaths.find(Name);
+   auto path = Scene->DatabasePaths.find(asset);
    if (path IS Scene->DatabasePaths.end()) return ERR::NotFound;
 
-   if (auto error = load_database_paint(Scene, path->second, Paint); error != ERR::Okay) return error;
-   Scene->DatabasePaints.emplace(Name, Paint);
+   if (auto error = load_database_paint(Scene, path->second, params, Paint); error != ERR::Okay) return error;
+   Scene->DatabasePaints.emplace(std::move(cache_key), Paint);
    return ERR::Okay;
 }
 
@@ -877,11 +1001,22 @@ a linear gradient that belongs to the `Scene`.  Valid colourmap names are `cmap:
 
 To use a paint from the installed pattern collection, use the format `url(#pattern:Name)`, where `Name` is the
 basename of an SVG file in the `patterns:` volume, without its category folder or `.svg` extension.  For example,
-`url(#pattern:Canvas)` selects `patterns:Textiles/Canvas.svg`.  The name is matched case-insensitively.  The asset's
+`url(#pattern:Canvas)` selects `patterns:Textiles/Canvas.svg`.  The name is matched case-insensitively, and can be
+qualified with its category, e.g. `url(#pattern:Textiles/Canvas)`, in which case the asset must be in that category.
+Qualified and plain references to an asset share one paint.  The asset's
 paint server, which has the ID `pid` followed by its category and name (e.g. `pidTextilesCanvas`), is loaded into the
 `Scene` on first use and reused by later references to the same name.  The
 `pattern:` namespace is reserved, so scene definitions cannot shadow collection assets.  `NotFound` is returned if
 the name is not in the collection, and other errors are returned if the asset cannot be imported.
+
+A collection asset that declares `param()` substitution points can be customised by appending a query to its name, in
+the format `url(#pattern:Name?key=value&key=value)`.  Each value is passed to the asset through @SVG.SetKey().  Keys
+are case-sensitive, a key with no `=` is defined with an empty value, and a later duplicate of a key overrides an
+earlier one.  Keys and values are percent-decoded, and `+` is not treated as a space.  The characters `(`, `)`, `&`
+and whitespace must be percent-encoded, as must a `%` that is followed by two hexadecimal digits, and a key must also
+encode `=`.  Hex colours can be written directly, e.g. `url(#pattern:Chrome?tint=#88aaff)`.  A key that names no
+parameter is ignored and a warning is logged.  Each distinct set of parameters is loaded as a separate paint that is
+retained until the `Scene` is destroyed, so parameter values should not be animated.
 
 A !VectorPainter structure must be provided by the client and will be used to store the final result.  All pointers
 that are returned will remain valid as long as the provided Scene exists with its registered painter definitions.

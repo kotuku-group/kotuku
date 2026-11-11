@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Deco sunburst (centred)</title>
+  <desc>Art deco sunrays in antique gold on navy, radiating from a single stepped sun.  The square design is centred
+    and scaled to cover the bounds of the shape, clipping any overflow rather than tiling.</desc>
+  <defs>
+    <pattern id="pidDecoSunburst" patternUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
+      viewBox="0 0 128 128" preserveAspectRatio="xMidYMid slice">
+      <rect width="128" height="128" fill="#1f2b3b"/>
+      <!-- Alternate rays are filled for a sunray fan -->
+      <path fill="#2b3849" d="
+        M64,64L0,0L16,0ZM64,64L32,0L48,0ZM64,64L64,0L80,0ZM64,64L96,0L112,0ZM64,64L128,0L128,16ZM64,64L128,32L128,48Z
+        M64,64L128,64L128,80ZM64,64L128,96L128,112ZM64,64L128,128L112,128ZM64,64L96,128L80,128ZM64,64L64,128L48,128Z
+        M64,64L32,128L16,128ZM64,64L0,128L0,112ZM64,64L0,96L0,80ZM64,64L0,64L0,48ZM64,64L0,32L0,16Z"/>
+      <!-- Ray lines -->
+      <path fill="none" stroke="#bfa26a" stroke-width="1" d="
+        M64,64L0,0M64,64L16,0M64,64L32,0M64,64L48,0M64,64L64,0M64,64L80,0M64,64L96,0M64,64L112,0M64,64L128,0
+        M64,64L128,16M64,64L128,32M64,64L128,48M64,64L128,64M64,64L128,80M64,64L128,96M64,64L128,112M64,64L128,128
+        M64,64L112,128M64,64L96,128M64,64L80,128M64,64L64,128M64,64L48,128M64,64L32,128M64,64L16,128M64,64L0,128
+        M64,64L0,112M64,64L0,96M64,64L0,80M64,64L0,64M64,64L0,48M64,64L0,32M64,64L0,16"/>
+      <!-- A stepped sun, in nested gold outlines -->
+      <path fill="#1f2b3b" d="
+        M46,58L52,58L52,52L58,52L58,46L70,46L70,52L76,52L76,58L82,58L82,70L76,70L76,76L70,76L70,82L58,82L58,76L52,76
+        L52,70L46,70Z"/>
+      <path fill="none" stroke="#bfa26a" stroke-width="2" stroke-linejoin="miter" d="
+        M46,58L52,58L52,52L58,52L58,46L70,46L70,52L76,52L76,58L82,58L82,70L76,70L76,76L70,76L70,82L58,82L58,76L52,76
+        L52,70L46,70Z"/>
+      <path fill="none" stroke="#d8c79e" stroke-width="1" stroke-linejoin="miter" d="
+        M50.5,62.5L56.5,62.5L56.5,56.5L62.5,56.5L62.5,50.5L65.5,50.5L65.5,56.5L71.5,56.5L71.5,62.5L77.5,62.5L77.5,65.5
+        L71.5,65.5L71.5,71.5L65.5,71.5L65.5,77.5L62.5,77.5L62.5,71.5L56.5,71.5L56.5,65.5L50.5,65.5Z"/>
+    </pattern>
+  </defs>
+  <rect width="200" height="200" fill="url(#pidDecoSunburst)"/>
+</svg>

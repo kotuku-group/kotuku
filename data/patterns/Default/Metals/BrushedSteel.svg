@@ -2,20 +2,20 @@
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Brushed steel</title>
   <desc>Horizontally brushed steel with angled bands of sheen, fine streaks and polish specks that stretch to fill
-    the bounds of the shape, ignoring its aspect ratio.</desc>
+    the bounds of the shape, ignoring its aspect ratio.  Parameters: baseColour, highlight, shadow.</desc>
   <defs>
     <linearGradient id="sheen" x1="0" y1="0" x2="0.25" y2="1">
-      <stop offset="0" stop-color="#cdd0d4"/>
-      <stop offset="0.18" stop-color="#bcbfc5"/>
-      <stop offset="0.42" stop-color="#9da1a7"/>
-      <stop offset="0.58" stop-color="#a9adb3"/>
-      <stop offset="0.78" stop-color="#cacdd1"/>
-      <stop offset="1" stop-color="#b8bcc2"/>
+      <stop offset="0" stop-color="param(highlight) #cdd0d4"/>
+      <stop offset="0.18" stop-color="param(baseColour) #bcbfc5"/>
+      <stop offset="0.42" stop-color="param(shadow) #9da1a7"/>
+      <stop offset="0.58" stop-color="param(shadow) #a9adb3"/>
+      <stop offset="0.78" stop-color="param(highlight) #cacdd1"/>
+      <stop offset="1" stop-color="param(baseColour) #b8bcc2"/>
     </linearGradient>
     <pattern id="pidMetalsBrushedSteel" patternUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
       viewBox="0 0 100 100" preserveAspectRatio="none">
       <rect width="100" height="100" fill="url(#sheen)"/>
-      <path fill="#9a9da3" fill-opacity="0.25" d="
+      <path fill="param(shadow) #9a9da3" fill-opacity="0.25" d="
         M-2,76.77 6,76.69 94,76.69 102,76.77 94,76.86 6,76.86Z
         M30.31,81.11 38.31,81.01 90.49,81.01 98.49,81.11 90.49,81.21 38.31,81.21Z
         M-2,48.23 6,48.09 94,48.09 102,48.23 94,48.36 6,48.36Z M-2,26.22 6,26.12 94,26.12 102,26.22 94,26.31 6,26.31Z
@@ -67,7 +67,7 @@
         M1.59,92.24 9.59,92.14 49.88,92.14 57.88,92.24 49.88,92.33 9.59,92.33Z
         M-2,73.67 6,73.57 94,73.57 102,73.67 94,73.77 6,73.77Z M-2,97.74 6,97.67 94,97.67 102,97.74 94,97.81 6,97.81Z
         M-2,14.86 6,14.8 94,14.8 102,14.86 94,14.93 6,14.93Z"/>
-      <path fill="#82858b" fill-opacity="0.18" d="
+      <path fill="param(shadow) #82858b" fill-opacity="0.18" d="
         M-2,57.82 6,57.76 94,57.76 102,57.82 94,57.88 6,57.88Z M-2,9.27 6,9.12 94,9.12 102,9.27 94,9.42 6,9.42Z
         M-2,43.41 6,43.26 94,43.26 102,43.41 94,43.56 6,43.56Z
         M26.22,90.56 34.22,90.37 58.59,90.37 66.59,90.56 58.59,90.75 34.22,90.75Z
@@ -116,7 +116,7 @@
         M19.99,0.56 25.52,0.43 32.89,0.43 38.41,0.56 32.89,0.69 25.52,0.69Z
         M-2,68.68 6,68.59 94,68.59 102,68.68 94,68.77 6,68.77Z M-2,87.06 6,86.78 94,86.78 102,87.06 94,87.33 6,87.33Z
         M37.89,89.46 45.89,89.24 58.7,89.24 66.7,89.46 58.7,89.69 45.89,89.69Z"/>
-      <path fill="#d1d3d7" fill-opacity="0.3" d="
+      <path fill="param(highlight) #d1d3d7" fill-opacity="0.3" d="
         M-2,15.68 6,15.53 94,15.53 102,15.68 94,15.82 6,15.82Z
         M49.5,39.05 53.53,38.93 58.9,38.93 62.92,39.05 58.9,39.17 53.53,39.17Z
         M51.49,27.59 59.49,27.5 79.26,27.5 87.26,27.59 79.26,27.68 59.49,27.68Z
@@ -168,7 +168,7 @@
         M37.38,17.92 45.38,17.85 76.29,17.85 84.29,17.92 76.29,17.98 45.38,17.98Z
         M-2,16.02 6,15.82 94,15.82 102,16.02 94,16.21 6,16.21Z M-2,95.02 6,94.95 94,94.95 102,95.02 94,95.09 6,95.09Z
         M-2,39.45 6,39.39 94,39.39 102,39.45 94,39.52 6,39.52Z"/>
-      <path fill="#e3e4e7" fill-opacity="0.2" d="
+      <path fill="param(highlight) #e3e4e7" fill-opacity="0.2" d="
         M-2,61.51 6,61.39 94,61.39 102,61.51 94,61.63 6,61.63Z M-2,82.13 6,82.07 94,82.07 102,82.13 94,82.19 6,82.19Z
         M-2,26.3 6,26.12 94,26.12 102,26.3 94,26.49 6,26.49Z
         M41.96,6.89 48.09,6.83 56.26,6.83 62.39,6.89 56.26,6.95 48.09,6.95Z
@@ -226,7 +226,7 @@
         M26.75,91.15 34.75,90.89 88.04,90.89 96.04,91.15 88.04,91.41 34.75,91.41Z
         M-2,12.05 6,11.87 94,11.87 102,12.05 94,12.22 6,12.22Z
         M62.95,29.38 69.5,29.3 78.23,29.3 84.78,29.38 78.23,29.46 69.5,29.46Z"/>
-      <path fill="#7c7f85" fill-opacity="0.55" d="
+      <path fill="param(shadow) #7c7f85" fill-opacity="0.55" d="
         M75.5,46.03a0.69,0.43 0 1,0 1.37,0a0.69,0.43 0 1,0 -1.37,0Z
         M87.15,87.9a0.2,0.12 0 1,0 0.39,0a0.2,0.12 0 1,0 -0.39,0Z
         M73.43,10.35a0.2,0.13 0 1,0 0.41,0a0.2,0.13 0 1,0 -0.41,0Z
@@ -282,7 +282,7 @@
         M56.24,82.55a0.59,0.37 0 1,0 1.19,0a0.59,0.37 0 1,0 -1.19,0Z
         M45.67,26.8a0.19,0.12 0 1,0 0.38,0a0.19,0.12 0 1,0 -0.38,0Z
         M52.24,82.99a0.19,0.12 0 1,0 0.38,0a0.19,0.12 0 1,0 -0.38,0Z"/>
-      <path fill="#eaebed" fill-opacity="0.6" d="
+      <path fill="param(highlight) #eaebed" fill-opacity="0.6" d="
         M98.6,16.9a0.66,0.41 0 1,0 1.32,0a0.66,0.41 0 1,0 -1.32,0Z
         M48.11,25.87a0.28,0.18 0 1,0 0.56,0a0.28,0.18 0 1,0 -0.56,0Z
         M31.87,77.83a0.29,0.18 0 1,0 0.58,0a0.29,0.18 0 1,0 -0.58,0Z

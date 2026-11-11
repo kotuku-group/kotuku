@@ -2,7 +2,8 @@
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Chrome</title>
   <desc>Polished chrome reflecting a bright horizon above a dark band, with a faint horizontal grain, that
-    stretches to fill the bounds of the shape, ignoring its aspect ratio.</desc>
+    stretches to fill the bounds of the shape, ignoring its aspect ratio.  Parameters: tint, a colour laid over the
+    reflection beneath the grain.</desc>
   <defs>
     <linearGradient id="gradMetalsChrome" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#75787d"/>
@@ -28,6 +29,7 @@
     <pattern id="pidMetalsChrome" patternUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
       viewBox="0 0 100 100" preserveAspectRatio="none">
       <rect width="100" height="100" fill="url(#gradMetalsChrome)"/>
+      <rect width="100" height="100" fill="param(tint) none" fill-opacity="0.4"/>
       <!-- Grain: short polishing streaks, light and dark -->
       <path fill="#000" fill-opacity=".025" d="
         M78.7,94.25h7.18v1.05h-7.18Z M26.09,96.15h5.77v0.87h-5.77Z M-2.12,78.77h4.56v0.8h-4.56Z

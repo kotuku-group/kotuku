@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+<svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Argyle</title>
   <desc>A navy and green argyle on a pale blue ground, with dashed white lines crossing through the green
     diamonds.</desc>
   <defs>
-    <pattern id="pidTextilesArgyle" patternUnits="userSpaceOnUse" width="96" height="150">
+    <pattern id="pidTextilesArgyle" patternUnits="userSpaceOnUse" width="48" height="75" viewBox="0 0 96 150">
       <rect width="96" height="150" fill="#d0e0fd"/>
       <path fill="#314061" d="
         M0,-37.5l24,37.5l-24,37.5l-24,-37.5Z M96,-37.5l24,37.5l-24,37.5l-24,-37.5Z
@@ -28,5 +28,5 @@
         M49.5,147.656l-3,4.688"/>
     </pattern>
   </defs>
-  <rect width="376" height="376" fill="url(#pidTextilesArgyle)"/>
+  <rect width="100%" height="100%" fill="url(#pidTextilesArgyle)"/>
 </svg>

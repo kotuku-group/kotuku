@@ -1,21 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="376" height="376" viewBox="0 0 376 376">
+<svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Canvas</title>
-  <desc>A heavy cotton duck canvas in natural khaki, woven in a tight, even plain weave.</desc>
+  <desc>A heavy cotton duck canvas in natural khaki, woven in a tight, even plain weave.
+    Parameters: baseColour, shadow.</desc>
   <defs>
     <pattern id="pidTextilesCanvas" patternUnits="userSpaceOnUse" width="100" height="100" viewBox="0 0 100 100">
-      <rect width="100" height="100" fill="#d3c4a1"/>
+      <rect width="100" height="100" fill="param(baseColour) #d3c4a1"/>
       <g fill="none">
       <!-- Plain weave: each thread rounds over alternate crossings -->
-      <path stroke="#3a2e18" stroke-opacity=".1" stroke-width="0.6" d="
+      <path stroke="param(shadow) #3a2e18" stroke-opacity=".1" stroke-width="0.6" d="
         M0,15h100M0,17.5h100M0,30h100M0,32.5h100M0,40h100M0,42.5h100M0,52.5h100M0,72.5h100M0,77.5h100M0,82.5h100
         M0,85h100M0,87.5h100M0,90h100M0,92.5h100M0,97.5h100M10,0v100M15,0v100M25,0v100M30,0v100M45,0v100M55,0v100
         M62.5,0v100M65,0v100M70,0v100M75,0v100M82.5,0v100M85,0v100M90,0v100M92.5,0v100M95,0v100M97.5,0v100"/>
-      <path stroke="#3a2e18" stroke-opacity=".14" stroke-width="0.6" d="
+      <path stroke="param(shadow) #3a2e18" stroke-opacity=".14" stroke-width="0.6" d="
         M0,0h100M0,5h100M0,7.5h100M0,22.5h100M0,35h100M0,37.5h100M0,57.5h100M0,60h100M0,0v100M2.5,0v100M5,0v100
         M20,0v100M22.5,0v100M32.5,0v100M37.5,0v100M40,0v100M50,0v100M52.5,0v100M60,0v100M72.5,0v100M77.5,0v100
         M80,0v100"/>
-      <path stroke="#3a2e18" stroke-opacity=".18" stroke-width="0.6" d="
+      <path stroke="param(shadow) #3a2e18" stroke-opacity=".18" stroke-width="0.6" d="
         M0,2.5h100M0,10h100M0,12.5h100M0,20h100M0,25h100M0,27.5h100M0,45h100M0,47.5h100M0,50h100M0,55h100M0,62.5h100
         M0,65h100M0,67.5h100M0,70h100M0,75h100M0,80h100M0,95h100M7.5,0v100M12.5,0v100M17.5,0v100M27.5,0v100M35,0v100
         M42.5,0v100M47.5,0v100M57.5,0v100M67.5,0v100M87.5,0v100"/>
@@ -60,5 +61,5 @@
       </g>
     </pattern>
   </defs>
-  <rect width="376" height="376" fill="url(#pidTextilesCanvas)"/>
+  <rect width="100%" height="100%" fill="url(#pidTextilesCanvas)"/>
 </svg>

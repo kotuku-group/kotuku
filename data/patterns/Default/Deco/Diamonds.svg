@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Deco diamonds</title>
+  <desc>An art deco harlequin lattice of double gold lines on black, with a jewel at every
+    crossing.</desc>
+  <defs>
+    <pattern id="pidDecoDiamonds" patternUnits="userSpaceOnUse" width="32" height="48"
+      viewBox="0 0 32 48">
+      <rect width="32" height="48" fill="#1d1d1f"/>
+      <!-- Double lines: a broad gold stroke split by a dark core -->
+      <path fill="none" stroke="#bfa26a" stroke-width="4.5" d="
+        M-32,0L0,48M0,0L32,48M32,0L64,48M-32,-48L0,0M0,-48L32,0M-32,48L0,0M0,48L32,0M32,48L64,0M-32,96L0,48
+        M0,96L32,48"/>
+      <path fill="none" stroke="#1d1d1f" stroke-width="1.5" d="
+        M-32,0L0,48M0,0L32,48M32,0L64,48M-32,-48L0,0M0,-48L32,0M-32,48L0,0M0,48L32,0M32,48L64,0M-32,96L0,48
+        M0,96L32,48"/>
+      <!-- Jewels at the crossings, at the corners and the centre of the tile -->
+      <path fill="#bfa26a" d="
+        M0,-8L5.5,0L0,8L-5.5,0ZM32,-8L37.5,0L32,8L26.5,0ZM0,40L5.5,48L0,56L-5.5,48ZM32,40L37.5,48L32,56L26.5,48Z
+        M16,16L21.5,24L16,32L10.5,24Z"/>
+      <path fill="#1d1d1f" d="
+        M0,-4L2.75,0L0,4L-2.75,0ZM32,-4L34.75,0L32,4L29.25,0ZM0,44L2.75,48L0,52L-2.75,48Z
+        M32,44L34.75,48L32,52L29.25,48ZM16,20L18.75,24L16,28L13.25,24Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidDecoDiamonds)"/>
+</svg>

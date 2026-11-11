@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic trellis</title>
+  <desc>A charcoal cement tile of framed chalk diamonds in rows, with small crosses where the rows meet.</desc>
+  <defs>
+    <pattern id="pidEncausticTrellis" patternUnits="userSpaceOnUse" width="64" height="64"
+      viewBox="0 0 64 64">
+      <rect width="64" height="64" fill="#4a4a4d"/>
+      <!-- Framed diamonds -->
+      <path fill="#ecebe6" d="
+        M16,2L30,16L16,30L2,16ZM16,7L7,16L16,25L25,16ZM48,2L62,16L48,30L34,16ZM48,7L39,16L48,25L57,16Z
+        M16,34L30,48L16,62L2,48ZM16,39L7,48L16,57L25,48ZM48,34L62,48L48,62L34,48ZM48,39L39,48L48,57L57,48Z"/>
+      <!-- Diamond centres -->
+      <path fill="#ecebe6" d="
+        M16,12L20,16L16,20L12,16ZM48,12L52,16L48,20L44,16Z
+        M16,44L20,48L16,52L12,48ZM48,44L52,48L48,52L44,48Z"/>
+      <!-- Crosses -->
+      <path fill="#ecebe6" d="
+        M-2,-7L2,-7L2,-2L7,-2L7,2L2,2L2,7L-2,7L-2,2L-7,2L-7,-2L-2,-2Z
+        M30,-7L34,-7L34,-2L39,-2L39,2L34,2L34,7L30,7L30,2L25,2L25,-2L30,-2Z
+        M62,-7L66,-7L66,-2L71,-2L71,2L66,2L66,7L62,7L62,2L57,2L57,-2L62,-2Z
+        M-2,25L2,25L2,30L7,30L7,34L2,34L2,39L-2,39L-2,34L-7,34L-7,30L-2,30Z
+        M30,25L34,25L34,30L39,30L39,34L34,34L34,39L30,39L30,34L25,34L25,30L30,30Z
+        M62,25L66,25L66,30L71,30L71,34L66,34L66,39L62,39L62,34L57,34L57,30L62,30Z
+        M-2,57L2,57L2,62L7,62L7,66L2,66L2,71L-2,71L-2,66L-7,66L-7,62L-2,62Z
+        M30,57L34,57L34,62L39,62L39,66L34,66L34,71L30,71L30,66L25,66L25,62L30,62Z
+        M62,57L66,57L66,62L71,62L71,66L66,66L66,71L62,71L62,66L57,66L57,62L62,62Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidEncausticTrellis)"/>
+</svg>

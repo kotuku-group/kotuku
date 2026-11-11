@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Deco chevrons</title>
+  <desc>Art deco zigzag bands: broad antique gold chevrons between fine lines on navy.</desc>
+  <defs>
+    <pattern id="pidDecoChevrons" patternUnits="userSpaceOnUse" width="48" height="64"
+      viewBox="0 0 48 64">
+      <rect width="48" height="64" fill="#1f2b3b"/>
+      <!-- Broad chevrons -->
+      <path fill="none" stroke="#bfa26a" stroke-width="5" stroke-linejoin="miter" d="
+        M-4,-34L0,-32L24,-44L48,-32L52,-34M-4,-2L0,0L24,-12L48,0L52,-2M-4,30L0,32L24,20L48,32L52,30M-4,62L0,64L24,52L48,64L52,62M-4,94L0,96L24,84L48,96L52,94"/>
+      <!-- Fine lines either side -->
+      <path fill="none" stroke="#d8c79e" stroke-width="1" d="
+        M0,-39.5L24,-51.5L48,-39.5M0,-24.5L24,-36.5L48,-24.5M0,-7.5L24,-19.5L48,-7.5M0,7.5L24,-4.5L48,7.5
+        M0,24.5L24,12.5L48,24.5M0,39.5L24,27.5L48,39.5M0,56.5L24,44.5L48,56.5M0,71.5L24,59.5L48,71.5
+        M0,88.5L24,76.5L48,88.5M0,103.5L24,91.5L48,103.5"/>
+      <path fill="none" stroke="#8c7449" stroke-width="1" d="
+        M0,-16L24,-28L48,-16M0,16L24,4L48,16M0,48L24,36L48,48M0,80L24,68L48,80M0,112L24,100L48,112"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidDecoChevrons)"/>
+</svg>
