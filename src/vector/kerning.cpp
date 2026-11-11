@@ -4,147 +4,35 @@
 // 'OpenType Font Variations Common Table Formats'.
 
 #include "kerning.h"
+#include "opentype.h"
 #include <algorithm>
 #include <bit>
 
+using ot_reader::reader;
+using ot_reader::coverage_index;
+using ot_reader::validate_coverage;
+using ot_reader::glyph_class;
+using ot_reader::validate_class_def;
+using ot_reader::LF_USE_MARK_FILTERING_SET;
+
 namespace {
 
-constexpr uint32_t make_tag(char A, char B, char C, char D) {
-   return (uint32_t(uint8_t(A))<<24) | (uint32_t(uint8_t(B))<<16) | (uint32_t(uint8_t(C))<<8) | uint32_t(uint8_t(D));
-}
-
-constexpr uint32_t TAG_KERN = make_tag('k','e','r','n');
-constexpr uint32_t TAG_DFLT = make_tag('D','F','L','T');
-constexpr uint32_t TAG_LATN = make_tag('l','a','t','n');
+constexpr uint32_t TAG_KERN = ot_reader::tag('k','e','r','n');
+constexpr uint32_t TAG_DFLT = ot_reader::tag('D','F','L','T');
+constexpr uint32_t TAG_LATN = ot_reader::tag('l','a','t','n');
 
 constexpr uint16_t LOOKUP_PAIR_POS  = 2;
 constexpr uint16_t LOOKUP_EXTENSION = 9;
 
-constexpr uint16_t LF_IGNORE_BASE_GLYPHS     = 0x0002;
-constexpr uint16_t LF_IGNORE_LIGATURES       = 0x0004;
-constexpr uint16_t LF_IGNORE_MARKS           = 0x0008;
-constexpr uint16_t LF_USE_MARK_FILTERING_SET = 0x0010;
-constexpr uint16_t LF_MARK_ATTACHMENT_TYPE   = 0xFF00;
-
-constexpr uint16_t VF_X_PLACEMENT = 0x0001;
+constexpr uint16_t VF_X_PLACEMENT  = 0x0001;
 constexpr uint16_t VF_X_PLA_DEVICE = 0x0010;
 constexpr uint16_t VF_X_ADVANCE    = 0x0004;
 constexpr uint16_t VF_X_ADV_DEVICE = 0x0040;
-
-constexpr uint16_t GLYPH_CLASS_BASE     = 1;
-constexpr uint16_t GLYPH_CLASS_LIGATURE = 2;
-constexpr uint16_t GLYPH_CLASS_MARK     = 3;
 
 constexpr uint16_t DELTA_VARIATION_INDEX = 0x8000;
 
 constexpr int MAX_LOOKUPS = 1024; // Sanity limits for the lookup list
 constexpr int MAX_SUBTABLES = 4096;
-
-// Bounds-checked big-endian reader.  Any out-of-range read returns zero and sets the sticky 'bad' flag, so that a
-// sequence of reads can be validated with a single check.
-
-struct reader {
-   const uint8_t *data;
-   uint32_t size;
-   mutable bool bad = false;
-
-   reader(const std::vector<uint8_t> &Table) : data(Table.data()), size(uint32_t(Table.size())) { }
-
-   bool has(uint64_t Offset, uint64_t Length) const {
-      if (Offset + Length <= size) return true;
-      bad = true;
-      return false;
-   }
-
-   uint16_t u16(uint64_t Offset) const {
-      if (not has(Offset, 2)) return 0;
-      return uint16_t((data[Offset]<<8) | data[Offset+1]);
-   }
-
-   int16_t s16(uint64_t Offset) const { return int16_t(u16(Offset)); }
-
-   uint32_t u32(uint64_t Offset) const {
-      if (not has(Offset, 4)) return 0;
-      return (uint32_t(data[Offset])<<24) | (uint32_t(data[Offset+1])<<16) | (uint32_t(data[Offset+2])<<8) |
-         uint32_t(data[Offset+3]);
-   }
-};
-
-// Returns the coverage index of a glyph, or -1 if the glyph is not covered.
-
-int coverage_index(const reader &R, uint32_t Offset, uint32_t Glyph)
-{
-   if (Glyph > 0xffff) return -1;
-   const auto format = R.u16(Offset);
-   const auto count = R.u16(Offset + 2);
-   if (format IS 1) {
-      int lo = 0, hi = int(count) - 1;
-      while (lo <= hi) {
-         const int mid = (lo + hi)>>1;
-         const auto g = R.u16(Offset + 4 + uint32_t(mid) * 2);
-         if (R.bad) return -1;
-         if (g < Glyph) lo = mid + 1;
-         else if (g > Glyph) hi = mid - 1;
-         else return mid;
-      }
-   }
-   else if (format IS 2) {
-      int lo = 0, hi = int(count) - 1;
-      while (lo <= hi) {
-         const int mid = (lo + hi)>>1;
-         const uint32_t rec = Offset + 4 + uint32_t(mid) * 6;
-         const auto start = R.u16(rec), end = R.u16(rec + 2);
-         if (R.bad) return -1;
-         if (end < Glyph) lo = mid + 1;
-         else if (start > Glyph) hi = mid - 1;
-         else return int(R.u16(rec + 4)) + int(Glyph - start);
-      }
-   }
-   return -1;
-}
-
-bool validate_coverage(const reader &R, uint32_t Offset)
-{
-   const auto format = R.u16(Offset);
-   const auto count = R.u16(Offset + 2);
-   if (format IS 1) return R.has(Offset + 4, uint64_t(count) * 2);
-   else if (format IS 2) return R.has(Offset + 4, uint64_t(count) * 6);
-   else return false;
-}
-
-// Returns the class of a glyph.  Glyphs that the ClassDef does not list are in class zero.
-
-uint16_t glyph_class(const reader &R, uint32_t Offset, uint32_t Glyph)
-{
-   if (Glyph > 0xffff) return 0;
-   const auto format = R.u16(Offset);
-   if (format IS 1) {
-      const auto start = R.u16(Offset + 2);
-      const auto count = R.u16(Offset + 4);
-      if ((Glyph >= start) and (Glyph < uint32_t(start) + count)) return R.u16(Offset + 6 + (Glyph - start) * 2);
-   }
-   else if (format IS 2) {
-      int lo = 0, hi = int(R.u16(Offset + 2)) - 1;
-      while (lo <= hi) {
-         const int mid = (lo + hi)>>1;
-         const uint32_t rec = Offset + 4 + uint32_t(mid) * 6;
-         const auto start = R.u16(rec), end = R.u16(rec + 2);
-         if (R.bad) return 0;
-         if (end < Glyph) lo = mid + 1;
-         else if (start > Glyph) hi = mid - 1;
-         else return R.u16(rec + 4);
-      }
-   }
-   return 0;
-}
-
-bool validate_class_def(const reader &R, uint32_t Offset)
-{
-   const auto format = R.u16(Offset);
-   if (format IS 1) return R.has(Offset + 6, uint64_t(R.u16(Offset + 4)) * 2);
-   else if (format IS 2) return R.has(Offset + 4, uint64_t(R.u16(Offset + 2)) * 6);
-   else return false;
-}
 
 // The size of a ValueRecord in bytes.  Each bit of the ValueFormat adds one 16-bit field.
 
@@ -402,25 +290,8 @@ bool gpos_kerning::validate_gdef()
 
 bool gpos_kerning::skip_glyph(const lookup &Lookup, uint32_t Glyph) const
 {
-   if ((not glyph_class_def) or (not (Lookup.flags & 0xff1e))) return false;
-
-   const reader r(gdef);
-   const auto cls = glyph_class(r, glyph_class_def, Glyph);
-   if ((cls IS GLYPH_CLASS_BASE) and (Lookup.flags & LF_IGNORE_BASE_GLYPHS)) return true;
-   if ((cls IS GLYPH_CLASS_LIGATURE) and (Lookup.flags & LF_IGNORE_LIGATURES)) return true;
-   if (cls IS GLYPH_CLASS_MARK) {
-      if (Lookup.flags & LF_IGNORE_MARKS) return true;
-      if (Lookup.flags & LF_USE_MARK_FILTERING_SET) {
-         if ((not mark_glyph_sets) or (Lookup.mark_set >= r.u16(mark_glyph_sets + 2))) return true;
-         const auto coverage = mark_glyph_sets + r.u32(mark_glyph_sets + 4 + uint32_t(Lookup.mark_set) * 4);
-         return coverage_index(r, coverage, Glyph) < 0;
-      }
-      if (auto type = (Lookup.flags & LF_MARK_ATTACHMENT_TYPE)>>8) {
-         if (not mark_attach_class_def) return true;
-         return glyph_class(r, mark_attach_class_def, Glyph) != type;
-      }
-   }
-   return false;
+   return ot_reader::skip_glyph(reader(gdef), Lookup.flags, Lookup.mark_set, Glyph,
+      glyph_class_def, mark_attach_class_def, mark_glyph_sets);
 }
 
 //********************************************************************************************************************
