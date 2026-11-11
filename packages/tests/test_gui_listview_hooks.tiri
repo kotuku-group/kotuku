@@ -1,6 +1,6 @@
 -- Tests for listview custom row content, custom highlighting, row lifecycle and in-place refresh.
 
-   import 'gui', 'gui/listview', 'gui/window'
+   import 'gui', 'gui/listview', 'gui/window', 'gui/input'
    include 'display', 'vector'
 
 function newView(Options:table!, Width:num, Height:num):<obj, table>
@@ -17,12 +17,13 @@ function newView(Options:table!, Width:num, Height:num):<obj, table>
    return surface, view
 end
 
-function sendKey(Code:num!, Qualifiers:num!)
+function sendKey(Code:num!, Qualifiers:num!, Unicode:num)
    local ev = array<int, 6>
    ev[0] = ('keypress').hash()
    ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
    ev[2] = Qualifiers
    ev[3] = Code
+   ev[4] = Unicode ?? 0
    check mSys.BroadcastEvent(ev, 24)
    processing.sleep(0)
 end
@@ -672,4 +673,55 @@ end
    assert(reasons.update is (before.reasons.update ?? 0) + 2, f'Each row must get one update, got {reasons.update}')
    assert(highlights is before.highlights + 2, 'Each row must have its highlight refreshed once')
    assert(reasons.create is before.reasons.create, 'A theme change must not recreate the rows')
+end
+
+-- A focused input box in a row consumes the keys that it acts upon, so they do not reach the list's navigation and
+-- selection.  Escape returns the focus to the row, after which the list receives the keys again.
+
+@Test function FocusedRowInputConsumesItsKeys()
+   local events = ''
+   local items = array<table>
+   for i in {0 to 3} do items.push({ name=f'row{i}' }) end
+   local surface <close>, view = newView({ items=items, multiSelect=true,
+      constructItem=function(Item, Viewport, Reason)
+         if Reason is 'create' then
+            Item.box = gui.input({ target=Viewport, x=40, y=0, width=100, text='' })
+         elseif Reason is 'destroy' then
+            Item.box = nil
+         end
+      end,
+      events={
+         itemSelected=function(View, Reason, Item) events ..= f'selected:{Item.name} ' end,
+         itemDeselected=function(View, Reason, Item) events ..= f'deselected:{Item.name} ' end,
+         itemActivated=function(View, Reason, Item) events ..= f'activated:{Item.name} ' end
+      }
+   })
+
+   view.targetItem(view.items[0])
+   local box = view.items[2].box
+   check box._textClip.acFocus()
+   processing.sleep(0)
+
+   local np = KQ_PRESSED | KQ_NOT_PRINTABLE
+   sendKey(KEY_X, KQ_PRESSED, 120)
+   sendKey(KEY_SPACE, KQ_PRESSED, 32)
+   sendKey(KEY_Y, KQ_PRESSED, 121)
+   sendKey(KEY_DOWN, np)
+   sendKey(KEY_UP, np)
+   sendKey(KEY_HOME, np)
+   sendKey(KEY_END, np)
+   sendKey(KEY_BACKSPACE, np)
+   sendKey(KEY_A, np | KQ_L_CONTROL)
+   sendKey(KEY_ENTER, np)
+
+   assert(box.getText() is 'x ', f'The box must receive the typed keys, got "{box.getText()}"')
+   assert(view.kItem is view.items[0], 'Keys consumed by a focused box must not move the keyboard target')
+   assert(events is '', f'Keys consumed by a focused box must not select or activate rows, got {events}')
+
+   sendKey(KEY_ESCAPE, np)
+   processing.sleep(0)
+   assert(not box._focus, 'Escape must return the focus from the box to its parent viewport')
+   sendKey(KEY_DOWN, np)
+   assert(view.kItem is view.items[1], 'The list must receive navigation keys after Escape leaves the box')
+   assert(box.getText() is 'x ', 'Keys must not reach the box after Escape')
 end
