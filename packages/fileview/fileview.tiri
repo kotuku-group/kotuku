@@ -317,12 +317,12 @@ function displayFilters()
 
          item.highlight = item.vp.new('VectorRectangle', {
             x = 0, y = 0, width='100%', height='100%',
-            fill = &theme.page.textSelectBkgd, visibility = VIS_HIDDEN
+            fill = &theme.list.textSelectBkgd, visibility = VIS_HIDDEN
          })
 
          item.txt = item.vp.new('VectorText', table.merge({
             x=0, y=0, string=item.name, face=gui.fonts.widget.face, fontSize='10pt'
-         }, &theme.page.text, false))
+         }, &theme.list.text, false))
 
          if not descent then
             descent = math.round(item.txt.descent)
@@ -336,7 +336,7 @@ function displayFilters()
 
          if item.selected then
             item.highlight.visibility = VIS_VISIBLE
-            item.txt.fill = &theme.page.textSelect
+            item.txt.fill = &theme.list.textSelect
          end
 
          item.vp.mtSubscribeInput(JTYPE_BUTTON, function(Viewport, Events)
@@ -348,13 +348,13 @@ function displayFilters()
                         if (not &strictFilter) or (selectedFilters() > 1) then
                            item.highlight.visibility = VIS_HIDDEN
                            item.selected = false
-                           item.txt.fill = &theme.page.text.fill
+                           item.txt.fill = &theme.list.text.fill
                            &_filters = nil
                         end
                      else
                         item.highlight.visibility = VIS_VISIBLE
                         item.selected = true
-                        item.txt.fill = &theme.page.textSelect
+                        item.txt.fill = &theme.list.textSelect
                         &_filters = nil
                      end
 
@@ -1587,8 +1587,8 @@ gui.fileview = function(Options)
             gui.applyStyle(&_filterBkgd, &theme.page.bkgd)
             &_filterRule?.fill = rule_fill
             for item in values(&filterList) do
-               item.highlight?.fill = &theme.page.textSelectBkgd
-               item.txt?.fill = item.selected ? &theme.page.textSelect : &theme.page.text.fill
+               item.highlight?.fill = &theme.list.textSelectBkgd
+               item.txt?.fill = item.selected ? &theme.list.textSelect : &theme.list.text.fill
             end
          end
       end
@@ -1715,7 +1715,7 @@ gui.fileview = function(Options)
                         feedback = function(Result)
                            if Result then
                               ViewOptions.theme = table.merge(ViewOptions.theme, {
-                                 page = { text = {
+                                 list = { text = {
                                     face = Result.face,
                                     fontSize = string.format('%.2fpt', Result.pointSize),
                                     fontStyle = Result.style
@@ -1810,7 +1810,7 @@ gui.fileview = function(Options)
    vo = {
       target = Options.target,
       theme = {
-         page = {
+         list = {
             text = {
                face      = gui.fonts.filesys.face,
                fontSize  = string.format('%.2fpt', gui.fonts.filesys.size),

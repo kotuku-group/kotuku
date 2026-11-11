@@ -31,10 +31,11 @@ not across line breaks.  Set `NO_KERNING` in #TextFlags to disable it, which is 
 property having a value of `none`.  A font can also be excluded by setting `Kerning = No` in its section of
 `fonts:options.cfg`.
 
-Single, multiple, alternate and ligature OpenType substitutions are available through the `features` key of #TextStyle
-for Latin, Greek and Cyrillic text.  They are opt-in and use the font's default language system.  Contextual
-substitution, contextual kerning, mark positioning and complex script shaping are not performed.  Kerning lookups use
-the font's Latin script definition if it has one, otherwise its default script.
+Single, multiple, alternate, ligature and contextual OpenType substitutions are available through the `features` key
+of #TextStyle for Latin, Greek and Cyrillic text.  They are opt-in and use the font's default language system.
+Variable fonts can select alternate lookups according to their axes.  Contextual kerning, mark positioning and complex
+script shaping are not performed.  Kerning lookups use the font's Latin script definition if it has one, otherwise
+its default script.
 
 -END-
 
@@ -322,7 +323,9 @@ class extVectorText : public extVector {
       auto &point = *(freetype_font::ft_point *)txHandle;
       auto settings = features();
       auto table = (settings.empty() or (settings IS "none")) ? nullptr : &point.font->get_gsub();
-      return Line.shaping.get(point.font->face, Line, point.axis, settings, table);
+      const auto coordinates = (table and table->has_variations()) ? point.normalised_coordinates() :
+         std::span<const int>();
+      return Line.shaping.get(point.font->face, Line, point.axis, settings, table, coordinates);
    }
 
    // Changes the em size.  Text effects and a stroke width in `em` units follow it, unless StrokeWidth has been
@@ -1375,12 +1378,12 @@ value of #Filter while any of them is active.  `blend` requires a backdrop, whic
 are stored and returned but are not rendered at present.
 
 For scalable fonts, `features=smcp 1, onum 1` requests small capitals and old-style figures when the face supports
-them.  Single, multiple, alternate and ligature substitutions are supported for Latin, Greek and Cyrillic script
-runs.  Other scripts retain their direct character mapping.  Features are off unless explicitly requested; a value of
-zero disables a feature, and `features=none` disables all substitution.  For an alternate substitution, a value of N
-selects alternate N, starting at one; an unavailable alternate leaves the glyph unchanged.  `features=kern 0` disables
-pair kerning, while `features=none` leaves kerning controlled by #TextFlags and the `kerning` key.  Bitmap fonts ignore
-substitution.
+them.  Single, multiple, alternate, ligature and contextual substitutions are supported for Latin, Greek and
+Cyrillic script runs.  Other scripts retain their direct character mapping.  Features are off unless explicitly
+requested; a value of zero disables a feature, and `features=none` disables all substitution.  For an alternate
+substitution, a value of N selects alternate N, starting at one; an unavailable alternate leaves the glyph
+unchanged.  `features=kern 0` disables pair kerning, while `features=none` leaves kerning controlled by #TextFlags
+and the `kerning` key.  Bitmap fonts ignore substitution.
 ~Vector.DrawText(), ~Vector.StringWidth() and ~Vector.CharWidth() retain direct character mapping, so their advances
 can differ from a VectorText with substitutions enabled.
 
@@ -1388,6 +1391,11 @@ Request `features=liga 1` to enable standard ligatures such as fi and ffi.  Curs
 codepoints; a ligature's advance is divided equally between its components.  Editing a component reshapes the line.
 Wrapping keeps each substituted cluster intact, including in `ANYWHERE` mode.  Letter spacing applies between
 clusters.  Ligatures remain opt-in when letter spacing is non-zero, so an explicit request still enables them.
+
+Request `features=calt 1` for contextual alternates or `features=frac 1` for fractions such as 12/345, when the font
+supports them.  Matching uses the complete hard line before wrapping.  Variable fonts use their normalised axis
+coordinates to select feature variations, and an explicit `features=rvrn 1` applies required variation alternates
+before other requested substitutions.  Changing the axes regenerates the shaped text even if kerning is disabled.
 
 Reading the field returns the canonical form of the current state, including changes that have been made through
 fields such as #Face and #FontSize.  The result can be assigned to another VectorText or saved.

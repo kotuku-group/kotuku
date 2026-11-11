@@ -141,7 +141,7 @@ end
    assert(plain.items[0]._vectors.text and plain.items[0].viewState, 'Default rows must render text and maintain state')
    plain.selectItems(Item => Item.name is 'a')
    assert(plain.items[0]._vectors.highlight.visibility is VIS_VISIBLE, 'Default highlight must show selection')
-   assert(plain.items[0]._vectors.text.fill is plain.theme.page.textSelect, 'Default text must recolour')
+   assert(plain.items[0]._vectors.text.fill is plain.theme.list.textSelect, 'Default text must recolour')
 
    -- Content only: custom content with the built-in background
    local content_log = array<str>
@@ -153,7 +153,7 @@ end
    content.selectItems(Item => Item.name is 'a')
    assert(content.items[0]._vectors.highlight.visibility is VIS_VISIBLE,
       'Content-only rows must retain the built-in selection background')
-   assert(content.items[0].content.name.fill != content.theme.page.textSelect,
+   assert(content.items[0].content.name.fill != content.theme.list.textSelect,
       'The built-in highlight must not recolour client children')
 
    -- Highlight only: built-in content, client highlight, no built-in recolouring
@@ -164,7 +164,7 @@ end
    highlight.selectItems(Item => Item.name is 'a')
    assert(hl_log[#hl_log-1] is 'a:selected', 'The highlight hook must receive the selected state')
    assert(not highlight.items[0]._vectors.highlight, 'No built-in highlight is created when a hook is supplied')
-   assert(highlight.items[0]._vectors.text.fill is highlight.theme.page.text.fill,
+   assert(highlight.items[0]._vectors.text.fill is highlight.theme.list.text.fill,
       'Built-in selection recolouring must be suppressed')
 
    -- Both hooks
@@ -568,7 +568,7 @@ end
    local surface <close>, view = newView({ rowHeight=20, showIcons=true,
       items={ { name='normal', icon='items/info' }, { name='tall', icon='items/info', rowHeight=60 } }
    })
-   local _, _, ascent = gui.getFontHeight(view.theme.page.text)
+   local _, _, ascent = gui.getFontHeight(view.theme.list.text)
 
    function centred(Item:table!, Height:num!)
       local vp, text, image = Item._vectors.viewport, Item._vectors.text, Item._vectors.iconImage

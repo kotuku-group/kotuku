@@ -210,6 +210,27 @@ _close:
 }
 
 //********************************************************************************************************************
+// FreeType has already applied 'avar' mapping.  Read coordinates once per style, even when kerning is disabled.
+
+std::span<const int> freetype_font::ft_point::normalised_coordinates()
+{
+   if (not axes_ready) {
+      if (not axis.empty()) {
+         if (font->active_size != this) {
+            FT_Set_Var_Design_Coordinates(font->face, axis.size(), axis.data());
+            font->active_size = this;
+         }
+         std::vector<FT_Fixed> blend(axis.size());
+         if (not FT_Get_Var_Blend_Coordinates(font->face, blend.size(), blend.data())) {
+            for (auto value : blend) normalised_axes.push_back(int(std::lround(double(value) / 4.0)));
+         }
+      }
+      axes_ready = true;
+   }
+   return normalised_axes;
+}
+
+//********************************************************************************************************************
 // Returns separate placement and advance adjustments in pixels, at the scale of the glyph outlines.
 // Values are not rounded.  GPOS pair positioning takes priority; faces without it use a legacy 'kern' table.
 //
@@ -222,22 +243,7 @@ gpos_kerning::adjustment freetype_font::ft_point::positioning(int PrevGlyph, int
    auto &gpos = font->get_gpos();
    if (gpos.enabled()) {
       if (not kern_ready) {
-         // The normalised coordinates of the style are read back from FreeType, which has already applied any
-         // 'avar' mapping to them.
-
-         std::vector<int> coords;
-         if (not axis.empty()) {
-            if (font->active_size != this) {
-               FT_Set_Var_Design_Coordinates(font->face, axis.size(), axis.data());
-               font->active_size = this;
-            }
-
-            std::vector<FT_Fixed> blend(axis.size());
-            if (!FT_Get_Var_Blend_Coordinates(font->face, blend.size(), blend.data())) {
-               for (auto v : blend) coords.push_back(int(std::lround(double(v) / 4.0))); // 16.16 to F2Dot14
-            }
-         }
-         kern_instance.set_coords(coords);
+         kern_instance.set_coords(normalised_coordinates());
          kern_ready = true;
       }
       auto value = gpos.pair_adjustment(PrevGlyph, Glyph, kern_instance);

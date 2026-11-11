@@ -138,7 +138,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
       rowSpacing = 0,
       scrollDirection = 'vertical',
       items      = listItems(),
-      theme      = { page = { text = { face = fontdialog_parts.FACE_UI, fontSize = FONT_SIZE } } },
+      theme      = { list = { text = { face = fontdialog_parts.FACE_UI, fontSize = FONT_SIZE } } },
 
       events = {
          itemSelected = function(View:table, Reason:str, Item:table)

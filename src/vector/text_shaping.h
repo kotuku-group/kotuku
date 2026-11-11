@@ -28,7 +28,7 @@ class gsub_table;
 // The caller must hold glFontMutex.
 
 std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_table *Table = nullptr,
-   std::string_view Features = {});
+   std::string_view Features = {}, std::span<const int> Coordinates = {});
 
 // Owned by a TextLine.  Text edits must invalidate it; layout settings and font size are deliberately not keys.
 // Face and design coordinates distinguish font instances without reshaping on a size-only change.
@@ -46,5 +46,5 @@ class shaped_line_cache {
       // Returns the shaped Line, reshaping it only if the text, face, design coordinates or features have changed.
 
       const std::vector<shaped_glyph> & get(FT_Face Face, std::string_view Line, std::span<const FT_Fixed> Axes,
-         std::string_view Features, gsub_table *Table);
+         std::string_view Features, gsub_table *Table, std::span<const int> Coordinates = {});
 };

@@ -43,7 +43,7 @@ uint32_t script_of(uint32_t Unicode)
 //********************************************************************************************************************
 
 std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_table *Table,
-   std::string_view Features)
+   std::string_view Features, std::span<const int> Coordinates)
 {
    std::vector<shaped_glyph> glyphs;
    glyphs.reserve(Line.size());
@@ -76,7 +76,7 @@ std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_t
       }
       if ((script != SCRIPT_UNSUPPORTED) and budget) {
          std::vector<shaped_glyph> run(glyphs.begin() + start, glyphs.begin() + end);
-         Table->apply(run, script, Features, &budget, &growth);
+         Table->apply(run, script, Features, &budget, &growth, Coordinates);
          result.insert(result.end(), run.begin(), run.end());
       }
       else result.insert(result.end(), glyphs.begin() + start, glyphs.begin() + end);
@@ -89,10 +89,10 @@ std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_t
 //********************************************************************************************************************
 
 const std::vector<shaped_glyph> & shaped_line_cache::get(FT_Face Face, std::string_view Line,
-   std::span<const FT_Fixed> Axes, std::string_view Features, gsub_table *Table)
+   std::span<const FT_Fixed> Axes, std::string_view Features, gsub_table *Table, std::span<const int> Coordinates)
 {
    if ((not valid) or (face != Face) or (features != Features) or (not std::ranges::equal(axes, Axes))) {
-      glyphs = shape_line(Face, Line, Table, Features);
+      glyphs = shape_line(Face, Line, Table, Features, Coordinates);
       face = Face;
       axes.assign(Axes.begin(), Axes.end());
       features = Features;
