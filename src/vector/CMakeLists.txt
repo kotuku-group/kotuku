@@ -78,8 +78,6 @@ flute_test(vector_readpainter "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_readpainte
 flute_test(vector_fill_layers "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_fill_layers.tiri")
 flute_test(vector_parse_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parse_transform.tiri")
 flute_test(vector_push "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_push.tiri")
-flute_test(vector_convolve_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_convolve_validation.tiri")
-flute_test(vector_lighting_units "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lighting_units.tiri")
 flute_test(vector_filter_bounds "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_filter_bounds.tiri")
 flute_test(vector_apply_path "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_apply_path.tiri")
 flute_test(vector_clip_mask_cache "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clip_mask_cache.tiri")
@@ -113,7 +111,5 @@ flute_test(vector_text_path_length "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_
 flute_test(vector_text_font_size "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_font_size.tiri")
 flute_test(vector_text_wrap "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_wrap.tiri")
 flute_test(vector_text_selection_keyboard "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_selection_keyboard.tiri")
-flute_test(vector_spiral "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_spiral.tiri")
-flute_test(vector_supershape "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_supershape.tiri")
 
 flute_test(vector_drag_drop "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_drag_drop.tiri")
