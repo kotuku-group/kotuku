@@ -60,17 +60,20 @@ bool gpos_kerning::load(std::vector<uint8_t> GPOS, std::vector<uint8_t> GDEF)
    gpos = std::move(GPOS);
    gdef = std::move(GDEF);
    lookups.clear();
+   mark_lookups.clear();
    glyph_class_def = mark_attach_class_def = mark_glyph_sets = var_store = 0;
    region_count = 0;
 
-   if ((not parse_lookups()) or (not validate_gdef())) {
+   if ((gpos.size() > 64 * 1024 * 1024) or (gdef.size() > 64 * 1024 * 1024) or
+       (not parse_lookups()) or (not validate_gdef()) or (not parse_marks())) {
       lookups.clear();
+      mark_lookups.clear();
       gpos.clear();
       gdef.clear();
       return false;
    }
 
-   if (lookups.empty()) { // Nothing to apply; release the table memory
+   if (lookups.empty() and mark_lookups.empty()) { // Nothing to apply; release the table memory
       gpos.clear();
       gdef.clear();
       return false;

@@ -32,10 +32,14 @@ property having a value of `none`.  A font can also be excluded by setting `Kern
 `fonts:options.cfg`.
 
 Single, multiple, alternate, ligature and contextual OpenType substitutions are available through the `features` key
-of #TextStyle for Latin, Greek and Cyrillic text.  They are opt-in and use the font's default language system.
-Variable fonts can select alternate lookups according to their axes.  Contextual kerning, mark positioning and complex
+of #TextStyle for Latin, Greek and Cyrillic text, using the font's default language system.  Glyph composition and
+decomposition (`ccmp`) and mark-to-base positioning (`mark`) are enabled by default.  Other substitutions are opt-in.
+Variable fonts can select alternate lookups and mark anchors according to their axes.  Mark positioning attaches
+combining glyphs to base anchors after substitution, independently of the kerning controls, in both ordinary text and
+text along a guide path.  Mark-to-mark, mark-to-ligature and contextual positioning, contextual kerning and complex
 script shaping are not performed.  Kerning lookups use the font's Latin script definition if it has one, otherwise
-its default script.
+its default script.  Mark anchors use unrounded design coordinates and variation deltas; contour-point hinting and
+pixel Device corrections are not applied.
 
 -END-
 
@@ -321,11 +325,18 @@ class extVectorText : public extVector {
 
    const std::vector<shaped_glyph> & shaped_line(TextLine &Line) {
       auto &point = *(freetype_font::ft_point *)txHandle;
-      auto settings = features();
-      auto table = (settings.empty() or (settings IS "none")) ? nullptr : &point.font->get_gsub();
-      const auto coordinates = (table and table->has_variations()) ? point.normalised_coordinates() :
+      std::string settings(features());
+      if ((settings != "none") and
+          (not ot_reader::feature_value(settings, ot_reader::tag('c','c','m','p')).has_value())) {
+         if (not settings.empty()) settings += ", ";
+         settings += "ccmp 1";
+      }
+      auto table = (settings IS "none") ? nullptr : &point.font->get_gsub();
+      auto positioning = (settings IS "none") ? nullptr : &point.font->get_gpos();
+      const auto coordinates = ((table and table->has_variations()) or
+         (positioning and positioning->marks_enabled())) ? point.normalised_coordinates() :
          std::span<const int>();
-      return Line.shaping.get(point.font->face, Line, point.axis, settings, table, coordinates);
+      return Line.shaping.get(point.font->face, Line, point.axis, settings, table, coordinates, positioning);
    }
 
    // Changes the em size.  Text effects and a stroke width in `em` units follow it, unless StrokeWidth has been
@@ -1379,13 +1390,20 @@ are stored and returned but are not rendered at present.
 
 For scalable fonts, `features=smcp 1, onum 1` requests small capitals and old-style figures when the face supports
 them.  Single, multiple, alternate, ligature and contextual substitutions are supported for Latin, Greek and
-Cyrillic script runs.  Other scripts retain their direct character mapping.  Features are off unless explicitly
-requested; a value of zero disables a feature, and `features=none` disables all substitution.  For an alternate
+Cyrillic script runs.  Other scripts retain their direct character mapping.  Glyph composition/decomposition (`ccmp`)
+and mark-to-base positioning (`mark`) are enabled by default; other features require an explicit request.
+A value of zero disables a feature, and `features=none` disables substitution and mark positioning.  For an alternate
 substitution, a value of N selects alternate N, starting at one; an unavailable alternate leaves the glyph
 unchanged.  `features=kern 0` disables pair kerning, while `features=none` leaves kerning controlled by #TextFlags
 and the `kerning` key.  Bitmap fonts ignore substitution.
 ~Vector.DrawText(), ~Vector.StringWidth() and ~Vector.CharWidth() retain direct character mapping, so their advances
 can differ from a VectorText with substitutions enabled.
+
+Use `features=ccmp 0` to disable composition/decomposition, or `features=mark 0` to disable mark positioning.
+Attached marks share their base's cluster, so letter spacing and wrapping cannot separate them.  Source columns are
+retained, with the cluster's advance divided equally between its codepoints.  Mark attachment changes glyph placement
+without changing advances, and remains enabled when pair kerning is disabled.  Mark-to-mark stacking, attachment to
+ligatures and contextual positioning are not supported.
 
 Request `features=liga 1` to enable standard ligatures such as fi and ffi.  Cursor and selection columns remain source
 codepoints; a ligature's advance is divided equally between its components.  Editing a component reshapes the line.

@@ -597,24 +597,33 @@ const std::vector<gsub_table::selection> & gsub_table::select(uint32_t Script, s
    if (script IS scripts.end()) script = scripts.find(ot_reader::tag('D','F','L','T'));
    if (script IS scripts.end()) return selected;
 
-   // Required variation alternates form an earlier pass, even when their lookup indices are greater.
+   // Required variation alternates precede composition/decomposition, which precedes ordinary features.
+   // Shared lookups run in their earliest enabled pass, using the highest requested value across all features.
+   // Each pass retains LookupList order, even when the earlier pass references greater lookup indices.
 
-   for (bool early : { true, false }) {
-      std::vector<uint32_t> values(lookups.size());
-      for (const auto index : script->second) {
-         const auto &feature = features[index];
-         if ((feature.tag IS ot_reader::tag('r','v','r','n')) != early) continue;
-         const auto value = ot_reader::feature_value(Features, feature.tag).value_or(0);
-         if (not value) continue;
-         const auto *indices = &feature.lookups;
-         if (Variation >= 0) {
-            const auto &replacements = variations[Variation].replacements;
-            if (const auto found = replacements.find(index); found != replacements.end()) indices = &found->second;
-         }
-         for (const auto lookup : *indices) values[lookup] = std::max(values[lookup], value);
+   std::vector<uint32_t> values(lookups.size());
+   std::vector<int> passes(lookups.size(), 3);
+   for (const auto index : script->second) {
+      const auto &feature = features[index];
+      const auto value = ot_reader::feature_value(Features, feature.tag).value_or(0);
+      if (not value) continue;
+      const int feature_pass = (feature.tag IS ot_reader::tag('r','v','r','n')) ? 0 :
+         (feature.tag IS ot_reader::tag('c','c','m','p')) ? 1 : 2;
+      const auto *indices = &feature.lookups;
+      if (Variation >= 0) {
+         const auto &replacements = variations[Variation].replacements;
+         if (const auto found = replacements.find(index); found != replacements.end()) indices = &found->second;
       }
+      for (const auto lookup : *indices) {
+         values[lookup] = std::max(values[lookup], value);
+         passes[lookup] = std::min(passes[lookup], feature_pass);
+      }
+   }
+   for (int pass=0; pass < 3; pass++) {
       for (uint32_t i=0; i < values.size(); i++) {
-         if (values[i] and (not lookups[i].subtables.empty())) selected.push_back({ uint16_t(i), values[i] });
+         if ((passes[i] IS pass) and (not lookups[i].subtables.empty())) {
+            selected.push_back({ uint16_t(i), values[i] });
+         }
       }
    }
    return selected;
