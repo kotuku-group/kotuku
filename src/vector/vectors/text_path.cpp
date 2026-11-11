@@ -16,15 +16,16 @@
 //
 // REQUIREMENT: The caller must have acquired a lock on glFontMutex.
 
-freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
+freetype_font::glyph & freetype_font::ft_point::get_glyph_by_index(uint32_t Glyph)
 {
    double x1, y1, x2, y2, x3, y3;
 
-   if (glyphs.contains(Unicode)) return glyphs[Unicode];
+   if (auto it = glyphs.find(Glyph); it != glyphs.end()) return it->second;
 
-   auto &path = glyphs[Unicode];
+   auto &path = glyphs[Glyph];
 
-   path.glyph_index = FT_Get_Char_Index(font->face, Unicode);
+   path.glyph_index = Glyph;
+   if (Glyph IS shaped_glyph::INVISIBLE) return path;
 
    if (font->face->size->metrics.height != ft_size->metrics.height) {
       FT_Set_Char_Size(font->face, 0, ft_size->metrics.height, 72, 72);
@@ -304,31 +305,27 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       }
    }
 
-   // Compute the string length in characters if a transition is being applied
-
-   int total_chars = 0;
-   if (Vector->Transition) {
-      for (auto const &line : Vector->txLines) {
-         for (auto lstr=line.c_str(); *lstr; ) {
-            int char_len;
-            uint32_t unicode = UTF8ReadValue(std::string_view(line).substr(size_t(lstr - line.data())), &char_len);
-            lstr += char_len;
-            if (unicode <= 0x20) continue;
-            else if (!unicode) break;
-            total_chars++;
-         }
-      }
-   }
-
    const std::lock_guard lock(glFontMutex);
 
    auto &pt = *(freetype_font::ft_point *)Vector->txHandle;
+
+   // Both layout paths, measurement and transition counting consume the cached shaped hard lines.
+
+   int total_chars = 0;
+   for (auto &line : lines) {
+      const auto &shaped = Vector->shaped_line(line);
+      if (Vector->Transition) {
+         for (const auto &glyph : shaped) {
+            if (glyph.unicode > 0x20) total_chars += glyph.codepoints;
+         }
+      }
+   }
 
    // Freetype seems to be happier when the DPI is maintained at its native 72, and we get font results
    // that match Chrome's output.  It also means that 1:1 metrics don't need to be converted to 96 DPI
    // point sizes.
 
-   const bool kern = (Vector->txFlags & VTXF::NO_KERNING) IS VTXF::NIL;
+   const bool kern = Vector->use_kerning();
    const double letter_spacing = Vector->letter_spacing();
    const double word_spacing = Vector->word_spacing();
    const double line_pitch = Vector->line_pitch(pt.line_spacing);
@@ -344,17 +341,28 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       int prev_glyph_index = 0;
       double dist = 0; // Distance to next vertex
       double angle = 0;
-      for (auto &line : Vector->txLines) {
+      for (auto &line : lines) {
+         const auto &shaped = Vector->shaped_line(line);
          line.chars.clear();
          line.wrapOffsets.clear(); // Guide paths do not wrap
          prev_glyph_index = 0; // Kerning does not apply across lines
 
-         int char_len;
-         for (auto str=line.c_str(); *str; ) {
-            uint32_t unicode = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &char_len);
-            str += char_len;
+         size_t cluster_end = 0;
+         uint32_t cluster_codepoints = 0;
+         agg::trans_affine cluster_transform;
+         double cluster_x = 0, cluster_y = 0;
+         for (size_t i=0; i < shaped.size(); i++) {
+            const auto &current = shaped[i];
+            const auto unicode = current.unicode;
+            const auto next_glyph = (i + 1 < shaped.size()) ? &shaped[i + 1] : nullptr;
 
-            if (unicode > 0x20) char_index++; // Index for transitions only increases if a glyph is being drawn
+            const bool cluster_start = (i IS cluster_end);
+            if (cluster_start) {
+               cluster_codepoints = 0;
+               do { cluster_codepoints += shaped[cluster_end++].codepoints; }
+               while ((cluster_end < shaped.size()) and (shaped[cluster_end].cluster IS current.cluster));
+               if (unicode > 0x20) char_index += cluster_codepoints;
+            }
 
             agg::trans_affine transform;
 
@@ -365,20 +373,27 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             // Spacing separates this character from the next one, unless the next is a zero-advance glyph that has
             // to stay attached.  The look-ahead precedes the glyph reference because it can modify the glyph cache.
 
-            double spacing = is_word_gap(unicode) ? word_spacing : 0;
-            if ((letter_spacing != 0) and *str) {
-               int next_len;
-               auto next = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &next_len);
-               if (pt.get_glyph(next).adv_x != 0) spacing += letter_spacing;
+            const bool cluster_last = (i + 1 IS cluster_end);
+            double spacing = (cluster_last and is_word_gap(unicode)) ? word_spacing : 0;
+            if (cluster_last and (letter_spacing != 0) and next_glyph) {
+               for (size_t next=i + 1; (next < shaped.size()) and
+                    (shaped[next].cluster IS next_glyph->cluster); next++) {
+                  if (pt.get_glyph_by_index(shaped[next].glyph).adv_x != 0) {
+                     spacing += letter_spacing;
+                     break;
+                  }
+               }
             }
 
-            auto &glyph = pt.get_glyph(unicode);
+            auto &glyph = pt.get_glyph_by_index(current.glyph);
 
-            auto adjustment = kern ? pt.positioning(prev_glyph_index, glyph.glyph_index) :
+            auto adjustment = (kern and (current.glyph != shaped_glyph::INVISIBLE)) ?
+               pt.positioning(prev_glyph_index, glyph.glyph_index) :
                gpos_kerning::adjustment{};
             start_x += adjustment.first_advance * advance_scale;
             const double placement = kern ? adjustment.second_placement +
-               pt.first_placement(glyph.glyph_index, str) : 0;
+               pt.first_placement(glyph.glyph_index,
+                  (next_glyph and (next_glyph->unicode != '\n')) ? next_glyph->glyph : 0) : 0;
 
             // The walk along the guide path can only move forwards, so negative spacing is limited by the advance.
 
@@ -440,15 +455,27 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             if (Vector->needs_caret_geometry()) {
                transform.tx -= placement * advance_scale * cos(angle);
                transform.ty -= placement * advance_scale * sin(angle);
-               calc_caret_position(line, transform, pt.ascent, pt.descent);
-               if (not *str) {
+               if (cluster_start) {
+                  cluster_transform = transform;
+                  cluster_x = transform.tx;
+                  cluster_y = transform.ty;
+               }
+               if (cluster_last) {
+                  for (uint32_t c=0; c < cluster_codepoints; c++) {
+                     auto caret = cluster_transform;
+                     caret.tx += (start_x - cluster_x) * double(c) / cluster_codepoints;
+                     caret.ty += (start_y - cluster_y) * double(c) / cluster_codepoints;
+                     calc_caret_position(line, caret, pt.ascent, pt.descent);
+                  }
+               }
+               if (not next_glyph) {
                   transform.tx = start_x;
                   transform.ty = start_y;
                   calc_caret_position(line, transform, pt.ascent, pt.descent);
                }
             }
 
-            prev_glyph_index = glyph.glyph_index;
+            if (current.glyph != shaped_glyph::INVISIBLE) prev_glyph_index = glyph.glyph_index;
          }
       }
       Vector->txWidth = start_x;
@@ -464,7 +491,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       const double paragraph_spacing = Vector->paragraph_spacing();
       std::vector<TextRow> rows;
 
-      for (auto &line : Vector->txLines) {
+      for (auto &line : lines) {
+         const auto &shaped = Vector->shaped_line(line);
          line.chars.clear();
          line.wrapOffsets.clear();
          bool in_word = false;
@@ -501,26 +529,38 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             line.wrapOffsets.push_back(int(Position - line.c_str()));
          };
 
+         size_t cluster_end = 0;
+         uint32_t cluster_codepoints = 0;
+         agg::trans_affine cluster_transform;
+         bool cluster_has_advance = false;
          if ((line.empty()) and (Vector->needs_caret_geometry())) {
             agg::trans_affine transform;
             transform.translate(dx, dy);
             calc_caret_position(line, transform, pt.ascent, pt.descent);
          }
-         else for (auto str=line.c_str(); *str; ) {
-            int char_len;
-            int unicode = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &char_len);
-
-            if (!unicode) break;
+         else for (size_t i=0; i < shaped.size(); i++) {
+            const auto &current = shaped[i];
+            const auto unicode = current.unicode;
+            const auto str = line.c_str() + current.cluster;
+            const bool cluster_start = (i IS cluster_end);
+            if (cluster_start) {
+               cluster_codepoints = 0;
+               do { cluster_codepoints += shaped[cluster_end++].codepoints; }
+               while ((cluster_end < shaped.size()) and (shaped[cluster_end].cluster IS current.cluster));
+            }
+            const bool cluster_last = (i + 1 IS cluster_end);
 
             // A segment starts at the first character of a word, and at each break point within a word that
             // segment_extent() reports.  In VTW::WORD mode the segments are whole words.
 
             bool segment_start = false, word_start = false;
-            if (unicode <= 0x20) { in_word = false; char_break = false; }
-            else if (not in_word) { in_word = true; segment_start = true; word_start = true; }
-            else if ((segment_end) and (str >= segment_end)) segment_start = true;
+            if (cluster_start) {
+               if (unicode <= 0x20) { in_word = false; char_break = false; }
+               else if (not in_word) { in_word = true; segment_start = true; word_start = true; }
+               else if ((segment_end) and (str >= segment_end)) segment_start = true;
 
-            if (unicode > 0x20) char_index++; // Character index only increases if a glyph is being drawn
+               if (unicode > 0x20) char_index += cluster_codepoints;
+            }
 
             agg::trans_affine transform;
 
@@ -531,12 +571,16 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             // Determine if this is a new segment that would wrap if drawn.
             // TODO: Wrapping information should be cached for speeding up subsequent redraws.
 
-            if (Vector->txInlineSize) {
+            if (cluster_start and Vector->txInlineSize) {
                const double scale = std::abs(transform.sx);
                if (segment_start) {
                   auto extent = segment_extent(str, wrap_mode, word_start);
                   segment_end = str + extent.bytes;
-                  auto segment_width = string_width(Vector, std::string_view(str, extent.bytes));
+                  size_t segment_last = i;
+                  while ((segment_last < shaped.size()) and
+                         (shaped[segment_last].cluster < current.cluster + extent.bytes)) segment_last++;
+                  auto segment_width = string_width(Vector,
+                     std::span<const shaped_glyph>(shaped).subspan(i, segment_last - i));
                   if (line_started) segment_width += letter_spacing; // The gap before the segment's first character
 
                   // A segment that is too wide for an empty line stays on that line instead of leaving it blank.
@@ -548,18 +592,39 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                }
             }
 
+            // Anywhere wrapping measures the complete cluster, including internal kerning, before taking a
+            // glyph reference: measurement can insert into the dense glyph cache.
+
+            double cluster_width = 0;
+            if (cluster_start and Vector->txInlineSize and char_break) {
+               cluster_width = string_width(Vector,
+                  std::span<const shaped_glyph>(shaped).subspan(i, cluster_end - i));
+            }
+            if (cluster_start and (letter_spacing != 0)) {
+               cluster_has_advance = false;
+               for (size_t next=i; next < cluster_end; next++) {
+                  if (pt.get_glyph_by_index(shaped[next].glyph).adv_x != 0) {
+                     cluster_has_advance = true;
+                     break;
+                  }
+               }
+            }
+
             // The glyph reference is retrieved after string_width(), which can modify the glyph cache.
 
-            auto &glyph = pt.get_glyph(unicode);
+            auto &glyph = pt.get_glyph_by_index(current.glyph);
 
-            auto adjustment = kern ? pt.positioning(prev_glyph_index, glyph.glyph_index) :
+            auto adjustment = (kern and (current.glyph != shaped_glyph::INVISIBLE)) ?
+               pt.positioning(prev_glyph_index, glyph.glyph_index) :
                gpos_kerning::adjustment{};
             double kx = adjustment.first_advance;
-            const double letter_gap = ((glyph.adv_x != 0) and line_started) ? letter_spacing : 0;
-            if (Vector->txInlineSize and not segment_start and char_break and (dx > 0) and
-                ((dx + kx + letter_gap + glyph.adv_x) * std::abs(transform.sx) > Vector->txInlineSize)) {
+            double letter_gap = (cluster_has_advance and line_started and cluster_start) ? letter_spacing : 0;
+            if (cluster_start and Vector->txInlineSize and not segment_start and char_break and (dx > 0) and
+                ((dx + kx + adjustment.second_advance + letter_gap + cluster_width) * std::abs(transform.sx) >
+                   Vector->txInlineSize)) {
                wrap_line(str);
                kx = 0; // Kerning does not apply across a line break
+               letter_gap = 0;
                adjustment = {};
             }
 
@@ -570,13 +635,11 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             }
 
             dx += kx;
-            if ((glyph.adv_x != 0) and line_started) dx += letter_spacing * std::abs(transform.sx);
+            dx += letter_gap * std::abs(transform.sx);
             if (glyph.adv_x != 0) line_started = true;
 
-            str += char_len;
-
-            double char_width = (glyph.adv_x + adjustment.second_advance + (is_word_gap(unicode) ? word_spacing : 0)) *
-               std::abs(transform.sx);
+            const double word_gap = (cluster_start and is_word_gap(unicode)) ? word_spacing : 0;
+            double char_width = (glyph.adv_x + adjustment.second_advance + word_gap) * std::abs(transform.sx);
 
             // Apply first-glyph placement only after wrapping has decided whether this pair stays together.
             if (adjustment.first_placement) {
@@ -588,20 +651,30 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                   }
                }
             }
-            previous_start = Path.total_vertices();
-            previous_sx = transform.sx;
-            previous_shy = transform.shy;
             const double placement = adjustment.second_placement;
             transform.translate(dx + placement, dy);
-            agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
-            Path.concat_path(trans_char);
-            previous_end = Path.total_vertices();
+            if (current.glyph != shaped_glyph::INVISIBLE) {
+               previous_start = Path.total_vertices();
+               previous_sx = transform.sx;
+               previous_shy = transform.shy;
+               agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
+               Path.concat_path(trans_char);
+               previous_end = Path.total_vertices();
+            }
 
             if (Vector->needs_caret_geometry()) {
                transform.tx -= placement;
-               calc_caret_position(line, transform, pt.ascent, pt.descent);
+               if (cluster_start) cluster_transform = transform;
+               if (cluster_last) {
+                  const double advance = dx + char_width - cluster_transform.tx;
+                  for (uint32_t c=0; c < cluster_codepoints; c++) {
+                     auto caret = cluster_transform;
+                     caret.translate(advance * double(c) / cluster_codepoints, 0);
+                     calc_caret_position(line, caret, pt.ascent, pt.descent);
+                  }
+               }
 
-               if (!*str) { // Last character reached, add a final cursor entry past the character position.
+               if (i + 1 IS shaped.size()) { // Add a final cursor entry past the last character.
                   transform.translate(char_width, 0);
                   calc_caret_position(line, transform, pt.ascent, pt.descent);
                }
@@ -611,7 +684,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             dy += glyph.adv_y;
             if (unicode > 0x20) visible_dx = dx;
 
-            prev_glyph_index = glyph.glyph_index;
+            if (current.glyph != shaped_glyph::INVISIBLE) prev_glyph_index = glyph.glyph_index;
          }
 
          finish_row(dx, false); // Whitespace before a hard break is retained so that the caret of an edited line is stable

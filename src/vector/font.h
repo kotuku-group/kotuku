@@ -12,6 +12,7 @@
 #include FT_OUTLINE_H
 
 #include "kerning.h"
+#include "gsub.h"
 
 #define CF_BITMAP 0
 #define CF_FREETYPE 1
@@ -62,7 +63,7 @@ class freetype_font {
          uint32_t tag;
          double minimum, def, maximum;
       };
-      using GLYPH_TABLE = ankerl::unordered_dense::map<uint32_t, glyph>; // Unicode to glyph lookup
+      using GLYPH_TABLE = ankerl::unordered_dense::map<uint32_t, glyph>; // Glyph index to outline and advances
 
       class ft_point : public common_font {
          public:
@@ -94,11 +95,18 @@ class freetype_font {
             static constexpr int EMBOLDEN_TEXT_FULL  = 8;
             static constexpr int CONTRAST_WEIGHT_LIMIT = 300; // Small text above this weight is not boosted
 
-            glyph & get_glyph(uint32_t);
+            glyph & get_glyph_by_index(uint32_t);
+            glyph & get_glyph(uint32_t Unicode) {
+               return get_glyph_by_index(FT_Get_Char_Index(font->face, Unicode));
+            }
             gpos_kerning::adjustment positioning(int PrevGlyph, int Glyph);
             double kerning(int PrevGlyph, int Glyph) {
                auto value = positioning(PrevGlyph, Glyph);
                return value.first_advance + value.second_advance;
+            }
+
+            double first_placement(int Glyph, int NextGlyph) {
+               return positioning(Glyph, NextGlyph).first_placement;
             }
 
             double first_placement(int Glyph, const std::string_view &Remaining) {
@@ -106,7 +114,7 @@ class freetype_font {
                int length;
                auto unicode = UTF8ReadValue(Remaining, &length);
                if (unicode IS '\n') return 0;
-               return positioning(Glyph, FT_Get_Char_Index(font->face, unicode)).first_placement;
+               return first_placement(Glyph, FT_Get_Char_Index(font->face, unicode));
             }
 
             ft_point() : common_font(CF_FREETYPE) { }
@@ -286,6 +294,8 @@ class freetype_font {
       ft_point *active_size = nullptr;
       gpos_kerning gpos; // GPOS pair kerning, loaded on first use by get_gpos()
       bool gpos_loaded = false;
+      gsub_table gsub; // Opt-in substitution, independent of size and variable instance
+      bool gsub_loaded = false;
 
       freetype_font()  { }
       freetype_font(FT_Face pFace, STYLE_CACHE &pStyles, METRIC_TABLE &pMetrics, std::vector<axis_info> &pAxes,
@@ -319,6 +329,16 @@ class freetype_font {
             if (FT_IS_SFNT(face)) gpos.load(load_sfnt_table(TTAG_GPOS), load_sfnt_table(TTAG_GDEF));
          }
          return gpos;
+      }
+
+      gsub_table & get_gsub() {
+         if (not gsub_loaded) {
+            gsub_loaded = true;
+            if (FT_IS_SFNT(face)) {
+               gsub.load(load_sfnt_table(TTAG_GSUB), load_sfnt_table(TTAG_GDEF), face->num_glyphs);
+            }
+         }
+         return gsub;
       }
 
       std::vector<uint8_t> load_sfnt_table(FT_ULong Tag) {

@@ -31,9 +31,10 @@ not across line breaks.  Set `NO_KERNING` in #TextFlags to disable it, which is 
 property having a value of `none`.  A font can also be excluded by setting `Kerning = No` in its section of
 `fonts:options.cfg`.
 
-Only pair kerning is supported.  Contextual kerning, ligatures, mark positioning and complex script shaping are not
-performed.  Kerning lookups are taken from the font's Latin script definition if it has one, otherwise from its default
-script.
+Single, multiple, alternate and ligature OpenType substitutions are available through the `features` key of #TextStyle
+for Latin, Greek and Cyrillic text.  They are opt-in and use the font's default language system.  Contextual
+substitution, contextual kerning, mark positioning and complex script shaping are not performed.  Kerning lookups use
+the font's Latin script definition if it has one, otherwise its default script.
 
 -END-
 
@@ -76,6 +77,8 @@ where large glyphs were oriented around sharp corners.  The process would look s
 #include "agg_path_length.h"
 #include "text_word_ranges.h"
 #include "../font_def.h"
+#include "../text_shaping.h"
+#include "../opentype.h"
 
 const int DEFAULT_WEIGHT = 400;
 
@@ -169,9 +172,11 @@ public:
    std::vector<int> wrapOffsets; // Byte offsets at which word-wrapping starts a new visual line
    std::vector<TextCharClass> characterClasses;
    bool classesValid = false;
+   shaped_line_cache shaping;
 
    void invalidate_text() {
       classesValid = false;
+      shaping.invalidate();
       chars.clear(); // Retain layout storage for the next generation.
       wrapOffsets.clear();
    }
@@ -300,6 +305,24 @@ class extVectorText : public extVector {
 
    double word_spacing() const {
       return txDefinition.word_spacing ? txDefinition.word_spacing->pixels(txFontSize) : 0.0;
+   }
+
+   std::string_view features() const {
+      return txDefinition.features ? std::string_view(*txDefinition.features) : std::string_view();
+   }
+
+   bool use_kerning() const {
+      return ((txFlags & VTXF::NO_KERNING) IS VTXF::NIL) and
+         (ot_reader::feature_value(features(), ot_reader::tag('k','e','r','n')).value_or(1) != 0);
+   }
+
+   // REQUIREMENT: glFontMutex is held.  Size-only and layout-only changes reuse the shaped line.
+
+   const std::vector<shaped_glyph> & shaped_line(TextLine &Line) {
+      auto &point = *(freetype_font::ft_point *)txHandle;
+      auto settings = features();
+      auto table = (settings.empty() or (settings IS "none")) ? nullptr : &point.font->get_gsub();
+      return Line.shaping.get(point.font->face, Line, point.axis, settings, table);
    }
 
    // Changes the em size.  Text effects and a stroke width in `em` units follow it, unless StrokeWidth has been
@@ -523,7 +546,7 @@ static constexpr bool is_word_gap(uint32_t Unicode)
 // Letter spacing is applied between characters and not after the last character of a line.  Zero-advance glyphs such
 // as combining marks receive none, so that they stay attached to their base character.
 
-static double string_width(extVectorText *Self, const std::string_view &String)
+static double string_width(extVectorText *Self, std::span<const shaped_glyph> Glyphs)
 {
    const std::lock_guard lock(glFontMutex);
 
@@ -531,40 +554,71 @@ static double string_width(extVectorText *Self, const std::string_view &String)
 
    FT_Activate_Size(pt->ft_size);
 
-   const bool kern = (Self->txFlags & VTXF::NO_KERNING) IS VTXF::NIL;
+   const bool kern = Self->use_kerning();
    double len     = 0;
    double widest  = 0;
    int prev_glyph = 0;
-   int i = 0;
    const double letter_spacing = Self->letter_spacing();
    const double word_spacing = Self->word_spacing();
    bool line_started = false;
-   while (i < std::ssize(String)) {
-      if (String[i] IS '\n') {
+   uint32_t previous_cluster = 0xffffffff;
+   uint32_t spaced_cluster = 0xffffffff;
+   for (const auto &shaped : Glyphs) {
+      if (shaped.unicode IS '\n') {
          if (widest < len) widest = len;
          len = 0;
          prev_glyph = 0; // Kerning does not apply across lines
          line_started = false;
-         i++;
       }
       else {
-         uint32_t unicode;
-         auto charlen = get_utf8(String, unicode, i);
-         auto &glyph  = pt->get_glyph(unicode);
+         auto &glyph = pt->get_glyph_by_index(shaped.glyph);
          len += glyph.adv_x;
          if (glyph.adv_x != 0) {
-            if (line_started) len += letter_spacing;
+            if (line_started and (shaped.cluster != spaced_cluster)) len += letter_spacing;
             line_started = true;
+            spaced_cluster = shaped.cluster;
          }
-         if (is_word_gap(unicode)) len += word_spacing;
-         if (kern) len += pt->kerning(prev_glyph, glyph.glyph_index);
-         prev_glyph = glyph.glyph_index;
-         i += charlen;
+         if ((shaped.cluster != previous_cluster) and is_word_gap(shaped.unicode)) len += word_spacing;
+         if (shaped.glyph != shaped_glyph::INVISIBLE) {
+            if (kern) len += pt->kerning(prev_glyph, glyph.glyph_index);
+            prev_glyph = glyph.glyph_index;
+         }
       }
+      previous_cluster = shaped.cluster;
    }
 
    if (widest > len) return widest;
    else return len;
+}
+
+static double string_width(extVectorText *Self, TextLine &Line)
+{
+   const std::lock_guard lock(glFontMutex);
+   return string_width(Self, Self->shaped_line(Line));
+}
+
+//********************************************************************************************************************
+// Returns the width of the codepoint at ByteOffset.  A ligature's advance is divided equally between the codepoints
+// of its cluster.
+
+static double codepoint_width(extVectorText *Self, TextLine &Line, uint32_t ByteOffset)
+{
+   const std::lock_guard lock(glFontMutex);
+   const auto &shaped = Self->shaped_line(Line);
+   auto found = std::upper_bound(shaped.begin(), shaped.end(), ByteOffset,
+      [](uint32_t Offset, const shaped_glyph &Glyph) { return Offset < Glyph.cluster; });
+
+   size_t first = (found IS shaped.begin()) ? 0 : size_t(found - shaped.begin() - 1);
+   while (first and (shaped[first - 1].cluster IS shaped[first].cluster)) first--;
+
+   size_t end = first;
+   uint32_t count = 0;
+   while ((end < shaped.size()) and (shaped[end].cluster IS shaped[first].cluster)) {
+      count += shaped[end++].codepoints;
+   }
+
+   if (not count) return 0;
+   return string_width(Self, std::span<const shaped_glyph>(shaped).subspan(first, end - first)) / count;
 }
 
 /*********************************************************************************************************************
@@ -1317,8 +1371,23 @@ settings are unchanged.
 
 The `shadow`, `glow` and `blend` keys are rendered through a @VectorFilter that belongs to the text, which replaces the
 value of #Filter while any of them is active.  `blend` requires a backdrop, which is provided by setting the
-`ISOLATED` flag on an enclosing viewport.  The `features` key, a `kerning` value of `optical`, and any `strokeAlign`
-other than `centre`, are stored and returned but are not rendered at present.
+`ISOLATED` flag on an enclosing viewport.  A `kerning` value of `optical`, and any `strokeAlign` other than `centre`,
+are stored and returned but are not rendered at present.
+
+For scalable fonts, `features=smcp 1, onum 1` requests small capitals and old-style figures when the face supports
+them.  Single, multiple, alternate and ligature substitutions are supported for Latin, Greek and Cyrillic script
+runs.  Other scripts retain their direct character mapping.  Features are off unless explicitly requested; a value of
+zero disables a feature, and `features=none` disables all substitution.  For an alternate substitution, a value of N
+selects alternate N, starting at one; an unavailable alternate leaves the glyph unchanged.  `features=kern 0` disables
+pair kerning, while `features=none` leaves kerning controlled by #TextFlags and the `kerning` key.  Bitmap fonts ignore
+substitution.
+~Vector.DrawText(), ~Vector.StringWidth() and ~Vector.CharWidth() retain direct character mapping, so their advances
+can differ from a VectorText with substitutions enabled.
+
+Request `features=liga 1` to enable standard ligatures such as fi and ffi.  Cursor and selection columns remain source
+codepoints; a ligature's advance is divided equally between its components.  Editing a component reshapes the line.
+Wrapping keeps each substituted cluster intact, including in `ANYWHERE` mode.  Letter spacing applies between
+clusters.  Ligatures remain opt-in when letter spacing is non-zero, so an explicit request still enables them.
 
 Reading the field returns the canonical form of the current state, including changes that have been made through
 fields such as #Face and #FontSize.  The result can be assigned to another VectorText or saved.
@@ -1426,7 +1495,7 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
       else Self->txFlags &= ~VTXF::NO_KERNING;
    }
 
-   if (def.line_height or def.letter_spacing or def.word_spacing or def.kerning) reset_path(Self);
+   if (def.line_height or def.letter_spacing or def.word_spacing or def.kerning or def.features) reset_path(Self);
 
    if (def.shadow or def.glow or def.blend) {
       if (Self->initialised()) return update_text_effects(Self);
@@ -3325,7 +3394,7 @@ static void rebuild_selection(extVectorText *Self)
    if (range) {
       const bool plain = not Self->Transition and not Self->GuidePath;
       for (int row=range->row; row <= range->end_row; row++) {
-         const auto &line = Self->txLines[row];
+         auto &line = Self->txLines[row];
          if (line.chars.empty()) continue;
          const auto last = int(line.chars.size()) - 1;
          const auto start = std::min(row IS range->row ? range->column : 0, last);
@@ -3343,16 +3412,16 @@ static void rebuild_selection(extVectorText *Self)
                // A wrapped word starts on another visual line.  Finish this glyph on its own line instead
                // of joining its highlight diagonally to the next line's first caret.
 
-               int char_length;
-
                // Advance from the previous wrap boundary, never rescan the line prefix.
 
                byte_offset += UTF8CharOffset(line.c_str() + byte_offset, col - byte_column);
                byte_column = col;
-               const auto glyph = std::string_view(line).substr(byte_offset);
-               const auto unicode = UTF8ReadValue(glyph, &char_length);
-               const auto width = Self->txBitmapFont ? fnt::CharWidth(Self->txBitmapFont, unicode) :
-                  string_width(Self, glyph.substr(0, char_length));
+               double width;
+               if (Self->txBitmapFont) {
+                  const auto unicode = UTF8ReadValue(std::string_view(line).substr(byte_offset), nullptr);
+                  width = fnt::CharWidth(Self->txBitmapFont, unicode);
+               }
+               else width = codepoint_width(Self, line, uint32_t(byte_offset));
                right = left;
                right.x1 += width;
                right.x2 += width;

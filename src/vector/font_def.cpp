@@ -8,6 +8,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <limits>
 
 namespace ft = kt::font_traits;
 
@@ -179,7 +180,7 @@ static std::optional<std::string> normalise_glow(std::string_view Value)
 
 static std::optional<std::string> normalise_features(std::string_view Value)
 {
-   std::map<std::string, int> tags;
+   std::map<std::string, uint32_t> tags;
    bool valid = true;
 
    split_outer(Value, ',', [&](std::string_view Segment) {
@@ -191,13 +192,14 @@ static std::optional<std::string> normalise_features(std::string_view Value)
          return;
       }
 
-      int number = 1;
-      if (auto flag = ft::parse_bool(setting)) number = *flag ? 1 : 0;
-      else if (not setting.empty()) {
-         auto parsed = ft::parse_number(setting);
-         if ((not parsed) or (*parsed < 0) or (*parsed != std::floor(*parsed))) { valid = false; return; }
-         number = int(*parsed);
+      uint32_t number = 1;
+      if (auto parsed = ft::parse_number(setting)) {
+         if ((*parsed < 0) or (*parsed > std::numeric_limits<uint32_t>::max()) or
+             (*parsed != std::floor(*parsed))) { valid = false; return; }
+         number = uint32_t(*parsed);
       }
+      else if (auto flag = ft::parse_bool(setting)) number = *flag ? 1 : 0;
+      else if (not setting.empty()) { valid = false; return; }
       tags[std::string(tag)] = number;
    });
 
