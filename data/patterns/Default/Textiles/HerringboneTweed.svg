@@ -3,6 +3,7 @@
   <title>HerringboneTweed</title>
   <desc>A grey herringbone tweed: a dark warp and light weft woven in a twill that reverses direction every
     twelve units to form the chevron columns.</desc>
+
   <defs>
     <clipPath id="clipTextilesHerringboneTweedTwill">
       <path d="
@@ -24,6 +25,7 @@
         M17.5,7.5 10,0 11,0 17.5,6.5Z M17.5,5.5 12,0 13,0 17.5,4.5Z M17.5,3.5 14,0 15,0 17.5,2.5Z
         M17.5,1.5 16,0 17,0 17.5,0.5Z"/>
     </clipPath>
+
     <pattern id="pidTextilesHerringboneTweed" patternUnits="userSpaceOnUse" width="48" height="48" viewBox="0 0 24 24">
       <rect width="24" height="24" fill="#3e3a35"/>
       <!-- Warp -->
@@ -33,5 +35,6 @@
       </g>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidTextilesHerringboneTweed)"/>
 </svg>

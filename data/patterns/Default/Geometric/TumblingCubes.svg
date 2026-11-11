@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic tumbling cubes</title>
+  <desc>Cream, charcoal and grey diamonds form a repeating three-dimensional cube illusion.</desc>
+  <defs>
+    <pattern id="pidGeometricTumblingCubes" patternUnits="userSpaceOnUse" width="120" height="180"
+      viewBox="0 0 120 180">
+      <rect width="120" height="180" fill="param(shade) #242628"/>
+      <path fill="param(fore) #e8dfc9" d="M-60,-90L0,-60L-60,-30L-120,-60Z"/>
+      <path fill="param(shade) #242628" d="M-120,-60L-60,-30V30L-120,0Z"/>
+      <path fill="param(mid) #92908c" d="M-60,-30L0,-60V0L-60,30Z"/>
+      <path fill="param(fore) #e8dfc9" d="M-60,90L0,120L-60,150L-120,120Z"/>
+      <path fill="param(shade) #242628" d="M-120,120L-60,150V210L-120,180Z"/>
+      <path fill="param(mid) #92908c" d="M-60,150L0,120V180L-60,210Z"/>
+      <path fill="param(fore) #e8dfc9" d="M0,0L60,30L0,60L-60,30Z"/>
+      <path fill="param(shade) #242628" d="M-60,30L0,60V120L-60,90Z"/>
+      <path fill="param(mid) #92908c" d="M0,60L60,30V90L0,120Z"/>
+      <path fill="param(fore) #e8dfc9" d="M0,180L60,210L0,240L-60,210Z"/>
+      <path fill="param(shade) #242628" d="M-60,210L0,240V300L-60,270Z"/>
+      <path fill="param(mid) #92908c" d="M0,240L60,210V270L0,300Z"/>
+      <path fill="param(fore) #e8dfc9" d="M60,-90L120,-60L60,-30L0,-60Z"/>
+      <path fill="param(shade) #242628" d="M0,-60L60,-30V30L0,0Z"/>
+      <path fill="param(mid) #92908c" d="M60,-30L120,-60V0L60,30Z"/>
+      <path fill="param(fore) #e8dfc9" d="M60,90L120,120L60,150L0,120Z"/>
+      <path fill="param(shade) #242628" d="M0,120L60,150V210L0,180Z"/>
+      <path fill="param(mid) #92908c" d="M60,150L120,120V180L60,210Z"/>
+      <path fill="param(fore) #e8dfc9" d="M120,0L180,30L120,60L60,30Z"/>
+      <path fill="param(shade) #242628" d="M60,30L120,60V120L60,90Z"/>
+      <path fill="param(mid) #92908c" d="M120,60L180,30V90L120,120Z"/>
+      <path fill="param(fore) #e8dfc9" d="M120,180L180,210L120,240L60,210Z"/>
+      <path fill="param(shade) #242628" d="M60,210L120,240V300L60,270Z"/>
+      <path fill="param(mid) #92908c" d="M120,240L180,210V270L120,300Z"/>
+      <path fill="param(fore) #e8dfc9" d="M180,-90L240,-60L180,-30L120,-60Z"/>
+      <path fill="param(shade) #242628" d="M120,-60L180,-30V30L120,0Z"/>
+      <path fill="param(mid) #92908c" d="M180,-30L240,-60V0L180,30Z"/>
+      <path fill="param(fore) #e8dfc9" d="M180,90L240,120L180,150L120,120Z"/>
+      <path fill="param(shade) #242628" d="M120,120L180,150V210L120,180Z"/>
+      <path fill="param(mid) #92908c" d="M180,150L240,120V180L180,210Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidGeometricTumblingCubes)"/>
+</svg>

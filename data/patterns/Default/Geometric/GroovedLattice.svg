@@ -4,12 +4,13 @@
   <desc>Grey concrete covered in fine diagonal grooves that turn at the centre lines, meeting in chevrons that
     trace a large cross.  The square design is centred and scaled to cover the bounds of the shape, clipping any
     overflow rather than tiling.</desc>
+
   <defs>
     <pattern id="pidGeometricGroovedLattice" patternUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
       viewBox="0 0 384 384" preserveAspectRatio="xMidYMid slice">
-      <rect width="384" height="384" fill="#8a8987"/>
+      <rect width="384" height="384" fill="param(fore) #8a8987"/>
       <!-- Grooves filling the top-left quarter, mirrored into the other three quarters -->
-      <path fill="#6f6e6b" d="
+      <path fill="param(bkgd) #6f6e6b" d="
         M0,186.32L5.68,192L2.32,192L0,189.68ZM0,178.32L13.68,192L10.32,192L0,181.68Z
         M0,170.32L21.68,192L18.32,192L0,173.68ZM0,162.32L29.68,192L26.32,192L0,165.68Z
         M0,154.32L37.68,192L34.32,192L0,157.68ZM0,146.32L45.68,192L42.32,192L0,149.68Z
@@ -108,5 +109,6 @@
         M202.32,384L192,373.68L192,370.32L205.68,384ZM194.32,384L192,381.68L192,378.32L197.68,384Z"/>
     </pattern>
   </defs>
+
   <rect width="384" height="384" fill="url(#pidGeometricGroovedLattice)"/>
 </svg>

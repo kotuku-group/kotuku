@@ -486,6 +486,110 @@ end
       'Each list must retain its own metrics')
 end
 
+@Test function ItemRowHeightOverridesTheViewHeight()
+   local log = array<str>
+   local surface <close>, view = newView({
+      constructItem=paletteRow(log), rowHeight=20, rowSpacing=2,
+      items={ { name='a' }, { name='tall', rowHeight=50 }, { name='c' } }
+   }, 200, 300)
+
+   local a, tall, c = view.items[0], view.items[1], view.items[2]
+   assert(a._vectors.viewport.height is 20 and tall._vectors.viewport.height is 50,
+      'An item rowHeight must override the view rowHeight')
+   assert(c._vectors.viewport.y is tall._vectors.viewport.y + 52, 'Rows must stack by their own heights')
+   assert(view.zones[1].height is 50, 'The hit zone must match the row height')
+
+   -- Changing the height through setItem() lays out the rows again and notifies the row.
+   local before = count(log, 'tall:layout')
+   view.setItem(tall, { rowHeight=30 })
+   processing.sleep(0)
+   assert(tall._vectors.viewport.height is 30 and c._vectors.viewport.y is tall._vectors.viewport.y + 32,
+      'setItem() must apply a new rowHeight')
+   assert(count(log, 'tall:layout') is before + 1, 'The height change must be reported as a layout')
+
+   -- A direct change followed by relayout() is also applied; nil restores the view height.
+   tall.rowHeight = nil
+   view.relayout()
+   assert(tall._vectors.viewport.height is 20 and c._vectors.viewport.y is tall._vectors.viewport.y + 22,
+      'relayout() must apply a cleared rowHeight')
+
+   clickItem(view, c)
+   assert(view.sItem is c, 'Rows below a resized row must remain clickable')
+end
+
+@Test function ItemRowHeightsAreValidatedBeforeChanges()
+   local surface <close>, view = newView({ rowHeight=20, items={ { name='a' }, { name='b' } } })
+   local first, last = view.items[0], view.items[1]
+   view.selectItems(Item => Item is first)
+
+   function rejected(Action:func!)
+      local raised = false
+      try
+         Action()
+      except e
+         raised = true
+      end
+      assert(raised, 'An invalid item rowHeight must be rejected')
+   end
+
+   for height in values({ -50, 0, 0/0, math.huge, -math.huge, '20', false, {} }) do
+      rejected(function()
+         gui.listView({ target=view.parentViewport, items={ { name='invalid', rowHeight=height } } })
+      end)
+
+      rejected(function() view.addItems({ { name='valid' }, { name='invalid', rowHeight=height } }) end)
+      assert(#view.items is 2, 'An invalid batch must not add any items')
+
+      rejected(function() view.setItem(first, { name='changed', rowHeight=height }) end)
+      assert(first.name is 'a' and first.rowHeight is nil, 'A rejected update must not change item fields')
+
+      rejected(function() view.loadItems({ { name='valid' }, { name='invalid', rowHeight=height } }) end)
+      assert(#view.items is 2 and view.items[0] is first and view.sItem is first,
+         'A rejected replacement must preserve the existing items and selection')
+
+      local zones = view.zones
+      local last_y = last._vectors.viewport.y
+      first.rowHeight = 40
+      last.rowHeight = height
+      rejected(function() view.relayout() end)
+      assert(view.zones is zones and first._vectors.viewport.height is 20 and last._vectors.viewport.y is last_y,
+         'A rejected relayout must preserve the hit zones and all row geometry')
+      first.rowHeight = nil
+      last.rowHeight = nil
+   end
+
+   view.relayout()
+   assert(first._vectors.viewport.height is 20 and last._vectors.viewport.height is 20,
+      'Valid row heights must still work after validation failures')
+end
+
+@Test function DefaultContentIsCentredInEachRow()
+   local surface <close>, view = newView({ rowHeight=20, showIcons=true,
+      items={ { name='normal', icon='items/info' }, { name='tall', icon='items/info', rowHeight=60 } }
+   })
+   local _, _, ascent = gui.getFontHeight(view.theme.page.text)
+
+   function centred(Item:table!, Height:num!)
+      local vp, text, image = Item._vectors.viewport, Item._vectors.text, Item._vectors.iconImage
+      assert(vp.height is Height, 'The row viewport must use its effective height')
+      assert(text.y is math.round((Height + ascent) * 0.5), 'Text must be centred using the row height')
+      assert(image and math.abs(image.y + (image.height * 0.5) - (Height * 0.5)) <= 0.5,
+         'The icon must be centred using the row height')
+   end
+
+   centred(view.items[0], 20)
+   local tall = view.items[1]
+   centred(tall, 60)
+   view.setItem(tall, { rowHeight=40 })
+   centred(tall, 40)
+   tall.rowHeight = 80
+   view.relayout()
+   centred(tall, 80)
+   tall.rowHeight = nil
+   view.relayout()
+   centred(tall, 20)
+end
+
 @Test function RowsAndZonesStayConsistentThroughChanges()
    local surface <close>, view = newView({ items={ { name='d' }, { name='b' }, { name='c' } } }, 200, 100)
 

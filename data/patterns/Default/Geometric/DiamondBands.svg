@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic diamond bands</title>
+  <desc>Broad black, grey and chalk bands form a repeating field of nested diamonds.</desc>
+  <defs>
+    <pattern id="pidGeometricDiamondBands" patternUnits="userSpaceOnUse" width="180" height="90"
+      viewBox="0 0 360 180">
+      <rect width="360" height="180" fill="param(shade) #17191a"/>
+      <path fill="param(shade) #17191a" d="
+        M0,-90.0L180,0L0,90.0L-180,0Z
+        M0,90.0L180,180L0,270.0L-180,180Z
+        M180,0.0L360,90L180,180.0L0,90Z
+        M360,-90.0L540,0L360,90.0L180,0Z
+        M360,90.0L540,180L360,270.0L180,180Z"/>
+      <path fill="param(mid) #929392" d="
+        M0,-75.0L150,0L0,75.0L-150,0Z
+        M0,105.0L150,180L0,255.0L-150,180Z
+        M180,15.0L330,90L180,165.0L30,90Z
+        M360,-75.0L510,0L360,75.0L210,0Z
+        M360,105.0L510,180L360,255.0L210,180Z"/>
+      <path fill="param(fore) #f1f0ed" d="
+        M0,-60.0L120,0L0,60.0L-120,0Z
+        M0,120.0L120,180L0,240.0L-120,180Z
+        M180,30.0L300,90L180,150.0L60,90Z
+        M360,-60.0L480,0L360,60.0L240,0Z
+        M360,120.0L480,180L360,240.0L240,180Z"/>
+      <path fill="param(shade) #17191a" d="
+        M0,-45.0L90,0L0,45.0L-90,0Z
+        M0,135.0L90,180L0,225.0L-90,180Z
+        M180,45.0L270,90L180,135.0L90,90Z
+        M360,-45.0L450,0L360,45.0L270,0Z
+        M360,135.0L450,180L360,225.0L270,180Z"/>
+      <path fill="param(mid) #929392" d="
+        M0,-30.0L60,0L0,30.0L-60,0Z
+        M0,150.0L60,180L0,210.0L-60,180Z
+        M180,60.0L240,90L180,120.0L120,90Z
+        M360,-30.0L420,0L360,30.0L300,0Z
+        M360,150.0L420,180L360,210.0L300,180Z"/>
+      <path fill="param(fore) #f1f0ed" d="
+        M0,-15.0L30,0L0,15.0L-30,0Z
+        M0,165.0L30,180L0,195.0L-30,180Z
+        M180,75.0L210,90L180,105.0L150,90Z
+        M360,-15.0L390,0L360,15.0L330,0Z
+        M360,165.0L390,180L360,195.0L330,180Z"/>
+      <path fill="param(shade) #17191a" d="
+        M0,-6.0L12,0L0,6.0L-12,0Z
+        M0,174.0L12,180L0,186.0L-12,180Z
+        M180,84.0L192,90L180,96.0L168,90Z
+        M360,-6.0L372,0L360,6.0L348,0Z
+        M360,174.0L372,180L360,186.0L348,180Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidGeometricDiamondBands)"/>
+</svg>
