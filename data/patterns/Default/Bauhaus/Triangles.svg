@@ -1,21 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Bauhaus triangles</title>
-  <desc>Half-square and quarter triangles in charcoal, brick red, slate blue and mustard on
-    cream, with a few larger triangles spanning four cells.</desc>
+  <desc>Half-square and quarter triangles in charcoal, brick red, slate blue and mustard on cream, with a few
+    larger triangles spanning four cells.  Parameters: chroma, a multiplier of the colour intensity, where 1 is
+    the original level and 0 is greyscale.</desc>
   <defs>
+    <filter id="fltBauhausTrianglesChroma" color-interpolation-filters="sRGB">
+      <feColorMatrix type="saturate" values="param(chroma) 1"/>
+    </filter>
     <pattern id="pidBauhausTriangles" patternUnits="userSpaceOnUse" width="80" height="80"
       viewBox="0 0 160 160">
-      <rect width="160" height="160" fill="#e8dfcb"/>
-      <!-- Triangles -->
-      <path fill="#2f2e2c" d="
-        M64,0L64,64L0,64ZM128,32L96,32L96,0ZM64,32L96,32L96,64ZM32,96L32,128L16,112ZM128,160L96,160L112,144Z"/>
-      <path fill="#b25841" d="
-        M160,128L96,128L96,64ZM160,0L160,32L128,32ZM0,64L32,64L16,80ZM32,160L0,160L16,144ZM32,160L32,128L48,144Z
-        M160,128L160,160L128,160Z"/>
-      <path fill="#45607e" d="M32,64L96,64L96,128ZM96,64L96,32L112,48Z"/>
-      <path fill="#cfa24c" d="
-        M96,32L64,32L64,0ZM128,32L128,64L112,48ZM0,128L0,96L16,112ZM64,128L64,160L48,144ZM96,128L128,128L112,144Z"/>
+      <g filter="url(#fltBauhausTrianglesChroma)">
+        <rect width="160" height="160" fill="#e8dfcb"/>
+        <!-- Triangles -->
+        <path fill="#2f2e2c" d="
+          M64,0L64,64L0,64ZM128,32L96,32L96,0ZM64,32L96,32L96,64ZM32,96L32,128L16,112ZM128,160L96,160L112,144Z"/>
+        <path fill="#b25841" d="
+          M160,128L96,128L96,64ZM160,0L160,32L128,32ZM0,64L32,64L16,80ZM32,160L0,160L16,144ZM32,160L32,128L48,144Z
+          M160,128L160,160L128,160Z"/>
+        <path fill="#45607e" d="M32,64L96,64L96,128ZM96,64L96,32L112,48Z"/>
+        <path fill="#cfa24c" d="
+          M96,32L64,32L64,0ZM128,32L128,64L112,48ZM0,128L0,96L16,112ZM64,128L64,160L48,144ZM96,128L128,128L112,144Z"/>
+      </g>
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#pidBauhausTriangles)"/>

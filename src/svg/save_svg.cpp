@@ -657,9 +657,20 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
+            VCS colour_space;
+            if ((!error) and (!filter->getColourSpace(colour_space))) {
+               switch(colour_space) {
+                  default:
+                  case VCS::LINEAR_RGB: break; // Default
+                  case VCS::SRGB:    xml::NewAttrib(tag, "color-interpolation-filters", "sRGB"); break;
+                  case VCS::INHERIT: xml::NewAttrib(tag, "color-interpolation-filters", "inherit"); break;
+               }
+            }
+
             std::string effect_xml;
             if ((!error) and (!filter->getEffectXML(effect_xml))) {
-               error = XML->insertStatement(tag->ID, XMI::CHILD, effect_xml, nullptr);
+               XTag *effect;
+               error = XML->insertStatement(tag->ID, XMI::CHILD, effect_xml, &effect);
             }
          }
          else if (def->classID() IS CLASSID::VECTORTRANSITION) {

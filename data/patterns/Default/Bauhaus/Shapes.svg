@@ -1,41 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Bauhaus shapes</title>
-  <desc>A grid of circles, squares, arches and quarter rounds in soft peach, rose, olive, mustard,
-    teal, sage, terracotta and blue, with a few pieces spanning two cells.</desc>
+  <desc>A grid of circles, squares, arches and quarter rounds in soft peach, rose, olive, mustard, teal, sage,
+    terracotta and blue, with a few pieces spanning two cells.  Parameters: chroma, a multiplier of the colour
+    intensity, where 1 is the original level and 0 is greyscale.</desc>
   <defs>
+    <filter id="fltBauhausShapesChroma" color-interpolation-filters="sRGB">
+      <feColorMatrix type="saturate" values="param(chroma) 1"/>
+    </filter>
     <pattern id="pidBauhausShapes" patternUnits="userSpaceOnUse" width="160" height="160"
       viewBox="0 0 160 160">
-      <rect width="160" height="160" fill="#efe5d4"/>
-      <!-- Shapes -->
-      <path fill="#4d6b66" d="
-        M16,0H16A16,16 0 0,1 32,16V16A16,16 0 0,1 16,32H16A16,16 0 0,1 0,16V16A16,16 0 0,1 16,0Z
-        M128,64H160L160,64V112A16,16 0 0,1 144,128H144A16,16 0 0,1 128,112V64L128,64Z
-        M48,96H64L64,96V128L64,128H48A16,16 0 0,1 32,112V112A16,16 0 0,1 48,96Z"/>
-      <path fill="#8e9a80" d="
-        M32,0H48A16,16 0 0,1 64,16V16A16,16 0 0,1 48,32H32L32,32V0L32,0Z
-        M48,128H48A16,16 0 0,1 64,144V144A16,16 0 0,1 48,160H48A16,16 0 0,1 32,144V144A16,16 0 0,1 48,128Z"/>
-      <path fill="#d3a541" d="
-        M80,0H80A16,16 0 0,1 96,16V16A16,16 0 0,1 80,32H80A16,16 0 0,1 64,16V16A16,16 0 0,1 80,0Z"/>
-      <path fill="#cc8150" d="
-        M112,0H112A16,16 0 0,1 128,16V16A16,16 0 0,1 112,32H112A16,16 0 0,1 96,16V16A16,16 0 0,1 112,0Z
-        M0,32H48A16,16 0 0,1 64,48V48A16,16 0 0,1 48,64H0L0,64V32L0,32Z
-        M112,128H112A16,16 0 0,1 128,144V144A16,16 0 0,1 112,160H112A16,16 0 0,1 96,144V144A16,16 0 0,1 112,128Z"/>
-      <path fill="#52728f" d="
-        M128,0H160L160,0V0A32,32 0 0,1 128,32H128L128,32V0L128,0Z
-        M64,64H112A16,16 0 0,1 128,80V80A16,16 0 0,1 112,96H64L64,96V64L64,64Z"/>
-      <path fill="#bb5f48" d="
-        M64,32h32v32h-32Z
-        M144,32H144A16,16 0 0,1 160,48V48A16,16 0 0,1 144,64H144A16,16 0 0,1 128,48V48A16,16 0 0,1 144,32Z
-        M16,96H16A16,16 0 0,1 32,112V128L32,128H0L0,128V112A16,16 0 0,1 16,96Z
-        M80,96H80A16,16 0 0,1 96,112V160L96,160H64L64,160V112A16,16 0 0,1 80,96Z"/>
-      <path fill="#a8a24f" d="
-        M96,32H128L128,32V48A16,16 0 0,1 112,64H112A16,16 0 0,1 96,48V32L96,32Z
-        M0,64H0A32,32 0 0,1 32,96V96L32,96H0L0,96V64L0,64Z
-        M144,128H144A16,16 0 0,1 160,144V160L160,160H128L128,160V144A16,16 0 0,1 144,128Z"/>
-      <path fill="#cf7d7c" d="M32,64H48A16,16 0 0,1 64,80V80A16,16 0 0,1 48,96H32L32,96V64L32,64ZM0,128h32v32h-32Z"/>
-      <path fill="#d9a083" d="
-        M112,96H112A16,16 0 0,1 128,112V112A16,16 0 0,1 112,128H112A16,16 0 0,1 96,112V112A16,16 0 0,1 112,96Z"/>
+      <g filter="url(#fltBauhausShapesChroma)">
+        <rect width="160" height="160" fill="#efe5d4"/>
+        <!-- Shapes -->
+        <path fill="#4d6b66" d="
+          M16,0H16A16,16 0 0,1 32,16V16A16,16 0 0,1 16,32H16A16,16 0 0,1 0,16V16A16,16 0 0,1 16,0Z
+          M128,64H160L160,64V112A16,16 0 0,1 144,128H144A16,16 0 0,1 128,112V64L128,64Z
+          M48,96H64L64,96V128L64,128H48A16,16 0 0,1 32,112V112A16,16 0 0,1 48,96Z"/>
+        <path fill="#8e9a80" d="
+          M32,0H48A16,16 0 0,1 64,16V16A16,16 0 0,1 48,32H32L32,32V0L32,0Z
+          M48,128H48A16,16 0 0,1 64,144V144A16,16 0 0,1 48,160H48A16,16 0 0,1 32,144V144A16,16 0 0,1 48,128Z"/>
+        <path fill="#d3a541" d="
+          M80,0H80A16,16 0 0,1 96,16V16A16,16 0 0,1 80,32H80A16,16 0 0,1 64,16V16A16,16 0 0,1 80,0Z"/>
+        <path fill="#cc8150" d="
+          M112,0H112A16,16 0 0,1 128,16V16A16,16 0 0,1 112,32H112A16,16 0 0,1 96,16V16A16,16 0 0,1 112,0Z
+          M0,32H48A16,16 0 0,1 64,48V48A16,16 0 0,1 48,64H0L0,64V32L0,32Z
+          M112,128H112A16,16 0 0,1 128,144V144A16,16 0 0,1 112,160H112A16,16 0 0,1 96,144V144A16,16 0 0,1 112,128Z"/>
+        <path fill="#52728f" d="
+          M128,0H160L160,0V0A32,32 0 0,1 128,32H128L128,32V0L128,0Z
+          M64,64H112A16,16 0 0,1 128,80V80A16,16 0 0,1 112,96H64L64,96V64L64,64Z"/>
+        <path fill="#bb5f48" d="
+          M64,32h32v32h-32Z
+          M144,32H144A16,16 0 0,1 160,48V48A16,16 0 0,1 144,64H144A16,16 0 0,1 128,48V48A16,16 0 0,1 144,32Z
+          M16,96H16A16,16 0 0,1 32,112V128L32,128H0L0,128V112A16,16 0 0,1 16,96Z
+          M80,96H80A16,16 0 0,1 96,112V160L96,160H64L64,160V112A16,16 0 0,1 80,96Z"/>
+        <path fill="#a8a24f" d="
+          M96,32H128L128,32V48A16,16 0 0,1 112,64H112A16,16 0 0,1 96,48V32L96,32Z
+          M0,64H0A32,32 0 0,1 32,96V96L32,96H0L0,96V64L0,64Z
+          M144,128H144A16,16 0 0,1 160,144V160L160,160H128L128,160V144A16,16 0 0,1 144,128Z"/>
+        <path fill="#cf7d7c" d="M32,64H48A16,16 0 0,1 64,80V80A16,16 0 0,1 48,96H32L32,96V64L32,64ZM0,128h32v32h-32Z"/>
+        <path fill="#d9a083" d="
+          M112,96H112A16,16 0 0,1 128,112V112A16,16 0 0,1 112,128H112A16,16 0 0,1 96,112V112A16,16 0 0,1 112,96Z"/>
+      </g>
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#pidBauhausShapes)"/>

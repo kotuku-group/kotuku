@@ -1,23 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Bauhaus steps</title>
-  <desc>Squares of slate blue, mustard and brick red, each casting a charcoal shadow down to the
-    left, so that the shadows interlock into a stepped pattern on cream.</desc>
+  <desc>Squares of slate blue, mustard and brick red, each casting a charcoal shadow down to the left, so that
+    the shadows interlock into a stepped pattern on cream.  Parameters: chroma, a multiplier of the colour
+    intensity, where 1 is the original level and 0 is greyscale.</desc>
   <defs>
+    <filter id="fltBauhausStepsChroma" color-interpolation-filters="sRGB">
+      <feColorMatrix type="saturate" values="param(chroma) 1"/>
+    </filter>
     <pattern id="pidBauhausSteps" patternUnits="userSpaceOnUse" width="72" height="72"
       viewBox="0 0 144 144">
-      <rect width="144" height="144" fill="#e8dfcb"/>
-      <!-- Shadows -->
-      <path fill="#2f2e2c" d="
-        M0,24L24,0L24,24L48,24L24,48L0,48ZM48,24L72,0L72,24L96,24L72,48L48,48Z
-        M96,24L120,0L120,24L144,24L120,48L96,48ZM0,72L24,48L24,72L48,72L24,96L0,96Z
-        M48,72L72,48L72,72L96,72L72,96L48,96ZM96,72L120,48L120,72L144,72L120,96L96,96Z
-        M0,120L24,96L24,120L48,120L24,144L0,144ZM48,120L72,96L72,120L96,120L72,144L48,144Z
-        M96,120L120,96L120,120L144,120L120,144L96,144Z"/>
-      <!-- Squares -->
-      <path fill="#45607e" d="M24,0h24v24h-24ZM120,48h24v24h-24ZM72,96h24v24h-24Z"/>
-      <path fill="#cfa24c" d="M72,0h24v24h-24ZM24,48h24v24h-24ZM120,96h24v24h-24Z"/>
-      <path fill="#b25841" d="M120,0h24v24h-24ZM72,48h24v24h-24ZM24,96h24v24h-24Z"/>
+      <g filter="url(#fltBauhausStepsChroma)">
+        <rect width="144" height="144" fill="#e8dfcb"/>
+        <!-- Shadows -->
+        <path fill="#2f2e2c" d="
+          M0,24L24,0L24,24L48,24L24,48L0,48ZM48,24L72,0L72,24L96,24L72,48L48,48Z
+          M96,24L120,0L120,24L144,24L120,48L96,48ZM0,72L24,48L24,72L48,72L24,96L0,96Z
+          M48,72L72,48L72,72L96,72L72,96L48,96ZM96,72L120,48L120,72L144,72L120,96L96,96Z
+          M0,120L24,96L24,120L48,120L24,144L0,144ZM48,120L72,96L72,120L96,120L72,144L48,144Z
+          M96,120L120,96L120,120L144,120L120,144L96,144Z"/>
+        <!-- Squares -->
+        <path fill="#45607e" d="M24,0h24v24h-24ZM120,48h24v24h-24ZM72,96h24v24h-24Z"/>
+        <path fill="#cfa24c" d="M72,0h24v24h-24ZM24,48h24v24h-24ZM120,96h24v24h-24Z"/>
+        <path fill="#b25841" d="M120,0h24v24h-24ZM72,48h24v24h-24ZM24,96h24v24h-24Z"/>
+      </g>
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#pidBauhausSteps)"/>

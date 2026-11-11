@@ -1,24 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Bauhaus weave</title>
-  <desc>Offset bands of colour blocks with fine striped panels, after the geometric hangings of the
-    Bauhaus weaving workshop.</desc>
+  <desc>Offset bands of colour blocks with fine striped panels, after the geometric hangings of the Bauhaus
+    weaving workshop.  Parameters: chroma, a multiplier of the colour intensity, where 1 is the original level
+    and 0 is greyscale.</desc>
   <defs>
+    <filter id="fltBauhausWeaveChroma" color-interpolation-filters="sRGB">
+      <feColorMatrix type="saturate" values="param(chroma) 1"/>
+    </filter>
     <pattern id="pidBauhausWeave" patternUnits="userSpaceOnUse" width="128" height="128"
       viewBox="0 0 128 128">
-      <rect width="128" height="128" fill="#d9cdb3"/>
-      <!-- Bands of blocks -->
-      <path fill="#a39182" d="M0,0h64v14h-64ZM32,14h80v22h-80ZM80,70h48v12h-48Z"/>
-      <path fill="#2f2e2c" d="M64,0h64v14h-64ZM0,14h32v22h-32ZM64,70h16v12h-16Z"/>
-      <path fill="#cfa24c" d="M112,14h16v22h-16ZM112,36h16v8h-16ZM0,44h16v26h-16ZM0,108h64v20h-64Z"/>
-      <path fill="#b25841" d="
-        M0,36h112v8h-112ZM32,44h96v26h-96ZM0,70h64v12h-64ZM96,82h32v18h-32ZM0,100h16v8h-16ZM112,108h16v20h-16Z"/>
-      <path fill="#45607e" d="M16,44h16v26h-16ZM0,82h96v18h-96ZM64,108h48v20h-48Z"/>
-      <path fill="#d9cdb3" d="M16,100h112v8h-112Z"/>
-      <!-- Striped panels -->
-      <path fill="#e8dfcb" d="
-        M0,38h112v1h-112ZM0,42h112v1h-112ZM0,84h96v1h-96ZM0,88h96v1h-96ZM0,92h96v1h-96ZM0,96h96v1h-96Z
-        M0,102h16v1h-16ZM0,106h16v1h-16Z"/>
+      <g filter="url(#fltBauhausWeaveChroma)">
+        <rect width="128" height="128" fill="#d9cdb3"/>
+        <!-- Bands of blocks -->
+        <path fill="#a39182" d="M0,0h64v14h-64ZM32,14h80v22h-80ZM80,70h48v12h-48Z"/>
+        <path fill="#2f2e2c" d="M64,0h64v14h-64ZM0,14h32v22h-32ZM64,70h16v12h-16Z"/>
+        <path fill="#cfa24c" d="M112,14h16v22h-16ZM112,36h16v8h-16ZM0,44h16v26h-16ZM0,108h64v20h-64Z"/>
+        <path fill="#b25841" d="
+          M0,36h112v8h-112ZM32,44h96v26h-96ZM0,70h64v12h-64ZM96,82h32v18h-32ZM0,100h16v8h-16ZM112,108h16v20h-16Z"/>
+        <path fill="#45607e" d="M16,44h16v26h-16ZM0,82h96v18h-96ZM64,108h48v20h-48Z"/>
+        <path fill="#d9cdb3" d="M16,100h112v8h-112Z"/>
+        <!-- Striped panels -->
+        <path fill="#e8dfcb" d="
+          M0,38h112v1h-112ZM0,42h112v1h-112ZM0,84h96v1h-96ZM0,88h96v1h-96ZM0,92h96v1h-96ZM0,96h96v1h-96Z
+          M0,102h16v1h-16ZM0,106h16v1h-16Z"/>
+      </g>
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#pidBauhausWeave)"/>

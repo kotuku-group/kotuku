@@ -4,9 +4,9 @@
   <desc>A chalk cement tile with a charcoal jewel at its centre and curved stars that complete themselves across
     the corners of neighbouring tiles.</desc>
   <defs>
-    <pattern id="pidEncausticCompass" patternUnits="userSpaceOnUse" width="64" height="64"
+    <pattern id="pidEncausticCompass" patternUnits="userSpaceOnUse" width="32" height="32"
       viewBox="0 0 128 128">
-      <rect width="128" height="128" fill="#ecebe6"/>
+      <rect width="100%" height="100%" fill="#ecebe6"/>
       <!-- Corner stars -->
       <path fill="#4a4a4d" d="
         M0,-60Q6,-6 60,0Q6,6 0,60Q-6,6 -60,0Q-6,-6 0,-60ZM128,-60Q134,-6 188,0Q134,6 128,60Q122,6 68,0Q122,-6 128,-60Z

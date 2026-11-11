@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/namespaces/kotuku">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Zzap!</title>
+  <desc></desc>
+  <defs>
+    <pattern id="pidGeometricZzap" patternUnits="userSpaceOnUse" width="128" height="184"
+      viewBox="0 0 128 184">
+      <rect width="128" height="184" fill="red"/>
+
+      <kotuku:wave fill="yellow" thickness="16" type="sawtooth" stroke="black" frequency="16" stroke-width="4"
+        x="-16" y="40" length="160" amplitude="32" stroke-linejoin="miter" stroke-linecap="miter"/>
+
+      <kotuku:wave fill="orange" thickness="16" type="sawtooth" stroke="black" frequency="16" stroke-width="4"
+        x="-24" y="132" length="192" amplitude="32" stroke-linejoin="miter" stroke-linecap="miter"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidGeometricZzap)"/>
+</svg>

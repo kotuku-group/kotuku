@@ -1,36 +1,43 @@
 <svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Bauhaus blocks</title>
-  <desc>A repeating grid of quarter circles, half discs, targets, triangles and bars in muted
-    Bauhaus red, mustard, slate blue and charcoal on cream.</desc>
+  <desc>A repeating grid of quarter circles, half discs, targets, triangles and bars in muted Bauhaus red,
+    mustard, slate blue and charcoal on cream.  Parameters: chroma, a multiplier of the colour intensity, where
+    1 is the original level and 0 is greyscale.</desc>
   <defs>
+    <filter id="fltBauhausBlocksChroma" color-interpolation-filters="sRGB">
+      <feColorMatrix type="saturate" values="param(chroma) 1"/>
+    </filter>
     <pattern id="pidBauhausBlocks" patternUnits="userSpaceOnUse" width="128" height="128"
       viewBox="0 0 128 128">
-      <rect width="128" height="128" fill="#e8dfcb"/>
-      <!-- Cell grounds -->
-      <path fill="#2f2e2c" d="M0,0h32v32h-32ZM96,32h32v32h-32ZM96,96h32v32h-32Z"/>
-      <path fill="#b25841" d="M32,0h32v32h-32ZM64,32h32v32h-32ZM32,96h32v32h-32Z"/>
-      <path fill="#d9cdb3" d="M64,0h32v32h-32ZM64,64h32v32h-32Z"/>
-      <path fill="#e8dfcb" d="M96,0h32v32h-32ZM32,32h32v32h-32ZM0,64h32v32h-32ZM96,64h32v32h-32Z"/>
-      <path fill="#45607e" d="M0,32h32v32h-32ZM0,96h32v32h-32ZM64,96h32v32h-32Z"/>
-      <path fill="#cfa24c" d="M32,64h32v32h-32Z"/>
-      <!-- One primitive per cell -->
-      <path fill="#45607e" d="M0,0A16,16 0 0,1 0,32ZM32,32h32A32,32 0 0,1 32,64Z"/>
-      <path fill="#2f2e2c" d="
-        M37,16a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM32,128h-16A16,16 0 0,1 32,112ZM0,96h16A16,16 0 0,1 0,112Z
-        M37,112a11,11 0 1,0 22,0a11,11 0 1,0 -22,0Z"/>
-      <path fill="#e8dfcb" d="M68,6h24v4h-24ZM68,14h24v4h-24ZM68,22h24v4h-24ZM64,96L64,64L96,64Z"/>
-      <path fill="#cfa24c" d="M101,16a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM6,36h4v24h-4ZM14,36h4v24h-4ZM22,36h4v24h-4Z"/>
-      <path fill="#d9cdb3" d="
-        M64,64h32A32,32 0 0,0 64,32ZM0,64h16A16,16 0 0,1 0,80ZM32,96h-16A16,16 0 0,1 32,80ZM32,96L32,64L64,64Z
-        M64,128h32A32,32 0 0,0 64,96Z"/>
-      <path fill="#b25841" d="M96,64A16,16 0 0,1 128,64ZM96,96A16,16 0 0,1 128,96ZM96,96A16,16 0 0,1 96,128Z"/>
-      <!-- Accents -->
-      <path fill="#d9cdb3" d="
-        M43.5,16a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0ZM107.5,16a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0Z
-        M32,32h12A12,12 0 0,1 32,44Z"/>
-      <path fill="#45607e" d="M64,64h12A12,12 0 0,0 64,52ZM43.5,112a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0Z"/>
-      <path fill="#cfa24c" d="M64,128h12A12,12 0 0,0 64,116Z"/>
+      <g filter="url(#fltBauhausBlocksChroma)">
+        <rect width="128" height="128" fill="#e8dfcb"/>
+        <!-- Cell grounds -->
+        <path fill="#2f2e2c" d="M0,0h32v32h-32ZM96,32h32v32h-32ZM96,96h32v32h-32Z"/>
+        <path fill="#b25841" d="M32,0h32v32h-32ZM64,32h32v32h-32ZM32,96h32v32h-32Z"/>
+        <path fill="#d9cdb3" d="M64,0h32v32h-32ZM64,64h32v32h-32Z"/>
+        <path fill="#e8dfcb" d="M96,0h32v32h-32ZM32,32h32v32h-32ZM0,64h32v32h-32ZM96,64h32v32h-32Z"/>
+        <path fill="#45607e" d="M0,32h32v32h-32ZM0,96h32v32h-32ZM64,96h32v32h-32Z"/>
+        <path fill="#cfa24c" d="M32,64h32v32h-32Z"/>
+        <!-- One primitive per cell -->
+        <path fill="#45607e" d="M0,0A16,16 0 0,1 0,32ZM32,32h32A32,32 0 0,1 32,64Z"/>
+        <path fill="#2f2e2c" d="
+          M37,16a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM32,128h-16A16,16 0 0,1 32,112ZM0,96h16A16,16 0 0,1 0,112Z
+          M37,112a11,11 0 1,0 22,0a11,11 0 1,0 -22,0Z"/>
+        <path fill="#e8dfcb" d="M68,6h24v4h-24ZM68,14h24v4h-24ZM68,22h24v4h-24ZM64,96L64,64L96,64Z"/>
+        <path fill="#cfa24c" d="
+          M101,16a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM6,36h4v24h-4ZM14,36h4v24h-4ZM22,36h4v24h-4Z"/>
+        <path fill="#d9cdb3" d="
+          M64,64h32A32,32 0 0,0 64,32ZM0,64h16A16,16 0 0,1 0,80ZM32,96h-16A16,16 0 0,1 32,80ZM32,96L32,64L64,64Z
+          M64,128h32A32,32 0 0,0 64,96Z"/>
+        <path fill="#b25841" d="M96,64A16,16 0 0,1 128,64ZM96,96A16,16 0 0,1 128,96ZM96,96A16,16 0 0,1 96,128Z"/>
+        <!-- Accents -->
+        <path fill="#d9cdb3" d="
+          M43.5,16a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0ZM107.5,16a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0Z
+          M32,32h12A12,12 0 0,1 32,44Z"/>
+        <path fill="#45607e" d="M64,64h12A12,12 0 0,0 64,52ZM43.5,112a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0Z"/>
+        <path fill="#cfa24c" d="M64,128h12A12,12 0 0,0 64,116Z"/>
+      </g>
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#pidBauhausBlocks)"/>
