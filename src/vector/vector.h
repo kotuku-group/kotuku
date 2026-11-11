@@ -1408,7 +1408,6 @@ static void mark_buffers_for_refresh(extVector *Vector)
    while (parent_view) {
       if (parent_view->vpBuffered) {
          parent_view->vpRefreshBuffer = true;
-         break;
       }
 
       parent_view = parent_view->ParentView;

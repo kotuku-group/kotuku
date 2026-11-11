@@ -3811,6 +3811,7 @@ class objVector : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR moveToBack() noexcept { return Action(AC::MoveToBack, this, nullptr); }
    inline ERR moveToFront() noexcept { return Action(AC::MoveToFront, this, nullptr); }
+   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
    inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
    inline ERR push(int Position) noexcept {
       struct vec::Push args = { Position };

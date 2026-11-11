@@ -87,6 +87,17 @@
     </action>
 
     <action>
+      <name>Refresh</name>
+      <comment>Marks the vector as dirty so that it is redrawn.</comment>
+      <prototype>ERR acRefresh(*Object)</prototype>
+      <tiriPrototype>err = Object.acRefresh()</tiriPrototype>
+      <description>
+<p>Changes to a vector's fields are detected automatically.  Call Refresh when the vector's appearance changes in a way that its fields do not reflect, such as new content in a bitmap that its <class name="VectorImage">VectorImage</class> fill refers to.  Any buffered <class name="VectorViewport">VectorViewport</class> that contains the vector will redraw its buffer rather than reuse the cached content.</p>
+<p>Refresh does not schedule drawing.  Call <action>Draw</action> afterwards if the scene must be redrawn.</p>
+      </description>
+    </action>
+
+    <action>
       <name>Show</name>
       <comment>Changes the vector's visibility setting to visible.</comment>
       <prototype>ERR acShow(*Object)</prototype>

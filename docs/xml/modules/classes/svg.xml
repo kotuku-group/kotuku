@@ -304,6 +304,16 @@ active scope so that values can be forwarded, e.g. <code>&lt;param name=&quot;co
     </field>
 
     <field>
+      <name>ParamNames</name>
+      <comment>Lists the names of the parameters that the document references.</comment>
+      <access read="G">Get</access>
+      <type>kt::vector&lt;std::string&gt;</type>
+      <description>
+<p>This field returns the sorted, unique names of every parameter referenced by a <code>param()</code> expression in the document, whether or not a value has been supplied for it.  It can be used to detect a value set with <action>SetKey</action> that the document does not use.  The array is empty if the document references no parameters or has not yet been parsed.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Path</name>
       <comment>File system path to the source SVG document.</comment>
       <access read="R" write="S">Read/Set</access>

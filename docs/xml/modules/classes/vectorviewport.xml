@@ -131,6 +131,7 @@
 <p>Viewport buffering is enabled by setting this field to <code>true</code> prior to initialisation.  A <class name="Bitmap">Bitmap</class> buffer will be created at the first drawing operation, and is available for the client to read from the <fl>Buffer</fl> field.</p>
 <p>Potential reasons for enabling viewport buffering include: 1. Allows the client to read the rendered graphics directly from the <fl>Buffer</fl>; 2. Overall rendering will be faster if the content of the viewport rarely changes; 3. The use of multiple buffers can improve threaded rendering.</p>
 <p>Buffering comes at a cost of using extra memory, and rendering may be less efficient if the buffered content changes frequently (e.g. is animated).  Buffering also enforces overflow (clipping) restrictions, equivalent to <fl>Overflow</fl> being permanently set to <code>HIDDEN</code>.</p>
+<p>The buffer is redrawn when a vector within it is marked as dirty, which happens automatically when its fields change.  A client that modifies content that the scene cannot observe, such as the pixels of a bitmap that a <class name="VectorImage">VectorImage</class> fill refers to, must call <class name="Vector" method="Refresh">Vector.Refresh()</class> on the vector that displays it.</p>
       </description>
     </field>
 

@@ -599,6 +599,29 @@ static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string &Value)
 
    stream << "feColorMatrix";
 
+   CSTRING type = nullptr;
+   int total_values = 0;
+   switch (Self->Mode) {
+      case CM::MATRIX:          type = "matrix"; total_values = CM_SIZE; break;
+      case CM::SATURATE:        type = "saturate"; total_values = 1; break;
+      case CM::HUE_ROTATE:      type = "hueRotate"; total_values = 1; break;
+      case CM::LUMINANCE_ALPHA: type = "luminanceToAlpha"; break;
+      case CM::CONTRAST:        type = "contrast"; total_values = 1; break;
+      case CM::BRIGHTNESS:      type = "brightness"; total_values = 1; break;
+      case CM::HUE:             type = "hue"; total_values = 1; break;
+      case CM::DESATURATE:      type = "desaturate"; break;
+      case CM::COLOURISE:       type = "colourise"; total_values = 4; break;
+      default:                  break; // An identity matrix needs no attributes
+   }
+
+   if (type) stream << " type=\"" << type << "\"";
+
+   if (total_values) {
+      stream << " values=\"";
+      for (int i=0; i < total_values; i++) stream << (i ? " " : "") << Self->Values[i];
+      stream << "\"";
+   }
+
    Value = stream.str();
    return ERR::Okay;
 }
