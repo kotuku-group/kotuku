@@ -21,7 +21,7 @@ A floating strip previews the selected colours while dragging.
       minHeight=300, dragDrop=true })
    viewport = win.clientViewport({})
    theme = gui.getTheme(viewport)
-   _, _, glAscent = gui.getFontHeight(theme.page.text)
+   _, _, glAscent = gui.getFontHeight(theme.list.text)
 
    glNextID = 0
    glBaseLine = math.round((ROW_HEIGHT + glAscent) * 0.5)
@@ -50,7 +50,7 @@ end
 
 function rowText(Viewport:obj!, X:num!, String:str!, Align:str):obj
    return Viewport.new('VectorText', table.merge({ x=X, y=glBaseLine, string=String, align=Align ?? 'left' },
-      theme.page.text))
+      theme.list.text))
 end
 
 -- Content is created once per row, updated in place and repositioned when the row width changes.  Client vectors are
@@ -71,7 +71,7 @@ end
 
 function updateRowState(Item:table!, SelectedText:bool!)
    st = Item.viewState
-   fill = (SelectedText and st.selected) ? theme.page.textSelect : theme.page.text.fill
+   fill = (SelectedText and st.selected) ? theme.list.textSelect : theme.list.text.fill
    for text in values(array<obj> { Item.content.name, Item.content.glyph, Item.content.hex }) do
       text.fill = fill
       text.opacity = st.disabled ? 0.5 : 1

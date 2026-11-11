@@ -65,7 +65,7 @@ gui.listView = function(Options:table!):table
    -- Row and font metrics are stored per view instance.
 
    function computeMetrics(View:table!)
-      line_height, font_height, ascent = gui.getFontHeight(View.theme.page.text)
+      line_height, font_height, ascent = gui.getFontHeight(View.theme.list.text)
 
       line_height = math.round(line_height)
       row_height  = Options.rowHeight ?? line_height
@@ -157,14 +157,14 @@ gui.listView = function(Options:table!):table
 
       if label != nil then
          if not Item._vectors.text then
-            Item._vectors.text = vp.new('VectorText', table.merge({ align = 'left' }, View.theme.page.text))
+            Item._vectors.text = vp.new('VectorText', table.merge({ align = 'left' }, View.theme.list.text))
          end
 
          text = Item._vectors.text
          text.{
             x          = m.margin + icon_margin,
             string     = tostring(label),
-            fill       = Item.fill ?? View.theme.page.text.fill,
+            fill       = Item.fill ?? View.theme.list.text.fill,
             visibility = VIS_VISIBLE
          }
 
@@ -182,8 +182,8 @@ gui.listView = function(Options:table!):table
    -- built-in content renderer.
 
    function renderDefaultHighlight(View:table!, Item:table!, Reason:str!)
-      vectors = Item._vectors
-      page    = View.theme.page
+      vectors  = Item._vectors
+      list     = View.theme.list
       recolour = lContentHook is nil
 
       if not vectors.highlight then
@@ -196,23 +196,23 @@ gui.listView = function(Options:table!):table
       end
 
       if Reason is 'selected' then
-         vectors.highlight.fill = page.textSelectBkgd
+         vectors.highlight.fill = list.textSelectBkgd
          vectors.highlight.visibility = VIS_VISIBLE
          if recolour then
-            vectors.text?.fill = page.textSelect
+            vectors.text?.fill = list.textSelect
             setIconFill(View, Item, true)
          end
       elseif Reason is 'highlighted' then
-         vectors.highlight.fill = page.textHighlightBkgd
+         vectors.highlight.fill = list.textHighlightBkgd
          vectors.highlight.visibility = VIS_VISIBLE
          if recolour then
-            vectors.text?.fill = page.textHighlight
+            vectors.text?.fill = list.textHighlight
             setIconFill(View, Item, true)
          end
       else
          vectors.highlight.visibility = VIS_HIDDEN
          if recolour then
-            vectors.text?.fill = Item.fill ?? page.text.fill
+            vectors.text?.fill = Item.fill ?? list.text.fill
             setIconFill(View, Item, false)
          end
       end

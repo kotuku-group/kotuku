@@ -2672,6 +2672,13 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          icon              = Icon('fill(pearl)'), -- Default icon theme for icons drawn over 'bkgd'
          iconHighlight     = Icon('fill(pearl)')  -- Recommended icon theme when highlighted or selected
       },
+      list = {
+         text = { fill = Palette.text, face = gui.fonts.list.face, fontSize = string.format('%.2fpt', gui.fonts.list.size), fontStyle = gui.fonts.list.style },
+         textHighlight     = Palette.altText,  -- Colour for 'text' during user hover
+         textHighlightBkgd = Palette.contrast, -- Background fill for 'text' during user hover
+         textSelect        = Palette.altText,  -- Colour for 'text' when selected
+         textSelectBkgd    = Palette.prime     -- Background fill for 'text' when selected
+      },
       widget = { -- Non-input widgets only (exc. checkbox, combobox, etc.)
          text        = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          bkgd        = { fill = Palette.prime, opacity = 1 },
@@ -2801,6 +2808,13 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          textSelectBkgd    = Palette.prime,
          icon              = Icon('fill(carbon)'),
          iconHighlight     = Icon('fill(pearl)')
+      },
+      list = {
+         text = { fill = Palette.text, face = gui.fonts.list.face, fontSize = string.format('%.2fpt', gui.fonts.list.size), fontStyle = gui.fonts.list.style },
+         textHighlight     = Palette.altText,
+         textHighlightBkgd = Palette.contrast,
+         textSelect        = Palette.altText,
+         textSelectBkgd    = Palette.prime
       },
       widget = {
          text        = { fill = Palette.altText, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },

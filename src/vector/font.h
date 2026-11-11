@@ -84,6 +84,8 @@ class freetype_font {
             double em_scale = 0; // Pixels per font unit, matching the scale of the glyph outlines
             METRIC_GROUP axis;
             gpos_kerning::instance kern_instance; // GPOS kerning state for this style instance
+            std::vector<int> normalised_axes; // F2Dot14 coordinates shared by GSUB and GPOS
+            bool axes_ready = false;
             bool kern_ready = false; // True once kern_instance has the design coordinates of this style
             bool kerning_enabled = true; // False if the font configuration sets Kerning = No
             int16_t size = false; // True if the size is below SMALL_TEXT_LIMIT
@@ -99,6 +101,7 @@ class freetype_font {
             glyph & get_glyph(uint32_t Unicode) {
                return get_glyph_by_index(FT_Get_Char_Index(font->face, Unicode));
             }
+            std::span<const int> normalised_coordinates();
             gpos_kerning::adjustment positioning(int PrevGlyph, int Glyph);
             double kerning(int PrevGlyph, int Glyph) {
                auto value = positioning(PrevGlyph, Glyph);

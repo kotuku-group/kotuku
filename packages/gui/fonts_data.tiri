@@ -43,7 +43,8 @@ glFontDefaults = {
    filesys  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Text for files, folders
    icon     = { face='Noto Sans,Noto Sans UI', size='100%', style='Bold' }, -- Labeling for icons
    menu     = { face='Noto Sans,Noto Sans UI', size='100%', style='Medium' }, -- Menu & dropdown item text
-   page     = { face='Noto Sans,Noto Sans UI', size='100%', style='Medium' }, -- Multiple lines of text
+   page     = { face='Noto Sans,Noto Sans UI', size='100%', style='Medium' }, -- Text bodies
+   list     = { face='Noto Sans UI', size='100%', style='Regular' }, -- List item text
    small    = { face='Noto Sans UI', size=9, style='Regular' }, -- Recommended text for small sizes
    xsmall   = { face='Micro', size=6, style='Medium' }, -- The smallest available, still legible size
    large    = { face='Noto Sans,Noto Sans UI', size='130%', style='Medium' }, -- Recommended text for headers

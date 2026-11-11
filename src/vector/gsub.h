@@ -2,9 +2,8 @@
 
 // Glyph substitution reader for the OpenType GSUB table.
 //
-// Supported: Single (lookup type 1) formats 1 and 2, Multiple (type 2), Alternate (type 3) and Ligature (type 4)
-// substitutions, Extension (type 7) wrappers, and lookup flags that ignore base glyphs, ligatures and marks.  Source
-// clusters are retained through every substitution.  Contextual lookups and FeatureVariations are not supported.
+// Supports lookup types 1 to 6, Extension (type 7) wrappers, lookup filtering and FeatureVariations.  Contextual
+// lookups support glyph, class and coverage patterns.  Source clusters survive every substitution.
 //
 // Substitution is opt-in: a lookup is only applied if a feature that references it is explicitly requested.
 //
@@ -16,6 +15,7 @@
 #include <map>
 #include <span>
 #include <string>
+#include <tuple>
 
 class gsub_table {
    public:
@@ -27,13 +27,14 @@ class gsub_table {
       // True if the font has usable substitution lookups.
 
       bool enabled() const { return not lookups.empty(); }
+      bool has_variations() const { return not variations.empty(); }
 
       // Applies the lookups of the requested Features to a run of glyphs in a single Script.  Budget limits the
       // total work and GrowthBudget limits the glyphs that multiple substitutions can insert.  Both are shared
-      // across runs if provided.
+      // across runs if provided.  Coordinates are normalised, avar-mapped F2Dot14 values in face axis order.
 
       void apply(std::vector<shaped_glyph> &Glyphs, uint32_t Script, std::string_view Features,
-         size_t *Budget = nullptr, size_t *GrowthBudget = nullptr);
+         size_t *Budget = nullptr, size_t *GrowthBudget = nullptr, std::span<const int> Coordinates = {});
 
       // Default work and growth budgets for a line of the given glyph count.
 
@@ -46,9 +47,21 @@ class gsub_table {
       }
 
    private:
+      struct sequence_lookup { uint16_t sequence, lookup; };
+
+      struct context_rule {
+         uint32_t backtrack = 0, input = 0, lookahead = 0; // Absolute offsets of pattern arrays
+         uint16_t backtrack_count = 0, input_count = 0, lookahead_count = 0;
+         std::vector<sequence_lookup> actions;
+      };
+
       struct subtable {
          uint32_t offset; // Absolute offset of the subtable within the GSUB table, after Extension resolution
          uint16_t type;   // Resolved lookup type
+         uint16_t format = 0;
+         uint32_t coverage = 0, backtrack_classes = 0, input_classes = 0, lookahead_classes = 0;
+         std::vector<context_rule> rules;
+         std::vector<std::pair<uint32_t, uint32_t>> rule_sets; // First rule and count, by coverage index or class
       };
 
       struct lookup {
@@ -67,11 +80,19 @@ class gsub_table {
          uint32_t value; // The requested feature value; selects the alternate for type 3 lookups
       };
 
+      struct condition { uint16_t axis; int16_t minimum, maximum; };
+      struct variation {
+         bool supported = true;
+         std::vector<condition> conditions;
+         std::map<uint16_t, std::vector<uint16_t>> replacements;
+      };
+
       std::vector<uint8_t> gsub, gdef;
       std::vector<lookup> lookups;
       std::vector<feature> features;
       std::map<uint32_t, std::vector<uint16_t>> scripts; // Script tag to the feature indices of its default language
-      std::map<std::pair<uint32_t, std::string>, std::vector<selection>> selections; // Cached lookup selections
+      std::vector<variation> variations;
+      std::map<std::tuple<uint32_t, std::string, int>, std::vector<selection>> selections;
       uint32_t glyph_classes = 0; // GDEF offsets, zero if absent
       uint32_t mark_classes = 0;
       uint32_t mark_sets = 0;
@@ -79,6 +100,9 @@ class gsub_table {
 
       bool validate();
       bool validate_subtable(uint32_t Offset, uint16_t Type, uint32_t &Budget) const;
+      bool validate_context(subtable &Sub, uint32_t &Budget);
+      bool validate_variations(uint32_t Offset, uint32_t &Budget);
       bool validate_gdef();
-      const std::vector<selection> & select(uint32_t Script, std::string_view Features);
+      int variation_index(std::span<const int> Coordinates, size_t &Budget) const;
+      const std::vector<selection> & select(uint32_t Script, std::string_view Features, int Variation);
 };
