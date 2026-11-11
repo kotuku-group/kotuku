@@ -3,21 +3,23 @@
   <title>Houndstooth</title>
   <desc>A black and white houndstooth, formed by weaving four dark and four light threads in a 2/2 twill.
     The diagonal edges of the twill give the broken check its pointed shape.</desc>
+
   <defs>
     <clipPath id="clipTextilesHoundstoothTwill">
-      <path d="
-        M0,0h1l-4,4h-1ZM2,0h1l-4,4h-1ZM4,0h1l-4,4h-1ZM6,0h1l-4,4h-1Z"/>
+      <path d="M0,0h1l-4,4h-1ZM2,0h1l-4,4h-1ZM4,0h1l-4,4h-1ZM6,0h1l-4,4h-1Z"/>
     </clipPath>
+
     <pattern id="pidTextilesHoundstooth" patternUnits="userSpaceOnUse" width="26" height="26" viewBox="0 0 4 4">
-      <rect width="4" height="4" fill="#f9f9f9"/>
+      <rect width="4" height="4" fill="param(light) #f9f9f9"/>
       <!-- Warp -->
-      <path fill="#060606" d="M2,0h2v4h-2Z"/>
+      <path fill="param(dark) #060606" d="M2,0h2v4h-2Z"/>
       <!-- Weft, woven through the warp -->
       <g clip-path="url(#clipTextilesHoundstoothTwill)">
-        <path fill="#f9f9f9" d="M0,0h4v2h-4Z"/>
-        <path fill="#060606" d="M0,2h4v2h-4Z"/>
+        <path fill="param(light) #f9f9f9" d="M0,0h4v2h-4Z"/>
+        <path fill="param(dark) #060606" d="M0,2h4v2h-4Z"/>
       </g>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidTextilesHoundstooth)"/>
 </svg>

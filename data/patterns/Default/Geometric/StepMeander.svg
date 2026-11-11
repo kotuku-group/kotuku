@@ -3,12 +3,14 @@
   <title>Step meander</title>
   <desc>Black and white bands nested around the corners of square cells, turning between neighbouring cells so the
     stripes step back and forth down each column and run straight across the joins.</desc>
+
   <defs>
     <pattern id="pidGeometricStepMeander" patternUnits="userSpaceOnUse" width="88" height="88"
       viewBox="0 0 176 176">
-      <rect width="176" height="176" fill="#f4f3ef"/>
+      <rect width="100%" height="100%" fill="param(bkgd) #f4f3ef"/>
+
       <!-- Each quarter nests its bands around one corner: bottom-right, top-left, top-right, bottom-left -->
-      <path fill="#1b1b1b" d="
+      <path fill="param(fore) #1b1b1b" d="
         M80,88L72,88L72,72L88,72L88,80L80,80ZM64,88L56,88L56,56L88,56L88,64L64,64Z
         M48,88L40,88L40,40L88,40L88,48L48,48ZM32,88L24,88L24,24L88,24L88,32L32,32ZM16,88L8,88L8,8L88,8L88,16L16,16Z
         M96,0L104,0L104,16L88,16L88,8L96,8ZM112,0L120,0L120,32L88,32L88,24L112,24Z
@@ -22,5 +24,6 @@
         M160,176L168,176L168,96L88,96L88,104L160,104Z"/>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidGeometricStepMeander)"/>
 </svg>

@@ -5,17 +5,17 @@
   <defs>
     <pattern id="pidEncausticTrellis" patternUnits="userSpaceOnUse" width="64" height="64"
       viewBox="0 0 64 64">
-      <rect width="64" height="64" fill="#4a4a4d"/>
+      <rect width="64" height="64" fill="param(bkgd) #4a4a4d"/>
       <!-- Framed diamonds -->
-      <path fill="#ecebe6" d="
+      <path fill="param(fore) #ecebe6" d="
         M16,2L30,16L16,30L2,16ZM16,7L7,16L16,25L25,16ZM48,2L62,16L48,30L34,16ZM48,7L39,16L48,25L57,16Z
         M16,34L30,48L16,62L2,48ZM16,39L7,48L16,57L25,48ZM48,34L62,48L48,62L34,48ZM48,39L39,48L48,57L57,48Z"/>
       <!-- Diamond centres -->
-      <path fill="#ecebe6" d="
+      <path fill="param(fore) #ecebe6" d="
         M16,12L20,16L16,20L12,16ZM48,12L52,16L48,20L44,16Z
         M16,44L20,48L16,52L12,48ZM48,44L52,48L48,52L44,48Z"/>
       <!-- Crosses -->
-      <path fill="#ecebe6" d="
+      <path fill="param(fore) #ecebe6" d="
         M-2,-7L2,-7L2,-2L7,-2L7,2L2,2L2,7L-2,7L-2,2L-7,2L-7,-2L-2,-2Z
         M30,-7L34,-7L34,-2L39,-2L39,2L34,2L34,7L30,7L30,2L25,2L25,-2L30,-2Z
         M62,-7L66,-7L66,-2L71,-2L71,2L66,2L66,7L62,7L62,2L57,2L57,-2L62,-2Z

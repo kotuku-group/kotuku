@@ -6,9 +6,9 @@
   <defs>
     <pattern id="pidEncausticStars" patternUnits="userSpaceOnUse" width="64" height="64"
       viewBox="0 0 64 64">
-      <rect width="64" height="64" fill="#4a4a4d"/>
+      <rect width="64" height="64" fill="param(bkgd) #4a4a4d"/>
       <!-- Stars -->
-      <path fill="#ecebe6" d="
+      <path fill="param(fore) #ecebe6" d="
         M16,2L19.44,7.69L25.9,6.1L24.31,12.56L30,16L24.31,19.44L25.9,25.9L19.44,24.31L16,30L12.56,24.31L6.1,25.9
         L7.69,19.44L2,16L7.69,12.56L6.1,6.1L12.56,7.69Z
         M48,2L51.44,7.69L57.9,6.1L56.31,12.56L62,16L56.31,19.44L57.9,25.9L51.44,24.31L48,30L44.56,24.31L38.1,25.9
@@ -18,13 +18,13 @@
         M48,34L51.44,39.69L57.9,38.1L56.31,44.56L62,48L56.31,51.44L57.9,57.9L51.44,56.31L48,62L44.56,56.31L38.1,57.9
         L39.69,51.44L34,48L39.69,44.56L38.1,38.1L44.56,39.69Z"/>
       <!-- Star centres -->
-      <path fill="#4a4a4d" d="
+      <path fill="param(bkgd) #4a4a4d" d="
         M12,16 A4,4 0 1,1 20,16 A4,4 0 1,1 12,16Z
         M44,16 A4,4 0 1,1 52,16 A4,4 0 1,1 44,16Z
         M12,48 A4,4 0 1,1 20,48 A4,4 0 1,1 12,48Z
         M44,48 A4,4 0 1,1 52,48 A4,4 0 1,1 44,48Z"/>
       <!-- Links -->
-      <path fill="#ecebe6" d="
+      <path fill="param(fore) #ecebe6" d="
         M0,-5L5,0L0,5L-5,0Z
         M32,-5L37,0L32,5L27,0Z
         M64,-5L69,0L64,5L59,0Z

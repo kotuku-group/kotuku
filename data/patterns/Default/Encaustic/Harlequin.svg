@@ -6,16 +6,16 @@
   <defs>
     <pattern id="pidEncausticHarlequin" patternUnits="userSpaceOnUse" width="64" height="64"
       viewBox="0 0 128 128">
-      <rect width="128" height="128" fill="#ecebe6"/>
+      <rect width="128" height="128" fill="param(bkgd) #ecebe6"/>
       <!-- Large diamonds -->
-      <path fill="#4a4a4d" d="
+      <path fill="param(fore) #4a4a4d" d="
         M64,30L98,64L64,98L30,64ZM0,-34L34,0L0,34L-34,0ZM128,-34L162,0L128,34L94,0ZM0,94L34,128L0,162L-34,128Z
         M128,94L162,128L128,162L94,128Z"/>
       <!-- Inlaid jewels -->
-      <path fill="#ecebe6" d="
+      <path fill="param(bkgd) #ecebe6" d="
         M64,55L73,64L64,73L55,64ZM0,-9L9,0L0,9L-9,0ZM128,-9L137,0L128,9L119,0ZM0,119L9,128L0,137L-9,128Z
         M128,119L137,128L128,137L119,128Z"/>
-      <path fill="#4a4a4d" d="
+      <path fill="param(fore) #4a4a4d" d="
         M64,-9L73,0L64,9L55,0ZM128,55L137,64L128,73L119,64ZM64,119L73,128L64,137L55,128ZM0,55L9,64L0,73L-9,64Z"/>
     </pattern>
   </defs>

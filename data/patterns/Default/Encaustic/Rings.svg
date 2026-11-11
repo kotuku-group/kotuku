@@ -6,11 +6,11 @@
   <defs>
     <pattern id="pidEncausticRings" patternUnits="userSpaceOnUse" width="32" height="32"
       viewBox="0 0 64 64">
-      <rect width="64" height="64" fill="#4a4a4d"/>
+      <rect width="64" height="64" fill="param(bkgd) #4a4a4d"/>
       <!-- Disc -->
-      <path fill="#ecebe6" d="M1,32 A31,31 0 1,1 63,32 A31,31 0 1,1 1,32Z"/>
+      <path fill="param(fore) #ecebe6" d="M1,32 A31,31 0 1,1 63,32 A31,31 0 1,1 1,32Z"/>
       <!-- Inlaid ring and centre -->
-      <path fill="#4a4a4d" d="
+      <path fill="param(bkgd) #4a4a4d" d="
         M10,32 A22,22 0 1,1 54,32 A22,22 0 1,1 10,32ZM13,32 A19,19 0 1,0 51,32 A19,19 0 1,0 13,32Z
         M32,20Q33.8,30.2 44,32Q33.8,33.8 32,44Q30.2,33.8 20,32Q30.2,30.2 32,20Z"/>
     </pattern>

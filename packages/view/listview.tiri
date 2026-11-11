@@ -18,6 +18,10 @@ function isFinite(Value:any):bool
    return Value is <num> and Value > -math.huge and Value < math.huge
 end
 
+function validateRowHeight(Height:any)
+   assert(Height is nil or (isFinite(Height) and Height > 0), 'rowHeight must be a finite positive number')
+end
+
 function raiseFailure(Exception)
    raise(Exception.code ?? ERR_Failed, Exception.message)
 end
@@ -40,10 +44,14 @@ gui.listView = function(Options:table!):table
    assert(lContentHook is nil or lContentHook is <func>, 'constructItem must be a function')
    assert(lHighlightHook is nil or lHighlightHook is <func>, 'constructHighlight must be a function')
    assert(lDestroyHook is nil or lDestroyHook is <func>, 'destroyItem must be a function')
-   assert(Options.rowHeight is nil or (isFinite(Options.rowHeight) and Options.rowHeight > 0),
-      'rowHeight must be a finite positive number')
+   validateRowHeight(Options.rowHeight)
    assert(Options.rowSpacing is nil or (isFinite(Options.rowSpacing) and Options.rowSpacing >= 0),
       'rowSpacing must be a finite non-negative number')
+
+   function validateItems(Items)
+      if not Items then return end
+      for item in values(Items) do validateRowHeight(item.rowHeight) end
+   end
 
    -- Client callbacks are dispatched with the view's structural guard set, which is restored on all exit paths.
 
@@ -68,7 +76,7 @@ gui.listView = function(Options:table!):table
          lineHeight = line_height,
          rowHeight  = row_height,
          rowSpacing = Options.rowSpacing ?? VSPACING,
-         textOffset = math.round((row_height + ascent) * 0.5), -- Baseline that centres capitals in the row
+         ascent     = ascent,
          iconSize   = font_height,
          margin     = math.round(line_height * 0.3)
       }
@@ -76,6 +84,17 @@ gui.listView = function(Options:table!):table
 
    -------------------------------------------------------------------------------------------------------------------
    -- Built-in renderers
+
+   function positionDefaultContent(View:table!, Item:table!)
+      m = View._metrics
+      height = Item.rowHeight ?? m.rowHeight
+      text = Item._vectors.text
+      if text then text.y = math.round((height + m.ascent) * 0.5) end -- Baseline that centres capitals in the row
+
+      image = Item._vectors.iconImage
+      icon = View.icons[Item.icon]
+      if image and icon then image.y = math.round((height - m.iconSize) * 0.5) - icon.margin end
+   end
 
    function setIconFill(View:table!, Item:table!, Highlighted:bool!)
       image = Item._vectors.iconImage
@@ -123,7 +142,6 @@ gui.listView = function(Options:table!):table
             image.{
                fill       = View.icons[Item.icon].fill,
                x          = math.round(m.lineHeight * 0.2) - margin,
-               y          = math.round((m.rowHeight - m.iconSize) * 0.5) - margin,
                width      = m.iconSize + (margin * 2),
                height     = m.iconSize + (margin * 2),
                visibility = VIS_VISIBLE
@@ -145,7 +163,6 @@ gui.listView = function(Options:table!):table
          text = Item._vectors.text
          text.{
             x          = m.margin + icon_margin,
-            y          = m.textOffset,
             string     = tostring(label),
             fill       = Item.fill ?? View.theme.page.text.fill,
             visibility = VIS_VISIBLE
@@ -158,6 +175,7 @@ gui.listView = function(Options:table!):table
       end
 
       Item._contentWidth = width + m.margin
+      positionDefaultContent(View, Item)
    end
 
    -- Draws the selection and hover background.  The text and icon are recoloured only if they were drawn by the
@@ -275,6 +293,8 @@ gui.listView = function(Options:table!):table
    end
 
    function layoutRows(View:table!)
+      validateItems(View.items)
+
       m      = View._metrics
       EDGE   = math.round(m.lineHeight * .15)
       y      = EDGE
@@ -286,17 +306,19 @@ gui.listView = function(Options:table!):table
          vp = item._vectors?.viewport
          if not vp then continue end
 
-         item.{ _x = EDGE, _y = y, _height = m.rowHeight }
+         height = item.rowHeight ?? m.rowHeight
+         item.{ _x = EDGE, _y = y, _height = height }
 
          if vp.y != y then vp.y = y end
-         if vp.height != m.rowHeight then vp.height = m.rowHeight end
+         if vp.height != height then vp.height = height end
+         if not lContentHook then positionDefaultContent(View, item) end
 
          if item.hidden then
             if vp.visibility != VIS_HIDDEN then vp.visibility = VIS_HIDDEN end
          else
             if vp.visibility != VIS_VISIBLE then vp.visibility = VIS_VISIBLE end
             if (item._contentWidth ?? 0) > widest then widest = item._contentWidth end
-            y += m.rowHeight + m.rowSpacing
+            y += height + m.rowSpacing
          end
       end
 
@@ -343,7 +365,7 @@ gui.listView = function(Options:table!):table
       Item.viewState = { selected=false, highlighted=false, focused=false, disabled=false }
 
       vp = View.page.new('VectorViewport', {
-         x = EDGE, xOffset = EDGE, y = EDGE, height = View._metrics.rowHeight,
+         x = EDGE, xOffset = EDGE, y = EDGE, height = Item.rowHeight ?? View._metrics.rowHeight,
          visibility = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
       })
 
@@ -432,6 +454,7 @@ gui.listView = function(Options:table!):table
 
    function refreshRow(View:table!, Item:table!)
       if not Item._rowReady then return end
+      validateRowHeight(Item.rowHeight)
       old_width = Item._contentWidth
       vp = Item._vectors.viewport
 
@@ -463,6 +486,20 @@ gui.listView = function(Options:table!):table
    end
 
    function prepareView(View:table!)
+      -- Validate whole batches before adding rows or clearing the current contents.
+
+      add_items = View.addItems
+      View.addItems = function(Items)
+         validateItems(Items)
+         add_items(Items)
+      end
+
+      load_items = View.loadItems
+      View.loadItems = function(Items)
+         validateItems(Items)
+         load_items(Items)
+      end
+
       -- Client cleanup: constructItem(..., 'destroy') then destroyItem(), while the viewport is still valid.  Both are
       -- attempted, and the first failure is returned to the caller for reporting after the row is released.
 
@@ -541,14 +578,16 @@ gui.listView = function(Options:table!):table
       for k in pairs(KV) do
          assert(not isReservedField(k), f'Item field "{k}" is reserved by the view')
       end
+      validateRowHeight(KV.rowHeight is nil ? Item.rowHeight : KV.rowHeight)
 
       was_hidden = Item.hidden is true
+      old_height = Item.rowHeight
       for k, v in pairs(KV) do
          Item[k] = v
       end
 
       refreshRow(vw, Item)
-      if (Item.hidden is true) != was_hidden then vw._refreshLayout() end
+      if ((Item.hidden is true) != was_hidden) or (Item.rowHeight != old_height) then vw._refreshLayout() end
       vw.scene.surface.mtScheduleRedraw()
    end
 
@@ -563,6 +602,7 @@ gui.listView = function(Options:table!):table
 
    vw.relayout = function()
       assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
+      validateItems(vw.items)
       vw._refreshLayout()
    end
 

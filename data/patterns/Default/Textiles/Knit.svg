@@ -2,9 +2,11 @@
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Knit</title>
   <desc>A cranberry stockinette knit of interlocking V stitches, as on a hand-knitted jumper.</desc>
+
   <defs>
     <pattern id="pidTextilesKnit" patternUnits="userSpaceOnUse" width="32" height="32" viewBox="0 0 32 32">
       <rect width="32" height="32" fill="#4a1218"/>
+
       <g fill="none">
       <!-- Stockinette: each stitch is a V of two leaning loops.  Rows run top to bottom so that each row -->
       <!-- overlaps the one above; the rows beyond each edge are repeated for a seamless tile. -->
@@ -192,5 +194,6 @@
       </g>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidTextilesKnit)"/>
 </svg>

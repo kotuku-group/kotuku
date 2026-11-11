@@ -47,7 +47,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          branches++;
       }
       #else
-      void traceBranch(CSTRING Message = "", ...) cmp_fmt((format(printf, 2, 3))) { }
+      void traceBranch([[maybe_unused]] CSTRING Message = "", ...) cmp_fmt((format(printf, 2, 3))) { }
       #endif
 
       inline void debranch() {
@@ -122,7 +122,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          return Code; // Breakpoint here
       }
 
-      void debug(CSTRING Message, ...) {
+      void debug([[maybe_unused]] CSTRING Message, ...) {
          #ifndef NDEBUG
             va_list arg;
             va_start(arg, Message);
@@ -131,7 +131,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          #endif
       }
 
-      void trace(CSTRING Message, ...) {
+      void trace([[maybe_unused]] CSTRING Message, ...) {
          #ifndef NDEBUG
             va_list arg;
             va_start(arg, Message);
@@ -140,7 +140,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          #endif
       }
 
-      void traceWarning(CSTRING Message, ...) {
+      void traceWarning([[maybe_unused]] CSTRING Message, ...) {
          #ifndef NDEBUG
             va_list arg;
             va_start(arg, Message);
