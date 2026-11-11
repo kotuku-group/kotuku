@@ -295,7 +295,7 @@ class freetype_font {
       int glyph_flags = 0;
       uint32_t family_hash = 0; // strihash() of the resolved family name that first loaded this face
       ft_point *active_size = nullptr;
-      gpos_kerning gpos; // GPOS pair kerning, loaded on first use by get_gpos()
+      gpos_kerning gpos; // GPOS pair kerning and mark positioning, loaded on first use by get_gpos()
       bool gpos_loaded = false;
       gsub_table gsub; // Opt-in substitution, independent of size and variable instance
       bool gsub_loaded = false;
@@ -323,8 +323,8 @@ class freetype_font {
          }
       }
 
-      // Returns the GPOS kerning reader for the face, loading it on the first call.  A face without usable GPOS
-      // kerning returns a disabled reader.
+      // Returns the GPOS reader for the face, loading it on the first call.  Pair kerning and mark positioning
+      // report their availability separately.
 
       gpos_kerning & get_gpos() {
          if (not gpos_loaded) {

@@ -285,6 +285,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    }
 
    auto guide = Vector->GuidePath;
+   bool positioned_marks = false;
    int wrapped_lines = 0; // Extra lines created by InlineSize word-wrapping
    double start_x, start_y, end_vx, end_vy;
    double advance_scale = 1.0;
@@ -349,6 +350,11 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       double angle = 0;
       for (auto &line : lines) {
          const auto &shaped = Vector->shaped_line(line);
+         const bool attached_marks = std::ranges::any_of(shaped, [](const auto &Glyph) {
+            return Glyph.attachment != shaped_glyph::INVISIBLE;
+         });
+         positioned_marks = positioned_marks or attached_marks;
+         std::vector<agg::trans_affine> origins(attached_marks ? shaped.size() : 0);
          line.chars.clear();
          line.wrapOffsets.clear(); // Guide paths do not wrap
          prev_glyph_index = 0; // Kerning does not apply across lines
@@ -452,8 +458,17 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             transform.rotate(angle); // Rotate the character in accordance with its position on the path angle.
             transform.translate(tx + placement * advance_scale * cos(angle),
                ty + placement * advance_scale * sin(angle));
+            if (attached_marks) origins[i] = transform;
             if (unicode > 0x20) {
-               agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
+               auto drawing = transform;
+               if (current.attachment < i) {
+                  drawing = origins[current.attachment];
+                  const double x = current.mark_x * pt.em_scale, y = -current.mark_y * pt.em_scale;
+                  drawing.tx += x * drawing.sx + y * drawing.shx;
+                  drawing.ty += x * drawing.shy + y * drawing.sy;
+               }
+               if (attached_marks) origins[i] = drawing;
+               agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, drawing);
                Path.concat_path(trans_char);
             }
 
@@ -498,6 +513,12 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
       for (auto &line : lines) {
          const auto &shaped = Vector->shaped_line(line);
+         const bool attached_marks = std::ranges::any_of(shaped, [](const auto &Glyph) {
+            return Glyph.attachment != shaped_glyph::INVISIBLE;
+         });
+         positioned_marks = positioned_marks or attached_marks;
+         std::vector<agg::trans_affine> origins(attached_marks ? shaped.size() : 0);
+         size_t previous_index = 0;
          line.chars.clear();
          line.wrapOffsets.clear();
          bool in_word = false;
@@ -648,7 +669,14 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             double char_width = (glyph.adv_x + adjustment.second_advance + word_gap) * std::abs(transform.sx);
 
             // Apply first-glyph placement only after wrapping has decided whether this pair stays together.
-            if (adjustment.first_placement) {
+            // Attachment is applied after pair positioning, so later pair placement cannot move an attached mark
+            // away from its base.  Base placement still moves both the outline and its saved attachment origin.
+            if (adjustment.first_placement and ((not attached_marks) or
+                (shaped[previous_index].attachment IS shaped_glyph::INVISIBLE))) {
+               if (attached_marks) {
+                  origins[previous_index].tx += adjustment.first_placement * previous_sx;
+                  origins[previous_index].ty += adjustment.first_placement * previous_shy;
+               }
                for (auto vertex=previous_start; vertex < previous_end; vertex++) {
                   double x, y;
                   if (agg::is_vertex(Path.vertex(vertex, &x, &y))) {
@@ -663,7 +691,16 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                previous_start = Path.total_vertices();
                previous_sx = transform.sx;
                previous_shy = transform.shy;
-               agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
+               previous_index = i;
+               auto drawing = transform;
+               if (current.attachment < i) {
+                  drawing = origins[current.attachment];
+                  const double x = current.mark_x * pt.em_scale, y = -current.mark_y * pt.em_scale;
+                  drawing.tx += x * drawing.sx + y * drawing.shx;
+                  drawing.ty += x * drawing.shy + y * drawing.sy;
+               }
+               if (attached_marks) origins[i] = drawing;
+               agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, drawing);
                Path.concat_path(trans_char);
                previous_end = Path.total_vertices();
             }
@@ -721,6 +758,14 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    auto total_lines = std::ssize(Vector->txLines) + wrapped_lines;
    if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * line_pitch;
    if (not guide) Vector->Bounds.bottom += (std::ssize(Vector->txLines) - 1) * Vector->paragraph_spacing();
+
+   if (positioned_marks and Path.total_vertices()) {
+      const auto ink = get_bounds(Path);
+      Vector->Bounds.left = std::min(Vector->Bounds.left, ink.left);
+      Vector->Bounds.top = std::min(Vector->Bounds.top, ink.top);
+      Vector->Bounds.right = std::max(Vector->Bounds.right, ink.right);
+      Vector->Bounds.bottom = std::max(Vector->Bounds.bottom, ink.bottom);
+   }
 
    update_text_effect_region(Vector);
 

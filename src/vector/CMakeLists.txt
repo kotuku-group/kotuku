@@ -25,6 +25,7 @@ set (vector_sources
    "${CMAKE_CURRENT_SOURCE_DIR}/vector.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/vector_functions.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/kerning.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/mark_positioning.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/gsub.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/text_shaping.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/font_style.cpp"

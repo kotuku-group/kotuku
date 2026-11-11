@@ -2,6 +2,7 @@
 
 #include "text_shaping.h"
 #include "gsub.h"
+#include "kerning.h"
 #include "opentype.h"
 #include "../link/unicode.h"
 #include <algorithm>
@@ -43,7 +44,7 @@ uint32_t script_of(uint32_t Unicode)
 //********************************************************************************************************************
 
 std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_table *Table,
-   std::string_view Features, std::span<const int> Coordinates)
+   std::string_view Features, std::span<const int> Coordinates, gpos_kerning *Positioning)
 {
    std::vector<shaped_glyph> glyphs;
    glyphs.reserve(Line.size());
@@ -54,7 +55,11 @@ std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_t
       glyphs.push_back({ FT_Get_Char_Index(Face, unicode), uint32_t(offset), 1, 0, unicode });
       offset += length;
    }
-   if ((not Table) or Features.empty() or (Features IS "none") or (not Table->enabled())) return glyphs;
+   const bool substitute = Table and Table->enabled() and (not Features.empty()) and (Features != "none");
+   const bool position = Positioning and Positioning->marks_enabled() and (Features != "none") and
+      (ot_reader::feature_value(Features, ot_reader::tag('m','a','r','k')).value_or(1) != 0);
+   if ((not substitute) and (not position)) return glyphs;
+   gpos_kerning::instance positioning_instance(Coordinates);
 
    // Leading common/inherited characters join the first strong script.  A neutral-only line uses Latin so that
    // numeric features work on strings containing only digits.  Later neutral characters join the preceding run.
@@ -74,9 +79,13 @@ std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_t
          if ((next != SCRIPT_COMMON) and (next != script)) break;
          end++;
       }
-      if ((script != SCRIPT_UNSUPPORTED) and budget) {
+      if ((script != SCRIPT_UNSUPPORTED) and (budget or position)) {
          std::vector<shaped_glyph> run(glyphs.begin() + start, glyphs.begin() + end);
-         Table->apply(run, script, Features, &budget, &growth, Coordinates);
+         if (substitute) Table->apply(run, script, Features, &budget, &growth, Coordinates);
+         if (position) Positioning->position_marks(run, script, positioning_instance);
+         for (auto &glyph : run) {
+            if (glyph.attachment != shaped_glyph::INVISIBLE) glyph.attachment += uint32_t(result.size());
+         }
          result.insert(result.end(), run.begin(), run.end());
       }
       else result.insert(result.end(), glyphs.begin() + start, glyphs.begin() + end);
@@ -89,10 +98,11 @@ std::vector<shaped_glyph> shape_line(FT_Face Face, std::string_view Line, gsub_t
 //********************************************************************************************************************
 
 const std::vector<shaped_glyph> & shaped_line_cache::get(FT_Face Face, std::string_view Line,
-   std::span<const FT_Fixed> Axes, std::string_view Features, gsub_table *Table, std::span<const int> Coordinates)
+   std::span<const FT_Fixed> Axes, std::string_view Features, gsub_table *Table, std::span<const int> Coordinates,
+   gpos_kerning *Positioning)
 {
    if ((not valid) or (face != Face) or (features != Features) or (not std::ranges::equal(axes, Axes))) {
-      glyphs = shape_line(Face, Line, Table, Features, Coordinates);
+      glyphs = shape_line(Face, Line, Table, Features, Coordinates, Positioning);
       face = Face;
       axes.assign(Axes.begin(), Axes.end());
       features = Features;

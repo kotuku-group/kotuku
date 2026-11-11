@@ -1100,10 +1100,6 @@ creates.
 
 No features currently change their behaviour in response to this setting.  Features that extend a standard by
 default will consult it so that the standard behaviour can be restored for the scene.
--END-
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
 
 -FIELD-
 Defs: Obtain direct access to the SVG definition table.
@@ -1535,8 +1531,8 @@ ERR route_vector_key(const evKey *Event, APTR Meta)
       owners->erase(owner);
    }
 
-   auto release = kt::Defer([&]() { 
-      for (auto &sub : callbacks) sub.unpin(); 
+   auto release = kt::Defer([&]() {
+      for (auto &sub : callbacks) sub.unpin();
    });
 
    for (auto &sub : callbacks) {

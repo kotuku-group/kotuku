@@ -1,6 +1,6 @@
 #pragma once
 
-// Pair kerning reader for the OpenType GPOS table.
+// Pair kerning and MarkToBase reader for the OpenType GPOS table.
 //
 // FreeType's FT_Get_Kerning() only reads the legacy 'kern' table, and its optional GPOS support skips the device
 // records that variable fonts use for per-instance kerning.  This reader answers pair kerning queries from the
@@ -11,7 +11,8 @@
 //
 // Supported: PairPos (lookup type 2) formats 1 and 2, Extension (type 9) wrappers, Coverage and ClassDef formats 1
 // and 2, lookup flags that ignore base glyphs, ligatures and marks, and VariationIndex device records.  Hinting
-// device tables are ignored, as are all other lookup types.
+// device tables are ignored.  MarkToBase (type 4) is selected separately through each supported script's 'mark'
+// feature, with design-space anchors and variation corrections.  Other lookup types are ignored.
 //
 // The tables are fully validated by load().  A malformed table disables kerning rather than failing font loading.
 // Instances are not thread-safe; the vector module protects them with glFontMutex.
@@ -20,7 +21,10 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <map>
 #include <ankerl/unordered_dense.h>
+
+struct shaped_glyph;
 
 class gpos_kerning {
    public:
@@ -67,13 +71,23 @@ class gpos_kerning {
       gpos_kerning() = default;
 
       // Loads the GPOS and GDEF tables.  GDEF is optional (pass an empty vector).  Returns false and disables
-      // kerning if the GPOS table has no usable 'kern' lookups or if either table is malformed.
+      // positioning if the GPOS table has no usable 'kern' or 'mark' lookups or if either table is malformed.
 
       bool load(std::vector<uint8_t> GPOS, std::vector<uint8_t> GDEF);
 
       // True if the font has GPOS pair kerning.
 
       bool enabled() const { return not lookups.empty(); }
+
+      bool marks_enabled() const {
+         for (const auto &[script, entries] : mark_lookups) if (not entries.empty()) return true;
+         return false;
+      }
+
+      // Attaches marks to preceding bases in a supported script run.  Offsets remain in font units; neither
+      // glyph advances nor source codepoint counts are changed.  The caller holds glFontMutex.
+
+      void position_marks(std::span<shaped_glyph> Glyphs, uint32_t Script, instance &Instance) const;
 
       // Returns the kerning between two glyph indices in font units.  The value is the change to the advance of the
       // pair.  Placement adjustments do not affect its advance.
@@ -102,6 +116,7 @@ class gpos_kerning {
 
       std::vector<uint8_t> gpos, gdef;
       std::vector<lookup> lookups;
+      std::map<uint32_t, std::vector<lookup>> mark_lookups;
       uint32_t glyph_class_def = 0;  // GDEF offsets, zero if absent
       uint32_t mark_attach_class_def = 0;
       uint32_t mark_glyph_sets = 0;
@@ -110,6 +125,8 @@ class gpos_kerning {
 
       adjustment compute_pair(uint32_t Key, instance &) const;
       bool parse_lookups();
+      bool parse_marks();
+      double anchor_component(uint32_t Anchor, bool Vertical, instance &) const;
       bool validate_gdef();
       bool skip_glyph(const lookup &, uint32_t Glyph) const;
       bool apply_subtable(uint32_t Offset, uint32_t First, uint32_t Second, instance &, adjustment &Value) const;
