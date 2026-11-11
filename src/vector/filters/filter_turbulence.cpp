@@ -50,21 +50,25 @@ class extTurbulenceFX : public extFilterEffect {
    double Gradient[GSIZE][LSIZE][GSUBSIZE];
    int    Lattice[LSIZE];
    bool   Dirty = true;
+   agg::trans_affine CacheTransform;
+   TClipRectangle<double> CacheRegion = {};
+   VCS CacheColourSpace = VCS::INHERIT;
 
-   double noise2(uint8_t Channel, double VX, double VY, bool StitchNoise = false, int StitchWidth = 0, int StitchHeight = 0, int WrapX = 0, int WrapY = 0) {
+   double noise2(uint8_t Channel, double VX, double VY, bool StitchNoise = false, int StitchWidth = 0,
+      int StitchHeight = 0, int WrapX = 0, int WrapY = 0) {
       int bx0, bx1, by0, by1, b00, b10, b01, b11;
       double rx0, rx1, ry0, ry1, *q, sx, sy, a, b, t, u, v;
 
       t = VX + PerlinN;
-      bx0 = (int)t;
+      bx0 = int(std::floor(t));
       bx1 = bx0 + 1;
-      rx0 = t - (int)t;
+      rx0 = t - bx0;
       rx1 = rx0 - 1.0;
 
       t = VY + PerlinN;
-      by0 = (int)t;
+      by0 = int(std::floor(t));
       by1 = by0 + 1;
-      ry0 = t - (int)t;
+      ry0 = t - by0;
       ry1 = ry0 - 1.0;
 
       // If stitching, adjust lattice points accordingly.
@@ -97,63 +101,32 @@ class extTurbulenceFX : public extFilterEffect {
       return std::lerp(a, b, sy);
    }
 
-   // Standard turbulence (non-stitched)
-
-   uint8_t turbulence(uint8_t Channel, int x, int y) {
+   uint8_t turbulence(uint8_t Channel, double X, double Y, double FrequencyX, double FrequencyY,
+      int StitchWidth, int StitchHeight, int WrapX, int WrapY) {
       double sum = 0.0;
-      double vx = x * FX;
-      double vy = y * FY;
+      double vx = X * FrequencyX;
+      double vy = Y * FrequencyY;
       double ratio = 1.0;
       for (int n=0; n < Octaves; n++) {
-         double noise = noise2(Channel, vx, vy);
+         double noise = noise2(Channel, vx, vy, Stitch, StitchWidth, StitchHeight, WrapX, WrapY);
          if (Type IS TB::NOISE) sum += noise * ratio;
          else sum += fabs(noise) * ratio;
          vx *= 2.0;
          vy *= 2.0;
          ratio *= 0.5;
+         if (Stitch) {
+            StitchWidth *= 2;
+            StitchHeight *= 2;
+            WrapX = 2 * WrapX - PerlinN;
+            WrapY = 2 * WrapY - PerlinN;
+         }
       }
 
       int col;
       if (Type IS TB::NOISE) col = ((sum * 255.0) + 255.0) * 0.5;
       else col = sum * 255.0;
 
-      return (col < 0) ? 0 : (col > 255) ? 255 : col;
-   }
-
-   // Stitched turbulence
-
-   uint8_t turbulence_stitch(uint8_t Channel, int x, int y, double FX, double FY, int StitchWidth, int StitchHeight) {
-      int stitch_width = StitchWidth;
-      int stitch_height = StitchHeight;
-      int wrap_x = (x % StitchWidth) * FX + PerlinN + stitch_width;
-      int wrap_y = (y % StitchHeight) * FY + PerlinN + stitch_height;
-
-      double sum = 0;
-      double vx = x * FX;
-      double vy = y * FY;
-      double ratio = 1;
-      for (int n=0; n < Octaves; n++) {
-         double noise = noise2(Channel, vx, vy, true, stitch_width, stitch_height, wrap_x, wrap_y);
-
-         if (Type IS TB::NOISE) sum += noise * ratio;
-         else sum += fabs(noise) * ratio;
-
-         vx *= 2;
-         vy *= 2;
-         ratio *= 0.5;
-         // Update stitch values. Subtracting PerlinN before the multiplication and adding it
-         // afterwards simplifies to subtracting it once.
-         stitch_width *= 2;
-         wrap_x = 2 * wrap_x - PerlinN;
-         stitch_height *= 2;
-         wrap_y = 2 * wrap_y - PerlinN;
-      }
-
-      int col;
-      if (Type IS TB::NOISE) col = ((sum * 255.0) + 255.0) * 0.5;
-      else col = sum * 255.0;
-
-      return (col < 0) ? 0 : (col > 255) ? 255 : col;
+      return std::clamp(col, 0, 255);
    }
 
    ~extTurbulenceFX() {
@@ -191,10 +164,56 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 {
    if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
 
-   const int width = std::lrint(Self->Filter->TargetWidth);
-   const int height = std::lrint(Self->Filter->TargetHeight);
-
+   auto filter = Self->Filter;
+   const auto clip = filter->scratch_clip();
+   const int width = clip.right;
+   const int height = clip.bottom;
    if ((width <= 0) or (height <= 0)) return ERR::Okay;
+
+   // Express the primitive subregion and the inverse sampling transform in primitiveUnits.  Each output pixel
+   // samples the noise at its centre in that coordinate system, independently of the filter bitmap's origin.
+
+   double origin_x = 0, origin_y = 0, unit_width = 1, unit_height = 1;
+   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
+      calc_local_boundary(filter->ClientVector, bounds);
+      origin_x = bounds.left;
+      origin_y = bounds.top;
+      unit_width = bounds.width();
+      unit_height = bounds.height();
+      if ((unit_width <= 0) or (unit_height <= 0)) return ERR::Okay;
+   }
+
+   double region_x = (filter->TargetX - origin_x) / unit_width;
+   double region_y = (filter->TargetY - origin_y) / unit_height;
+   double region_width = filter->TargetWidth / unit_width;
+   double region_height = filter->TargetHeight / unit_height;
+
+   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      if (Self->X.defined()) region_x = Self->X;
+      if (Self->Y.defined()) region_y = Self->Y;
+      if (Self->Width.defined()) region_width = Self->Width;
+      if (Self->Height.defined()) region_height = Self->Height;
+   }
+   else {
+      if (Self->X.scaled()) region_x += Self->X * filter->TargetWidth;
+      else if (Self->X.defined()) region_x = Self->X;
+      if (Self->Y.scaled()) region_y += Self->Y * filter->TargetHeight;
+      else if (Self->Y.defined()) region_y = Self->Y;
+      if (Self->Width.scaled()) region_width *= Self->Width;
+      else if (Self->Width.defined()) region_width = Self->Width;
+      if (Self->Height.scaled()) region_height *= Self->Height;
+      else if (Self->Height.defined()) region_height = Self->Height;
+   }
+   const TClipRectangle<double> region = { region_x, region_y, region_x + region_width, region_y + region_height };
+
+   agg::trans_affine sampling;
+   sampling.scale(unit_width, unit_height);
+   sampling.translate(origin_x, origin_y);
+   sampling *= filter->Transform;
+   const double determinant = sampling.determinant();
+   if ((not std::isfinite(determinant)) or (determinant IS 0)) return ERR::Okay;
+   sampling.invert();
 
    if (!Self->Bitmap) {
       Self->Dirty = true;
@@ -208,81 +227,73 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
    }
    else if ((Self->Bitmap->Width != width) or (Self->Bitmap->Height != height)) {
       Self->Dirty = true;
-      Self->Bitmap->resize(width, height);
+      if (auto error = Self->Bitmap->resize(width, height); error != ERR::Okay) return error;
    }
 
+   if ((not Self->CacheTransform.is_equal(sampling)) or (Self->CacheColourSpace != filter->ColourSpace) or
+       (Self->CacheRegion.left != region.left) or (Self->CacheRegion.top != region.top) or
+       (Self->CacheRegion.right != region.right) or (Self->CacheRegion.bottom != region.bottom)) Self->Dirty = true;
+
    if (Self->Dirty) {
-      Self->Dirty = false;
+      const bool linear_rgb = filter->ColourSpace IS VCS::LINEAR_RGB;
+      double fx = Self->FX, fy = Self->FY;
+      int stitch_width = 0, stitch_height = 0, wrap_x = PerlinN, wrap_y = PerlinN;
+      if (Self->Stitch and (region_width > 0) and (region_height > 0)) {
+         // Adjust frequencies and wrap at the primitive subregion's edges, measured in primitive units.
+         auto stitch_frequency = [](double Frequency, double Size) {
+            if (Frequency IS 0) return Frequency;
+            const double low = std::floor(Size * Frequency) / Size;
+            const double high = std::ceil(Size * Frequency) / Size;
+            return ((low > 0) and (Frequency / low < high / Frequency)) ? low : high;
+         };
+         fx = stitch_frequency(fx, region_width);
+         fy = stitch_frequency(fy, region_height);
+         stitch_width = int(region_width * fx + 0.5);
+         stitch_height = int(region_height * fy + 0.5);
+         wrap_x = int(region_x * fx + PerlinN + stitch_width);
+         wrap_y = int(region_y * fy + PerlinN + stitch_height);
+      }
 
       int thread_count = std::thread::hardware_concurrency();
       if (thread_count > height/4) thread_count = height/4;
       if (thread_count < 1) thread_count = 1;
-
       BS::thread_pool pool(thread_count);
 
       for (int i=0; i < thread_count; i++) {
-         pool.detach_task([Self, Start = (height * i) / thread_count, End = (height * (i + 1)) / thread_count]() {
-            const uint8_t A = Self->Bitmap->ColourFormat->AlphaPos>>3;
-            const uint8_t R = Self->Bitmap->ColourFormat->RedPos>>3;
-            const uint8_t G = Self->Bitmap->ColourFormat->GreenPos>>3;
-            const uint8_t B = Self->Bitmap->ColourFormat->BluePos>>3;
-
-            uint8_t *data = Self->Bitmap->Data;
-
-            if (Self->Stitch) {
-               const int tile_width  = std::lrint(Self->Filter->BoundWidth);
-               const int tile_height = std::lrint(Self->Filter->BoundHeight);
-
-               // When stitching tiled turbulence, the frequencies must be adjusted so that the tile borders will be continuous.
-
-               auto fx = Self->FX;
-               auto fy = Self->FY;
-
-               if (fx != 0.0) {
-                  double fLoFreq = double(floor(tile_width * fx)) / tile_width;
-                  double fHiFreq = double(ceil(tile_width * fx)) / tile_width;
-                  if (fx / fLoFreq < fHiFreq / fx) fx = fLoFreq;
-                  else fx = fHiFreq;
-               }
-
-               if (fy != 0.0) {
-                  double fLoFreq = double(floor(tile_height * fy)) / tile_height;
-                  double fHiFreq = double(ceil(tile_height * fy)) / tile_height;
-                  if (fy / fLoFreq < fHiFreq / fy) fy = fLoFreq;
-                  else fy = fHiFreq;
-               }
-
-               auto stitch_width  = std::lrint(tile_width * fx);
-               auto stitch_height = std::lrint(tile_height * fy);
-
-               for (int y=Start; y < End; y++) {
-                  uint8_t *pixel = data + (Self->Bitmap->LineWidth * y);
-                  for (int x=0; x < Self->Bitmap->Width; x++, pixel += 4) {
-                     pixel[R] = glLinearRGB.invert(Self->turbulence_stitch(0, x, y, fx, fy, stitch_width, stitch_height));
-                     pixel[G] = glLinearRGB.invert(Self->turbulence_stitch(1, x, y, fx, fy, stitch_width, stitch_height));
-                     pixel[B] = glLinearRGB.invert(Self->turbulence_stitch(2, x, y, fx, fy, stitch_width, stitch_height));
-                     pixel[A] = Self->turbulence_stitch(3, x, y, fx, fy, stitch_width, stitch_height);
+         pool.detach_task([Self, sampling, region, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y, linear_rgb,
+            Start = (height * i) / thread_count, End = (height * (i + 1)) / thread_count]() {
+            const uint8_t a = Self->Bitmap->ColourFormat->AlphaPos>>3;
+            const uint8_t r = Self->Bitmap->ColourFormat->RedPos>>3;
+            const uint8_t g = Self->Bitmap->ColourFormat->GreenPos>>3;
+            const uint8_t b = Self->Bitmap->ColourFormat->BluePos>>3;
+            for (int y=Start; y < End; y++) {
+               auto pixel = Self->Bitmap->Data + (Self->Bitmap->LineWidth * y);
+               for (int x=0; x < Self->Bitmap->Width; x++, pixel += 4) {
+                  double px = x + 0.5, py = y + 0.5;
+                  sampling.transform(&px, &py);
+                  if ((px < region.left) or (px >= region.right) or (py < region.top) or (py >= region.bottom)) {
+                     pixel[r] = pixel[g] = pixel[b] = pixel[a] = 0;
+                     continue;
                   }
-               }
-            }
-            else {
-               for (int y=Start; y < End; y++) {
-                  uint8_t *pixel = data + (Self->Bitmap->LineWidth * y);
-                  for (int x=0; x < Self->Bitmap->Width; x++, pixel += 4) {
-                     pixel[R] = glLinearRGB.invert(Self->turbulence(0, x, y));
-                     pixel[G] = glLinearRGB.invert(Self->turbulence(1, x, y));
-                     pixel[B] = glLinearRGB.invert(Self->turbulence(2, x, y));
-                     pixel[A] = Self->turbulence(3, x, y);
-                  }
+                  const auto red = Self->turbulence(0, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
+                  const auto green = Self->turbulence(1, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
+                  const auto blue = Self->turbulence(2, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
+                  pixel[r] = linear_rgb ? glLinearRGB.invert(red) : red;
+                  pixel[g] = linear_rgb ? glLinearRGB.invert(green) : green;
+                  pixel[b] = linear_rgb ? glLinearRGB.invert(blue) : blue;
+                  pixel[a] = Self->turbulence(3, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
                }
             }
          });
       }
-
       pool.wait();
+      Self->CacheTransform = sampling;
+      Self->CacheRegion = region;
+      Self->CacheColourSpace = filter->ColourSpace;
+      Self->Dirty = false;
    }
 
-   render_to_filter(Self, Self->Bitmap, ARF::NONE, Self->Filter->Scene->SampleMethod);
+   gfx::CopyArea(Self->Bitmap, Self->Target, BAF::NIL, 0, 0, width, height, 0, 0);
    return ERR::Okay;
 }
 

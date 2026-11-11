@@ -1,0 +1,221 @@
+-- SVG filter regressions: normalised matrix offsets, named merge outputs and turbulence coordinates/colour space.
+
+   include 'svg', 'vector', 'display'
+   module display as mGfx
+
+function draw(SVG:obj, Size:num):obj
+   local bmp = obj.new('bitmap', { width=Size, height=Size, bitsPerPixel=32,
+      flags=BMF_ALPHA_CHANNEL, blendMode=BLM_NONE, bkgd='0,0,0,0' })
+   bmp.acClear()
+   SVG.scene.{ pageWidth=Size, pageHeight=Size, bitmap=bmp }
+   check SVG.scene.acDraw()
+   return bmp
+end
+
+function document(Effects:str, Content:str, Size:num, Attribs:str, FilterAttribs:str):obj
+   Content ??= '<rect width="64" height="64" filter="url(#f)"/>'
+   return obj.new('svg', { statement=f'<svg xmlns="http://www.w3.org/2000/svg" ' ..
+      f'width="{Size}" height="{Size}" {Attribs ?? ""}>' ..
+      '<filter id="f" x="0" y="0" width="100%" height="100%" ' ..
+      f'color-interpolation-filters="sRGB" {FilterAttribs ?? ""}>{Effects}</filter>' ..
+      f'{Content}</svg>' })
+end
+
+function pixel(Effects:str):table
+   local svg <close> = document(Effects, nil, 64)
+   local bmp <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(bmp, 20, 20)
+   return { red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }
+end
+
+@Test function MatrixAlphaOffsetIsNormalised()
+   local p = pixel([[<feFlood flood-color="red" flood-opacity=".2"/>
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1"/>]])
+   assert((p.red is 255) and (p.alpha is 255), f'Expected opaque red, got {p.red},{p.alpha}')
+end
+
+@Test function MatrixColourOffsetsAndClamping()
+   local p = pixel([[<feFlood flood-color="red"/>
+      <feColorMatrix type="matrix" values="1 0 0 0 -.25  0 0 0 0 .5  0 0 0 0 2  0 0 0 0 1"/>]])
+   assert((math.abs(p.red - 191) <= 1) and (math.abs(p.green - 128) <= 1) and
+      (p.blue is 255) and (p.alpha is 255), 'All four matrix offsets must use normalised units and clamp')
+end
+
+@Test function MatrixOffsetsCanFillTransparentPixels()
+   local p = pixel([[<feFlood flood-opacity="0"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0  0 0 0 0 0  0 0 0 0 1"/>]])
+   assert((p.red is 255) and (p.alpha is 255), 'Matrix offsets must also apply to transparent input')
+end
+
+@Test function MergeResultCanBeReferencedAfterAnotherEffect()
+   for input in values(array<str> { '', 'in2="r"' }) do
+      local p = pixel([[<feFlood flood-color="#0f0" result="g"/>
+         <feMerge result="m"><feMergeNode in="g"/></feMerge>
+         <feFlood flood-color="#f00" result="r"/>]] .. f'<feComposite in="m" {input} operator="over"/>')
+      assert((p.green is 255) and (p.red is 0) and (p.alpha is 255), 'Named merge output must resolve to green')
+   end
+end
+
+@Test function TurbulenceUsesTheFilterColourSpace()
+   local svg <close> = document('<feTurbulence type="fractalNoise" baseFrequency="0"/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   for cs in values(array<int> { VCS_SRGB, VCS_LINEAR_RGB, VCS_SRGB }) do
+      filter.colourSpace = cs
+      local bmp <close> = draw(svg, 64)
+      local p = mGfx.ReadRGBPixel(bmp, 20, 20)
+      local expected = (cs is VCS_SRGB) ? 127 : 187
+      assert(math.abs(p.red - expected) <= 1, f'Expected noise value {expected}, got {p.red}')
+      assert(p.alpha is 127, 'Turbulence alpha must not be gamma converted')
+   end
+end
+
+function noise(Attribs:str):str
+   return '<feTurbulence type="fractalNoise" baseFrequency="0.05 0.11" numOctaves="3" seed="7" ' ..
+      f'{Attribs ?? ""}/><feComponentTransfer><feFuncA type="linear" slope="0" intercept="1"/>' ..
+      '</feComponentTransfer>'
+end
+
+function assertSame(Actual:obj, Expected:obj, X:num, Y:num, RefX:num, RefY:num)
+   local p = mGfx.ReadRGBPixel(Actual, X, Y)
+   local r, g, b, a = p.red, p.green, p.blue, p.alpha
+   local q = mGfx.ReadRGBPixel(Expected, RefX, RefY)
+   assert((r is q.red) and (g is q.green) and (b is q.blue) and (a is q.alpha),
+      f'Noise differs at {X},{Y} from reference {RefX},{RefY}: {r},{g},{b},{a}')
+end
+
+-- Moving a rectangle in user space selects another part of the same noise field.  Reusing one filter must
+-- invalidate its cached pixels when the origin changes even if both rectangles have the same dimensions.
+
+@Test function SharedTurbulenceSamplesUserSpace()
+   local svg <close> = document(noise(), '<rect id="moving" width="64" height="64" filter="url(#f)"/>', 96)
+   local reference <close> = draw(svg, 96)
+   local rect = obj.find('moving')
+   for offset in values(array<int> { 16, 0, 8 }) do
+      rect.{ x=offset, y=offset }
+      local bmp <close> = draw(svg, 96)
+      for y in {20 to 60 by 7} do
+         for x in {20 to 60 by 7} do
+            assertSame(bmp, reference, x, y, x, y)
+         end
+      end
+   end
+end
+
+@Test function TurbulenceFollowsTranslationAndRotation()
+   local svg <close> = document(noise(), nil, 96)
+   local reference <close> = draw(svg, 96)
+   local moved <close> = document(noise(),
+      '<rect width="64" height="64" transform="translate(16 16)" filter="url(#f)"/>', 96)
+   local moved_bmp <close> = draw(moved, 96)
+   local rotated <close> = document(noise(),
+      '<rect width="64" height="64" transform="translate(64 0) rotate(90)" filter="url(#f)"/>', 96)
+   local rotated_bmp <close> = draw(rotated, 96)
+   for y in {4 to 60 by 7} do
+      for x in {4 to 60 by 7} do
+         assertSame(moved_bmp, reference, x + 16, y + 16, x, y)
+         assertSame(rotated_bmp, reference, 63 - y, x, x, y)
+      end
+   end
+end
+
+-- An odd scale factor aligns pixel centres exactly, so the enlarged noise can be compared without resampling.
+
+@Test function TurbulenceFollowsViewboxZoom()
+   for stitching in values(array<str> { '', 'stitchTiles="stitch"' }) do
+      local svg <close> = document(noise(stitching), nil, 64)
+      local bmp <close> = draw(svg, 64)
+      local zoomed <close> = document(noise(stitching), nil, 192, 'viewBox="0 0 64 64"')
+      local large <close> = draw(zoomed, 192)
+      for y in {4 to 60 by 7} do
+         for x in {4 to 60 by 7} do
+            assertSame(large, bmp, x * 3 + 1, y * 3 + 1, x, y)
+         end
+      end
+   end
+end
+
+@Test function TurbulenceSubregionClipsWithoutRescaling()
+   local svg <close> = document(noise(), nil, 64)
+   local reference <close> = draw(svg, 64)
+   local clipped <close> = document(noise('x="16" y="16" width="32" height="32"'), nil, 64)
+   local bmp <close> = draw(clipped, 64)
+   for y in {20 to 44 by 7} do
+      for x in {20 to 44 by 7} do
+         assertSame(bmp, reference, x, y, x, y)
+      end
+   end
+   assert(mGfx.ReadRGBPixel(bmp, 8, 8).alpha is 0, 'Noise must stay inside its primitive subregion')
+end
+
+@Test function BoundingBoxTurbulenceUsesNormalisedCoordinates()
+   local effects = noise().replace('0.05 0.11', '3.2 7.04')
+   local svg <close> = document(effects, nil, 64, nil, 'primitiveUnits="objectBoundingBox"')
+   local reference <close> = draw(svg, 64)
+   local moved <close> = document(effects,
+      '<rect x="16" y="16" width="64" height="64" filter="url(#f)"/>', 96, nil,
+      'primitiveUnits="objectBoundingBox"')
+   local bmp <close> = draw(moved, 96)
+   local user <close> = document(noise(), nil, 64)
+   local user_bmp <close> = draw(user, 64)
+   for y in {4 to 60 by 7} do
+      for x in {4 to 60 by 7} do
+         assertSame(bmp, reference, x + 16, y + 16, x, y)
+         assertSame(user_bmp, reference, x, y, x, y)
+      end
+   end
+end
+
+@Test function StitchedTurbulenceAcceptsZeroFrequency()
+   local p = pixel('<feTurbulence type="fractalNoise" baseFrequency="0" stitchTiles="stitch"/>')
+   assert((p.red is 127) and (p.green is 127) and (p.alpha is 127),
+      'Stitching zero frequency must produce constant mid-grey without division by zero')
+end
+
+@Test function StitchingUsesThePrimitiveSubregionSize()
+   local svg <close> = document(noise('stitchTiles="stitch"'), nil, 64)
+   local reference <close> = draw(svg, 64)
+   local larger <close> = document(noise('stitchTiles="stitch" width="64" height="64"'),
+      '<rect width="128" height="128" filter="url(#f)"/>', 128)
+   local bmp <close> = draw(larger, 128)
+   for y in {4 to 60 by 7} do
+      for x in {4 to 60 by 7} do
+         assertSame(bmp, reference, x, y, x, y)
+      end
+   end
+end
+
+@Test function MatrixOffsetsUseTheSelectedColourSpace()
+   local svg <close> = document([[<feFlood flood-color="black"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 1"/>]], nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   filter.colourSpace = VCS_LINEAR_RGB
+   local bmp <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(bmp, 20, 20)
+   assert((math.abs(p.red - 188) <= 1) and (p.green is p.red) and (p.alpha is 255),
+      'Linear matrix offsets must be encoded to sRGB only after applying the matrix')
+end
+
+@Test function MatrixPresetsKeepByteOffsets()
+   local p = pixel('<feFlood flood-color="red"/><feColorMatrix type="contrast" values="-1"/>')
+   assert((p.red is 128) and (p.green is 128) and (p.blue is 128) and (p.alpha is 255),
+      'Preset contrast offsets must keep their existing byte units')
+end
+
+@Test function MatrixValuesRemainNormalisedOnExport()
+   local svg <close> = document([[<feFlood flood-color="black"/>
+      <feColorMatrix type="matrix" values="1 0 0 0 .5  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>]], nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   assert(filter.effectXML.find('0.5') != nil, 'Export must retain normalised matrix values')
+end
+
+@Test function CompositeDefaultsItsSecondInput()
+   local content = '<rect width="64" height="64" fill="white" fill-opacity=".6" filter="url(#f)"/>'
+   for _, case in { { effects='<feComposite operator="in"/>', alpha=92 },
+      { effects='<feFlood flood-color="white" flood-opacity=".2"/><feComposite in="SourceGraphic" operator="in"/>', alpha=31 } } do
+      local svg <close> = document(case.effects, content, 64)
+      local bmp <close> = draw(svg, 64)
+      local p = mGfx.ReadRGBPixel(bmp, 20, 20)
+      assert(math.abs(p.alpha - case.alpha) <= 1,
+         f'Default in2 must use the previous result or SourceGraphic, got alpha {p.alpha}')
+   end
+end

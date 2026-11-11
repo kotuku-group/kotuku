@@ -395,42 +395,44 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
       uint8_t *pixel = in_line;
       uint8_t *out = out_line;
       for (int x=0; x < width; x++, pixel += 4, out += 4) {
-         if (auto a = pixel[A]) {
-            const __m128d r  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(pixel[R]) : pixel[R]));
-            const __m128d g  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(pixel[G]) : pixel[G]));
-            const __m128d b  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(pixel[B]) : pixel[B]));
-            const __m128d av = _mm_set1_pd(double(a));
+         const auto a = pixel[A];
+         const auto red = a ? pixel[R] : 0;
+         const auto green = a ? pixel[G] : 0;
+         const auto blue = a ? pixel[B] : 0;
+         const __m128d r  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(red) : red));
+         const __m128d g  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(green) : green));
+         const __m128d b  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(blue) : blue));
+         const __m128d av = _mm_set1_pd(double(a));
 
-            __m128d rg = _mm_add_pd(half, _mm_mul_pd(r, col_rg[0]));
-            rg = _mm_add_pd(rg, _mm_mul_pd(g, col_rg[1]));
-            rg = _mm_add_pd(rg, _mm_mul_pd(b, col_rg[2]));
-            rg = _mm_add_pd(rg, _mm_mul_pd(av, col_rg[3]));
-            rg = _mm_add_pd(rg, col_rg[4]);
+         __m128d rg = _mm_add_pd(half, _mm_mul_pd(r, col_rg[0]));
+         rg = _mm_add_pd(rg, _mm_mul_pd(g, col_rg[1]));
+         rg = _mm_add_pd(rg, _mm_mul_pd(b, col_rg[2]));
+         rg = _mm_add_pd(rg, _mm_mul_pd(av, col_rg[3]));
+         rg = _mm_add_pd(rg, col_rg[4]);
 
-            __m128d ba = _mm_add_pd(half, _mm_mul_pd(r, col_ba[0]));
-            ba = _mm_add_pd(ba, _mm_mul_pd(g, col_ba[1]));
-            ba = _mm_add_pd(ba, _mm_mul_pd(b, col_ba[2]));
-            ba = _mm_add_pd(ba, _mm_mul_pd(av, col_ba[3]));
-            ba = _mm_add_pd(ba, col_ba[4]);
+         __m128d ba = _mm_add_pd(half, _mm_mul_pd(r, col_ba[0]));
+         ba = _mm_add_pd(ba, _mm_mul_pd(g, col_ba[1]));
+         ba = _mm_add_pd(ba, _mm_mul_pd(b, col_ba[2]));
+         ba = _mm_add_pd(ba, _mm_mul_pd(av, col_ba[3]));
+         ba = _mm_add_pd(ba, col_ba[4]);
 
-            // Truncation towards zero matches the scalar double-to-int conversion.
+         // Truncation towards zero matches the scalar double-to-int conversion.
 
-            const int r2 = _mm_cvttsd_si32(rg);
-            const int g2 = _mm_cvttsd_si32(_mm_unpackhi_pd(rg, rg));
-            const int b2 = _mm_cvttsd_si32(ba);
-            const int a2 = _mm_cvttsd_si32(_mm_unpackhi_pd(ba, ba));
+         const int r2 = _mm_cvttsd_si32(rg);
+         const int g2 = _mm_cvttsd_si32(_mm_unpackhi_pd(rg, rg));
+         const int b2 = _mm_cvttsd_si32(ba);
+         const int a2 = _mm_cvttsd_si32(_mm_unpackhi_pd(ba, ba));
 
-            out[A] = uint8_t(std::clamp(a2, 0, 255));
-            if (linear_rgb) {
-               out[R] = glLinearRGB.invert(uint8_t(std::clamp(r2, 0, 255)));
-               out[G] = glLinearRGB.invert(uint8_t(std::clamp(g2, 0, 255)));
-               out[B] = glLinearRGB.invert(uint8_t(std::clamp(b2, 0, 255)));
-            }
-            else {
-               out[R] = uint8_t(std::clamp(r2, 0, 255));
-               out[G] = uint8_t(std::clamp(g2, 0, 255));
-               out[B] = uint8_t(std::clamp(b2, 0, 255));
-            }
+         out[A] = uint8_t(std::clamp(a2, 0, 255));
+         if (linear_rgb) {
+            out[R] = glLinearRGB.invert(uint8_t(std::clamp(r2, 0, 255)));
+            out[G] = glLinearRGB.invert(uint8_t(std::clamp(g2, 0, 255)));
+            out[B] = glLinearRGB.invert(uint8_t(std::clamp(b2, 0, 255)));
+         }
+         else {
+            out[R] = uint8_t(std::clamp(r2, 0, 255));
+            out[G] = uint8_t(std::clamp(g2, 0, 255));
+            out[B] = uint8_t(std::clamp(b2, 0, 255));
          }
       }
       out_line += Self->Target->LineWidth;
@@ -442,38 +444,39 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
       uint8_t *out = out_line;
       for (int x=0; x < width; x++, pixel += 4, out += 4) {
          double a = pixel[A];
-         if (a) {
-            double r = linear_rgb ? glLinearRGB.convert(pixel[R]) : pixel[R];
-            double g = linear_rgb ? glLinearRGB.convert(pixel[G]) : pixel[G];
-            double b = linear_rgb ? glLinearRGB.convert(pixel[B]) : pixel[B];
+         const auto red = a ? pixel[R] : 0;
+         const auto green = a ? pixel[G] : 0;
+         const auto blue = a ? pixel[B] : 0;
+         double r = linear_rgb ? glLinearRGB.convert(red) : red;
+         double g = linear_rgb ? glLinearRGB.convert(green) : green;
+         double b = linear_rgb ? glLinearRGB.convert(blue) : blue;
 
-            int r2 = 0.5 + (r * matrix[0]) + (g * matrix[1]) + (b * matrix[2]) + (a * matrix[3]) + matrix[4];
-            int g2 = 0.5 + (r * matrix[5]) + (g * matrix[6]) + (b * matrix[7]) + (a * matrix[8]) + matrix[9];
-            int b2 = 0.5 + (r * matrix[10]) + (g * matrix[11]) + (b * matrix[12]) + (a * matrix[13]) + matrix[14];
-            int a2 = 0.5 + (r * matrix[15]) + (g * matrix[16]) + (b * matrix[17]) + (a * matrix[18]) + matrix[19];
+         int r2 = 0.5 + (r * matrix[0]) + (g * matrix[1]) + (b * matrix[2]) + (a * matrix[3]) + matrix[4];
+         int g2 = 0.5 + (r * matrix[5]) + (g * matrix[6]) + (b * matrix[7]) + (a * matrix[8]) + matrix[9];
+         int b2 = 0.5 + (r * matrix[10]) + (g * matrix[11]) + (b * matrix[12]) + (a * matrix[13]) + matrix[14];
+         int a2 = 0.5 + (r * matrix[15]) + (g * matrix[16]) + (b * matrix[17]) + (a * matrix[18]) + matrix[19];
 
-            if (a2 < 0) out[A] = 0;
-            else if (a2 > 255) out[A] = 255;
-            else out[A] = a2;
+         if (a2 < 0) out[A] = 0;
+         else if (a2 > 255) out[A] = 255;
+         else out[A] = a2;
 
-            if (linear_rgb) {
-               if (r2 < 0)   out[R] = 0;
-               else if (r2 > 255) out[R] = glLinearRGB.invert(255);
-               else out[R] = glLinearRGB.invert(r2);
+         if (linear_rgb) {
+            if (r2 < 0)   out[R] = 0;
+            else if (r2 > 255) out[R] = glLinearRGB.invert(255);
+            else out[R] = glLinearRGB.invert(r2);
 
-               if (g2 < 0) out[G] = 0;
-               else if (g2 > 255) out[G] = glLinearRGB.invert(255);
-               else out[G] = glLinearRGB.invert(g2);
+            if (g2 < 0) out[G] = 0;
+            else if (g2 > 255) out[G] = glLinearRGB.invert(255);
+            else out[G] = glLinearRGB.invert(g2);
 
-               if (b2 < 0) out[B] = 0;
-               else if (b2 > 255) out[B] = glLinearRGB.invert(255);
-               else out[B] = glLinearRGB.invert(b2);
-            }
-            else {
-               out[R] = uint8_t(std::clamp(r2, 0, 255));
-               out[G] = uint8_t(std::clamp(g2, 0, 255));
-               out[B] = uint8_t(std::clamp(b2, 0, 255));
-            }
+            if (b2 < 0) out[B] = 0;
+            else if (b2 > 255) out[B] = glLinearRGB.invert(255);
+            else out[B] = glLinearRGB.invert(b2);
+         }
+         else {
+            out[R] = uint8_t(std::clamp(r2, 0, 255));
+            out[G] = uint8_t(std::clamp(g2, 0, 255));
+            out[B] = uint8_t(std::clamp(b2, 0, 255));
          }
       }
       out_line += Self->Target->LineWidth;
@@ -543,6 +546,10 @@ static ERR COLOURFX_Init(extColourFX *Self)
 
       default:
          matrix = new (std::nothrow) ColourMatrix(Self->Values);
+         if (matrix) {
+            // User matrices use normalised offsets; internal presets already use byte units.
+            for (int i=4; i < CM_SIZE; i += 5) (*matrix)[i] *= 255.0;
+         }
          break;
    }
 

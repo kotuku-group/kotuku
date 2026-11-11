@@ -355,13 +355,13 @@ end
 @Test global function W3Struct08() hashTestSVG('struct/w3-struct-group-01-t.svg', 0xb87251f5) end
 @Test global function W3Struct09() hashTestSVG('struct/w3-struct-group-02-b.svg', 0x38b67cdb) end
 
-@Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0x8a817d23) end
+@Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0xd7a6edb1) end
 @Test global function Composite()          hashTestSVG('filters/composite.svg', 0xf3433f42) end
 @Test global function CompositeClamp()     hashTestSVG('filters/composite_linear_clamp.svg', 0x137886b9) end
 @Test global function Convolve()           pHashTestSVG('filters/convolve.svg', array<byte> { 28,28,240,225,65,158,207,99 }, 6, true) end
 @Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x87bad74f) end
 @Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0x19e54151) end
-@Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x5d1fa547) end
+@Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x4199c499) end
 @Test global function ScaledLighting()     hashTestSVG('filters/lighting_scale.svg', 0x0ba5705d) end
 @Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0xe1d40c77) end
 @Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0xf4b0397e) end
@@ -387,11 +387,10 @@ end
 @Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0xa95283ef) end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0x86937dc1) end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xaaa3ec5b) end
--- These fixtures inherit text-anchor="middle" from a group.  The old hashes represented left-aligned labels;
--- removing only that group attribute reproduces the old hashes exactly.  Centre anchoring is now applied.
-@Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x40930c88) end
-@Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0xc6a28bc8) end
-@Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2a996913) end
+-- Turbulence snapshots include sampling in user coordinates through the inverse transform at pixel centres.
+@Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x06560878) end
+@Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x70c6859b) end
+@Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2422ae17) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0x9dbdcd62) end
 
 @Test global function Transformations()   hashTestSVG('transforms/transformations.svg', 0x310b69c3) end
