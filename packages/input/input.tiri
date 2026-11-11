@@ -507,11 +507,19 @@ gui.input = function(Options)
       end)
 
       -- Enter activates a single-line box.  A multi-line box takes Enter as a new line and activates on Ctrl+Enter.
+      -- The VectorText consumes the keys that it edits with, after this handler has run.  An activating Enter is
+      -- consumed here so that ancestors such as a list view do not also act on it.
+      --
+      -- Escape returns the focus to the parent viewport, so that an enclosing widget receives the keys that follow.
+      -- Escape itself is not consumed, which allows an enclosing dialog to cancel on the same press.  A keypress
+      -- handler that returns KRES_HANDLED keeps the focus in the box.
 
       &_editView.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers, Value, Unicode)
          if not (Qualifiers has KQ_PRESSED) then return end
 
-         if ((Value is KEY_ENTER) or (Value is KEY_NP_ENTER)) and (not &multiline or (Qualifiers has KQ_CTRL)) then
+         local activate = ((Value is KEY_ENTER) or (Value is KEY_NP_ENTER)) and
+            (not &multiline or (Qualifiers has KQ_CTRL))
+         if activate then
             validateInput()
             reportActivate('activated', true)
          end
@@ -519,7 +527,13 @@ gui.input = function(Options)
          local result = &events?.keypress({ qualifiers=Qualifiers, value=Value, unicode=Unicode })
 
          checkPlaceholder()
-         if result is KRES_HANDLED then return KRES_HANDLED end
+         if result is KRES_HANDLED or activate then return KRES_HANDLED end
+
+         if (Value is KEY_ESCAPE) and not (Qualifiers has KQ_REPEAT) then
+            processing.delayedCall(function()
+               if &_focus then &viewport.parent?.acFocus() end
+            end)
+         end
       end)
 
       if &events.cursorEntry or &events.cursorExit then

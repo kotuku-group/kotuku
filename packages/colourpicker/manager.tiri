@@ -497,6 +497,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
             if Event.value != KEY_ESCAPE then return end
             if self.search.getText()?? then
                self.clearSearch()
+               return KRES_HANDLED -- Keep the focus in the box
             else
                Options.blur()
             end

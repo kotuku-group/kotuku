@@ -209,7 +209,7 @@ static bool replace_selection(class extVectorText *, std::string_view);
 static void insert_char(class extVectorText *, int);
 static void generate_text(class extVectorText *, agg::path_storage &Path);
 static void raster_text_to_bitmap(class extVectorText *);
-static void key_event(evKey *, int, class extVectorText *);
+static bool key_event(evKey *, int, class extVectorText *);
 static ERR routed_text_key(const evKey *, APTR);
 static ERR reset_font(class extVectorText *, bool = false);
 static ERR update_text_effects(class extVectorText *);
@@ -3067,7 +3067,7 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
          Self->txCursor.move(Self, 0, 0);
          Self->txCursor.extend(Self, int(Self->txLines.size()) - 1, Self->txLines.back().utf8Length());
       }
-      return true;
+      return system_keys;
    }
 
    switch (Event->Code) {
@@ -3135,21 +3135,28 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
 
 static ERR routed_text_key(const evKey *Event, APTR Meta)
 {
+   // Ordinary handlers at the text's focus scope, such as the input widget's keypress feedback, run before this
+   // default handler.  A key that the text acts upon is consumed so that it does not also reach the ancestors, e.g. a
+   // list view whose row contains the text.
+
    auto event = *Event;
-   key_event(&event, sizeof(event), (extVectorText *)Meta);
-   return ERR::Okay; // Preserve the input widget's keypress feedback on its enclosing viewport.
+   if (key_event(&event, sizeof(event), (extVectorText *)Meta)) return ERR(int(KRES::HANDLED));
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static void key_event(evKey *Event, int Size, extVectorText *Self)
+// Returns true if the text acted upon the key.  Unused keys, such as Tab, Escape and function keys, are left to the
+// ancestors of the focused vector.
+
+static bool key_event(evKey *Event, int Size, extVectorText *Self)
 {
    CursorUpdate update(Self);
 
-   if (not Self->needs_caret_geometry()) return;
+   if (not Self->needs_caret_geometry()) return false;
 
    Self->txMouseShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
-   if ((Event->Qualifiers & KQ::PRESSED) IS KQ::NIL) return;
+   if ((Event->Qualifiers & KQ::PRESSED) IS KQ::NIL) return false;
 
    kt::Log log(__FUNCTION__);
 
@@ -3164,51 +3171,47 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
       switch(Event->Code) {
          case KEY::C: // Copy
             acClipboard(Self, CLIPMODE::COPY);
-            return;
+            return true;
 
          case KEY::X: // Cut
-            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
+            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return false;
             acClipboard(Self, CLIPMODE::CUT);
-            return;
+            return true;
 
          case KEY::V: // Paste
-            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
+            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return false;
             acClipboard(Self, CLIPMODE::PASTE);
-            return;
+            return true;
 
          case KEY::K: { // Delete line
-            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
+            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return false;
             const bool changed = (Self->txLines.size() > 1) or
                ((not Self->txLines.empty()) and (not Self->txLines.front().empty()));
             if ((((objVectorText *)Self)->deleteLine(Self->txCursor.row()) IS ERR::Okay) and changed) {
                report_change(Self);
             }
-            return;
+            return true;
          }
 
-         case KEY::Z: // Undo
-            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
-            return;
-
+         case KEY::Z: // Undo is not implemented, so the key remains available to the client
          case KEY::Y: // Redo
-            if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
-            return;
+            return false;
 
          default:
             break;
       }
    }
 
-   if (navigate_text(Self, Event)) return;
+   if (navigate_text(Self, Event)) return true;
 
-   if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
+   if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return false;
 
    if (((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) and
        (((Event->Qualifiers & KQ::CTRL) IS KQ::NIL) or ((Event->Qualifiers & KQ::ALT) != KQ::NIL))) {
       // Printable character handling
 
       insert_char(Self, Event->Unicode);
-      return;
+      return true;
    }
 
    switch(Event->Code) {
@@ -3220,7 +3223,7 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
          else if (row > 0) Self->txCursor.extend(Self, row - 1, Self->txLines[row - 1].utf8Length());
       }
       if (replace_selection(Self, "")) report_change(Self);
-      break;
+      return true;
 
    case KEY::CLEAR:
       if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) {
@@ -3231,7 +3234,7 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
          ((objVectorText *)Self)->deleteLine(Self->txCursor.row());
          report_change(Self);
       }
-      break;
+      return true;
 
    case KEY::DELETE:
       if ((Self->txFlags & VTXF::AREA_SELECTED) IS VTXF::NIL) {
@@ -3241,25 +3244,24 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
          else if (row + 1 < std::ssize(Self->txLines)) Self->txCursor.extend(Self, row + 1, 0);
       }
       if (replace_selection(Self, "")) report_change(Self);
-      break;
-
-   case KEY::TAB:
-      break;
+      return true;
 
    case KEY::ENTER:
    case KEY::NP_ENTER:
-      // Ctrl+Enter is left to the client, e.g. to submit a form from a multi-line field.
-      if ((Event->Qualifiers & KQ::CTRL) != KQ::NIL) break;
+      // Ctrl+Enter is left to the client, e.g. to submit a form from a multi-line field.  A single-line text does not
+      // take a new line, so Enter is also left to the client.
+      if ((Event->Qualifiers & KQ::CTRL) != KQ::NIL) return false;
+      if (Self->txLineLimit IS 1) return false;
       if (replace_selection(Self, "\n")) report_change(Self);
-      break;
+      return true;
 
    case KEY::INSERT:
       if ((Self->txFlags & VTXF::OVERWRITE) != VTXF::NIL) Self->txFlags &= ~VTXF::OVERWRITE;
       else Self->txFlags |= VTXF::OVERWRITE;
-      break;
+      return true;
 
    default:
-      break;
+      return false;
    }
 }
 
