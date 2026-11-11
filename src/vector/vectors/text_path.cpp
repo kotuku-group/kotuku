@@ -443,10 +443,9 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             //log.trace("Char '%c' is at (%.2f %.2f) to (%.2f %.2f), angle: %.2f, remaining dist: %.2f", unicode, tx, ty, start_x, start_y, angle / DEG2RAD, dist);
 
-            tx += placement * advance_scale * cos(angle);
-            ty += placement * advance_scale * sin(angle);
             transform.rotate(angle); // Rotate the character in accordance with its position on the path angle.
-            transform.translate(tx, ty); // Move the character to its correct position on the path.
+            transform.translate(tx + placement * advance_scale * cos(angle),
+               ty + placement * advance_scale * sin(angle));
             if (unicode > 0x20) {
                agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
                Path.concat_path(trans_char);
@@ -457,8 +456,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                transform.ty -= placement * advance_scale * sin(angle);
                if (cluster_start) {
                   cluster_transform = transform;
-                  cluster_x = transform.tx;
-                  cluster_y = transform.ty;
+                  cluster_x = tx; // Guide coordinates exclude the transition's translation.
+                  cluster_y = ty;
                }
                if (cluster_last) {
                   for (uint32_t c=0; c < cluster_codepoints; c++) {
@@ -469,8 +468,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                   }
                }
                if (not next_glyph) {
-                  transform.tx = start_x;
-                  transform.ty = start_y;
+                  transform.tx += start_x - tx;
+                  transform.ty += start_y - ty;
                   calc_caret_position(line, transform, pt.ascent, pt.descent);
                }
             }
@@ -532,6 +531,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
          size_t cluster_end = 0;
          uint32_t cluster_codepoints = 0;
          agg::trans_affine cluster_transform;
+         double cluster_x = 0;
          bool cluster_has_advance = false;
          if ((line.empty()) and (Vector->needs_caret_geometry())) {
             agg::trans_affine transform;
@@ -664,9 +664,12 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             if (Vector->needs_caret_geometry()) {
                transform.tx -= placement;
-               if (cluster_start) cluster_transform = transform;
+               if (cluster_start) {
+                  cluster_transform = transform;
+                  cluster_x = dx; // Layout coordinates exclude the transition's translation.
+               }
                if (cluster_last) {
-                  const double advance = dx + char_width - cluster_transform.tx;
+                  const double advance = dx + char_width - cluster_x;
                   for (uint32_t c=0; c < cluster_codepoints; c++) {
                      auto caret = cluster_transform;
                      caret.translate(advance * double(c) / cluster_codepoints, 0);
