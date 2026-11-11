@@ -655,6 +655,38 @@ static ERR SET_FrameRate(extSVG *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+ParamNames: Lists the names of the parameters that the document references.
+
+This field returns the sorted, unique names of every parameter referenced by a `param()` expression in the document,
+whether or not a value has been supplied for it.  It can be used to detect a value set with #SetKey() that the document
+does not use.  The array is empty if the document references no parameters or has not yet been parsed.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR GET_ParamNames(extSVG *Self, std::span<std::string> &Value)
+{
+   Self->ParamNames.clear();
+
+   for (auto &[id, attribs] : Self->ParamAttribs) {
+      for (int a=1; a < std::ssize(attribs); a++) {
+         std::string_view name, fallback;
+         if ((attribs[a].Name != "id") and (parse_param_value(attribs[a].Value, name, fallback))) {
+            Self->ParamNames.emplace_back(name);
+         }
+      }
+   }
+
+   std::sort(Self->ParamNames.begin(), Self->ParamNames.end());
+   Self->ParamNames.erase(std::unique(Self->ParamNames.begin(), Self->ParamNames.end()), Self->ParamNames.end());
+
+   Value = std::span<std::string>(Self->ParamNames.data(), Self->ParamNames.size());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Path: File system path to the source SVG document.
 
 This field specifies the location of the SVG file to be loaded and processed during object initialisation.  The path
@@ -823,6 +855,7 @@ static const FieldArray clSVGFields[] = {
    { "FrameRate", FDF_INT|FDF_RW, nullptr, SET_FrameRate },
    // Virtual Fields
    { "FrameCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FrameCallback, SET_FrameCallback },
+   { "ParamNames",    FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_ParamNames },
    END_FIELD
 };
 

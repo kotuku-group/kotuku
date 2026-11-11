@@ -129,6 +129,7 @@ class extSVG : public objSVG {
    std::list<XTag> SymbolInstances; // Parameterised symbol copies; retained if animations reference them
    ankerl::unordered_dense::map<int, kt::vector<XMLAttrib>> ParamAttribs; // Raw attribs of param() tags, by XTag.ID
    SVGStringLookupMap<kt::vector<std::string>> ParamDeps; // Parameter names referenced by a definition's subtree
+   std::vector<std::string> ParamNames; // Backing store for the ParamNames field
    TIMER AnimationTimer;
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
    bool  PreserveWS; // Preserve white-space

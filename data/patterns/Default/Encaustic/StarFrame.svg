@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic star frame</title>
+  <desc>A charcoal cement tile with a chalk eight-point star inside a diamond frame.  Partial stars in the
+    corners meet across neighbouring tiles.</desc>
+  <defs>
+    <pattern id="pidEncausticStarFrame" patternUnits="userSpaceOnUse" width="32" height="32"
+      viewBox="0 0 128 128">
+      <rect width="128" height="128" fill="#4a4a4d"/>
+      <!-- Diamond frame -->
+      <path fill="#ecebe6" d="
+        M64,6L122,64L64,122L6,64ZM64,18L18,64L64,110L110,64Z"/>
+      <!-- Centre and corner stars -->
+      <path fill="#ecebe6" d="
+        M64,38L69.36,51.07L82.38,45.62L76.93,58.64L90,64L76.93,69.36L82.38,82.38L69.36,76.93L64,90L58.64,76.93
+        L45.62,82.38L51.07,69.36L38,64L51.07,58.64L45.62,45.62L58.64,51.07Z
+        M0,-22L4.59,-11.09L15.56,-15.56L11.09,-4.59L22,0L11.09,4.59L15.56,15.56L4.59,11.09L0,22L-4.59,11.09
+        L-15.56,15.56L-11.09,4.59L-22,0L-11.09,-4.59L-15.56,-15.56L-4.59,-11.09Z
+        M128,-22L132.59,-11.09L143.56,-15.56L139.09,-4.59L150,0L139.09,4.59L143.56,15.56L132.59,11.09L128,22
+        L123.41,11.09L112.44,15.56L116.91,4.59L106,0L116.91,-4.59L112.44,-15.56L123.41,-11.09Z
+        M0,106L4.59,116.91L15.56,112.44L11.09,123.41L22,128L11.09,132.59L15.56,143.56L4.59,139.09L0,150L-4.59,139.09
+        L-15.56,143.56L-11.09,132.59L-22,128L-11.09,123.41L-15.56,112.44L-4.59,116.91Z
+        M128,106L132.59,116.91L143.56,112.44L139.09,123.41L150,128L139.09,132.59L143.56,143.56L132.59,139.09L128,150
+        L123.41,139.09L112.44,143.56L116.91,132.59L106,128L116.91,123.41L112.44,112.44L123.41,116.91Z"/>
+      <path fill="#4a4a4d" d="
+        M64,59L69,64L64,69L59,64Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidEncausticStarFrame)"/>
+</svg>

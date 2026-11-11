@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic lattice</title>
+  <desc>A cement tile of chalk bands on a diagonal grid, with a jewel set in every charcoal cell.</desc>
+  <defs>
+    <pattern id="pidEncausticLattice" patternUnits="userSpaceOnUse" width="64" height="64"
+      viewBox="0 0 128 128">
+      <rect width="128" height="128" fill="#4a4a4d"/>
+      <!-- Diagonal bands -->
+      <path fill="none" stroke="#ecebe6" stroke-width="14" d="
+        M8,-8L-136,136M72,-8L-72,136M136,-8L-8,136M200,-8L56,136M264,-8L120,136M-136,-8L8,136M-72,-8L72,136
+        M-8,-8L136,136M56,-8L200,136M120,-8L264,136"/>
+      <!-- Jewels -->
+      <path fill="#ecebe6" d="
+        M32,-9L41,0L32,9L23,0ZM96,-9L105,0L96,9L87,0ZM0,23L9,32L0,41L-9,32ZM64,23L73,32L64,41L55,32Z
+        M128,23L137,32L128,41L119,32ZM32,55L41,64L32,73L23,64ZM96,55L105,64L96,73L87,64ZM0,87L9,96L0,105L-9,96Z
+        M64,87L73,96L64,105L55,96ZM128,87L137,96L128,105L119,96ZM32,119L41,128L32,137L23,128Z
+        M96,119L105,128L96,137L87,128Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidEncausticLattice)"/>
+</svg>

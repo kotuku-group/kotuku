@@ -6,7 +6,7 @@ extension, e.g. `url(#pattern:Canvas)` for `Textiles/Canvas.svg`.
 
 Each asset defines one public paint server and a preview rectangle that uses it.  The paint server's ID is `pid`
 followed by the asset's category and name, e.g. `pidGradientsSunset` for `Gradients/Sunset.svg`.  Exported documents
-retain `url(#pattern:Name)` references rather than embedding the paint.  By convention, any other IDs used by an
+embed the paint's definitions rather than retaining `url(#pattern:Name)` references.  By convention, any other IDs used by an
 asset are also unique across the collection.
 
 ## Copyright

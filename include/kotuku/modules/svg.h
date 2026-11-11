@@ -145,20 +145,28 @@ class objSVG : public Object {
    }
 
    inline ERR getFrameCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       return field->GetValue(this, &Value);
+   }
+
+   inline ERR getParamNames(std::span<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
 
    // Customised field setting
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, 0x08000501, Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -193,7 +201,7 @@ class objSVG : public Object {
    }
 
    inline ERR setFrameCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 

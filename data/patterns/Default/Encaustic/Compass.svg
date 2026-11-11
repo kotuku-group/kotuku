@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic compass</title>
+  <desc>A chalk cement tile with a charcoal jewel at its centre and curved stars that complete themselves across
+    the corners of neighbouring tiles.</desc>
+  <defs>
+    <pattern id="pidEncausticCompass" patternUnits="userSpaceOnUse" width="64" height="64"
+      viewBox="0 0 128 128">
+      <rect width="128" height="128" fill="#ecebe6"/>
+      <!-- Corner stars -->
+      <path fill="#4a4a4d" d="
+        M0,-60Q6,-6 60,0Q6,6 0,60Q-6,6 -60,0Q-6,-6 0,-60ZM128,-60Q134,-6 188,0Q134,6 128,60Q122,6 68,0Q122,-6 128,-60Z
+        M0,68Q6,122 60,128Q6,134 0,188Q-6,134 -60,128Q-6,122 0,68Z
+        M128,68Q134,122 188,128Q134,134 128,188Q122,134 68,128Q122,122 128,68Z"/>
+      <!-- Edge notches and centre jewel -->
+      <path fill="#4a4a4d" d="
+        M64,-10L74,0L64,10L54,0ZM128,54L138,64L128,74L118,64ZM64,118L74,128L64,138L54,128ZM0,54L10,64L0,74L-10,64Z
+        M64,48L80,64L64,80L48,64Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidEncausticCompass)"/>
+</svg>
