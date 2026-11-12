@@ -26,8 +26,8 @@ enum class DRAG : int {
 
 enum class KRES : int {
    NIL = 0,
-   HANDLED = 65536,
    PASS = 0,
+   HANDLED = 65536,
 };
 
 // Keyboard subscription options.

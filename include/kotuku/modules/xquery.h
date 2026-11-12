@@ -220,8 +220,7 @@ class objXQuery : public Object {
    inline ERR getResultString(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -238,15 +237,13 @@ class objXQuery : public Object {
 
    inline ERR getResolveVariable(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getFunctions(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -254,8 +251,7 @@ class objXQuery : public Object {
    inline ERR getVariables(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

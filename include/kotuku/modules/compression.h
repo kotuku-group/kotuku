@@ -238,8 +238,7 @@ class objCompression : public Object {
    inline ERR getFeedback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -335,7 +334,7 @@ class objCompressedStream : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -343,7 +342,7 @@ class objCompressedStream : public Object {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
@@ -355,7 +354,7 @@ class objCompressedStream : public Object {
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -366,7 +365,7 @@ class objCompressedStream : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;

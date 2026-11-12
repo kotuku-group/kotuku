@@ -237,8 +237,7 @@ class objWebSocketServer : public Object {
    inline ERR getAccept(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -246,8 +245,7 @@ class objWebSocketServer : public Object {
    inline ERR getConnected(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[14];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -255,8 +253,7 @@ class objWebSocketServer : public Object {
    inline ERR getDisconnected(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -541,8 +538,7 @@ class objWebSocket : public Object {
    inline ERR getHeartbeat(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -550,8 +546,7 @@ class objWebSocket : public Object {
    inline ERR getIncoming(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -559,8 +554,7 @@ class objWebSocket : public Object {
    inline ERR getOutgoing(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -576,8 +570,7 @@ class objWebSocket : public Object {
    inline ERR getStateChanged(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

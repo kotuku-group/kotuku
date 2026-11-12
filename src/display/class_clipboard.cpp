@@ -1142,14 +1142,14 @@ extern "C" void report_windows_clip_utf16(uint16_t *String)
       else if (value < 0x800) {
          uint8_t b = (value & 0x3f) | 0x80;
          value = value>>6;
-         buffer << (value | 0xc0) << b;
+         buffer << (uint8_t)(value | 0xc0) << b;
       }
       else {
          uint8_t c = (value & 0x3f)|0x80;
          value = value>>6;
          uint8_t b = (value & 0x3f)|0x80;
          value = value>>6;
-         buffer << (value | 0xe0) << b << c;
+         buffer << (uint8_t)(value | 0xe0) << b << c;
       }
    }
 

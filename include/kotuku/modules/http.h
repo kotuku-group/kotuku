@@ -202,7 +202,7 @@ class objHTTP : public Object {
       return Action(AC::SetKey, this, &args);
    }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -213,7 +213,7 @@ class objHTTP : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -279,8 +279,7 @@ class objHTTP : public Object {
    inline ERR getUserAgent(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -358,8 +357,7 @@ class objHTTP : public Object {
    inline ERR getContentType(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -367,8 +365,7 @@ class objHTTP : public Object {
    inline ERR getIncoming(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -376,8 +373,7 @@ class objHTTP : public Object {
    inline ERR getLocation(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[35];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -385,8 +381,7 @@ class objHTTP : public Object {
    inline ERR getOutgoing(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[30];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -394,8 +389,7 @@ class objHTTP : public Object {
    inline ERR getRealm(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[7];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -403,8 +397,7 @@ class objHTTP : public Object {
    inline ERR getRecvBuffer(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -412,8 +405,7 @@ class objHTTP : public Object {
    inline ERR getResponseKeys(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[29];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -421,8 +413,7 @@ class objHTTP : public Object {
    inline ERR getStateChanged(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[32];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

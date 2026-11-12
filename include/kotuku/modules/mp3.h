@@ -74,7 +74,7 @@ class objMP3 : public objSound {
    inline ERR init() noexcept { return InitObject(this); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -82,7 +82,7 @@ class objMP3 : public objSound {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {

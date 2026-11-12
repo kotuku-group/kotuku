@@ -309,8 +309,7 @@ class objDocument : public Object {
    inline ERR getEventCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -318,8 +317,7 @@ class objDocument : public Object {
    inline ERR getOrigin(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -335,8 +333,7 @@ class objDocument : public Object {
    inline ERR getWorkingPath(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[13];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

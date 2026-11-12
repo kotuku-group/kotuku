@@ -84,7 +84,7 @@ class objTask : public Object {
       return Action(AC::SetKey, this, &args);
    }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -95,7 +95,7 @@ class objTask : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -183,8 +183,7 @@ class objTask : public Object {
 
    inline ERR getActions(std::span<struct ActionEntry> &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getAffinityMask(int64_t &Value) noexcept {
@@ -195,34 +194,29 @@ class objTask : public Object {
    inline ERR getKeys(std::span<std::string> &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
 
    inline ERR getErrorCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getExitCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getInputCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getOutputCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getPriority(int &Value) noexcept {

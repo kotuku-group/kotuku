@@ -538,8 +538,7 @@ class objAudio : public Object {
 
    inline ERR getDevice(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getMixerLag(double &Value) noexcept {
@@ -565,8 +564,7 @@ class objAudio : public Object {
 
    inline ERR getOutputLayout(std::span<int> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
 
@@ -788,8 +786,7 @@ class objAudioEffect : public Object {
    inline ERR getSchema(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -879,8 +876,7 @@ class objAudioEqualiser : public objAudioEffect {
 
    inline ERR getBands(std::span<struct AudioEQBand> &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      auto get_field = (ERR (*)(APTR, std::span<struct AudioEQBand> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getGain(double &Value) noexcept {
@@ -2078,7 +2074,7 @@ class objSound : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -2086,7 +2082,7 @@ class objSound : public Object {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
@@ -2230,14 +2226,12 @@ class objSound : public Object {
 
    inline ERR getHeader(std::span<int8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getOnStop(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[31];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getPlayPosition(int64_t &Value) noexcept {
@@ -2267,8 +2261,7 @@ class objSound : public Object {
    inline ERR getNote(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[32];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

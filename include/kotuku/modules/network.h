@@ -205,7 +205,7 @@ class objClientSocket : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -213,11 +213,11 @@ class objClientSocket : public Object {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -228,7 +228,7 @@ class objClientSocket : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -505,20 +505,17 @@ class objNetLookup : public Object {
 
    inline ERR getAddresses(std::span<struct IPAddress> &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, std::span<struct IPAddress> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getHostName(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getCallback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
 
@@ -588,7 +585,7 @@ class objNetSocket : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -596,11 +593,11 @@ class objNetSocket : public Object {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -611,7 +608,7 @@ class objNetSocket : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -725,8 +722,7 @@ class objNetSocket : public Object {
    inline ERR getFeedback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -734,8 +730,7 @@ class objNetSocket : public Object {
    inline ERR getIncoming(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -743,8 +738,7 @@ class objNetSocket : public Object {
    inline ERR getOutgoing(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -862,7 +856,7 @@ class objNetServer : public objNetSocket {
    inline ERR init() noexcept { return InitObject(this); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -870,11 +864,11 @@ class objNetServer : public objNetSocket {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -885,7 +879,7 @@ class objNetServer : public objNetSocket {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
