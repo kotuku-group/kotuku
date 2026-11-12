@@ -6,6 +6,17 @@ static const struct FieldDef clLightingFXLT[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clLightingFXLFX[] = {
+   { "Dequantise", 0x00000001 },
+   { "Sharpen", 0x00000002 },
+   { "Cavity", 0x00000004 },
+   { "Detail", 0x00000008 },
+   { "Shadows", 0x00000010 },
+   { "SpecularAa", 0x00000020 },
+   { "All", 0x0000003f },
+   { nullptr, 0 }
+};
+
 FDEF maSetDistantLight[] = { { "Azimuth", FD_DOUBLE }, { "Elevation", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetPointLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "PX", FD_DOUBLE }, { "PY", FD_DOUBLE }, { "PZ", FD_DOUBLE }, { "Exponent", FD_DOUBLE }, { "ConeAngle", FD_DOUBLE }, { 0, 0 } };

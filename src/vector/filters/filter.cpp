@@ -525,8 +525,8 @@ static void filter_reach(extVectorFilter *Self, double &ReachX, double &ReachY)
             break;
          }
 
-         case CLASSID::LIGHTINGFX: // Surface normals are computed from a 3x3 kernel
-            x = y = 2;
+         case CLASSID::LIGHTINGFX:
+            x = y = ((extLightingFX *)e)->reach();
             break;
 
          case CLASSID::MORPHOLOGYFX:
