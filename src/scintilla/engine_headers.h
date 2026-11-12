@@ -17,6 +17,7 @@
 #include <optional>
 #include <algorithm>
 #include <memory>
+#include <stdexcept>
 
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"

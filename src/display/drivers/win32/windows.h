@@ -52,6 +52,8 @@ DEFINE_ENUM_FLAG_OPERATORS(CON)
 int winLookupSurfaceID(HWND);
 void winSetAspectRatio(HWND, int, int);
 bool winGetAspectRatio(HWND, int &, int &);
+bool winGetClientSize(HWND, int &, int &);
+bool winIsMaximised(HWND);
 
 #ifdef __cplusplus
 namespace display {

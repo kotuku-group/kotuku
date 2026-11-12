@@ -189,6 +189,22 @@ bool winGetAspectRatio(HWND Window, int &Width, int &Height)
    return (Width > 0) and (Height > 0);
 }
 
+// Returns the dimensions of the window's client area.  Returns false if the call fails.
+
+bool winGetClientSize(HWND Window, int &Width, int &Height)
+{
+   RECT client;
+   if (not GetClientRect(Window, &client)) return false;
+   Width  = client.right - client.left;
+   Height = client.bottom - client.top;
+   return true;
+}
+
+bool winIsMaximised(HWND Window)
+{
+   return IsZoomed(Window) ? true : false;
+}
+
 namespace display {
 
 //********************************************************************************************************************

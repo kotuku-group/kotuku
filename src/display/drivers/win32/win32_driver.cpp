@@ -286,11 +286,10 @@ ERR Win32Driver::resizeWindow(HOSTWINDOW Window, int X, int Y, int Width, int He
    // one, e.g. when a dialog grows to fit its content.  A request that echoes the current size, such as feedback from
    // a user resize, leaves the ratio unchanged so that it does not drift.
 
-   int aspect_width, aspect_height;
-   RECT client;
+   int aspect_width, aspect_height, client_width, client_height;
    if ((winGetAspectRatio(HWND(Window), aspect_width, aspect_height)) and (Width > 0) and (Height > 0) and
-         (GetClientRect(HWND(Window), &client)) and
-         ((Width != client.right - client.left) or (Height != client.bottom - client.top)) and
+         (winGetClientSize(HWND(Window), client_width, client_height)) and
+         ((Width != client_width) or (Height != client_height)) and
          (int64_t(Width) * aspect_height != int64_t(Height) * aspect_width)) {
       const int gcd = std::gcd(Width, Height);
       winSetAspectRatio(HWND(Window), Width / gcd, Height / gcd);
@@ -345,11 +344,9 @@ ERR Win32Driver::setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, i
    int aspect_width, aspect_height;
    if (winGetAspectRatio(hwnd, aspect_width, aspect_height)) return ERR::Okay;
 
-   RECT client;
-   if ((GetClientRect(hwnd, &client)) and (client.right - client.left > 0) and (client.bottom - client.top > 0)) {
-      const int width  = client.right - client.left;
-      const int height = client.bottom - client.top;
-      const int gcd    = std::gcd(width, height);
+   int width, height;
+   if ((winGetClientSize(hwnd, width, height)) and (width > 0) and (height > 0)) {
+      const int gcd = std::gcd(width, height);
       winSetAspectRatio(hwnd, width / gcd, height / gcd);
    }
    else if ((MinW > 0) and (MinH > 0)) winSetAspectRatio(hwnd, MinW, MinH); // Fall back to the minimum dimensions
@@ -424,7 +421,7 @@ ERR Win32Driver::displayInfo(DisplayInfo &Info)
 
    if (window) {
       // Report the current host state, including maximise and restore operations initiated by the titlebar.
-      if (IsZoomed(HWND(window))) Info.Flags |= SCR::MAXIMISE;
+      if (winIsMaximised(HWND(window))) Info.Flags |= SCR::MAXIMISE;
       else Info.Flags &= ~SCR::MAXIMISE;
    }
 
