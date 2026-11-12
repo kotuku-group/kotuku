@@ -122,11 +122,11 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    std::string pattern_path;
    if (ResolvePath("patterns:", RSF::NO_FILE_CHECK, &pattern_path) != ERR::Okay) {
       if (ResolvePath("patternsource:", RSF::NO_FILE_CHECK, &pattern_path) != ERR::Okay) {
-         pattern_path = "styles:patterns/";
+         pattern_path = "styles:";
       }
 
-      if (not pattern_path.ends_with('/')) pattern_path += '/';
-      pattern_path += "Default.zip";
+      if ((not pattern_path.ends_with('/')) and (not pattern_path.ends_with(':'))) pattern_path += '/';
+      pattern_path += "patterns.zip";
 
       auto archive = objCompression::create::local(fl::Path(pattern_path), fl::ArchiveName("patterns"),
          fl::Flags(CMF::READ_ONLY));

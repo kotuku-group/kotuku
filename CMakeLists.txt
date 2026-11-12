@@ -1317,17 +1317,29 @@ add_custom_target (icon_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icons/D
 
 # Patterns are installed as a zip file
 
-file (GLOB_RECURSE pattern_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/patterns/Default/*")
+# Only the category folders are archived, so documentation in the root of data/patterns is excluded.  Folders are
+# passed to tar rather than individual files so that the archive includes directory entries.
+
+file (GLOB_RECURSE pattern_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/patterns/*/*")
+file (GLOB pattern_entries LIST_DIRECTORIES true RELATIVE "${PROJECT_SOURCE_DIR}/data/patterns"
+   "${PROJECT_SOURCE_DIR}/data/patterns/*")
+set (pattern_categories)
+foreach (entry IN LISTS pattern_entries)
+   if (IS_DIRECTORY "${PROJECT_SOURCE_DIR}/data/patterns/${entry}")
+      list (APPEND pattern_categories "${entry}")
+   endif ()
+endforeach ()
+list (SORT pattern_categories)
 
 add_custom_command (
-   OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/patterns/Default.zip"
-   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/patterns"
-   COMMAND ${CMAKE_COMMAND} -E tar "cf" "${CMAKE_CURRENT_BINARY_DIR}/patterns/Default.zip" --format=zip -- "."
+   OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/patterns.zip"
+   COMMAND ${CMAKE_COMMAND} -E tar "cf" "${CMAKE_CURRENT_BINARY_DIR}/patterns.zip" --format=zip -- ${pattern_categories}
    DEPENDS ${pattern_files}
-   WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/data/patterns/Default"
-   COMMENT "Zipping patterns")
+   WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/data/patterns"
+   COMMENT "Zipping patterns"
+   VERBATIM)
 
-add_custom_target (pattern_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/patterns/Default.zip")
+add_custom_target (pattern_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/patterns.zip")
 
 # --------------------------------------------------------------------------------------------------------------------
 # SSL Certificate Bundle Update
@@ -1409,7 +1421,7 @@ if (KOTUKU_INSTALL)
    endif ()
 
    install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/icons")
-   install (FILES "${CMAKE_BINARY_DIR}/patterns/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/patterns")
+   install (FILES "${CMAKE_BINARY_DIR}/patterns.zip" DESTINATION "${CONFIG_TARGET}/styles")
 
    install (DIRECTORY "${PROJECT_SOURCE_DIR}/apps/data" DESTINATION "${SHARE_TARGET}/apps")
    install (FILES
