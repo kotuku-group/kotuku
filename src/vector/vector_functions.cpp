@@ -19,6 +19,7 @@ functions for creating paths and rendering them to bitmaps.
 //#include "font.h"
 #include "colours.cpp"
 #include "font_def.h"
+#include "opentype.h"
 
 #include <charconv>
 
@@ -1082,6 +1083,76 @@ ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
       Metrics->Descent     = std::max(0, font->MaxHeight - font->Ascent);
       return ERR::Okay;
    }
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+GetFontFeatures: Lists the OpenType features that VectorText can apply for a font.
+
+GetFontFeatures() returns the OpenType layout features of a font that have an effect when the font is drawn by
+@VectorText, as a sorted, comma-separated list of tags such as `calt,ccmp,kern,liga,mark,tnum`.  The tags are
+suitable for the `features` key of a font definition (see ~NormaliseTextStyle()), and can be used to offer only the
+features that a font supports, as the font dialog does.
+
+A substitution feature is listed if the font's Latin, Greek or Cyrillic script, or its default script, references
+it in the default language system and at least one of its lookups is of a supported type.  Features that are only
+defined for other scripts, or that use unsupported lookups such as reverse chaining substitution, are not listed.
+`mark` is listed if the font provides mark-to-base positioning, and `kern` if it provides pair kerning that has not
+been disabled in the font configuration.  The list therefore includes the features that are applied by default, such
+as `liga` and `ccmp`, if the font defines them.
+
+The features are a property of the font file, so every size and variable instance of a face returns the same list.
+A bitmap font returns an empty string.
+
+-INPUT-
+ptr Handle: A font handle obtained from ~GetFontHandle().
+^&string Result: The comma-separated feature tags.
+
+-ERRORS-
+Okay
+NullArgs
+
+-TAGS-
+pure-query, thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR GetFontFeatures(APTR Handle, std::string *Result)
+{
+   if ((not Handle) or (not Result)) return ERR::NullArgs;
+
+   Result->clear();
+   if (((common_font *)Handle)->type != CF_FREETYPE) return ERR::Okay;
+
+   const std::lock_guard lock(glFontMutex);
+
+   auto pt = (freetype_font::ft_point *)Handle;
+   auto font = pt->font;
+   static constexpr uint32_t SCRIPTS[] = {
+      ot_reader::tag('l','a','t','n'), ot_reader::tag('g','r','e','k'), ot_reader::tag('c','y','r','l')
+   };
+
+   std::vector<uint32_t> tags;
+   font->get_gsub().feature_tags(SCRIPTS, tags);
+   auto &gpos = font->get_gpos();
+   if (gpos.marks_enabled()) tags.push_back(ot_reader::tag('m','a','r','k'));
+   if (pt->kerning_enabled and (gpos.enabled() or FT_HAS_KERNING(font->face))) {
+      tags.push_back(ot_reader::tag('k','e','r','n'));
+   }
+
+   std::vector<std::string> names;
+   for (auto tag : tags) {
+      std::string name = { char(tag>>24), char((tag>>16) & 0xff), char((tag>>8) & 0xff), char(tag & 0xff) };
+      if (std::ranges::find(names, name) IS names.end()) names.push_back(std::move(name));
+   }
+   std::ranges::sort(names);
+   for (auto &name : names) {
+      if (not Result->empty()) Result->push_back(',');
+      Result->append(name);
+   }
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

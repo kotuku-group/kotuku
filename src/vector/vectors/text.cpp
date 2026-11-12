@@ -32,8 +32,11 @@ property having a value of `none`.  A font can also be excluded by setting `Kern
 `fonts:options.cfg`.
 
 Single, multiple, alternate, ligature and contextual OpenType substitutions are available through the `features` key
-of #TextStyle for Latin, Greek and Cyrillic text, using the font's default language system.  Glyph composition and
-decomposition (`ccmp`) and mark-to-base positioning (`mark`) are enabled by default.  Other substitutions are opt-in.
+of #TextStyle for Latin, Greek and Cyrillic text, using the font's default language system.  As in web browsers,
+glyph composition and decomposition (`ccmp`), required variation alternates (`rvrn`), localised forms (`locl`),
+standard and contextual ligatures (`liga`, `clig`), contextual alternates (`calt`) and mark-to-base positioning
+(`mark`) are enabled by default.  Other features, such as `tnum`, `smcp` and `frac`, are opt-in.  The defaults apply
+only where the font defines them, so text in a font without these features is unchanged.
 Variable fonts can select alternate lookups and mark anchors according to their axes.  Mark positioning attaches
 combining glyphs to base anchors after substitution, independently of the kerning controls, in both ordinary text and
 text along a guide path.  Mark-to-mark, mark-to-ligature and contextual positioning, contextual kerning and complex
@@ -321,16 +324,31 @@ class extVectorText : public extVector {
          (ot_reader::feature_value(features(), ot_reader::tag('k','e','r','n')).value_or(1) != 0);
    }
 
+   // The requested features with VectorText's defaults added for any feature that is not stated.  Optional ligatures
+   // (liga, clig) are not a default when letter spacing is non-zero, following CSS.  The result depends only on the
+   // definition, so a change of font size or spacing distance doesn't invalidate the shaped lines.
+
+   std::string effective_features() const {
+      std::string settings(features());
+      if (settings IS "none") return settings;
+      const bool spaced = txDefinition.letter_spacing and (txDefinition.letter_spacing->value != 0);
+      static constexpr std::pair<std::string_view, bool> DEFAULTS[] = { // Tag, optional ligature
+         { "ccmp", false }, { "rvrn", false }, { "locl", false }, { "liga", true }, { "clig", true }, { "calt", false }
+      };
+      for (auto [ tag, ligature ] : DEFAULTS) {
+         if (spaced and ligature) continue;
+         if (ot_reader::feature_value(settings, ot_reader::tag(tag[0], tag[1], tag[2], tag[3])).has_value()) continue;
+         if (not settings.empty()) settings += ", ";
+         settings.append(tag).append(" 1");
+      }
+      return settings;
+   }
+
    // REQUIREMENT: glFontMutex is held.  Size-only and layout-only changes reuse the shaped line.
 
    const std::vector<shaped_glyph> & shaped_line(TextLine &Line) {
       auto &point = *(freetype_font::ft_point *)txHandle;
-      std::string settings(features());
-      if ((settings != "none") and
-          (not ot_reader::feature_value(settings, ot_reader::tag('c','c','m','p')).has_value())) {
-         if (not settings.empty()) settings += ", ";
-         settings += "ccmp 1";
-      }
+      const auto settings = effective_features();
       auto table = (settings IS "none") ? nullptr : &point.font->get_gsub();
       auto positioning = (settings IS "none") ? nullptr : &point.font->get_gpos();
       const auto coordinates = ((table and table->has_variations()) or
@@ -1390,9 +1408,11 @@ are stored and returned but are not rendered at present.
 
 For scalable fonts, `features=smcp 1, onum 1` requests small capitals and old-style figures when the face supports
 them.  Single, multiple, alternate, ligature and contextual substitutions are supported for Latin, Greek and
-Cyrillic script runs.  Other scripts retain their direct character mapping.  Glyph composition/decomposition (`ccmp`)
-and mark-to-base positioning (`mark`) are enabled by default; other features require an explicit request.
-A value of zero disables a feature, and `features=none` disables substitution and mark positioning.  For an alternate
+Cyrillic script runs.  Other scripts retain their direct character mapping.  The features `ccmp`, `rvrn`, `locl`,
+`liga`, `clig`, `calt` and `mark` are enabled by default; other features require an explicit request.  A value of
+zero disables a feature, e.g. `features=liga 0, calt 0`, and `features=none` disables every substitution and mark
+positioning.  The defaults are not part of the definition, so reading #TextStyle returns only the features that were
+stated.  ~Vector.GetFontFeatures() lists the features that a face provides.  For an alternate
 substitution, a value of N selects alternate N, starting at one; an unavailable alternate leaves the glyph
 unchanged.  `features=kern 0` disables pair kerning, while `features=none` leaves kerning controlled by #TextFlags
 and the `kerning` key.  Bitmap fonts ignore substitution.
@@ -1405,15 +1425,17 @@ retained, with the cluster's advance divided equally between its codepoints.  Ma
 without changing advances, and remains enabled when pair kerning is disabled.  Mark-to-mark stacking, attachment to
 ligatures and contextual positioning are not supported.
 
-Request `features=liga 1` to enable standard ligatures such as fi and ffi.  Cursor and selection columns remain source
-codepoints; a ligature's advance is divided equally between its components.  Editing a component reshapes the line.
-Wrapping keeps each substituted cluster intact, including in `ANYWHERE` mode.  Letter spacing applies between
-clusters.  Ligatures remain opt-in when letter spacing is non-zero, so an explicit request still enables them.
+Standard ligatures such as fi and ffi are formed by default where the font provides them; `features=liga 0` keeps
+the letters separate.  Cursor and selection columns remain source codepoints; a ligature's advance is divided equally
+between its components.  Editing a component reshapes the line.  Wrapping keeps each substituted cluster intact,
+including in `ANYWHERE` mode.  Letter spacing applies between clusters.  When letter spacing is non-zero, the
+optional ligatures `liga` and `clig` are not applied by default, following CSS, but an explicit request such as
+`features=liga 1` still enables them.  Discretionary ligatures (`dlig`) always require a request.
 
-Request `features=calt 1` for contextual alternates or `features=frac 1` for fractions such as 12/345, when the font
-supports them.  Matching uses the complete hard line before wrapping.  Variable fonts use their normalised axis
-coordinates to select feature variations, and an explicit `features=rvrn 1` applies required variation alternates
-before other requested substitutions.  Changing the axes regenerates the shaped text even if kerning is disabled.
+Contextual alternates (`calt`) apply by default, and `features=frac 1` requests fractions such as 12/345 when the
+font supports them.  Matching uses the complete hard line before wrapping.  Variable fonts use their normalised axis
+coordinates to select feature variations, and required variation alternates (`rvrn`) are applied before other
+substitutions.  Changing the axes regenerates the shaped text even if kerning is disabled.
 
 Reading the field returns the canonical form of the current state, including changes that have been made through
 fields such as #Face and #FontSize.  The result can be assigned to another VectorText or saved.

@@ -5,7 +5,8 @@
 // Supports lookup types 1 to 6, Extension (type 7) wrappers, lookup filtering and FeatureVariations.  Contextual
 // lookups support glyph, class and coverage patterns.  Source clusters survive every substitution.
 //
-// Substitution is opt-in: a lookup is only applied if a feature that references it is explicitly requested.
+// A lookup is only applied if a feature that references it is requested.  Default features are the caller's
+// responsibility; VectorText adds its own before shaping.
 //
 // The tables are fully validated by load().  A malformed table disables substitution rather than failing font
 // loading.  Instances are not thread-safe; the vector module protects them with glFontMutex.
@@ -28,6 +29,12 @@ class gsub_table {
 
       bool enabled() const { return not lookups.empty(); }
       bool has_variations() const { return not variations.empty(); }
+
+      // Adds the tags of the features that apply() can act upon for any of the Scripts to Tags.  A feature qualifies
+      // if it is listed by the script's default language system, or DFLT for a script that the font doesn't define,
+      // and references at least one supported lookup, including through a FeatureVariations alternate.
+
+      void feature_tags(std::span<const uint32_t> Scripts, std::vector<uint32_t> &Tags) const;
 
       // Applies the lookups of the requested Features to a run of glyphs in a single Script.  Budget limits the
       // total work and GrowthBudget limits the glyphs that multiple substitutions can insert.  Both are shared

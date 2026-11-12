@@ -217,7 +217,8 @@ static const char * text_property_initial(uint32_t Hash)
       case SVF_font_style:
       case SVF_font_stretch:
       case SVF_font_width:
-      case SVF_font_variation_settings: return "normal";
+      case SVF_font_variation_settings:
+      case SVF_font_feature_settings: return "normal";
       case SVF_font_optical_sizing:
       case SVF_font_kerning:
       case SVF_kerning: return "auto";
@@ -316,8 +317,10 @@ static bool expand_text_font(std::string_view Value, std::vector<XMLAttrib> &Res
    using kt::font_traits::trim;
    Value = trim(Value);
    const char *names[] = { "font-style", "font-variant", "font-weight", "font-stretch", "font-size",
-      "line-height", "font-family", "font-kerning", "font-variation-settings", "font-optical-sizing" };
-   std::string values[] = { "normal", "normal", "normal", "normal", "", "normal", "", "auto", "normal", "auto" };
+      "line-height", "font-family", "font-kerning", "font-variation-settings", "font-optical-sizing",
+      "font-feature-settings" };
+   std::string values[] = { "normal", "normal", "normal", "normal", "", "normal", "", "auto", "normal", "auto",
+      "normal" };
    if (iequals(Value, "inherit") or iequals(Value, "initial") or iequals(Value, "unset")) {
       for (auto name : names) Result.push_back(XMLAttrib { name, std::string(Value) });
       return true;
@@ -491,6 +494,54 @@ static bool font_descriptors(uint32_t Hash, std::string_view Value, std::string 
 }
 
 //********************************************************************************************************************
+// Converts CSS font-feature-settings to the value of a font definition's `features` key, e.g. `"liga" 0, "tnum"` to
+// `liga 0, tnum 1`.  Returns false if the value is malformed, in which case the declaration is ignored.  `normal`
+// produces an empty Result.  Tags that a font definition cannot express, such as those containing spaces, quotes or
+// brackets, are valid CSS but no font defines them, so they are skipped.  Duplicate tags are resolved by the font
+// definition, where the last one wins as it does in CSS.
+//
+// CSS: normal | [ <string> [ <integer [0,∞]> | on | off ]? ]#
+
+static bool feature_settings(std::string_view Value, std::string &Result)
+{
+   namespace ft = kt::font_traits;
+   Result.clear();
+   Value = ft::trim(Value);
+   if (iequals("normal", Value)) return true;
+
+   while (true) {
+      // The quoted tag is read first, as it can contain a comma.
+
+      Value = ft::trim(Value);
+      if (Value.size() < 6) return false; // Minimum of "abcd"
+      const char quote = Value.front();
+      if (((quote != '"') and (quote != '\'')) or (Value[5] != quote)) return false;
+      auto tag = Value.substr(1, 4);
+      if (std::ranges::any_of(tag, [](char C) { return (C < 0x20) or (C > 0x7e); })) return false;
+      Value.remove_prefix(6);
+
+      const auto end = Value.find(',');
+      auto option = ft::trim(Value.substr(0, end));
+      uint32_t number = 1;
+      if (iequals(option, "on")) number = 1;
+      else if (iequals(option, "off")) number = 0;
+      else if (not option.empty()) {
+         if (option.starts_with('+')) option.remove_prefix(1);
+         auto [ ptr, error ] = std::from_chars(option.data(), option.data() + option.size(), number);
+         if ((error != std::errc()) or (ptr != option.data() + option.size())) return false;
+      }
+
+      if (tag.find_first_of(" ,;=()'\"") IS std::string_view::npos) { // Characters with meaning in a definition
+         if (not Result.empty()) Result.append(", ");
+         Result.append(tag).append(" ").append(std::to_string(number));
+      }
+
+      if (end IS std::string_view::npos) return true;
+      Value.remove_prefix(end + 1);
+   }
+}
+
+//********************************************************************************************************************
 // Replaces the descriptors that are owned by the CSS font property Hash in Style with Descriptors.  This allows the
 // properties to be combined and inherited independently, so that a child's font-stretch does not discard a parent's
 // font-style.
@@ -556,8 +607,9 @@ ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const
 
    Value = ft::trim(Value);
    const bool inherited = Hash != SVF_text_decoration;
+   const bool inherit_value = iequals(Value, "inherit") or (inherited and iequals(Value, "unset"));
 
-   if (iequals(Value, "inherit") or (inherited and iequals(Value, "unset"))) {
+   if (inherit_value) {
       auto it = Parent.m_text_properties.find(Hash);
       Value = (it != Parent.m_text_properties.end()) ? std::string_view(it->second) : std::string_view(initial);
    }
@@ -628,6 +680,11 @@ ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const
       case SVF_font_variant:
          if (not iequals(Value, "normal")) return ERR::NoSupport;
          break;
+      case SVF_font_feature_settings:
+         // Inherited settings are already in font definition syntax, rather than quoted CSS syntax.
+         if ((not inherit_value) and (not feature_settings(Value, computed))) return ERR::InvalidValue;
+         if (computed.empty()) computed = "normal";
+         break;
       case SVF_font_family:
          if (not text_family(Value, computed)) return ERR::InvalidValue;
          m_font_family = computed;
@@ -696,6 +753,13 @@ ERR svgState::apply_text_properties(objVectorText *Text) const noexcept
       auto error = hash IS SVF_line_height ? Text->setLineHeight(length) :
          (hash IS SVF_letter_spacing ? Text->setLetterSpacing(length) : Text->setWordSpacing(length));
       if (error != ERR::Okay) return error;
+   }
+
+   // Feature settings are applied through the font definition.  `normal` leaves VectorText's default features.
+
+   if (auto features = m_text_properties.find(SVF_font_feature_settings);
+       (features != m_text_properties.end()) and (features->second != "normal")) {
+      if (auto error = Text->setTextStyle("features=" + features->second); error != ERR::Okay) return error;
    }
 
    auto anchor = m_text_properties.find(SVF_text_anchor);

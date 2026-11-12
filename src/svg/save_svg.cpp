@@ -1202,6 +1202,29 @@ static void save_font_style(XTag *Tag, std::string_view Style, int Weight)
 }
 
 //*********************************************************************************************************************
+// Converts the `features` key of a font definition, e.g. `liga 0, tnum 1`, to CSS font-feature-settings.  A value of
+// `none` disables every feature including VectorText's defaults, which CSS cannot express, so it is not saved.
+
+static void save_font_features(XTag *Tag, std::string_view Features)
+{
+   if (Features.empty() or (Features IS "none")) return;
+
+   std::string css;
+   while (not Features.empty()) {
+      auto comma = Features.find(',');
+      auto item = kt::font_traits::trim(Features.substr(0, comma));
+      if (auto space = item.find(' '); (space IS 4) and (item.size() > 5) and
+          (item.substr(0, 4).find_first_of("\"\\") IS std::string_view::npos)) {
+         if (not css.empty()) css.append(", ");
+         css.append("\"").append(item.substr(0, 4)).append("\" ").append(item.substr(5));
+      }
+      if (comma IS std::string_view::npos) break;
+      Features.remove_prefix(comma + 1);
+   }
+   if (not css.empty()) xml::NewAttrib(Tag, "font-feature-settings", css);
+}
+
+//*********************************************************************************************************************
 
 static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
 {
@@ -1265,6 +1288,16 @@ static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int 
 
    if ((!error) and (!(error = vt->getWeight(weight))) and (!(error = vt->getFontStyle(sv))))
       save_font_style(tag, sv, weight);
+
+   if ((!error) and (!(error = vt->getTextStyle(sv)))) {
+      KeyValue *keys;
+      if (vec::ReadTextStyle(sv, &keys) IS ERR::Okay) {
+         auto &entries = *(KEYVALUE *)keys;
+         if (auto features = entries.find("features"); features != entries.end()) {
+            save_font_features(tag, features->second);
+         }
+      }
+   }
 
    std::string text;
    if ((!error) and (!(error = vt->getString(text))))

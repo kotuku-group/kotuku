@@ -1,8 +1,8 @@
 -- Style panel: the axes of a variable family, or the styles of a static or bitmap family, followed by the OpenType
--- feature switches.  The content is rebuilt whenever the family changes.  Weight, width, italic and the static style
--- and the other axes are applied to the preview.  The feature switches are passed to the result and the samples, but
--- VectorText does not render them yet.  This file also composes the font definitions: fontDef() for the result, and
--- paintDef() for the preview.
+-- feature switches.  The content is rebuilt whenever the family or its available features change.  Weight, width,
+-- italic, the static style and the other axes are applied to the preview.  The feature switches are passed to the
+-- result and the samples, which render them.  This file also composes the font definitions: fontDef() for the result,
+-- and paintDef() for the preview.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 
@@ -37,10 +37,12 @@ AXES <const> = {
    ital = { label = 'Italic',       min = 0,   max = 1,   default = 0,   step = 1 }
 }
 
--- Feature switches, offered for the features that a family provides according to the font database.
+-- Feature switches, offered for the features that VectorText can apply to the selected face (see supportedFeatures()).
 
 FEATURES <const> = array<table> {
    { id = 'liga', label = 'liga', tip = 'Standard ligatures' },
+   { id = 'calt', label = 'calt', tip = 'Contextual alternates' },
+   { id = 'dlig', label = 'dlig', tip = 'Discretionary ligatures' },
    { id = 'kern', label = 'kern', tip = 'Kerning' },
    { id = 'tnum', label = 'tnum', tip = 'Tabular figures' },
    { id = 'onum', label = 'onum', tip = 'Oldstyle figures' },
@@ -49,9 +51,36 @@ FEATURES <const> = array<table> {
    { id = 'zero', label = 'zero', tip = 'Slashed zero' }
 }
 
--- Features that apply unless they are turned off, so that switching one off has to be stated as `tag 0`.
+-- Features that VectorText applies unless they are turned off, so that switching one off has to be stated as `tag 0`.
 
-DEFAULT_FEATURES <const> = { liga = true, kern = true }
+DEFAULT_FEATURES <const> = { liga = true, calt = true, kern = true }
+
+-- Feature tags by family and style, from GetFontFeatures().  Styles can select different font files with different
+-- features, even when they belong to the same family.
+
+glSupported = { }
+
+@Doc(text=[[
+@desc Return the OpenType feature tags that VectorText can apply to the selected face, according to
+~Vector.GetFontFeatures().  Unlike the font database, the list excludes features that are only defined for other
+scripts or that use unsupported lookups.  Bitmap families have no features.
+]])
+fontdialog_style.supportedFeatures = function(State:table!):array<str>
+   font = State.font
+   if font.tech is 'bitmap' then return array<str> end
+   style = fontdialog_style.fontStyle(State)
+   glSupported[font.name] ?= { }
+   cached = glSupported[font.name][style]
+   if cached then return cached end
+   tags = array<str>
+   err, handle = mVec.GetFontHandle(font.name, style, 0, 16)
+   if err is ERR_Okay then
+      err, list = mVec.GetFontFeatures(handle)
+      if (err is ERR_Okay) and (list??) then tags = list.split(',') end
+   end
+   glSupported[font.name][style] = tags
+   return tags
+end
 
 @Doc(text=[[
 @desc Return the feature settings that a family starts with, as a table that the caller may change.
@@ -304,13 +333,14 @@ end
 
 @Doc(text=[[
 @desc Return the OpenType feature settings of the picker state in the canonical form of a definition's `features` key,
-e.g. `kern 1, liga 0, smcp 1`.  Only features that the family provides are listed, and the result is `none` if there
-are no such settings.
+e.g. `kern 1, liga 0, smcp 1`.  Only features that the selected face provides are listed, and the result is `none`
+if there are no such settings.
 ]])
 fontdialog_style.featureList = function(State:table!):str
    tags = array<str>
+   supported = fontdialog_style.supportedFeatures(State)
    for tag, on in State.features do
-      if tag in State.font.features then tags.push(f'{tag} {on ? 1 : 0}') end
+      if tag in supported then tags.push(f'{tag} {on ? 1 : 0}') end
    end
    if #tags is 0 then return 'none' end
    tags.sort()
@@ -497,7 +527,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
 
    inner = Options.width - (PAD * 2)
 
-   -- Build the content for the current family in a viewport of its own, which is replaced when the family changes.
+   -- Replace the content when the family or its available features change.
 
    function build()
       s = Picker.state
@@ -561,7 +591,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
 
       if font.tech != 'bitmap' then
          y += 6
-         items = FEATURES.filter((Feature) => Feature.id in font.features)
+         items = FEATURES.filter((Feature) => Feature.id in self.supported)
 
          if #items > 0 then
             fontdialog_controls.subhead(Picker, content, PAD, y, 'OpenType features')
@@ -585,10 +615,11 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
    end
 
    self.update = function(Source:str)
-      if self.font != Picker.state.font then
+      supported = fontdialog_style.supportedFeatures(Picker.state)
+      if (self.font != Picker.state.font) or (self.supported != supported) or
+         (Source is 'reset') or (Source is 'preset') then
          self.font = Picker.state.font
-         build()
-      elseif (Source is 'reset') or (Source is 'preset') then
+         self.supported = supported
          build()
       end
    end
