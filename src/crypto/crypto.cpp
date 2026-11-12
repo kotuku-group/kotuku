@@ -53,6 +53,9 @@ security-sensitive records that need owner-only access and atomic replacement.
 
 #include "crypto_internal.h"
 #include "protocol_primitives.h"
+#ifdef CRYPTO_PROTOCOL_OPENSSL
+#include "protocol_openssl.h"
+#endif
 
 static ERR MODInit(OBJECTPTR, struct CoreBase *);
 static ERR MODExpunge(void);

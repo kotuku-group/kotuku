@@ -13,7 +13,7 @@
 #include "../sctp/sctp_association.h"
 #include "../sctp/dcep.h"
 
-#include <openssl/rand.h>
+#include "../../crypto/protocol_primitives.h"
 
 #include <chrono>
 #include <cstdio>
@@ -37,7 +37,7 @@ static std::string random_ice_text(size_t Length) {
    std::string result(Length, '\0');
    for (size_t i = 0; i < Length; ++i) {
       uint8_t value = 0;
-      if (RAND_bytes(&value, 1) != 1) return {};
+      if (not crypto_protocol::random_bytes(std::span<uint8_t>(&value, 1))) return {};
       result[i] = ALPHABET[value & 63];
    }
    return result;

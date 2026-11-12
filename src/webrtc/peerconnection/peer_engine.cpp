@@ -22,7 +22,7 @@
 #include <kotuku/modules/network.h>
 #include <kotuku/strings.hpp>
 
-#include <openssl/rand.h>
+#include "../../crypto/protocol_primitives.h"
 
 #include <algorithm>
 #include <chrono>
@@ -48,7 +48,7 @@ std::string random_ice_text(size_t Length)
    std::string result(Length, '\0');
    for (size_t i = 0; i < Length; ++i) {
       uint8_t value = 0;
-      if (RAND_bytes(&value, 1) != 1) return {};
+      if (not crypto_protocol::random_bytes(std::span<uint8_t>(&value, 1))) return {};
       result[i] = alphabet[value & 63];
    }
    return result;
@@ -526,7 +526,7 @@ void PeerConnection::queue_host(ice::CandidateLine Value, uint64_t NowUs)
    Value.foundation = std::to_string(local_names.size() + 1);
 
    std::array<uint8_t, 16> random{};
-   if (RAND_bytes(random.data(), int(random.size())) != 1) return;
+   if (not crypto_protocol::random_bytes(random)) return;
 
    constexpr char hex[] = "0123456789abcdef";
    Value.mdns_name.clear();

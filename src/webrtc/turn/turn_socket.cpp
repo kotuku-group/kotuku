@@ -4,7 +4,7 @@
 #include "turn_socket.h"
 #include "../ice/network_endpoint.h"
 
-#include <openssl/rand.h>
+#include "../../crypto/protocol_primitives.h"
 
 #include <algorithm>
 #include <chrono>
@@ -31,7 +31,7 @@ turn::Config options(const IceServer &Server, const turn::Identity &Id)
    result.password = Server.credential;
    result.reliable = Server.transport != ServerTransport::UDP;
    result.relay_ipv6 = Id.server.ipv6;
-   result.random = [](turn::TransactionId &Id) { return RAND_bytes(Id.data(), int(Id.size())) IS 1; };
+   result.random = [](turn::TransactionId &Id) { return crypto_protocol::random_bytes(Id); };
    return result;
 }
 

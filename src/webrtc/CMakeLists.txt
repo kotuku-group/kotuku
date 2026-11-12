@@ -66,7 +66,7 @@ add_library (webrtc_precis STATIC precis/opaque_string.cpp)
 set_target_properties (webrtc_precis PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
 target_link_libraries (webrtc_precis PUBLIC utf8proc unicode)
 
-add_library (crypto_protocol STATIC ../crypto/protocol_primitives.cpp)
+add_library (crypto_protocol STATIC ../crypto/protocol_primitives.cpp ../crypto/protocol_openssl.cpp)
 set_target_properties (crypto_protocol PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions (crypto_protocol PUBLIC CRYPTO_PROTOCOL_OPENSSL=1)
 target_include_directories (crypto_protocol PRIVATE "${OPENSSL_INCLUDE_DIR}")
@@ -91,7 +91,8 @@ endif ()
 
 set (WEBRTC_STUN_SOURCES stun/stun.cpp)
 set (WEBRTC_ICE_SOURCES ice/ice.cpp ice/ice_agent.cpp ${WEBRTC_STUN_SOURCES})
-set (WEBRTC_ICE_DTLS_SOURCES ice/ice_dtls.cpp dtls/dtls_openssl.cpp ${WEBRTC_ICE_SOURCES})
+set (WEBRTC_DTLS_SOURCES dtls/dtls_transport.cpp dtls/dtls_openssl.cpp)
+set (WEBRTC_ICE_DTLS_SOURCES ice/ice_dtls.cpp ${WEBRTC_DTLS_SOURCES} ${WEBRTC_ICE_SOURCES})
 set (WEBRTC_TRANSPORT_SOURCES ice/ice_socket.cpp ice/ice_candidates.cpp ice/ice_servers.cpp turn/turn.cpp
    turn/turn_socket.cpp ${WEBRTC_ICE_DTLS_SOURCES})
 set (WEBRTC_SCTP_SOURCES sctp/sctp_packet.cpp sctp/sctp_association.cpp sctp/sctp_transfer.cpp sctp/sctp_streams.cpp
@@ -198,7 +199,7 @@ if (UNIT_TESTS)
       LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns)
    webrtc_unit_test (ice_servers SOURCES ice/ice_servers.cpp ice/ice_candidates.cpp ${WEBRTC_STUN_SOURCES}
       LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns)
-   webrtc_unit_test (dtls SOURCES dtls/dtls_openssl.cpp LIBS ${DTLS_LIBS})
+   webrtc_unit_test (dtls SOURCES ${WEBRTC_DTLS_SOURCES} LIBS ${DTLS_LIBS})
    webrtc_unit_test (ice_dtls SOURCES ${WEBRTC_ICE_DTLS_SOURCES} LIBS ${DTLS_LIBS})
    webrtc_unit_test (full_ice_dtls SOURCES ${WEBRTC_ICE_DTLS_SOURCES} LIBS ${DTLS_LIBS})
    webrtc_unit_test (ice_socket NATIVE SOURCES ${WEBRTC_TRANSPORT_SOURCES}
@@ -216,7 +217,7 @@ if (UNIT_TESTS)
    foreach (SCTP_TEST association transfer streams)
       webrtc_unit_test (sctp_${SCTP_TEST} FIXTURES SOURCES ${WEBRTC_SCTP_SOURCES} LIBS crypto_protocol unicode)
    endforeach ()
-   webrtc_unit_test (sctp_dtls SOURCES ${WEBRTC_SCTP_SOURCES} dtls/dtls_openssl.cpp LIBS ${DTLS_LIBS})
+   webrtc_unit_test (sctp_dtls SOURCES ${WEBRTC_SCTP_SOURCES} ${WEBRTC_DTLS_SOURCES} LIBS ${DTLS_LIBS})
 
    # PeerConnection
 
@@ -302,7 +303,8 @@ if (UNIT_TESTS AND WEBRTC_FUZZ)
    endif ()
 
    set (FUZZ_FLAGS -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
-   set (FUZZ_PRECIS_SOURCES precis/opaque_string.cpp ../link/unicode.cpp ../crypto/protocol_primitives.cpp
+   set (FUZZ_CRYPTO_SOURCES ../crypto/protocol_primitives.cpp ../crypto/protocol_openssl.cpp)
+   set (FUZZ_PRECIS_SOURCES precis/opaque_string.cpp ../link/unicode.cpp ${FUZZ_CRYPTO_SOURCES}
       "${utf8proc_SOURCE_DIR}/utf8proc.c")
 
    function (webrtc_fuzz_target Name)
@@ -335,7 +337,7 @@ if (UNIT_TESTS AND WEBRTC_FUZZ)
       webrtc_fuzz_target (turn_${FUZZ_KIND} tests/fuzz_turn_${FUZZ_KIND}.cpp turn/turn.cpp ${WEBRTC_STUN_SOURCES}
          ${FUZZ_PRECIS_SOURCES})
       webrtc_fuzz_target (sctp_${FUZZ_KIND} tests/fuzz_sctp_${FUZZ_KIND}.cpp ${WEBRTC_SCTP_SOURCES}
-         ../link/unicode.cpp ../crypto/protocol_primitives.cpp)
+         ../link/unicode.cpp ${FUZZ_CRYPTO_SOURCES})
       foreach (PROTOCOL sctp turn)
          add_test (NAME webrtc_${PROTOCOL}_${FUZZ_KIND}_fuzz_regression COMMAND fuzz_webrtc_${PROTOCOL}_${FUZZ_KIND}
             -runs=1 "${${PROTOCOL}_${FUZZ_KIND}_CORPUS}")
