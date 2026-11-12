@@ -217,14 +217,22 @@ end
    end
 
    -- The waveform holds the tone: 1024 frames at 48 kHz contain about 21 cycles, i.e. about 43 zero crossings.
+   -- A detectable spectrum can precede a full waveform window.  Paced endpoints can also leave uncaptured frames
+   -- between packets, so poll for a complete window just as we poll for the spectrum and meters.
 
    wave = array<float, 1024>
-   check analyser.mtGetWaveform(wave)
    crossings = 0
    peak = 0
-   for i in {1 to 1024} do
-      if (wave[i - 1] < 0) != (wave[i] < 0) then crossings++ end
-      peak = math.max(peak, math.abs(wave[i]))
+   for attempt in {0 to 200} do
+      check analyser.mtGetWaveform(wave)
+      crossings = 0
+      peak = 0
+      for i in {1 to 1024} do
+         if (wave[i - 1] < 0) != (wave[i] < 0) then crossings++ end
+         peak = math.max(peak, math.abs(wave[i]))
+      end
+      if crossings >= 40 and crossings <= 46 and peak > 0.01 and peak < 1 then break end
+      processing.sleep(0.01)
    end
    assert(peak > 0.01 and peak < 1, f'The waveform peak should reflect the tone, got {peak}')
    assert(crossings >= 40 and crossings <= 46, f'Expected about 43 zero crossings, got {crossings}')

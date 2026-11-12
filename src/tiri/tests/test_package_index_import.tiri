@@ -139,12 +139,12 @@ end
    write_file(packages .. 'reverse.tiri',
       'import \'self-contained\'\nimport \'./helper\' as direct\nassert(direct.value() is 42)')
 
-   local code, output = run_packages("loadFile('" .. packages .. "seed.tiri')", false, packages)
+   local code, output = run_packages("loadFile('temp:inline_cache/seed.tiri')", false, packages)
    assert(code is 0, 'The initial import must work after the helper was inlined: ' .. output)
    for attempt in {0 to 2} do
       code, output = run_packages("import 'self-contained'; assert(contained.value() is 42)", false, packages)
       assert(code is 0, 'The cached module must initialise its own helper in a fresh process: ' .. output)
-      code, output = run_packages("loadFile('" .. packages .. "reverse.tiri')", false, packages)
+      code, output = run_packages("loadFile('temp:inline_cache/reverse.tiri')", false, packages)
       assert(code is 0, 'Cached source metadata must not suppress an inline helper in the caller: ' .. output)
    end
 end

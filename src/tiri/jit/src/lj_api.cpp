@@ -980,6 +980,11 @@ extern void lua_createarray(lua_State *L, int64_t Length, AET Type, void *Data, 
 //********************************************************************************************************************
 // Create native struct and push onto stack.  With Data null a zeroed inline payload is allocated; otherwise the
 // struct references external Data using an explicit payload and access policy.
+//
+// AdoptedResource and ManagedExternal payloads must be tracked Kotuku memory blocks (AllocMemory/AllocResource), as
+// the wrapper detaches them from their current owner via the hidden resource header.  The block must not be locked
+// or pinned at the time of the call, otherwise a script error is raised and ownership remains with the caller.
+//
 // Lifecycle optionally binds the view to a Kotuku object whose destruction invalidates the payload; see
 // lj_struct_new_external() for the weak pin contract.
 
@@ -989,6 +994,16 @@ extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, S
    lj_assertL((Data and (Policy != StructPayloadPolicy::Inline)) or
       ((not Data) and (Policy IS StructPayloadPolicy::Inline) and (Access IS StructAccess::Writable) and (not Parent)),
       "contradictory struct payload policy");
+
+   if (Data and ((Policy IS StructPayloadPolicy::AdoptedResource) or (Policy IS StructPayloadPolicy::ManagedExternal))) {
+      // The wrapper owns this resource.  Detach it before GC can destroy its previous object context, otherwise
+      // that object's cleanup releases the payload while the wrapper still retains it.
+
+      if (auto error = TrackResource(GetMemoryID(Data), nullptr, 0, nullptr); error != ERR::Okay) {
+         lj_err_callermsg(L, error, "Could not adopt native struct resource");
+      }
+   }
+
    lj_gc_check(L);
    auto s = Data ? lj_struct_new_external(L, Def, Data, Policy, Access, Lifecycle, Parent) : lj_struct_new(L, Def);
    setstructV(L, L->top, s);
@@ -1003,8 +1018,10 @@ extern GCobject * lua_pushobject(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objM
 {
    lj_gc_check(L);
    auto obj = lj_object_new(L, UID, Ptr, ClassPtr, Flags);
+
    // GCOBJ_PINNED in Flags means the caller already holds a weak pin on Ptr (e.g. via PinWeakObject())
    // and the wrapper adopts it; otherwise pin here while the caller's liveness guarantee still holds.
+
    if ((Ptr) and (not obj->is_pinned())) lj_object_pin(obj, Ptr);
    setobjectV(L, L->top, obj);
    incr_top(L);
@@ -1018,6 +1035,7 @@ extern int luaL_newmetatable(lua_State *L, CSTRING tname)
 {
    GCtab *regt = tabV(registry(L));
    TValue *tv = lj_tab_setstr(L, regt, lj_str_newz(L, tname));
+
    if (tvisnil(tv)) {
       GCtab *mt = lj_tab_new(L, 0, 1);
       settabV(L, tv, mt);
@@ -1051,6 +1069,7 @@ extern void * lua_newuserdata(lua_State *L, size_t size)
 extern void lua_concat(lua_State *L, int n)
 {
    lj_checkapi_slot(n);
+
    if (n >= 2) {
       n--;
       do {

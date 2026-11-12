@@ -301,8 +301,11 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
                }
 
                #ifdef _WIN32
-               const int64_t queued = int64_t(audio->MixerLag() * channel->Frequency) * frame_bytes;
-               position = std::max(int64_t(0), position - queued);
+               // A paused channel reports its fixed resume cursor, independent of the draining device queue.
+               if (!channel->Paused) {
+                  const int64_t queued = int64_t(audio->MixerLag() * channel->Frequency) * frame_bytes;
+                  position = std::max(int64_t(0), position - queued);
+               }
                #endif
                *Value = clamp_sound_position(Self, position);
             }
