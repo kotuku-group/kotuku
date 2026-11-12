@@ -293,13 +293,22 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
    check(cancelled_probe.released(), "Cancellation releases participant subscription pins");
    check(not display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)),
       "Cancelled snapshots refuse late data");
-   const auto folder_name = "temp:native_drop_" + std::to_string(getpid()) + '/';
+   const auto folder_name = "temp:native_drop_" + std::to_string(PreciseTime()) + '/';
    objFile::create folder = { fl::Path(folder_name), fl::Flags(FL::NEW|FL::FOLDER) };
    std::string folder_path;
    if (folder.ok() and (ResolvePath(folder_name, RSF::NIL, &folder_path) IS ERR::Okay)) {
       auto cleanup = kt::Defer([&]() { DeleteFile(folder_name, nullptr); });
+      // URIs use forward slashes, and Windows drive paths gain the leading separator of file:///C:/path.
+      std::replace(folder_path.begin(), folder_path.end(), '\\', '/');
       while (folder_path.ends_with('/')) folder_path.pop_back();
-      const auto folder_uri = "file://" + folder_path + "\r\n";
+      std::string folder_uri = "file://";
+      if (not folder_path.starts_with('/')) folder_uri.push_back('/');
+      for (char ch : folder_path) {
+         if (ch IS ' ') folder_uri.append("%20");
+         else if (ch IS '%') folder_uri.append("%25");
+         else folder_uri.push_back(ch);
+      }
+      folder_uri.append("\r\n");
       snapshot_drop(drop);
       native_test_movement(second->UID, 75, 90);
       check(display::DriverDragData(drop, "text/uri-list", folder_uri.data(), folder_uri.size()),

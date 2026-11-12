@@ -963,6 +963,13 @@ bool receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, O
             }
             path.push_back(line[i]);
          }
+#ifdef _WIN32
+         // Drive URIs take the form file:///C:/path; the separator preceding the drive is not part of the path.
+         if ((path.size() >= 3) and (path[0] IS '/') and (path[2] IS ':') and
+               (((path[1] >= 'A') and (path[1] <= 'Z')) or ((path[1] >= 'a') and (path[1] <= 'z')))) {
+            path.erase(0, 1);
+         }
+#endif
          if (not path.empty()) {
             // URI lists do not distinguish folders, but CopyFile requires their trailing separator.
             LOC type;

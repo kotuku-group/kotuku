@@ -148,7 +148,7 @@
       },
       "filter": {
         "exclude": {
-          "label": "^audio"
+          "label": "^(audio|desktop)"
         }
       }
     },
@@ -190,6 +190,33 @@
       "name": "debug-static-audio",
       "inherits": "audio-base",
       "configurePreset": "debug-static"
+    },
+    {
+      "name": "desktop-base",
+      "hidden": true,
+      "description": "Run tests that drive the real cursor or native desktop.  Requires an unlocked, unattended desktop.",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "filter": {
+        "include": {
+          "label": "^desktop$"
+        }
+      }
+    },
+    {
+      "name": "agents-desktop",
+      "inherits": "desktop-base",
+      "configurePreset": "agents"
+    },
+    {
+      "name": "agents-platform-desktop",
+      "inherits": "agents-desktop",
+      "configurePreset": "agents-platform"
     }
   ],
   "packagePresets": [

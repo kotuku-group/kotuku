@@ -847,13 +847,13 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 
 #include "driver/callbacks.cpp"
 
-#if defined(UNIT_TESTS) and defined(__linux__)
+#if defined(UNIT_TESTS) and (defined(__linux__) or defined(_WIN32))
 #include "tests/unit_native_drop.cpp"
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
-#if defined(UNIT_TESTS) and defined(__linux__)
+#if defined(UNIT_TESTS) and (defined(__linux__) or defined(_WIN32))
    native_drop_tests(Options, *Passed, *Total);
 #endif
 }
