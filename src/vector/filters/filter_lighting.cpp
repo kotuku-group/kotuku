@@ -83,6 +83,28 @@ The light is computed in the colour space of the parent @VectorFilter.  In `SRGB
 are sRGB values.  In `LINEAR_RGB` the light #Colour is converted to linear RGB and the result is encoded to sRGB for
 storage, so a result of 0.5 is stored as approximately 0.735.
 
+The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit
+steps on gentle slopes.  When the @VectorScene.Compliance of the scene is `NONE` (the default), the enhancements
+selected by the #Features field are applied.  All of them are enabled by default:
+
+<list type="bullet">
+<li>`DEQUANTISE`: Heights are read as floating point values, and areas that vary by no more than one alpha level are
+smoothed to remove terracing.</li>
+<li>`SHARPEN`: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
+wide.</li>
+<li>`CAVITY`: Narrow creases and pits receive less light, in proportion to their curvature.</li>
+<li>`DETAIL`: Fine detail is given more relief than broad shapes, so that it remains visible at a surface scale that
+suits the larger forms.</li>
+<li>`SHADOWS`: Distant lights cast shadows.  A point is unlit when the surface between it and the light rises above
+the light's elevation, and the edge of the shadow softens with distance from the surface that casts it.</li>
+<li>`SPECULAR_AA`: Specular highlights are widened where the surface varies within a pixel, so that high exponents
+do not produce isolated bright pixels.</li>
+</list>
+
+Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies
+beside a raised area.  Set the scene's Compliance to `SVG1` or `SVG2` for results that match the SVG specification
+exactly, or set #Features to zero to use the SVG algorithm for this effect alone.
+
 -END-
 
 *********************************************************************************************************************/
@@ -166,6 +188,7 @@ class extLightingFX : public extFilterEffect {
    double X, Y, Z;          // Position of light source.
    LS     LightSource;      // Light source identifier, recorded for SVG output purposes only.
    bool   UnitXProvided = false, UnitYProvided = false;
+   LFX    Features = LFX::ALL;  // Enhanced lighting features, applied when the scene's Compliance is NONE
 
    // DISTANT LIGHT
    double Azimuth, Elevation;    // Distant light
@@ -270,13 +293,36 @@ class extLightingFX : public extFilterEffect {
       };
    }
 
+   // The determinant of the kernel unit matrix is the product of the two unit lengths in pixels, so its square root
+   // is the mean unit length.
+
+   static double unit_length(const map_height &Unit) {
+      return sqrt(std::abs((Unit.x * Unit.y) - (Unit.xy * Unit.xy)));
+   }
+
    void draw();
    FRGB colour_spot_light(point3 &Point);
-   inline void diffuse_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
-   inline void specular_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
+   inline void diffuse_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
+      uint8_t, double Occlusion = 1.0);
+   inline void specular_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
+      uint8_t, double Occlusion = 1.0, double Exponent = 0);
    void render_distant(int, int, objBitmap *, const point3 &, double, const map_height &, int, int);
    void render_spotlight(int, int, objBitmap *, const point3 &, double, const map_height &, int, int);
    void render_point(int, int, objBitmap *, const point3 &, double, const map_height &, int, int);
+   double reach() const;
+
+   // True if the enhanced pipeline is used: the scene is not bound to an SVG standard and a feature is enabled.
+
+   bool enhanced() const {
+      return (Filter->Scene) and (Filter->Scene->Compliance IS VSC::NONE) and (Features != LFX::NIL);
+   }
+
+   // True if fine detail receives extra relief, given the radius of the base layer's blur in pixels.
+
+   bool boost_detail(double Sigma) const;
+   void draw_enhanced(objBitmap *, const point3 &, double, const map_height &, double, int, int);
+   template <class DELTA, class COLOUR>
+   void render_enhanced(int, int, const struct lit_surface &, int, DELTA, COLOUR);
 };
 
 //********************************************************************************************************************
@@ -304,11 +350,13 @@ FRGB extLightingFX::colour_spot_light(point3 &Point)
 }
 
 //********************************************************************************************************************
-// Specular/Diffuse drawing functions.
+// Specular/Diffuse drawing functions.  Occlusion is the fraction of light that reaches the surface; the SVG path
+// leaves it at 1.0, which does not alter the result.  A specular Exponent of zero selects SpecularExponent.
 
-inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL, const FRGB &Colour, uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A)
+inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL, const FRGB &Colour, uint8_t *Output,
+   uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion)
 {
-   double scale = std::clamp((Constant * Normal.dot(STL)) * 255.0, 0.0, 255.0);
+   double scale = std::clamp((Constant * Normal.dot(STL)) * 255.0 * Occlusion, 0.0, 255.0);
 
    if (Linear) {
       Output[R] = glLinearRGB.invert(int(Colour.Red * scale));
@@ -323,13 +371,16 @@ inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL
    Output[A] = 255;
 }
 
-inline void extLightingFX::specular_light(const point3 &Normal, const point3 &STL, const FRGB &Colour, uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A)
+inline void extLightingFX::specular_light(const point3 &Normal, const point3 &STL, const FRGB &Colour, uint8_t *Output,
+   uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
 {
    point3 halfDir(STL);
    halfDir.z += 1.0; // Eye position is always (0, 0, 1)
    halfDir.normalise();
 
-   double scale = std::clamp((Constant * std::pow(std::max(0.0, Normal.dot(halfDir)), SpecularExponent)) * 255.0, 0.0, 255.0);
+   const double exponent = (Exponent > 0) ? Exponent : SpecularExponent;
+   double scale = std::clamp((Constant * std::pow(std::max(0.0, Normal.dot(halfDir)), exponent)) * 255.0
+      * Occlusion, 0.0, 255.0);
 
    const uint8_t r = int(Colour.Red * scale);
    const uint8_t g = int(Colour.Green * scale);
@@ -704,6 +755,14 @@ void extLightingFX::draw()
    const double normal_scale = MapHeight * (1.0 / 255.0);
    const map_height normal_height = { unit.x * normal_scale, unit.y * normal_scale, unit.xy * normal_scale };
 
+   // Scenes that are not bound to an SVG standard use the enhanced pipeline, which resolves finer surface detail.
+
+   if (enhanced()) {
+      const double unit_size = unit_length(unit);
+      draw_enhanced(bmp, lt, spot_height, normal_height, unit_size, width, height);
+      return;
+   }
+
    int num_threads = std::min(int(std::thread::hardware_concurrency()), height);
    if (num_threads < 1) num_threads = 1;
    const int min_rows_per_chunk = 4; // Minimum work per thread to avoid overhead
@@ -938,6 +997,35 @@ static ERR LIGHTINGFX_SET_Exponent(extLightingFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Features: Selects the enhancements applied to the SVG lighting algorithm.
+Lookup: LFX
+
+When the @VectorScene.Compliance of the scene is `NONE`, the lighting algorithm is extended with the features
+enabled here.  The default is `ALL`.  Each feature can be disabled independently, for instance to remove shadows
+from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG
+algorithm.  Disabling `SHARPEN` measures slopes with the same kernel as the SVG algorithm.
+
+If no features are enabled, the SVG algorithm is used without modification.  Features have no effect when the
+Compliance of the scene is `SVG1` or `SVG2`.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Features(extLightingFX *Self, LFX &Value)
+{
+   Value = Self->Features;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Features(extLightingFX *Self, LFX Value)
+{
+   if ((Value & (~LFX::ALL)) != LFX::NIL) return ERR::InvalidValue;
+   Self->Features = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Scale: The maximum height of the input surface (bump map) when the alpha input is 1.0.
 
 The height is measured in kernel units when computing the surface normal, so the steepness of the lit surface is
@@ -1018,12 +1106,14 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 
 //********************************************************************************************************************
 
+#include "filter_lighting_enhanced.cpp"
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
    { "Colour",   FDF_STRUCT|FDF_RW, nullptr, LIGHTINGFX_SET_Colour, "FRGB" },
    { "Constant", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Constant },
    { "Exponent", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Exponent },
+   { "Features", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, LIGHTINGFX_GET_Features, LIGHTINGFX_SET_Features, &clLightingFXLFX },
    { "Scale",    FDF_DOUBLE|FDF_RW },
    { "UnitX",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },

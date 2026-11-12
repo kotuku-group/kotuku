@@ -207,7 +207,12 @@
       <type lookup="VSC">VSC</type>
       <description>
 <p>Compliance declares the standard that the content of the scene was written for.  The default is <code>NONE</code>, which permits Kōtuku's extensions where they differ from the standards.  The <class name="SVG">SVG</class> class sets <code>SVG2</code> on the scenes that it creates.</p>
-<p>No features currently change their behaviour in response to this setting.  Features that extend a standard by default will consult it so that the standard behaviour can be restored for the scene.</p>
+<p>Features that extend a standard by default consult this setting, so that the standard behaviour can be restored for the scene.  Currently affected:</p>
+<list type="bullet">
+<li><class name="LightingFX">LightingFX</class> resolves finer surface detail in <code>NONE</code> scenes.  It uses float heights, removes 8-bit terracing, uses
+a sharper gradient, gives fine detail more relief than broad shapes, darkens narrow creases and casts shadows from
+distant lights.  <code>SVG1</code> and <code>SVG2</code> use the exact algorithm from the SVG specification.</li>
+</list>
 <types lookup="VSC"/>
       </description>
     </field>

@@ -43,6 +43,15 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "DIFFUSE: Select diffuse lighting.",
     "SPECULAR: Select specular lighting.")
 
+  flags("LFX", { comment="Enhanced lighting features for the LightingFX class.  These apply only when the scene's Compliance is `NONE`." },
+    "DEQUANTISE: Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.",
+    "SHARPEN: Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.",
+    "CAVITY: Darken narrow creases and pits in proportion to their curvature.",
+    "DETAIL: Give fine detail more relief than broad shapes.",
+    "SHADOWS: Distant lights cast shadows from raised areas of the surface.",
+    "SPECULAR_AA: Widen specular highlights where the surface varies within a pixel, preventing sparkle at high exponents.",
+    { ALL = "DEQUANTISE|SHARPEN|CAVITY|DETAIL|SHADOWS|SPECULAR_AA" })
+
   enums("VUNIT", { type="int", start=0 },
     "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
     "BOUNDING_BOX: Coordinates are scaled to the object's bounding box.",
@@ -722,9 +731,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~struct(FRGB) Colour
   ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT' } }, [[
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX' } }, [[
     ~struct(FRGB) Colour
     ~int(LT) Type
+    ~int(LFX) Features
   ]])
 
   klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[

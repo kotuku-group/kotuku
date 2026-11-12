@@ -43,7 +43,22 @@ Lr,Lg,Lb = RGB components of light
 <pre>H = (L + E) / Norm(L + E)
 </pre>
 <p>where <code>L</code> is the light unit vector.</p>
-<p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p></description>
+<p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p>
+<p>The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit steps on gentle slopes.  When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code> (the default), the enhancements selected by the <fl>Features</fl> field are applied.  All of them are enabled by default:</p>
+<list type="bullet">
+<li><code>DEQUANTISE</code>: Heights are read as floating point values, and areas that vary by no more than one alpha level are
+smoothed to remove terracing.</li>
+<li><code>SHARPEN</code>: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
+wide.</li>
+<li><code>CAVITY</code>: Narrow creases and pits receive less light, in proportion to their curvature.</li>
+<li><code>DETAIL</code>: Fine detail is given more relief than broad shapes, so that it remains visible at a surface scale that
+suits the larger forms.</li>
+<li><code>SHADOWS</code>: Distant lights cast shadows.  A point is unlit when the surface between it and the light rises above
+the light's elevation, and the edge of the shadow softens with distance from the surface that casts it.</li>
+<li><code>SPECULAR_AA</code>: Specular highlights are widened where the surface varies within a pixel, so that high exponents
+do not produce isolated bright pixels.</li>
+</list>
+<p>Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies beside a raised area.  Set the scene's Compliance to <code>SVG1</code> or <code>SVG2</code> for results that match the SVG specification exactly, or set <fl>Features</fl> to zero to use the SVG algorithm for this effect alone.</p></description>
     <source>
       <file path="filters/">filter_lighting.cpp</file>
     </source>
@@ -157,6 +172,18 @@ Lr,Lg,Lb = RGB components of light
     </field>
 
     <field>
+      <name>Features</name>
+      <comment>Selects the enhancements applied to the SVG lighting algorithm.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="LFX">LFX</type>
+      <description>
+<p>When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code>, the lighting algorithm is extended with the features enabled here.  The default is <code>ALL</code>.  Each feature can be disabled independently, for instance to remove shadows from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG algorithm.  Disabling <code>SHARPEN</code> measures slopes with the same kernel as the SVG algorithm.</p>
+<p>If no features are enabled, the SVG algorithm is used without modification.  Features have no effect when the Compliance of the scene is <code>SVG1</code> or <code>SVG2</code>.</p>
+<types lookup="LFX"/>
+      </description>
+    </field>
+
+    <field>
       <name>Scale</name>
       <comment>The maximum height of the input surface (bump map) when the alpha input is 1.0.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -209,6 +236,16 @@ Lr,Lg,Lb = RGB components of light
 
   </fields>
   <types>
+    <constants lookup="LFX" comment="Enhanced lighting features for the LightingFX class.  These apply only when the scene's Compliance is `NONE`.">
+      <const name="ALL">Synonym for <code>DEQUANTISE | SHARPEN | CAVITY | DETAIL | SHADOWS | SPECULAR_AA</code></const>
+      <const name="CAVITY">Darken narrow creases and pits in proportion to their curvature.</const>
+      <const name="DEQUANTISE">Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.</const>
+      <const name="DETAIL">Give fine detail more relief than broad shapes.</const>
+      <const name="SHADOWS">Distant lights cast shadows from raised areas of the surface.</const>
+      <const name="SHARPEN">Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.</const>
+      <const name="SPECULAR_AA">Widen specular highlights where the surface varies within a pixel, preventing sparkle at high exponents.</const>
+    </constants>
+
     <constants lookup="LT" comment="Lighting algorithm for the LightingFX class.">
       <const name="DIFFUSE">Select diffuse lighting.</const>
       <const name="SPECULAR">Select specular lighting.</const>

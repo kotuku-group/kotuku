@@ -125,6 +125,21 @@ enum class LT : int {
    SPECULAR = 1,
 };
 
+// Enhanced lighting features for the LightingFX class.  These apply only when the scene's Compliance is `NONE`.
+
+enum class LFX : uint32_t {
+   NIL = 0,
+   DEQUANTISE = 0x00000001,
+   SHARPEN = 0x00000002,
+   CAVITY = 0x00000004,
+   DETAIL = 0x00000008,
+   SHADOWS = 0x00000010,
+   SPECULAR_AA = 0x00000020,
+   ALL = 0x0000003f,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(LFX)
+
 enum class VUNIT : int {
    NIL = 0,
    UNDEFINED = 0,
@@ -3012,6 +3027,14 @@ class objLightingFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getFeatures(LFX &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getConstant(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
@@ -3046,37 +3069,42 @@ class objLightingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setType(const LT Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setFeatures(const LFX Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setConstant(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setExponent(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setUnitX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setExponent(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setScale(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setUnitX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setUnitY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

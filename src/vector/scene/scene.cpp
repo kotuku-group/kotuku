@@ -1098,8 +1098,14 @@ Compliance declares the standard that the content of the scene was written for. 
 permits Kōtuku's extensions where they differ from the standards.  The @SVG class sets `SVG2` on the scenes that it
 creates.
 
-No features currently change their behaviour in response to this setting.  Features that extend a standard by
-default will consult it so that the standard behaviour can be restored for the scene.
+Features that extend a standard by default consult this setting, so that the standard behaviour can be restored for
+the scene.  Currently affected:
+
+<list type="bullet">
+<li>@LightingFX resolves finer surface detail in `NONE` scenes.  It uses float heights, removes 8-bit terracing, uses
+a sharper gradient, gives fine detail more relief than broad shapes, darkens narrow creases and casts shadows from
+distant lights.  `SVG1` and `SVG2` use the exact algorithm from the SVG specification.</li>
+</list>
 
 -FIELD-
 Defs: Obtain direct access to the SVG definition table.
