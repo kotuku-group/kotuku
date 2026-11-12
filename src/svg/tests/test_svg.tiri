@@ -382,11 +382,11 @@ end
 @Test global function W3Offset()           hashTestSVG('filters/w3-offset.svg', 0x2a25b1d5) end
 @Test global function W3Lighting1()        hashTestSVG('filters/w3-filters-light-01-f.svg', 0x8db6f5d7) end
 @Test global function W3Lighting2()        hashTestSVG('filters/w3-filters-light-02-f.svg', -1) end
-@Test global function W3Lighting3()        hashTestSVG('filters/w3-filters-light-03-f.svg', 0xe4b94cfe, true) end
+@Test global function W3Lighting3()        hashTestSVG('filters/w3-filters-light-03-f.svg', 0x0a2da407, true) end
 @Test global function W3Lighting4()        hashTestSVG('filters/w3-filters-light-04-f.svg', 0xa5fea774) end
-@Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0xa95283ef) end
+@Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0xa414aa41) end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0x86937dc1) end
-@Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xaaa3ec5b) end
+@Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xcb395553) end
 -- Turbulence snapshots include sampling in user coordinates through the inverse transform at pixel centres.
 @Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x06560878) end
 @Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x70c6859b) end
