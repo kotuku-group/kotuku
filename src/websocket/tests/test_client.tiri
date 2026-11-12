@@ -44,7 +44,8 @@ function waitFor(Condition:func, Seconds:num)
 end
 
 -- Runs one connection.  Options.respond(key) returns the bytes written once the request is complete.  Options.later
--- is written 50ms afterwards, and Options.drop closes the connection after the response.
+-- is written 50ms afterwards, Options.drop closes the connection after the response, and Options.closeOnClose closes
+-- it once the client's Close frame arrives.
 
 function runClient(Options:table):table
    local state = { request='', received='', states=array<int>, messages={}, types={}, finals={}, opened=0 }
@@ -59,6 +60,8 @@ function runClient(Options:table):table
 
          if state.request.find('\r\n\r\n') then
             state.received ..= data
+            -- A server closes TCP once the client has answered its Close.  Otherwise the client waits for it.
+            if Options.closeOnClose and (state.received.byte(0) is 0x88) then return ERR_Terminate end
             return
          end
 
@@ -304,7 +307,7 @@ end
 @Test function PeerCloseAndDisconnect()
    local closing = runClient({
       respond = (Accept => switching(Accept) .. frame(1, 'last') .. frame(8, string.char(0x03, 0xe8) .. 'bye')),
-      settle = 0.05
+      closeOnClose = true, settle = 0.05
    })
    assert(closing.state is WSS_CLOSED, 'Peer Close did not close the connection')
    assert(#closing.messages is 1 and closing.messages[0] is 'last', 'Message before Close was lost')
@@ -369,33 +372,35 @@ end
    assert(empty.state is WSS_CLOSED, 'A new WebSocket should report CLOSED')
 end
 
+-- A refused connection must report ConnectionRefused and close code 1006.  HTTP does not lock the WebSocket while
+-- reporting a failed handshake, so a WebSocket freed by StateChanged(CLOSED) at that point must still be destroyed.
+-- The reference is retained so that garbage collection cannot free it instead.  Both checks share one connection
+-- attempt because Windows retries a refused connection for about two seconds.
+
 @Test function ConnectionRefused()
-   local state = runClient({ location = 'ws://127.0.0.1:1/', respond = (Accept => '') })
-   assert(state.state is WSS_CLOSED and state.opened is 0, 'Refused connection opened')
-   assert(state.error is ERR_ConnectionRefused, f'Unexpected error {state.error}')
-   assert(state.closeCode is WSC_ABNORMAL, 'Refused connection did not report 1006')
-end
-
--- HTTP does not lock the WebSocket while reporting a failed handshake.  A WebSocket freed by StateChanged(CLOSED) at
--- that point must still be destroyed.  The reference is retained so that garbage collection cannot free it instead.
-
-@Test function FreeAfterRefusedConnection()
    local closed = false
    local destroyed = false
+   local opened = 0
+   local refused_error, close_code
    local ws = obj.new('websocket', { location = 'ws://127.0.0.1:1/' })
    ws.subscribe('Free', function()
       destroyed = true
    end)
    ws.stateChanged = function(WebSocket, State)
+      if State is WSS_OPEN then opened++ end
       if State is WSS_CLOSED then
          closed = true
+         refused_error = WebSocket.error
+         close_code = WebSocket.closeCode
          WebSocket.free()
       end
    end
 
    check ws.acActivate()
-   waitFor((() => destroyed), 3)
-   assert(closed, 'The refused connection did not report CLOSED')
+   waitFor((() => destroyed), 5)
+   assert(closed and opened is 0, 'The refused connection did not report CLOSED without opening')
+   assert(refused_error is ERR_ConnectionRefused, f'Unexpected error {refused_error}')
+   assert(close_code is WSC_ABNORMAL, f'Refused connection reported close code {close_code}, expected 1006')
    assert(destroyed, 'The WebSocket freed in StateChanged(CLOSED) was not destroyed')
    ws = nil
 end
@@ -859,7 +864,8 @@ end
    defer closeSession(session) end
    local ws = session.ws
 
-   processing.sleep(1.3)
+   -- Two answered pings show that the connection survives repeated keep-alive cycles.
+   waitFor((() => (#framesWith(session, 9) >= 2) and (#session.heartbeats >= 2) or (ws.state != WSS_OPEN)), 3)
    assert(ws.state is WSS_OPEN, f'Keep-alive closed a responsive connection: {ws.closeReason}')
    local pings = #framesWith(session, 9)
    assert(pings >= 2, f'Expected keep-alive pings, observed {pings}')

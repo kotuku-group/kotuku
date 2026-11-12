@@ -909,12 +909,16 @@ Fonts registered with ~RegisterFont() are private to the process and are neither
 If the `SCAN_HOST` flag is set, the host's native font folders are scanned for scalable fonts after the `fonts:`
 volume.  On Linux the folders are, in order: `$XDG_DATA_HOME/fonts` (defaulting to `~/.local/share/fonts`), `~/.fonts`,
 the `fonts` folder of each `$XDG_DATA_DIRS` entry (defaulting to `/usr/local/share:/usr/share`), `/usr/share/fonts` and
-`/usr/local/share/fonts`.  The folders are scanned recursively for `ttf`, `otf`, `ttc` and `otc` files, and host fonts
+`/usr/local/share/fonts`.  On Windows the folders are, in order: the per-user font folder
+`%LOCALAPPDATA%\Microsoft\Windows\Fonts` and the system font folder `%SystemRoot%\Fonts`.  The folders are scanned recursively for `ttf`, `otf`, `ttc` and `otc` files, and host fonts
 are recorded by their absolute paths.  If a host family style is found in more than one folder, the first folder in the
 list above takes precedence.  Every face in a collection is scanned.  For faces after the first, the zero-based index
 is stored in the `FaceIndex:Style` key, where `Style` is the corresponding style name, and is returned by
 ~SelectFontFace().  A style without this key uses face zero.  Host
 scanning is not supported on other platforms at this time, and the flag is ignored there.
+
+On Windows, host font paths are recorded in UTF-8 but FreeType opens files using the active code page.  Unless the
+active code page is UTF-8, host fonts with non-ASCII characters in their paths cannot be opened and are skipped.
 
 Host fonts are saved to their own database at `user:config/host_fonts.cfg`, regardless of `Path`, so that the `fonts:`
 database remains exclusive to Kotuku's fonts.  The host database is merged into the font database after it is saved,
@@ -1242,7 +1246,18 @@ ERR RegisterFont(const std::string_view &Path, std::string *Family)
 //    Styles = Bold,Bold Italic,Italic,Regular
 //
 // Style keys are identified by their values, which are either fonts: paths or absolute host paths.  No other key in a
-// family group has a value starting with '/'.
+// family group has a value that resembles a path.
+
+static bool is_style_path(std::string_view Value)
+{
+   if (Value.starts_with("fonts:") or Value.starts_with('/')) return true;
+#ifdef _WIN32
+   if (Value.starts_with("\\\\")) return true; // UNC path
+   if ((Value.size() >= 3) and (std::isalpha((unsigned char)Value[0])) and (Value[1] IS ':') and
+       ((Value[2] IS '\\') or (Value[2] IS '/'))) return true; // Drive path, e.g. C:\Windows\Fonts\arial.ttf
+#endif
+   return false;
+}
 
 static ERR build_style_lists(objConfig *Config)
 {
@@ -1256,7 +1271,7 @@ static ERR build_style_lists(objConfig *Config)
    for (auto & [group, keys] : *groups) {
       std::list <std::string> styles;
       for (auto & [k, v] : keys) {
-         if ((v.starts_with("fonts:")) or (v.starts_with('/'))) styles.push_front(k);
+         if (is_style_path(v)) styles.push_front(k);
       }
 
       styles.sort();
@@ -1318,20 +1333,23 @@ static ERR refresh_host_fonts(void)
    for (auto &[family, keys] : *groups) local.try_emplace(family);
 
    objConfig::create host = { };
-   if (not host.ok()) return log.warning(ERR::CreateObject);
+   if (host.ok()) {
+      std::map<std::string, family_details> details;
+      scan_host_folders(*host, local, details);
+      write_family_details(*host, details);
 
-   std::map<std::string, family_details> details;
-   scan_host_folders(*host, local, details);
-   write_family_details(*host, details);
-   if (auto error = build_style_lists(*host); error != ERR::Okay) return error;
+      ERR error;
+      if (error = build_style_lists(*host); error IS ERR::Okay) {
+         objFile::create host_file = { fl::Path(HOST_FONTS_PATH), fl::Flags(FL::NEW|FL::WRITE) };
+         if (host_file.ok()) error = host->saveToObject(*host_file);
+         else error = log.warning(ERR::OpenFile);
 
-   ERR error;
-   objFile::create host_file = { fl::Path(HOST_FONTS_PATH), fl::Flags(FL::NEW|FL::WRITE) };
-   if (host_file.ok()) error = host->saveToObject(*host_file);
-   else error = log.warning(ERR::OpenFile);
+         merge_host_fonts(*host);
+      }
 
-   merge_host_fonts(*host);
-   return error;
+      return error;
+   }
+   else return log.warning(ERR::CreateObject);
 }
 
 //********************************************************************************************************************
@@ -1745,13 +1763,36 @@ static void scan_scalable_folder(objConfig *Config, std::map<std::string, family
 }
 
 //********************************************************************************************************************
+// Converts a filesystem path to a UTF-8 string.  On Windows, path::string() converts to the active code page and can
+// throw, whereas u8string() is always lossless.
+
+static std::string path_to_utf8(const std::filesystem::path &Path)
+{
+   auto u8 = Path.u8string();
+   return std::string((const char *)u8.data(), u8.size());
+}
+
+//********************************************************************************************************************
 // Returns the host's native font folders in order of precedence.  Relative XDG paths are invalid according to the XDG
-// Base Directory specification and are ignored.
+// Base Directory specification and are ignored.  On Windows, per-user fonts (Windows 10 1809 and later) take precedence
+// over the system font folder.
 
 static std::vector<std::filesystem::path> host_font_folders(void)
 {
    std::vector<std::filesystem::path> folders;
-#ifdef __linux__
+#ifdef _WIN32
+   if (auto local = _wgetenv(L"LOCALAPPDATA"); (local) and (local[0])) {
+      std::filesystem::path local_path(local);
+      if (local_path.is_absolute()) folders.emplace_back(local_path / L"Microsoft" / L"Windows" / L"Fonts");
+   }
+
+   const wchar_t *windir = _wgetenv(L"SystemRoot");
+   if ((not windir) or (not windir[0])) windir = _wgetenv(L"WINDIR");
+   if ((windir) and (windir[0]) and (std::filesystem::path(windir).is_absolute())) {
+      folders.emplace_back(std::filesystem::path(windir) / L"Fonts");
+   }
+   else folders.emplace_back(L"C:\\Windows\\Fonts");
+#elif defined(__linux__)
    auto home = getenv("HOME");
    bool valid_home = (home) and (home[0] IS '/');
 
@@ -1808,7 +1849,7 @@ static void scan_host_folders(objConfig *Config, const std::map<std::string, fam
       if ((err) or (not std::filesystem::is_directory(canonical_root, err))) continue;
       if (not visited.insert(canonical_root).second) continue;
 
-      log.msg("Scanning folder \"%s\"", canonical_root.string().c_str());
+      log.msg("Scanning folder \"%s\"", path_to_utf8(canonical_root).c_str());
 
       std::error_code iter_err;
       std::filesystem::recursive_directory_iterator it(canonical_root, options, iter_err), end;
@@ -1823,18 +1864,19 @@ static void scan_host_folders(objConfig *Config, const std::map<std::string, fam
 
          if (not entry.is_regular_file(err)) continue;
 
-         auto ext = entry.path().extension().string();
+         auto ext = path_to_utf8(entry.path().extension());
          if ((not iequals(ext, ".ttf")) and (not iequals(ext, ".otf")) and
              (not iequals(ext, ".ttc")) and (not iequals(ext, ".otc"))) continue;
 
          auto file = std::filesystem::canonical(entry.path(), err);
          if ((err) or (not visited.insert(file).second)) continue;
 
-         files.push_back({ .path = file.string(), .name = file.filename().string() });
+         files.push_back({ .path = path_to_utf8(file), .name = path_to_utf8(file.filename()) });
       }
 
       if (iter_err) {
-         log.warning("Scan of \"%s\" ended early: %s", canonical_root.string().c_str(), iter_err.message().c_str());
+         log.warning("Scan of \"%s\" ended early: %s", path_to_utf8(canonical_root).c_str(),
+            iter_err.message().c_str());
       }
    }
 
