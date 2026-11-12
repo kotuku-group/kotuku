@@ -205,9 +205,14 @@ a #Path has been configured, the referenced SVG file will be loaded and parsed i
 #Statement contains SVG data, that content will be processed instead.
 
 The default behaviour creates a local @VectorScene object to contain the generated scene graph.  Its
-@VectorScene.Compliance is set to `SVG2` so that the document is rendered to the SVG standard.  This can be
-overridden by setting the #Target field to redirect content into an existing scene graph structure, enabling
-integration with existing UI components.  The @VectorScene.Compliance of a target's scene is not modified.
+@VectorScene.Compliance is set to `SVG2` so that the document is rendered to the SVG standard.  If the document
+declares a Kōtuku namespace, for instance `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`, it is asking for
+features beyond the standard and the Compliance is set to `NONE` instead.  The declaration is sufficient; the prefix
+does not need to be used.
+
+The local scene can be overridden by setting the #Target field to redirect content into an existing scene graph
+structure, enabling integration with existing UI components.  The @VectorScene.Compliance of a target's scene is not
+modified.
 
 The initialisation sequence includes:
 

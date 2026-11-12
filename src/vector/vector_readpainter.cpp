@@ -258,6 +258,10 @@ static KEYVALUE parse_database_query(std::string_view Query)
 // maintained internally, so they are parsed as ordinary SVG documents without validation.  Each file declares its
 // paint server with an ID derived from its location, e.g. 'pidGradientsSunset' for 'Gradients/Sunset.svg'.  Params
 // are passed to the SVG object for the resolution of param() references in the asset.
+//
+// The SVG object creates the private scene so that the asset determines its own compliance: an asset that declares a
+// Kotuku namespace is rendered with Kotuku's enhancements (e.g. enhanced lighting) and any other asset is rendered to
+// the SVG standard.  Ownership of the scene is transferred to the client Scene once the paint has been found.
 
 static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, const KEYVALUE &Params, OBJECTPTR &Paint)
 {
@@ -274,13 +278,8 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, con
       if ((c != '/') and (c != '\\')) paint_id.push_back(c);
    }
 
-   auto private_scene = objVectorScene::create { fl::Flags(VPF::NIL) };
-   if (not private_scene.ok()) return ERR::CreateObject;
-   private_scene->setCompliance(VSC::SVG2);
-
    objSVG::create svg;
    if (not svg.ok()) return log.warning(ERR::CreateObject);
-   if (auto error = svg->setTarget(*private_scene); error != ERR::Okay) return log.warning(error);
    if (auto error = svg->setPath(Path); error != ERR::Okay) return log.warning(error);
 
    std::vector<std::string_view> accepted;
@@ -293,6 +292,9 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, con
    }
 
    if (svg->init() != ERR::Okay) return log.warning(ERR::CreateObject);
+
+   objVectorScene *private_scene;
+   if ((svg->getScene(private_scene) != ERR::Okay) or (not private_scene)) return log.warning(ERR::GetField);
 
    // A parameter that the asset does not reference has no effect, which would otherwise hide a misspelt key.
 
@@ -322,8 +324,11 @@ static ERR load_database_paint(extVectorScene *Scene, std::string_view Path, con
       }
    }
 
-   if (auto error = SetOwner(*private_scene, Scene); error != ERR::Okay) return log.warning(error);
-   private_scene.detach();
+   // The SVG object created the scene as a local resource that it would free itself.  Under the new owner it is an
+   // ordinary child, freed automatically with the Scene.
+
+   if (auto error = SetOwner(private_scene, Scene); error != ERR::Okay) return log.warning(error);
+   private_scene->clearFlag(NF::LOCAL);
    Paint = paint;
    return ERR::Okay;
 }
@@ -1006,7 +1011,10 @@ qualified with its category, e.g. `url(#pattern:Textiles/Canvas)`, in which case
 Qualified and plain references to an asset share one paint.  The asset's
 paint server, which has the ID `pid` followed by its category and name (e.g. `pidTextilesCanvas`), is loaded into the
 `Scene` on first use and reused by later references to the same name.  The
-`pattern:` namespace is reserved, so scene definitions cannot shadow collection assets.  `NotFound` is returned if
+`pattern:` namespace is reserved, so scene definitions cannot shadow collection assets.  Each asset is rendered in
+a private scene whose @VectorScene.Compliance is chosen by the asset, independent of the `Scene`: an asset that
+declares a Kōtuku namespace uses Kōtuku's enhanced effects, such as the lighting extensions of @LightingFX, while any
+other asset is rendered to the SVG standard.  `NotFound` is returned if
 the name is not in the collection, and other errors are returned if the asset cannot be imported.
 
 A collection asset that declares `param()` substitution points can be customised by appending a query to its name, in

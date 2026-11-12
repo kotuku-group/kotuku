@@ -837,6 +837,23 @@ static void parse_query_params(extSVG *Self, std::string_view Query)
 }
 
 //********************************************************************************************************************
+// Returns true if a tag in the document declares a Kotuku namespace, whether or not the prefix is used.
+
+static bool declares_kotuku_namespace(const kt::vector<XTag> &Tags)
+{
+   for (auto &tag : Tags) {
+      for (int a=1; a < std::ssize(tag.Attribs); a++) {
+         const auto &name = tag.Attribs[a].Name;
+         if ((name != "xmlns") and (not (name.starts_with("xmlns:") and (name.size() > 6)))) continue;
+         const auto uri = strhash(tag.Attribs[a].Value);
+         if ((uri IS glKotukuNamespace) or (uri IS glKotukuSVGNamespace)) return true;
+      }
+      if (declares_kotuku_namespace(tag.Children)) return true;
+   }
+   return false;
+}
+
+//********************************************************************************************************************
 // Parse SVG from a file or string buffer.
 
 static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffer)
@@ -900,6 +917,14 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
          Self->SVGVersion = 1.0;
 
          Self->XML = xml;
+
+         // A document that declares a Kotuku namespace is asking for features beyond the SVG standard, so SVG
+         // compliance is dropped.  This applies only to a scene that the SVG object owns; a target's scene belongs to
+         // the client.
+
+         if ((Self->Scene) and (Self->Scene->ownerID() IS Self->UID)) {
+            Self->Scene->setCompliance(declares_kotuku_namespace(xml->Tags) ? VSC::NONE : VSC::SVG2);
+         }
 
          prepare_styles(xml->Tags);
          apply_document_params(Self, xml->Tags);

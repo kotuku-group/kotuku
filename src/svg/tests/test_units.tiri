@@ -50,9 +50,51 @@ end
    assert(svg.scene.compliance is VSC_SVG2, f'Own scene compliance must be SVG2, got {svg.scene.compliance}')
 end
 
+-- A document that declares either Kotuku namespace is asking for features beyond the standard, so its own scene drops
+-- SVG compliance.  The declaration can be on any tag and the prefix does not need to be used.
+
+@Test function KotukuNamespaceDropsCompliance()
+   for _, uri in ipairs({ 'http://www.kotuku.dev/xmlns/svg', 'http://www.kotuku.dev/namespaces/kotuku' }) do
+      local svg <close> = obj.new('svg', {
+         statement=f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="{uri}"/>'
+      })
+      assert(svg.scene.compliance is VSC_NONE, f'{uri} must drop compliance, got {svg.scene.compliance}')
+   end
+
+   local nested <close> = obj.new('svg', {
+      statement='<svg xmlns="http://www.w3.org/2000/svg"><g xmlns:k="http://www.kotuku.dev/xmlns/svg"/></svg>'
+   })
+   assert(nested.scene.compliance is VSC_NONE,
+      f'A nested declaration must drop compliance, got {nested.scene.compliance}')
+end
+
+@Test function OtherNamespacesKeepCompliance()
+   local svg <close> = obj.new('svg', {
+      statement='<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ' ..
+         'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"/>'
+   })
+   assert(svg.scene.compliance is VSC_SVG2, f'Foreign namespaces must keep SVG2, got {svg.scene.compliance}')
+end
+
+@Test function NamespaceLikeAttributesKeepCompliance()
+   local svg <close> = obj.new('svg', {
+      statement='<svg xmlns="http://www.w3.org/2000/svg" ' ..
+         'xmlns-note="http://www.kotuku.dev/xmlns/svg" ' ..
+         'xmlnsExtra="http://www.kotuku.dev/namespaces/kotuku"/>'
+   })
+   assert(svg.scene.compliance is VSC_SVG2,
+      f'Ordinary attributes must keep SVG2, got {svg.scene.compliance}')
+end
+
 @Test function TargetSceneComplianceIsKept()
    scene = loadScene('<rect width="10" height="10"/>')
    assert(scene.compliance is VSC_NONE, f'Target scene compliance must be unchanged, got {scene.compliance}')
+
+   scene = obj.new('VectorScene', { pageWidth=400, pageHeight=400, compliance=VSC_SVG2 })
+   obj.new('svg', {
+      target=scene, statement='<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"/>'
+   })
+   assert(scene.compliance is VSC_SVG2, f'A Kotuku namespace must not alter a target scene, got {scene.compliance}')
 end
 
 @Test function BoundingBoxOffsetFollowsSVG()
