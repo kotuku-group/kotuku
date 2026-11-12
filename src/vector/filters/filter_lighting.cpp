@@ -91,8 +91,10 @@ selected by the #Features field are applied.  All of them are enabled by default
 <li>`DEQUANTISE`: Heights are read as floating point values, and areas that vary by no more than one alpha level are
 smoothed to remove terracing.</li>
 <li>`SHARPEN`: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
-wide.</li>
-<li>`CAVITY`: Narrow creases and pits receive less light, in proportion to their curvature.</li>
+wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
+SVG kernel, reaching it at two pixels per unit.</li>
+<li>`CAVITY`: Narrow creases and pits receive less light, in proportion to their curvature.  When the bump map is
+magnified, curvature is measured at the scale of the kernel unit so that 8-bit steps are not darkened.</li>
 <li>`DETAIL`: Fine detail is given more relief than broad shapes, so that it remains visible at a surface scale that
 suits the larger forms.</li>
 <li>`SHADOWS`: Distant lights cast shadows.  A point is unlit when the surface between it and the light rises above
@@ -320,6 +322,8 @@ class extLightingFX : public extFilterEffect {
    // True if fine detail receives extra relief, given the radius of the base layer's blur in pixels.
 
    bool boost_detail(double Sigma) const;
+   double cavity_sigma(double UnitSize) const;
+   float sharpen_weight(double UnitSize) const;
    void draw_enhanced(objBitmap *, const point3 &, double, const map_height &, double, int, int);
    template <class DELTA, class COLOUR>
    void render_enhanced(int, int, const struct lit_surface &, int, DELTA, COLOUR);

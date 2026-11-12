@@ -9,9 +9,13 @@ replaces the gradient stage only; normals, kernel units and the light models are
 2. Pixels whose 3x3 neighbourhood spans no more than one alpha level are replaced with a Gaussian-weighted mean,
    which removes quantisation terraces without softening real edges.
 3. Gradients use a 4th-order central difference with light cross-axis smoothing.  The result is doubled to match the
-   slope gain of the SVG interior kernel, so broad shapes are lit identically in both modes.
+   slope gain of the SVG interior kernel, so broad shapes are lit identically in both modes.  Where a kernel unit
+   covers more than a pixel the stencil blends back to the SVG kernel, because magnified features are already wide
+   enough for it and the 4th-order stencil would only amplify the quantisation steps.
 4. Concave regions are darkened in proportion to their curvature, measured with an isotropic Laplacian.  This reveals
-   creases and pits at the scale of a single pixel, where the gradient is zero at the centre of the feature.
+   creases and pits at the scale of a single pixel, where the gradient is zero at the centre of the feature.  Where a
+   kernel unit covers more than a pixel the heights are first blurred to the scale of the kernel unit, so that the
+   curvature is measured at the scale on which it is defined rather than on the quantisation steps.
 5. Fine detail is given more slope than broad shapes.  A Gaussian base layer is subtracted from the height to give the
    detail, and only the component of its slope that reinforces the existing slope is boosted.  The boost is softly
    compressed so that it cannot tilt the surface far past the light, while the base slope is left exactly as it was.
@@ -32,16 +36,33 @@ constexpr int LIGHT_PAD = 3; // Padding on each side of the height buffer; the g
 constexpr double CAVITY_STRENGTH = 0.25;
 constexpr double CAVITY_FLOOR = 0.4;
 
+// Curvature is scaled by the square of the kernel unit's length in pixels, which also scales the Laplacian of the
+// 8-bit quantisation steps.  On magnified input that turned each step into a dark speckle.  Where a kernel unit is U
+// pixels long, the Laplacian is measured on heights blurred with a sigma of CAVITY_SIGMA * sqrt(U^2 - 1) pixels.  The
+// blur is zero at 1:1 and approaches half of a kernel unit as U grows, which smooths steps up to a kernel unit apart.
+
+constexpr double CAVITY_SIGMA = 0.5;
+constexpr double MIN_CAVITY_SIGMA = 0.25; // Smaller blurs are skipped
+
+// The 4th-order gradient is used in full where a kernel unit is no longer than SHARPEN_FULL pixels, and is blended
+// linearly into the SVG kernel by SHARPEN_NONE pixels.  At that scale the narrowest features already span several
+// pixels and the 2nd-order kernel measures them equally well, while the 4th-order kernel would amplify the
+// quantisation steps of the magnified heights.
+
+constexpr double SHARPEN_FULL = 1.0;
+constexpr double SHARPEN_NONE = 2.0;
+
 // Gradient along the stencil axis at H, where Step is the distance between consecutive taps.  The weights are
 // [1, -8, 0, 8, -1] / 12, multiplied by the SVG slope gain of 2.  The outer taps oppose the inner ones, so beside a
 // hard edge the stencil reports a slope in the wrong direction and draws a bright or dark halo.  Where the result
-// disagrees in sign with the 2nd-order difference [-1, 0, 1] / 2, the 2nd-order value is used instead.
+// disagrees in sign with the 2nd-order difference [-1, 0, 1] / 2, the 2nd-order value is used instead.  Weight
+// blends the result from the 2nd-order difference (0) to the 4th-order difference (1).
 
-static inline float central_diff(const float *H, ptrdiff_t Step)
+static inline float central_diff(const float *H, ptrdiff_t Step, float Weight)
 {
    const float near = H[Step] - H[-Step];
    const float wide = (H[-2 * Step] - H[2 * Step] + 8.0f * near) * (2.0f / 12.0f);
-   return (near * wide > 0.0f) ? wide : near;
+   return (near * wide > 0.0f) ? near + Weight * (wide - near) : near;
 }
 
 // Detail is the height minus a Gaussian base layer of DETAIL_SIGMA kernel units, and its slope is multiplied by
@@ -75,7 +96,7 @@ constexpr double MAX_SHADOW_LENGTH = 128;
 constexpr size_t SCRATCH_LIMIT = 8 * 1024 * 1024;
 
 struct light_scratch {
-   std::vector<float> raw, heights, detail, shadow;
+   std::vector<float> raw, heights, detail, curve, shadow;
 
    static float * reserve(std::vector<float> &Buffer, size_t Size) {
       if (Buffer.size() < Size) Buffer.resize(Size);
@@ -83,8 +104,8 @@ struct light_scratch {
    }
 
    void trim() {
-      if (raw.size() + heights.size() + detail.size() + shadow.size() > SCRATCH_LIMIT) {
-         for (auto *buffer : { &raw, &heights, &detail, &shadow }) {
+      if (raw.size() + heights.size() + detail.size() + curve.size() + shadow.size() > SCRATCH_LIMIT) {
+         for (auto *buffer : { &raw, &heights, &detail, &curve, &shadow }) {
             buffer->clear();
             buffer->shrink_to_fit();
          }
@@ -97,11 +118,13 @@ static thread_local light_scratch glLightScratch;
 struct lit_surface {
    const float *heights; // Padded, dequantised heights
    const float *detail;  // Padded, cored detail layer, or nullptr if detail is not boosted
+   const float *curve;   // Padded heights from which curvature is measured
    const float *shadow;  // Fraction of a distant light reaching each pixel, unpadded, or nullptr
    int stride;
    int height;           // Height of the surface in pixels, excluding the padding
    map_height normal;    // Maps height gradients to slopes
    double curvature;     // Maps the Laplacian of the height to curvature per kernel unit
+   float sharpen;        // Weight of the 4th-order gradient, from 0 to 1
 };
 
 // Dequantises elements Start to End of the row R1, where R0 and R2 are the rows above and below.  A neighbourhood
@@ -147,11 +170,11 @@ static void core_detail(const float *__restrict Heights, float *__restrict Detai
    }
 }
 
-// Detail layer: Source minus its separable Gaussian blur, cored to ignore quantisation residue.  The blur clamps its
-// indices to the buffer.  Work receives the horizontal pass.
+// Separable Gaussian blur of Source into Dest, clamping its indices to the buffer.  Work receives the horizontal pass.
+// Finish(Y) is called for each row once its blur is complete.
 
-static void detail_layer(const float *Source, float *Dest, float *Work, int Stride, int Rows, double Sigma,
-   auto ForRows)
+static void gaussian_blur(const float *Source, float *Dest, float *Work, int Stride, int Rows, double Sigma,
+   auto ForRows, auto Finish)
 {
    const int radius = std::min(int(std::ceil(Sigma * 3.0)), (Stride - 1) / 2);
    std::vector<float> weights(radius + 1);
@@ -199,8 +222,18 @@ static void detail_layer(const float *Source, float *Dest, float *Work, int Stri
                dest[x] = sum;
             }
          }
-         core_detail(Source + y * stride, Dest + y * stride, stride);
+         Finish(y);
       }
+   });
+}
+
+// Detail layer: Source minus its Gaussian blur, cored to ignore quantisation residue.
+
+static void detail_layer(const float *Source, float *Dest, float *Work, int Stride, int Rows, double Sigma,
+   auto ForRows)
+{
+   gaussian_blur(Source, Dest, Work, Stride, Rows, Sigma, ForRows, [&](int Y) {
+      core_detail(Source + Y * Stride, Dest + Y * Stride, Stride);
    });
 }
 
@@ -366,10 +399,10 @@ static void cast_shadows(const float *Heights, int Stride, int Width, int Height
    Pool.wait();
 }
 
-// Slopes and occlusion for one row of Width pixels.  H is the row's heights, and the gradient is taken from the 1D
-// differences across rows (X0 to X2, for the rows above, at and below) and along the row (Y, including the pixel
-// either side).  The differences are smoothed across their axis with weights [1, Centre, 1] * Scale.  The parameters
-// are restricted so that the loop can be vectorised.
+// Slopes and occlusion for one row of Width pixels.  H is the row of heights from which curvature is measured, and
+// the gradient is taken from the 1D differences across rows (X0 to X2, for the rows above, at and below) and along
+// the row (Y, including the pixel either side).  The differences are smoothed across their axis with weights
+// [1, Centre, 1] * Scale.  The parameters are restricted so that the loop can be vectorised.
 
 static void row_slopes(const float *__restrict H, int Stride, const float *__restrict X0, const float *__restrict X1,
    const float *__restrict X2, const float *__restrict Y, const map_height &Normal, float Centre, float Scale,
@@ -517,18 +550,20 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
    // Row points at the first pixel of an image row; Out[0] is the pixel before it.
 
    // Without SHARPEN, the 2nd-order difference [-1, 0, 1] and cross-axis smoothing [1, 2, 1] / 4 reproduce the
-   // Sobel kernel of the SVG algorithm, including its slope gain of 2.  Otherwise the smoothing is [1, 6, 1] / 8.
+   // Sobel kernel of the SVG algorithm, including its slope gain of 2.  With the full weight of SHARPEN the smoothing
+   // is [1, 6, 1] / 8, and partial weights blend the difference and the smoothing between the two.
 
-   const bool sharpen = (Features & LFX::SHARPEN) != LFX::NIL;
-   const float centre = sharpen ? 6.0f : 2.0f;
-   const float smooth = sharpen ? 0.125f : 0.25f;
+   const float weight = Surface.sharpen;
+   const bool sharpen = weight > 0.0f;
+   const float centre = 2.0f + (4.0f * weight);
+   const float smooth = 1.0f / (centre + 2.0f);
 
-   auto row_dx = [span, sharpen](const float *__restrict Row, float *__restrict Out) {
-      if (sharpen) for (int x=0; x < span; ++x) Out[x] = central_diff(Row + x - 1, 1);
+   auto row_dx = [span, sharpen, weight](const float *__restrict Row, float *__restrict Out) {
+      if (sharpen) for (int x=0; x < span; ++x) Out[x] = central_diff(Row + x - 1, 1, weight);
       else for (int x=0; x < span; ++x) Out[x] = Row[x] - Row[x - 2];
    };
-   auto row_dy = [stride, span, sharpen](const float *__restrict Row, float *__restrict Out) {
-      if (sharpen) for (int x=0; x < span; ++x) Out[x] = central_diff(Row + x - 1, stride);
+   auto row_dy = [stride, span, sharpen, weight](const float *__restrict Row, float *__restrict Out) {
+      if (sharpen) for (int x=0; x < span; ++x) Out[x] = central_diff(Row + x - 1, stride, weight);
       else for (int x=0; x < span; ++x) Out[x] = Row[x + stride - 1] - Row[x - stride - 1];
    };
 
@@ -559,7 +594,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
 
          const auto &slot = slots[ry % 3];
          float *nx = slot.x + 1, *ny = slot.y + 1, *nz = slot.z + 1;
-         row_slopes(row_of(Surface.heights, ry), stride, hx[0] + 1, hx[1] + 1, hx[2] + 1, hy + 1, m, centre, smooth,
+         row_slopes(row_of(Surface.curve, ry), stride, hx[0] + 1, hx[1] + 1, hx[2] + 1, hy + 1, m, centre, smooth,
             cavity, nx, ny, slot.occlusion + 1, Width);
          if (Surface.detail) row_boost(dx[0] + 1, dx[1] + 1, dx[2] + 1, dy + 1, m, centre, smooth, nx, ny, Width);
          row_normals(nx, ny, nz, slot.occlusion + 1, Surface.shadow ? Surface.shadow + (ry * Width) : nullptr,
@@ -607,20 +642,40 @@ bool extLightingFX::boost_detail(double Sigma) const
    return ((Features & LFX::DETAIL) != LFX::NIL) and (DETAIL_BOOST != 1.0) and (Sigma >= 0.5);
 }
 
+// Sigma in pixels of the blur applied to the heights before curvature is measured, or 0 if no blur is required.
+
+double extLightingFX::cavity_sigma(double UnitSize) const
+{
+   if (((Features & LFX::CAVITY) IS LFX::NIL) or (UnitSize <= 1.0)) return 0;
+   const double sigma = std::min(MAX_SIGMA, CAVITY_SIGMA * sqrt((UnitSize * UnitSize) - 1.0));
+   return (sigma >= MIN_CAVITY_SIGMA) ? sigma : 0;
+}
+
+// Weight of the 4th-order gradient, from 0 for the SVG kernel to 1.
+
+float extLightingFX::sharpen_weight(double UnitSize) const
+{
+   if ((Features & LFX::SHARPEN) IS LFX::NIL) return 0;
+   return float(std::clamp((SHARPEN_NONE - UnitSize) / (SHARPEN_NONE - SHARPEN_FULL), 0.0, 1.0));
+}
+
 //********************************************************************************************************************
 // Distance in pixels over which the lighting samples neighbouring pixels.  The SVG kernel is 3x3.  The enhanced
 // gradient reaches 2 px into heights that are dequantised over 1 px, and the specular Toksvig factor averages the
-// normals over a further 1 px.  The detail layer adds the radius of its blur, and shadows add the length of the
-// longest shadow, limited to MAX_SHADOW_LENGTH.  Each addition applies only if its feature is enabled.
+// normals over a further 1 px.  The detail layer and the curvature blur add the larger of their blur radii, and
+// shadows add the length of the longest shadow, limited to MAX_SHADOW_LENGTH.  Each addition applies only if its
+// feature is enabled.
 
 double extLightingFX::reach() const
 {
    if (not enhanced()) return 2;
 
    const double scale = Filter->ClientVector ? Filter->ClientVector->Transform.scale() : 1.0;
-   const double sigma = std::min(MAX_SIGMA, DETAIL_SIGMA * unit_length(kernel_unit_pixels(scale)));
-   double result = 4;
-   if (boost_detail(sigma)) result += std::ceil(sigma * 3.0);
+   const double unit_size = unit_length(kernel_unit_pixels(scale));
+   const double sigma = std::min(MAX_SIGMA, DETAIL_SIGMA * unit_size);
+   double blur = cavity_sigma(unit_size);
+   if (boost_detail(sigma)) blur = std::max(blur, sigma);
+   double result = 4 + std::ceil(blur * 3.0);
 
    if ((LightSource IS LS::DISTANT) and ((Features & LFX::SHADOWS) != LFX::NIL)) {
       const double elevation = Elevation * DEG2RAD;
@@ -715,6 +770,16 @@ void extLightingFX::draw_enhanced(objBitmap *Bitmap, const point3 &Light, double
       detail_layer(heights, detail, work, stride, rows, sigma, for_rows);
    }
 
+   // Heights for measuring curvature, blurred to the scale of the kernel unit if it covers more than a pixel.
+
+   const float *curve = heights;
+   if (const double curve_sigma = cavity_sigma(UnitSize); curve_sigma > 0) {
+      float *blurred = light_scratch::reserve(scratch.curve, size);
+      float *work = dequantise ? raw : light_scratch::reserve(scratch.heights, size);
+      gaussian_blur(heights, blurred, work, stride, rows, curve_sigma, for_rows, [](int) { });
+      curve = blurred;
+   }
+
    // Shadows for distant lights.  Heights are converted to pixels with the same scale that positions the surface
    // relative to point and spot lights.  A negative surface scale inverts the surface, which is not supported.
 
@@ -728,7 +793,8 @@ void extLightingFX::draw_enhanced(objBitmap *Bitmap, const point3 &Light, double
    }
 
    const lit_surface surface = {
-      heights, detail, shadow, stride, Height, NormalHeight, MapHeight * (1.0 / 255.0) * UnitSize * UnitSize
+      heights, detail, curve, shadow, stride, Height, NormalHeight, MapHeight * (1.0 / 255.0) * UnitSize * UnitSize,
+      sharpen_weight(UnitSize)
    };
 
    for_rows(Height, [&](int Start, int End) {
