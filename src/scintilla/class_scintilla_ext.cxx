@@ -53,7 +53,7 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
 
    // Call tips are drawn with STYLE_CALLTIP rather than fixed colours.  Tabs are not expanded.
 
-   SendScintilla(SCI_CALLTIPUSESTYLE, 0UL);
+   SendScintilla(SCI_CALLTIPUSESTYLE, uptr_t(0));
 }
 
 ScintillaKTK::~ScintillaKTK()
@@ -139,13 +139,13 @@ ERR ScintillaKTK::panShowCompletions(int Length, std::string_view Candidates, SC
    log.traceBranch("%d candidates, prefix length %d", int(list.size()), Length);
 
    SendScintilla(SCI_AUTOCSETSEPARATOR, (uptr_t)'\n');
-   SendScintilla(SCI_AUTOCSETTYPESEPARATOR, 0UL);
+   SendScintilla(SCI_AUTOCSETTYPESEPARATOR, uptr_t(0));
    SendScintilla(SCI_AUTOCSETIGNORECASE, (uptr_t)ignore_case);
 
    // The engine's chooseSingle shortcut bypasses acceptance notifications and dropRestOfWord, and leaves an
    // existing list open.  Start the normal list and accept its matching candidate before it can be painted.
 
-   SendScintilla(SCI_AUTOCSETCHOOSESINGLE, 0UL);
+   SendScintilla(SCI_AUTOCSETCHOOSESINGLE, uptr_t(0));
    SendScintilla(SCI_AUTOCSETDROPRESTOFWORD, (uptr_t)((Flags & SCACF::DROP_REST_OF_WORD) != SCACF::NIL));
    SendScintilla(SCI_AUTOCSHOW, (uptr_t)Length, joined.c_str());
    if ((list.size() IS 1) and ((Flags & SCACF::CHOOSE_SINGLE) != SCACF::NIL) and (ac.Active())) {
@@ -552,7 +552,7 @@ ERR ScintillaKTK::panClipboard(CLIPMODE Mode)
    clip_error = ERR::Okay;
    SendScintilla(msg);
 
-   if (read_only) SendScintilla(SCI_SETREADONLY, 0UL);
+   if (read_only) SendScintilla(SCI_SETREADONLY, uptr_t(0));
    return clip_error;
 }
 
@@ -1364,7 +1364,7 @@ void ScintillaKTK::panKeyDown(KEY Code, KQ Qualifiers, int Unicode)
    }
    else if (int key = shortcut_key(Code)) KeyDownWithModifiers(Scintilla::Keys(key), modifiers, nullptr);
 
-   if (read_only) SendScintilla(SCI_SETREADONLY, 0UL);
+   if (read_only) SendScintilla(SCI_SETREADONLY, uptr_t(0));
 }
 
 /*********************************************************************************************************************
@@ -1690,7 +1690,7 @@ void ScintillaKTK::braceMatch()
 
    if (braceAtCaret >= 0 and braceOpposite < 0) {
       SendScintilla(SCI_BRACEBADLIGHT, braceAtCaret);
-      SendScintilla(SCI_SETHIGHLIGHTGUIDE,0UL);
+      SendScintilla(SCI_SETHIGHLIGHTGUIDE,uptr_t(0));
    }
    else {
       char chBrace = SendScintilla(SCI_GETCHARAT,braceAtCaret);

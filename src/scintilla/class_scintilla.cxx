@@ -1121,7 +1121,7 @@ static void notify_write(OBJECTPTR, ACTIONID, ERR Result, struct acWrite *Args)
 
    Self->HoldModify = TRUE; // Prevent the file from being marked as modified due to incoming data
 
-   SCICALL(SCI_SETUNDOCOLLECTION, 0UL); // Turn off undo
+   SCICALL(SCI_SETUNDOCOLLECTION, uptr_t(0)); // Turn off undo
 
    if (not Args->Buffer.empty()) {
       acDataFeed(Self, Self, DATA::TEXT, Args->Buffer.first(std::min(size_t(Args->Result), Args->Buffer.size())));
@@ -1558,7 +1558,7 @@ static ERR SCINTILLA_DeleteLine(extScintilla *Self, struct sci::DeleteLine *Args
 
    // Delete the targeted text
 
-   SCICALL(SCI_REPLACETARGET, 0UL, "");
+   SCICALL(SCI_REPLACETARGET, uptr_t(0), "");
 
    return ERR::Okay;
 }
@@ -2122,11 +2122,11 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    if ((Self->Flags & SCIF::EXT_PAGE) != SCIF::NIL) {
       log.msg("Extended page mode.");
-      SCICALL(SCI_SETENDATLASTLINE, 0UL); // Allow scrolling by an extra page at the end of the document
+      SCICALL(SCI_SETENDATLASTLINE, uptr_t(0)); // Allow scrolling by an extra page at the end of the document
    }
    else SCICALL(SCI_SETENDATLASTLINE, 1UL);
 
-   SCICALL(SCI_SETMARGINRIGHT, 0, 0L);
+   SCICALL(SCI_SETMARGINRIGHT, uptr_t(0), sptr_t(0));
 
    SCICALL(SCI_SETTABWIDTH, Self->TabWidth);
    SCICALL(SCI_SETINDENT, Self->IndentWidth);
@@ -2143,7 +2143,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    // Turn off buffered drawing because Kotuku surfaces already include buffer support
 
-   SCICALL(SCI_SETBUFFEREDDRAW, 0UL);
+   SCICALL(SCI_SETBUFFEREDDRAW, uptr_t(0));
 
    // Caret visibility policy
 
@@ -2158,11 +2158,11 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    SCICALL(SCI_SETEOLMODE, int(Self->EOLMode));
 
    if (Self->AllowTabs) SCICALL(SCI_SETUSETABS, 1UL);
-   else  SCICALL(SCI_SETUSETABS, 0UL);
+   else  SCICALL(SCI_SETUSETABS, uptr_t(0));
 
    // Set all special margins to invisible (note that the values indicate the pixel width of the margin)
 
-   SCICALL(SCI_SETMARGINWIDTHN, 0, 0L);
+   SCICALL(SCI_SETMARGINWIDTHN, uptr_t(0), sptr_t(0));
    update_margin_width(Self);
 
    // The text margins, the caret policy and width, and the symbol and folding margins scale with the display.
@@ -2173,7 +2173,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    Self->API->panSetFolding(Self->FoldingMarkers);
 
    if (Self->Wordwrap) SCICALL(SCI_SETWRAPMODE, 1UL);
-   else SCICALL(SCI_SETWRAPMODE, 0UL);
+   else SCICALL(SCI_SETWRAPMODE, uptr_t(0));
 
    Self->HasFocus = (Self->Focus->Flags & VF::HAS_FOCUS) != VF::NIL;
    update_focus(Self);
@@ -2227,7 +2227,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
       // Replace currently selected text
 
       SCICALL(SCI_BEGINUNDOACTION);
-      SCICALL(SCI_REPLACESEL, 0UL, text.c_str());
+      SCICALL(SCI_REPLACESEL, uptr_t(0), text.c_str());
       SCICALL(SCI_ENDUNDOACTION);
       return ERR::Okay;
    }
@@ -3006,7 +3006,7 @@ static ERR SCINTILLA_TrimWhitespace(extScintilla *Self)
       if (i < (lineEnd-1)) {
          SCICALL(SCI_SETTARGETSTART, i + 1);
          SCICALL(SCI_SETTARGETEND, lineEnd);
-         SCICALL(SCI_REPLACETARGET, 0UL, "");
+         SCICALL(SCI_REPLACETARGET, uptr_t(0), "");
       }
    }
 
@@ -3071,7 +3071,7 @@ static ERR SET_AllowTabs(extScintilla *Self, int Value)
    }
    else {
       Self->AllowTabs = FALSE;
-      if (Self->initialised()) SCICALL(SCI_SETUSETABS, 0UL);
+      if (Self->initialised()) SCICALL(SCI_SETUSETABS, uptr_t(0));
    }
    return ERR::Okay;
 }
@@ -3817,7 +3817,7 @@ static ERR SET_String(extScintilla *Self, const std::string_view &Value)
    if (Self->initialised()) {
       if (not Value.empty()) {
          const std::string text(Value);
-         SCICALL(SCI_SETTEXT, 0UL, text.c_str());
+         SCICALL(SCI_SETTEXT, uptr_t(0), text.c_str());
       }
       else acClear(Self);
       calc_longest_line(Self); // Sets the scroll width, which determines the width of the Page
