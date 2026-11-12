@@ -11,7 +11,7 @@
     <pattern id="pidBauhausSteps" patternUnits="userSpaceOnUse" width="72" height="72"
       viewBox="0 0 144 144">
       <g filter="url(#fltBauhausStepsChroma)">
-        <rect width="144" height="144" fill="#e8dfcb"/>
+        <rect width="144" height="144" fill="#fff6e4"/>
         <!-- Shadows -->
         <path fill="#2f2e2c" d="
           M0,24L24,0L24,24L48,24L24,48L0,48ZM48,24L72,0L72,24L96,24L72,48L48,48Z

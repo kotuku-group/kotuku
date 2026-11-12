@@ -8,10 +8,10 @@
     <filter id="fltBauhausArcsChroma" color-interpolation-filters="sRGB">
       <feColorMatrix type="saturate" values="param(chroma) 1"/>
     </filter>
-    <pattern id="pidBauhausArcs" patternUnits="userSpaceOnUse" width="128" height="128"
+    <pattern id="pidBauhausArcs" patternUnits="userSpaceOnUse" width="256" height="256"
       viewBox="0 0 128 128">
       <g filter="url(#fltBauhausArcsChroma)">
-        <rect width="128" height="128" fill="#fff6e4"/>
+        <rect width="100%" height="100%" fill="#fff6e4"/>
         <!-- Quarter rings of radius 32 -->
         <path fill="#45607e" d="
           M32,0h-32A32,32 0 0,0 32,32ZM64,32h-32A32,32 0 0,1 64,0ZM64,0h32A32,32 0 0,1 64,32Z

@@ -8,17 +8,10 @@
     <filter id="fltBauhausHalvesChroma" color-interpolation-filters="sRGB">
       <feColorMatrix type="saturate" values="param(chroma) 1"/>
     </filter>
-    <pattern id="pidBauhausHalves" patternUnits="userSpaceOnUse" width="128" height="128"
-      viewBox="0 0 128 128">
+    <pattern id="pidBauhausHalves" patternUnits="userSpaceOnUse" width="256" height="256" viewBox="0 0 128 128">
       <g filter="url(#fltBauhausHalvesChroma)">
-        <rect width="128" height="128" fill="#e8dfcb"/>
-        <!-- Chequered ground -->
-        <path fill="#e8dfcb" d="
-          M0,0h32v32h-32ZM64,0h32v32h-32ZM32,32h32v32h-32ZM96,32h32v32h-32ZM0,64h32v32h-32ZM64,64h32v32h-32Z
-          M32,96h32v32h-32ZM96,96h32v32h-32Z"/>
-        <path fill="#d9cdb3" d="
-          M32,0h32v32h-32ZM96,0h32v32h-32ZM0,32h32v32h-32ZM64,32h32v32h-32ZM32,64h32v32h-32ZM96,64h32v32h-32Z
-          M0,96h32v32h-32ZM64,96h32v32h-32Z"/>
+        <rect width="100%" height="100%" fill="#fff6e4"/>
+
         <!-- Split discs -->
         <path fill="#b25841" d="
           M16,3A13,13 0 0,1 16,29ZM125,16A13,13 0 0,1 99,16ZM48,35A13,13 0 0,1 48,61ZM67,48A13,13 0 0,1 93,48Z

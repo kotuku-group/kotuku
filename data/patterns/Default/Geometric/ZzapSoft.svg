@@ -9,11 +9,11 @@
       <rect width="100%" height="100%" fill="param(bkgd) red"/>
 
       <kotuku:wave fill="param(foreA) yellow" thickness="param(thickness) 16" type="sawtooth"
-        stroke="param(stroke) black" frequency="param(frequency) 16" stroke-width="4"
+        stroke="param(stroke) none" frequency="param(frequency) 16" stroke-width="4"
         x="-16" y="30" length="160" amplitude="32"/>
 
       <kotuku:wave fill="param(foreB) orange" thickness="param(thickness) 16" type="sawtooth"
-        stroke="param(stroke) black" frequency="param(frequency) 16" stroke-width="4"
+        stroke="param(stroke) none" frequency="param(frequency) 16" stroke-width="4"
         x="-24" y="90" length="192" amplitude="32"/>
     </pattern>
   </defs>

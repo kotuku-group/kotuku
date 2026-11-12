@@ -8,10 +8,11 @@
     <filter id="fltBauhausBlocksChroma" color-interpolation-filters="sRGB">
       <feColorMatrix type="saturate" values="param(chroma) 1"/>
     </filter>
-    <pattern id="pidBauhausBlocks" patternUnits="userSpaceOnUse" width="128" height="128"
-      viewBox="0 0 128 128">
+    <pattern id="pidBauhausBlocks" patternUnits="userSpaceOnUse" width="512" height="512"
+      viewBox="0 0 256 256">
       <g filter="url(#fltBauhausBlocksChroma)">
-        <rect width="128" height="128" fill="#e8dfcb"/>
+        <rect width="256" height="256" fill="#e8dfcb"/>
+        <!-- Original quarter: the first sixteen cells -->
         <!-- Cell grounds -->
         <path fill="#2f2e2c" d="M0,0h32v32h-32ZM96,32h32v32h-32ZM96,96h32v32h-32Z"/>
         <path fill="#b25841" d="M32,0h32v32h-32ZM64,32h32v32h-32ZM32,96h32v32h-32Z"/>
@@ -37,6 +38,60 @@
           M32,32h12A12,12 0 0,1 32,44Z"/>
         <path fill="#45607e" d="M64,64h12A12,12 0 0,0 64,52ZM43.5,112a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0Z"/>
         <path fill="#cfa24c" d="M64,128h12A12,12 0 0,0 64,116Z"/>
+        <!-- Remaining 48 cells: grounds, then one primitive per cell, then accents -->
+        <path fill="#2f2e2c" d="
+          M192,0h32v32h-32ZM224,64h32v32h-32ZM128,128h32v32h-32ZM160,160h32v32h-32ZM224,160h32v32h-32Z
+          M96,192h32v32h-32ZM160,224h32v32h-32Z"/>
+        <path fill="#b25841" d="
+          M224,0h32v32h-32ZM128,64h32v32h-32ZM160,96h32v32h-32ZM64,128h32v32h-32ZM192,128h32v32h-32Z
+          M0,160h32v32h-32ZM128,160h32v32h-32ZM64,224h32v32h-32Z"/>
+        <path fill="#d9cdb3" d="
+          M224,32h32v32h-32ZM192,64h32v32h-32ZM160,128h32v32h-32ZM224,128h32v32h-32ZM96,160h32v32h-32Z
+          M64,192h32v32h-32ZM192,192h32v32h-32Z"/>
+        <path fill="#e8dfcb" d="
+          M160,32h32v32h-32ZM128,96h32v32h-32ZM32,128h32v32h-32ZM96,128h32v32h-32ZM64,160h32v32h-32Z
+          M192,160h32v32h-32ZM0,192h32v32h-32ZM32,224h32v32h-32ZM224,224h32v32h-32Z"/>
+        <path fill="#45607e" d="
+          M160,0h32v32h-32ZM128,32h32v32h-32ZM192,32h32v32h-32ZM160,64h32v32h-32ZM192,96h32v32h-32Z
+          M32,192h32v32h-32ZM160,192h32v32h-32ZM0,224h32v32h-32ZM128,224h32v32h-32ZM192,224h32v32h-32Z"/>
+        <path fill="#cfa24c" d="
+          M128,0h32v32h-32ZM224,96h32v32h-32ZM0,128h32v32h-32ZM32,160h32v32h-32ZM128,192h32v32h-32Z
+          M224,192h32v32h-32ZM96,224h32v32h-32Z"/>
+        <path fill="#2f2e2c" d="
+          M160,64L160,96L128,96ZM128,96A16,16 0 0,1 128,128ZM160,128h32A32,32 0 0,0 160,96ZM6,132h4v24h-4Z
+          M14,132h4v24h-4ZM22,132h4v24h-4ZM96,160L128,192L96,192ZM256,224A16,16 0 0,1 256,192ZM32,256h-32A32,32 0
+          0,1 32,224ZM64,224L96,224L64,256ZM224,224L224,256L192,256ZM228,230h24v4h-24ZM228,238h24v4h-24Z
+          M228,246h24v4h-24Z"/>
+        <path fill="#b25841" d="
+          M192,64h32A32,32 0 0,1 192,96ZM192,128A16,16 0 0,1 224,128ZM96,128h32A32,32 0 0,1 96,160ZM192,128A16,16 0
+          0,1 160,128ZM160,160A16,16 0 0,1 192,160ZM69,176a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM224,192A16,16 0 0,1
+          224,160ZM256,192A16,16 0 0,1 256,160ZM0,192A16,16 0 0,1 0,224ZM128,256A16,16 0 0,1 160,256Z"/>
+        <path fill="#d9cdb3" d="
+          M192,32h-32A32,32 0 0,1 192,0ZM228,6h24v4h-24ZM228,14h24v4h-24ZM228,22h24v4h-24ZM160,32A16,16 0 0,1
+          160,64ZM192,64A16,16 0 0,1 192,32ZM198,132h4v24h-4ZM206,132h4v24h-4ZM214,132h4v24h-4ZM0,160A16,16 0 0,1
+          0,192ZM160,224h32A32,32 0 0,0 160,192ZM96,256A16,16 0 0,1 128,256Z"/>
+        <path fill="#e8dfcb" d="
+          M133,16a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM196,38h24v4h-24ZM196,46h24v4h-24ZM196,54h24v4h-24Z
+          M224,32h32A32,32 0 0,1 224,64ZM224,64A16,16 0 0,1 224,96ZM128,160A16,16 0 0,1 160,160ZM37,176a11,11 0 1,0
+          22,0a11,11 0 1,0 -22,0ZM160,160h32A32,32 0 0,1 160,192ZM128,224A16,16 0 0,1 160,224Z
+          M192,192L224,192L224,224Z"/>
+        <path fill="#45607e" d="
+          M198,4h4v24h-4ZM206,4h4v24h-4ZM214,4h4v24h-4ZM256,96h-32A32,32 0 0,0 256,128ZM64,160h-32A32,32 0 0,1
+          64,128ZM224,128h32A32,32 0 0,1 224,160ZM69,208a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM96,192A16,16 0 0,1
+          96,224ZM128,224A16,16 0 0,1 128,192ZM37,240a11,11 0 1,0 22,0a11,11 0 1,0 -22,0ZM160,256A16,16 0 0,1
+          192,256Z"/>
+        <path fill="#cfa24c" d="
+          M128,32L160,32L128,64ZM192,96A16,16 0 0,1 192,64ZM96,160h-32A32,32 0 0,1 96,128ZM132,166h24v4h-24Z
+          M132,174h24v4h-24ZM132,182h24v4h-24ZM32,224h32A32,32 0 0,0 32,192Z"/>
+        <path fill="#2f2e2c" d="
+          M43.5,176a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0ZM160,224h12A12,12 0 0,0 160,212ZM43.5,240a4.5,4.5 0 1,0
+          9,0a4.5,4.5 0 1,0 -9,0Z"/>
+        <path fill="#b25841" d="
+          M224,32h12A12,12 0 0,1 224,44ZM224,128h12A12,12 0 0,1 224,140ZM75.5,208a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0
+          -9,0Z"/>
+        <path fill="#d9cdb3" d="M160,160h12A12,12 0 0,1 160,172Z"/>
+        <path fill="#45607e" d="M139.5,16a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0ZM160,128h12A12,12 0 0,0 160,116Z"/>
+        <path fill="#cfa24c" d="M192,64h12A12,12 0 0,1 192,76ZM75.5,176a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0Z"/>
       </g>
     </pattern>
   </defs>

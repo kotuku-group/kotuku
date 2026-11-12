@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg">
   <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
-  <title>Encaustic diamond lines</title>
+  <title>Diamond lines</title>
   <desc>Fine charcoal lines trace nested diamonds in a continuous diagonal lattice.</desc>
   <defs>
     <pattern id="pidGeometricDiamondLines" patternUnits="userSpaceOnUse" width="64" height="64"

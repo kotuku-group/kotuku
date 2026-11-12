@@ -11,7 +11,7 @@
     <pattern id="pidBauhausShapes" patternUnits="userSpaceOnUse" width="160" height="160"
       viewBox="0 0 160 160">
       <g filter="url(#fltBauhausShapesChroma)">
-        <rect width="160" height="160" fill="#efe5d4"/>
+        <rect width="160" height="160" fill="#fff6e4"/>
         <!-- Shapes -->
         <path fill="#4d6b66" d="
           M16,0H16A16,16 0 0,1 32,16V16A16,16 0 0,1 16,32H16A16,16 0 0,1 0,16V16A16,16 0 0,1 16,0Z
