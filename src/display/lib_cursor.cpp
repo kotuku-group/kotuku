@@ -621,6 +621,16 @@ surface and forward it to the registered @VectorViewport under the pointer.
 The DragDrop action is dispatched synchronously, so the Source must be able to answer data requests during the
 dispatch.  A new drag and drop operation cannot be started until the dispatch has returned.
 
+On Windows, a drag that leaves all of the application's windows becomes a native OLE drag, so that it can be dropped
+into other applications, including other Kōtuku processes.  At that point the Source receives one `DATA::REQUEST` for
+each of `DATA::FILE` and `DATA::TEXT` that `Datatypes` includes, sent from the @Display object.  The receipts are
+copied, so the native recipient does not depend on the Source after the handoff.  Only copies are offered.  File
+paths must resolve to native locations; paths on virtual volumes are omitted.  If the pointer returns to one of the
+application's windows, the original Source, `Item` and `Datatypes` are used again, and a drop there is delivered as
+usual.  A drop accepted by a native recipient ends the operation with `ERR::Okay`; refusal and cancellation with
+Escape end it with `ERR::Cancelled`.  The preview `Surface` is hidden while the pointer is over other applications.
+Other platforms do not export drags.
+
 The operation is cancelled without a drop if the Source object is freed, or if the SystemPointer receives a
 Deactivate action.  A @Clipboard source is told when the operation ends through its @Clipboard.DragEndHandler, unless
 the Source was freed.
@@ -678,6 +688,7 @@ ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes
       pointer->DragItem     = Item;
       pointer->DragSourceID = Source;
       pointer->DragFeedback = -1;
+      pointer->ExportTried  = false;
       watch_drag_keys(pointer);
       pointer->DragData.fill(0);
       pointer->DragDataSize = uint8_t(std::min(pointer->DragData.size(), Datatypes.size()));

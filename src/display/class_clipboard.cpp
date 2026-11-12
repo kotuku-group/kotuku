@@ -768,8 +768,9 @@ DragEndHandler is called once when that operation ends.  The callback uses this 
 `void DragEndHandler(*Clipboard, int Item, ERR Result)`
 
 `Item` is the item number passed to ~Display.StartCursorDrag().  `Result` is `ERR::Okay` if the drop was dispatched to
-the surface under the pointer, or `ERR::Cancelled` if the operation ended without a drop, for instance because the
-@Pointer received a Deactivate action or a modal surface blocked the drop.  A dispatched drop does not imply that the
+the surface under the pointer, or accepted as a copy by another application, or `ERR::Cancelled` if the operation
+ended without a drop.  For instance, the @Pointer received a Deactivate action, a modal surface blocked the drop or a
+native recipient refused it.  A dispatched drop does not imply that the
 destination accepted the data or completed a transfer; any data requests made by the destination will already have
 reached the #RequestHandler.
 

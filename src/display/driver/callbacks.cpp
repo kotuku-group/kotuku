@@ -72,6 +72,12 @@ void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient
       acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
          std::span<const int8_t>((const int8_t *)&joy, sizeof(joy)));
       ReleaseObject(pointer);
+
+      #ifdef _WIN32
+         // A captured internal drag that leaves all of our windows is handed to OLE.  This runs from the window
+         // procedure with the pointer released, as DoDragDrop() requires.
+         if (not SurfaceID) check_native_export(SurfaceID);
+      #endif
    }
 }
 

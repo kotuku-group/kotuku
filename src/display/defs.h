@@ -287,6 +287,9 @@ class extPointer : public objPointer {
    uint8_t  DragDataSize = 0;     // Number of valid bytes in DragData
    bool     DragDelivering = false; // True while the drop is being dispatched to its destination
    bool     NativeDrag = false; // The host owns the primary-button and offer lifetime
+   bool     NativeExport = false; // An internal drag has been handed to the host's modal drag loop
+   bool     ExportTried = false;  // The current internal session has already attempted a native export
+   bool     ExportDropped = false; // The exported drag was released over one of our own surfaces
    OBJECTID DropSessionID = 0; // Config snapshot exposed only during native delivery
    std::vector<OBJECTID> PendingDrops; // Owned by native transfers; IDs allow cancellation without retaining targets
    int      DragKeyHandle = 0; // Keyboard subscription that cancels the drag on Escape
@@ -545,10 +548,15 @@ extern bool receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dro
 extern void lose_host_clipboard();
 extern void clear_host_drop();
 extern ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference);
+#ifdef _WIN32
+extern void check_native_export(OBJECTID SurfaceID);
+extern bool receive_export_receipt(OBJECTPTR Source, std::string_view Receipt);
+#endif
 namespace display {
    void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
    bool DriverDragStart(NativeDrop &Drop);
    void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
+   void DriverButtonInput(int Buttons, bool State);
 }
 extern std::atomic<int> glLastPort;
 

@@ -99,7 +99,7 @@ endif ()
 if (WIN32)
    target_compile_definitions (${MOD} PRIVATE DISPLAY_WINDOWS_DRIVER WIN_DRAGDROP)
    target_link_libraries (${MOD} PRIVATE ole32 oleaut32 uuid)
-   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "win32/clipboard.c" ${CLASSES})
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "win32/clipboard.c" "win32/drag_source.c" ${CLASSES})
 
    add_library (display-windows)
    target_include_directories (display-windows PRIVATE "${PROJECT_SOURCE_DIR}/include")
@@ -178,6 +178,17 @@ if (WIN32)
             WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
          set_tests_properties (display_windows_drop_import PROPERTIES LABELS "display;desktop" RUN_SERIAL TRUE
             TIMEOUT 60)
+
+         # The export test starts internal drags that leave the Kotuku window, with the same executable acting as the
+         # native OLE recipient and driving the cursor.  It shares the import test's desktop requirements.
+
+         add_test (NAME display_windows_drag_export
+            COMMAND "${WINDOWS_DROP_ORIGO}" --no-crash-handler --log-warning --gfx-driver=windows
+               "${FLUTE_SCRIPT}" "file=${CMAKE_CURRENT_SOURCE_DIR}/tests/test_windows_drag_export.tiri"
+               "target=$<TARGET_FILE:test_display_windows_drop>"
+            WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
+         set_tests_properties (display_windows_drag_export PROPERTIES LABELS "display;desktop" RUN_SERIAL TRUE
+            TIMEOUT 120)
       endif ()
    endif ()
 elseif (ANDROID)
