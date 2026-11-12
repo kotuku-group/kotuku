@@ -907,7 +907,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     'StringWidth',
     'FlushMatrix',
     'TracePath',
-    'SetFontHinting')
+    'SetFontHinting',
+    'GetFontFeatures')
 
   c_insert([[
 

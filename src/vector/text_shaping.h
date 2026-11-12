@@ -1,7 +1,8 @@
 #pragma once
 
 // Maps UTF-8 text to glyph indices, applies requested GSUB substitutions and records GPOS mark attachments.
-// Source clusters retain codepoint-based carets, selection and wrapping.  VectorText supplies its default ccmp request.
+// Source clusters retain codepoint-based carets, selection and wrapping.  VectorText supplies its default feature
+// requests.
 
 #include <cstdint>
 #include <string_view>

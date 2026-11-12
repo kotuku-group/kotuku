@@ -333,6 +333,27 @@ Z: Close Path
   </function>
 
   <function>
+    <name>GetFontFeatures</name>
+    <comment>Lists the OpenType features that VectorText can apply for a font.</comment>
+    <prototype>ERR vec::GetFontFeatures(APTR Handle, STRING * Result)</prototype>
+    <tiriPrototype>err, Result:str = GetFontFeatures(Handle:any)</tiriPrototype>
+    <tags>pure-query, thread-safe, mutates-input</tags>
+    <input>
+      <param type="APTR" name="Handle">A font handle obtained from <function>GetFontHandle</function>.</param>
+      <param type="STRING *" name="Result">The comma-separated feature tags.</param>
+    </input>
+    <description>
+<p>GetFontFeatures() returns the OpenType layout features of a font that have an effect when the font is drawn by <class name="VectorText">VectorText</class>, as a sorted, comma-separated list of tags such as <code>calt,ccmp,kern,liga,mark,tnum</code>.  The tags are suitable for the <code>features</code> key of a font definition (see <function>NormaliseTextStyle</function>), and can be used to offer only the features that a font supports, as the font dialog does.</p>
+<p>A substitution feature is listed if the font's Latin, Greek or Cyrillic script, or its default script, references it in the default language system and at least one of its lookups is of a supported type.  Features that are only defined for other scripts, or that use unsupported lookups such as reverse chaining substitution, are not listed. <code>mark</code> is listed if the font provides mark-to-base positioning, and <code>kern</code> if it provides pair kerning that has not been disabled in the font configuration.  The list therefore includes the features that are applied by default, such as <code>liga</code> and <code>ccmp</code>, if the font defines them.</p>
+<p>The features are a property of the font file, so every size and variable instance of a face returns the same list. A bitmap font returns an empty string.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
     <name>GetFontHandle</name>
     <comment>Returns a cached handle for a font family, style and size.</comment>
     <prototype>ERR vec::GetFontHandle(STRVIEW Family, STRVIEW Style, INT Weight, INT Size, APTR * Handle)</prototype>

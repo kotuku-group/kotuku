@@ -580,6 +580,36 @@ bool gsub_table::validate_gdef()
 }
 
 //********************************************************************************************************************
+
+void gsub_table::feature_tags(std::span<const uint32_t> Scripts, std::vector<uint32_t> &Tags) const
+{
+   auto supported = [this](const std::vector<uint16_t> &Indices) {
+      return std::ranges::any_of(Indices, [this](uint16_t Lookup) {
+         return (Lookup < lookups.size()) and (not lookups[Lookup].subtables.empty());
+      });
+   };
+
+   for (const auto tag : Scripts) {
+      auto script = scripts.find(tag);
+      if (script IS scripts.end()) script = scripts.find(ot_reader::tag('D','F','L','T'));
+      if (script IS scripts.end()) continue;
+      for (const auto index : script->second) {
+         const auto &feature = features[index];
+         if (std::ranges::find(Tags, feature.tag) != Tags.end()) continue;
+         bool usable = supported(feature.lookups);
+         for (const auto &variation : variations) {
+            if (usable) break;
+            if (not variation.supported) continue;
+            if (const auto found = variation.replacements.find(index); found != variation.replacements.end()) {
+               usable = supported(found->second);
+            }
+         }
+         if (usable) Tags.push_back(feature.tag);
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Returns the lookups that a feature string enables for a script, in lookup list order.  Scripts that the font does
 // not define fall back to DFLT.  When several features share a lookup, the highest requested value is used.
 

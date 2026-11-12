@@ -16,6 +16,7 @@ FDEF argsFlushMatrix[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix"
 FDEF argsGenerateEllipse[] = { { "Error", FD_INT|FD_ERROR }, { "CX", FD_DOUBLE }, { "CY", FD_DOUBLE }, { "RX", FD_DOUBLE }, { "RY", FD_DOUBLE }, { "Vertices", FD_INT }, { "Path", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsGeneratePath[] = { { "Error", FD_INT|FD_ERROR }, { "Sequence", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsGenerateRectangle[] = { { "Error", FD_INT|FD_ERROR }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Width", FD_DOUBLE }, { "Height", FD_DOUBLE }, { "Path", FD_RESULT|FD_PTR }, { 0, 0 } };
+FDEF argsGetFontFeatures[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_PTR }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsGetFontHandle[] = { { "Error", FD_INT|FD_ERROR }, { "Family", FDF_CPPSTRING }, { "Style", FDF_CPPSTRING }, { "Weight", FD_INT }, { "Size", FD_INT }, { "Handle", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsGetFontMetrics[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_PTR }, { "FontMetrics:Info", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsGetVertex[] = { { "Result", FD_INT }, { "Path", FD_PTR }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
@@ -76,6 +77,7 @@ const struct Function glFunctions[] = {
    { (APTR)vec::FlushMatrix, "FlushMatrix", argsFlushMatrix },
    { (APTR)vec::TracePath, "TracePath", argsTracePath },
    { (APTR)vec::SetFontHinting, "SetFontHinting", argsSetFontHinting },
+   { (APTR)vec::GetFontFeatures, "GetFontFeatures", argsGetFontFeatures },
    { nullptr, nullptr, nullptr }
 };
 

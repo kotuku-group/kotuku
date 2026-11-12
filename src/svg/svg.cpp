@@ -404,6 +404,7 @@ static constexpr auto SVF_flood_opacity       = strhash("flood-opacity");
 static constexpr auto SVF_focalPoint          = strhash("focalPoint");
 static constexpr auto SVF_font                = strhash("font");
 static constexpr auto SVF_font_family         = strhash("font-family");
+static constexpr auto SVF_font_feature_settings = strhash("font-feature-settings");
 static constexpr auto SVF_font_optical_sizing = strhash("font-optical-sizing");
 static constexpr auto SVF_font_variation_settings = strhash("font-variation-settings");
 static constexpr auto SVF_font_width          = strhash("font-width");

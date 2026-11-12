@@ -12,7 +12,7 @@
 | `preview.tiri` | Centre column: the scrolling Preview panel at the top of the column, with the Paragraph / Waterfall and Compare / Edit text groups in a footer styled as the panel header.  Compare freezes a copy of the settings; clicking the frozen pane swaps it with the live settings.  Edit text makes the live paragraph an editable VectorText (shown without the letter case applied) and shows the sample text buttons in the footer; Waterfall turns editing off. |
 | `storage.tiri` | Reads and writes the user's pins and saved presets in `user:config/fontdialog.json`, using the colour picker's storage functions.  A file that can't be read or understood is left alone and turns off saving for that dialog. |
 | `sizing.tiri` | Sizing panel: size (snapped to a bitmap family's strikes), line height, tracking, word spacing, kerning, and the px / pt switch in the header. |
-| `style.tiri` | Style panel: axis sliders (ranges from the font database) and the italic switch for variable families, style buttons for static and bitmap families, and switches for the common OpenType features that the family provides.  Rebuilt when the family changes.  Also composes the VectorText `fontStyle` for the state. |
+| `style.tiri` | Style panel: axis sliders (ranges from the font database) and the italic switch for variable families, style buttons for static and bitmap families, and switches for the common OpenType features that VectorText can apply to the selected face, according to the Vector module's `GetFontFeatures()` (cached per family and style by `supportedFeatures(State)`).  `liga`, `calt` and `kern` start switched on, matching VectorText's defaults.  Rebuilt when the family or its available features change.  Also composes the VectorText `fontStyle` for the state. |
 | `glyphs.tiri` | Glyph report panel: family, file format, character count and the coverage bars of the font database's character sets.  Its height follows the number of sets shown and asks the picker to restack the column. |
 | `fill.tiri`, `stroke.tiri`, `effects.tiri`, `alignment.tiri` | Right column panels.  Effects grows when an effect is enabled and asks the picker to restack the column. |
 
@@ -20,8 +20,9 @@
 
 Known limitations:
 
-- The classification, axis ranges, OpenType features and character set coverage come from the font database (see
-  `RefreshFonts()`), through `gui.fontList`.  Script, display, symbol and unclassified families are listed under the
+- The classification, axis ranges and character set coverage come from the font database (see `RefreshFonts()`),
+  through `gui.fontList`.  The database's OpenType feature list includes every script and lookup type, so the Style
+  panel's switches use `GetFontFeatures()` instead.  Script, display, symbol and unclassified families are listed under the
   Other filter.  The weight axis defaults to 400 where the range
   allows, rather than the font's default instance, matching the Regular default of static families.
 - `string.upper()` is byte-based, so the preview uses `fontdialog_preview.applyCase()`.  It converts ASCII, Latin-1,
