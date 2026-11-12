@@ -39,6 +39,9 @@ and the `agents-platform` test or workflow preset for that tree.
 - Audio module tests (any label beginning with `audio`) are excluded from the standard presets.  Run them
   explicitly with `ctest --preset agents-audio`, optionally adding `-R audio_reverb` for a single test.  The
   `debug-audio` and `debug-static-audio` presets do the same for the `debug` and `debug-static` trees.
+- Tests labelled `desktop` drive the real cursor or native desktop and are excluded from the standard presets.  Run
+  them only with user consent on an unlocked, idle desktop via `ctest --preset agents-desktop` (or
+  `agents-platform-desktop`).
 - For the `agents-platform` tree, use the `agents-platform` and `agents-platform-audio` test presets.
 - Do not invoke `ctest --test-dir` directly.  It bypasses the preset filters and runs every registered test.
 - Tiri tests are always written for the Flute tool.

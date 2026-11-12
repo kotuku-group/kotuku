@@ -4,7 +4,9 @@
 
 static HWND glWindow;
 static int glFailures, glAccept = 1, glDrops, glX, glY;
+static char glExpectedType = DATA_FILE;
 static WCHAR glPaths[700];
+static const WCHAR glText[] = L"Native <text> & \x4e09\xd83d\xde00\r\nsecond line";
 static char glSnapshot[1200];
 
 static void expect(int Condition, const char *Message)
@@ -52,6 +54,12 @@ static HRESULT STDMETHODCALLTYPE offer_data(IDataObject *Object, FORMATETC *Form
    if (offer_query(Object, Format) != S_OK) return DV_E_FORMATETC;
    memset(Medium, 0, sizeof(*Medium));
    Medium->tymed = TYMED_HGLOBAL;
+   if (Format->cfFormat IS CF_UNICODETEXT) {
+      if (!(Medium->hGlobal = GlobalAlloc(GMEM_MOVEABLE, sizeof(glText)))) return E_OUTOFMEMORY;
+      memcpy(GlobalLock(Medium->hGlobal), glText, sizeof(glText));
+      GlobalUnlock(Medium->hGlobal);
+      return S_OK;
+   }
    Medium->hGlobal = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size);
    if (!Medium->hGlobal) return E_OUTOFMEMORY;
    drop = (DROPFILES *)GlobalLock(Medium->hGlobal);
@@ -198,7 +206,7 @@ int winDragDropFromHost_Over(int Surface, int X, int Y, const char *Types, int L
    glX = X;
    glY = Y;
    expect(Surface IS 123, "OLE must resolve the destination window");
-   expect((Length IS 1) AND (Types[0] IS DATA_FILE), "Offer must advertise numeric file data once");
+   expect((Length IS 1) AND (Types[0] IS glExpectedType), "Offer must advertise its numeric datatype once");
    return glAccept;
 }
 
@@ -209,6 +217,17 @@ int winDragDropFromHost_Drop(int Surface, int X, int Y, const char *Types)
    int count = 0;
    glDrops++;
    expect((X IS glX) AND (Y IS glY), "Drop must use OLE's coordinate snapshot");
+   if (glExpectedType IS DATA_TEXT) {
+      preference[0] = DATA_TEXT;
+      expect(winGetData(preference, &data, &count) IS ERR_Okay, "Text must remain readable during Drop");
+      expect((count IS 1) AND (data[0].Datatype IS DATA_TEXT), "A text offer must return a single text item");
+      if (count IS 1) {
+         expect(strcmp(data[0].Data, "Native <text> & \xe4\xb8\x89\xf0\x9f\x98\x80\r\nsecond line") IS 0,
+            "UTF-16 text, metacharacters and line endings must survive conversion to UTF-8");
+         strcpy(glSnapshot, data[0].Data);
+      }
+      return glAccept;
+   }
    expect(winGetData(preference, &data, &count) IS ERR_Okay, "The offer must remain readable during Drop");
    expect(count IS 2, "A multi-file HDROP must return both files");
    if (count IS 2) {
@@ -294,6 +313,20 @@ int wmain(int Count, WCHAR **Args)
    RKDT_DragEnter(glDropTarget, &offer.Interface, 0, point, &effect);
    expect(effect IS DROPEFFECT_NONE, "Unsupported formats must not advertise acceptance");
    RKDT_DragLeave(glDropTarget);
+
+   offer.Format = CF_UNICODETEXT;
+   glExpectedType = DATA_TEXT;
+   glSnapshot[0] = 0;
+   effect = DROPEFFECT_COPY;
+   RKDT_DragEnter(glDropTarget, &offer.Interface, 0, point, &effect);
+   expect(effect IS DROPEFFECT_COPY, "Text offers must be accepted as copies");
+   effect = DROPEFFECT_COPY;
+   RKDT_Drop(glDropTarget, &offer.Interface, 0, drop_point, &effect);
+   expect((effect IS DROPEFFECT_COPY) AND (glDrops IS 2), "An accepted text drop must report copy once");
+   expect(offer.References IS 1, "Text drops must release the native offer");
+   preference[0] = DATA_TEXT;
+   expect(winGetData(preference, &data, &count) IS ERR_NoData, "Deferred text reads must fail after Drop");
+   expect(glSnapshot[0] IS 'N', "The receiver's copied text must survive the offer");
    winDisableDragDrop(glWindow);
    DestroyWindow(glWindow);
    winTerminateClipboard();

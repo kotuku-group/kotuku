@@ -162,6 +162,13 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
       log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0,
          request.Item);
 
+      // Payloads staged through DriverDragData() take precedence over the OLE offer, which is only readable while
+      // its own synchronous Drop() is in progress.
+
+      if (respond_wayland_drop_request(Self, Args->Object, request.Item, request.Preference[0]) IS ERR::Okay) {
+         return ERR::Okay;
+      }
+
       #ifdef WIN_DRAGDROP
       struct WinDT *data;
       int total_items;

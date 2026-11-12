@@ -92,7 +92,7 @@ endif ()
 flute_test (display_keyboard_routing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_keyboard_routing.tiri")
 flute_test (display_surface_focus "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_surface_focus.tiri")
 flute_test (display_capture "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_capture_display.tiri")
-if (UNIT_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if (UNIT_TESTS AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
    flute_test (display_native_drop "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_drop.tiri")
 endif ()
 
@@ -152,20 +152,33 @@ if (WIN32)
       add_test (NAME display_windows_driver COMMAND test_display_windows_driver)
       set_tests_properties (display_windows_driver PROPERTIES LABELS display)
 
-# For manual testing only
-#      add_executable (test_display_windows_drop "tests/test_windows_drop.c")
-#      target_include_directories (test_display_windows_drop PRIVATE "${PROJECT_SOURCE_DIR}/include")
-#      target_link_libraries (test_display_windows_drop PRIVATE ole32 shell32 user32 uuid)
-#      add_test (NAME display_windows_drop COMMAND test_display_windows_drop)
-#      set_tests_properties (display_windows_drop PROPERTIES LABELS display RUN_SERIAL TRUE)
-#      if (BUILD_TESTS)
-#         add_test (NAME display_windows_drop_import
-#            COMMAND "${CMAKE_INSTALL_PREFIX}/origo" --no-crash-handler --log-warning --gfx-driver=windows
-#               "${FLUTE_SCRIPT}" "file=${CMAKE_CURRENT_SOURCE_DIR}/tests/test_windows_drop.tiri"
-#               "source=$<TARGET_FILE:test_display_windows_drop>"
-#            WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
-#         set_tests_properties (display_windows_drop_import PROPERTIES LABELS display RUN_SERIAL TRUE TIMEOUT 30)
-#      endif ()
+      # The OLE adapter test calls the drop target directly.  It needs a window station for its small non-activating
+      # window, but never moves the cursor or changes the clipboard, so it runs with the standard presets.
+
+      add_executable (test_display_windows_drop "tests/test_windows_drop.c")
+      target_include_directories (test_display_windows_drop PRIVATE "${PROJECT_SOURCE_DIR}/include")
+      target_link_libraries (test_display_windows_drop PRIVATE ole32 shell32 user32 uuid)
+      add_test (NAME display_windows_drop COMMAND test_display_windows_drop)
+      set_tests_properties (display_windows_drop PROPERTIES LABELS display RUN_SERIAL TRUE TIMEOUT 30)
+
+      # The import test runs DoDragDrop() from a separate process and drives the real cursor with SendInput(), so it
+      # requires an unlocked desktop that is not in use.  The 'desktop' label is excluded from the standard presets;
+      # run it with: ctest --preset agents-platform-desktop
+
+      if (BUILD_TESTS)
+         if (RUN_ANYWHERE)
+            set (WINDOWS_DROP_ORIGO "${CMAKE_INSTALL_PREFIX}/origo")
+         else ()
+            set (WINDOWS_DROP_ORIGO "${CMAKE_INSTALL_PREFIX}/bin/origo")
+         endif ()
+         add_test (NAME display_windows_drop_import
+            COMMAND "${WINDOWS_DROP_ORIGO}" --no-crash-handler --log-warning --gfx-driver=windows
+               "${FLUTE_SCRIPT}" "file=${CMAKE_CURRENT_SOURCE_DIR}/tests/test_windows_drop.tiri"
+               "source=$<TARGET_FILE:test_display_windows_drop>"
+            WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
+         set_tests_properties (display_windows_drop_import PROPERTIES LABELS "display;desktop" RUN_SERIAL TRUE
+            TIMEOUT 60)
+      endif ()
    endif ()
 elseif (ANDROID)
    target_compile_definitions (${MOD} PRIVATE DISPLAY_ANDROID_DRIVER)
