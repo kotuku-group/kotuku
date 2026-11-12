@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Deco fronds</title>
+  <desc>Staggered arched tiles in a glazed forest green, each moulded with a palm frond in relief and set in pale
+    grout.  Parameters: glaze, shade and light colour the tile surface, rib grooves and rib highlights; grout colours
+    the joints.</desc>
+  <defs>
+    <!-- One tile: a round arch on top, with a cusped base that seats on the two arches of the row below -->
+    <clipPath id="decoFrondsClip">
+      <path d="M0,40A40,40 0 0 1 80,40V176A40,40 0 0 0 40,216A40,40 0 0 0 0,176Z"/>
+    </clipPath>
+    <!-- Paired ribs leave the spine steeply and flatten towards the edges; the tile clip trims them -->
+    <path id="decoFrondsRibs" fill="none" d="
+        M40,0C38,-12 22,-24 -2,-28M40,0C42,-12 58,-24 82,-28 M40,7C38,-5 22,-17 -2,-21M40,7C42,-5 58,-17 82,-21
+        M40,14C38,2 22,-10 -2,-14M40,14C42,2 58,-10 82,-14 M40,21C38,9 22,-3 -2,-7M40,21C42,9 58,-3 82,-7 M40,28C38,16
+        22,4 -2,0M40,28C42,16 58,4 82,0 M40,35C38,23 22,11 -2,7M40,35C42,23 58,11 82,7 M40,42C38,30 22,18
+        -2,14M40,42C42,30 58,18 82,14 M40,49C38,37 22,25 -2,21M40,49C42,37 58,25 82,21 M40,56C38,44 22,32
+        -2,28M40,56C42,44 58,32 82,28 M40,63C38,51 22,39 -2,35M40,63C42,51 58,39 82,35 M40,70C38,58 22,46
+        -2,42M40,70C42,58 58,46 82,42 M40,77C38,65 22,53 -2,49M40,77C42,65 58,53 82,49 M40,84C38,72 22,60
+        -2,56M40,84C42,72 58,60 82,56 M40,91C38,79 22,67 -2,63M40,91C42,79 58,67 82,63 M40,98C38,86 22,74
+        -2,70M40,98C42,86 58,74 82,70 M40,105C38,93 22,81 -2,77M40,105C42,93 58,81 82,77 M40,112C38,100 22,88
+        -2,84M40,112C42,100 58,88 82,84 M40,119C38,107 22,95 -2,91M40,119C42,107 58,95 82,91 M40,126C38,114 22,102
+        -2,98M40,126C42,114 58,102 82,98 M40,133C38,121 22,109 -2,105M40,133C42,121 58,109 82,105 M40,140C38,128
+        22,116 -2,112M40,140C42,128 58,116 82,112 M40,147C38,135 22,123 -2,119M40,147C42,135 58,123 82,119
+        M40,154C38,142 22,130 -2,126M40,154C42,142 58,130 82,126 M40,161C38,149 22,137 -2,133M40,161C42,149 58,137
+        82,133 M40,168C38,156 22,144 -2,140M40,168C42,156 58,144 82,140 M40,175C38,163 22,151 -2,147M40,175C42,163
+        58,151 82,147 M40,182C38,170 22,158 -2,154M40,182C42,170 58,158 82,154 M40,189C38,177 22,165
+        -2,161M40,189C42,177 58,165 82,161 M40,196C38,184 22,172 -2,168M40,196C42,184 58,172 82,168 M40,203C38,191
+        22,179 -2,175M40,203C42,191 58,179 82,175 M40,210C38,198 22,186 -2,182M40,210C42,198 58,186 82,182
+        M40,217C38,205 22,193 -2,189M40,217C42,205 58,193 82,189 M40,224C38,212 22,200 -2,196M40,224C42,212 58,200
+        82,196"/>
+    <symbol id="decoFrondsTile" overflow="visible">
+      <g clip-path="url(#decoFrondsClip)">
+        <rect width="80" height="216" fill="param(glaze) #3f533b"/>
+        <!-- Relief: a dark groove below each rib, the rib body, then a highlight along its crest -->
+        <use href="#decoFrondsRibs" stroke="param(shade) #26331f" stroke-width="4.6" transform="translate(0,1.2)"/>
+        <use href="#decoFrondsRibs" stroke="param(glaze) #3f533b" stroke-width="3.4"/>
+        <use href="#decoFrondsRibs" stroke="param(light) #7d9372" stroke-width="1.1" transform="translate(0,-0.9)"/>
+        <!-- Glaze thins and brightens over the rounded tile edge -->
+        <path fill="none" stroke="param(light) #7d9372" stroke-width="4" opacity="0.5"
+          d="M0,40A40,40 0 0 1 80,40V176A40,40 0 0 0 40,216A40,40 0 0 0 0,176Z"/>
+      </g>
+      <path fill="none" stroke="param(grout) #ebe8df" stroke-width="3"
+        d="M0,40A40,40 0 0 1 80,40V176A40,40 0 0 0 40,216A40,40 0 0 0 0,176Z"/>
+    </symbol>
+    <!-- Rows are staggered by half a tile, so the cell holds one whole tile and quarters of four more -->
+    <pattern id="pidDecoFronds" patternUnits="userSpaceOnUse" width="60" height="264" viewBox="0 0 80 352">
+      <rect width="80" height="352" fill="param(grout) #ebe8df"/>
+      <use href="#decoFrondsTile"/>
+      <use href="#decoFrondsTile" x="-40" y="-176"/>
+      <use href="#decoFrondsTile" x="40" y="-176"/>
+      <use href="#decoFrondsTile" x="-40" y="176"/>
+      <use href="#decoFrondsTile" x="40" y="176"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidDecoFronds)"/>
+</svg>

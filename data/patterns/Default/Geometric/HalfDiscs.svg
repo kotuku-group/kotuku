@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Geometric half discs</title>
+  <desc>Ivory tiles with a black half disc at either side, laid in a chequer of quarter turns so that the discs
+    face across one tile and stand back to back across the next.  Parameters: bkgd and fore colour the tiles and
+    discs; grout colours the joints.</desc>
+  <defs>
+    <clipPath id="geoHalfDiscsClip">
+      <rect x="0.6" y="0.6" width="98.8" height="98.8"/>
+    </clipPath>
+    <!-- One tile: two discs centred on opposite edges, cut in half by the tile -->
+    <symbol id="geoHalfDiscsTile" overflow="visible">
+      <g clip-path="url(#geoHalfDiscsClip)">
+        <rect width="100" height="100" fill="param(bkgd) #f1efe8"/>
+        <circle cx="0" cy="50" r="46" fill="param(fore) #161616"/>
+        <circle cx="100" cy="50" r="46" fill="param(fore) #161616"/>
+      </g>
+    </symbol>
+    <pattern id="pidGeometricHalfDiscs" patternUnits="userSpaceOnUse" width="80" height="80"
+      viewBox="0 0 200 200">
+      <rect width="200" height="200" fill="param(grout) #d9d6cc"/>
+      <use href="#geoHalfDiscsTile"/>
+      <use href="#geoHalfDiscsTile" x="100" y="100"/>
+      <!-- The alternate tiles are turned a quarter, putting their discs on the top and bottom edges -->
+      <use href="#geoHalfDiscsTile" transform="translate(100,0) rotate(90,50,50)"/>
+      <use href="#geoHalfDiscsTile" transform="translate(0,100) rotate(90,50,50)"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidGeometricHalfDiscs)"/>
+</svg>

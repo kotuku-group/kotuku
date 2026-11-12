@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Copyright 2026 Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Encaustic cloister</title>
+  <desc>A dove grey cement tile framed by four white diagonal bands around a central diamond.  The bands fold at
+    the tile edges into a zigzag lattice, and steel blue diamonds sit where neighbouring tiles meet.  Parameters:
+    bkgd, fore and line colour the grey ground, blue diamonds and white bands.</desc>
+  <defs>
+    <pattern id="pidEncausticCloister" patternUnits="userSpaceOnUse" width="72" height="72"
+      viewBox="0 0 100 100">
+      <rect width="100" height="100" fill="param(bkgd) #b6b4b5"/>
+      <!-- Edge diamonds, halved by the tile edges and completed by the neighbouring tiles -->
+      <path fill="param(fore) #365977" d="
+        M50,-14L64,0L50,14L36,0ZM50,86L64,100L50,114L36,100ZM0,36L14,50L0,64L-14,50ZM100,36L114,50L100,64L86,50Z"/>
+      <!-- Bands run from edge to edge and overrun the tile so that their ends are trimmed square -->
+      <path fill="none" stroke="param(line) #fbfbfb" stroke-width="7.07" d="
+        M21.6,-10L110,78.4M78.4,-10L-10,78.4M-10,21.6L78.4,110M110,21.6L21.6,110"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidEncausticCloister)"/>
+</svg>
