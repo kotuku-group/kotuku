@@ -805,9 +805,10 @@ static ERR transport_incoming(extWebSocket *Self)
    Self->TerminateSocket = false;
    auto restore = kt::Defer([&]() { Self->InSocketCallback = in_socket; });
 
-   if (Self->HandoverPending) {
-      if (not complete_handover(Self)) return Self->TerminateSocket ? ERR::Terminate : ERR::Okay;
-   }
+   // The handover can stop decoding (e.g. the prefix ended with a Close frame) while the socket remains open.  The read
+   // loop still runs because it ends by itself if the transport was released or Self is being freed.
+
+   if (Self->HandoverPending) complete_handover(Self);
 
    // Bytes are always read so that Network does not discard them with a warning.  They are decoded only while the
    // connection accepts input.
