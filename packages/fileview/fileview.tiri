@@ -21,6 +21,11 @@ TBID <const> = {
 
 local glEnableThreading = false
 
+-- A drag hovering over a row is refreshed by the view at least every 50ms.  A longer gap means that the drag left,
+-- was rejected or ended, so any dwell measured before it is discarded.
+
+DWELL_GAP <const> = 250000
+
 rxParentFolder   <const> = <{ regex.new([[^(.*[:\/\\]+).+]]) }>
 rxStripFolder    <const> = <{ regex.new([[^(.*?)[:\/\\]*$]]) }> -- Remove trailing qualifiers
 rxExtractIcon    <const> = <{ regex.new([[^(.+)\.([^:\/\\]+)$]]) }>
@@ -588,6 +593,7 @@ gui.fileview = function(Options)
       events         = Options.events ?? {},
       filterList     = Options.filterList,
       strictFilter   = Options.strictFilter,
+      dragBrowseDelay = Options.dragBrowseDelay, -- Seconds (default 1); false or 0 disables browsing on drag hover
       theme          = nil -- Determined by target viewport
    }, {
       __gc = function()
@@ -1326,6 +1332,96 @@ gui.fileview = function(Options)
       return &path
    end
 
+   -- Drag hover navigation.  A drag that rests on a folder, parent or volume row for dragBrowseDelay seconds opens that
+   -- location, once.  The dwell is measured across the dragOver calls that the view makes for every feedback update
+   -- while it accepts the drag, so a drag that leaves, is rejected, is cancelled or ends cannot browse later.  Browsing
+   -- is deferred to the next message cycle, where the dwell is confirmed again, so that rows are never replaced during
+   -- the view's own feedback update.  The navigated folder remains visible if the drag is later cancelled.
+
+   -- Returns the location that a dwell over Item would open, or nil if the row is not eligible.  ':' is the volume
+   -- list.  A dragged folder is never opened, nor is a folder inside it.
+
+   function dwellTarget(Item:table, Drop:table!):str
+      Item ?! return
+      local target:str
+      if Item.type is 'folder' or Item.type is 'volume' then
+         target = Item.path
+      elseif Item.type is 'parent' and &path then
+         if &limitPath and pathKey(&path) is pathKey(&limitPath) then return end
+         target = parentFolder(&path) ?? ':'
+      end
+      target ?! return
+
+      if Drop.session?.files and target != ':' then
+         local key = pathKey(target) .. '/'
+         for src in values(Drop.session.files) do
+            local folder = src.endsWith('/') or src.endsWith('\\') or io.isFolder(src)
+            if folder and key.startsWith(pathKey(src) .. '/') then return end
+         end
+      end
+      return target
+   end
+
+   -- Called from dragOver while the drag hovers over Item.  The same row of the same session and folder keeps its
+   -- start time; any other row starts a new dwell.
+
+   function trackDwell(View:table!, Item:table, Drop:table!)
+      local delay = &dragBrowseDelay
+      if delay is nil then delay = 1.0 end
+      if not delay or delay <= 0 then return end
+
+      local now     = mSys.PreciseTime()
+      local session = f'{Drop.source.id}:{Drop.item}'
+      local x, y    = View.scene.dropX, View.scene.dropY
+
+      -- After a hover navigation the pointer must move before another row is chosen, so that a stationary pointer
+      -- does not descend through every folder that appears beneath it.
+
+      local rest = &_dwellRest
+      if rest then
+         if rest.session is session and rest.x is x and rest.y is y then
+            &_dwell = nil
+            return
+         end
+         &_dwellRest = nil
+      end
+
+      local dwell = &_dwell
+      if dwell and dwell.view is View and dwell.item is Item and dwell.session is session and
+         dwell.path is &path and now - dwell.seen <= DWELL_GAP then
+         dwell.seen = now
+      else
+         local target = dwellTarget(Item, Drop)
+         if not target then
+            &_dwell = nil
+            return
+         end
+         dwell = { view=View, item=Item, session=session, path=&path, target=target, started=now, seen=now }
+         &_dwell = dwell
+      end
+
+      if dwell.scheduled or now - dwell.started < delay * 1000000 then return end
+      dwell.scheduled = true
+
+      processing.delayedCall(function[&&]()
+         if &_released or &_dwell != dwell then return end
+         local view = dwell.view
+         if &view != view or not view.viewport or not view._dropActive or view._dropItem != dwell.item or
+            &path != dwell.path or mSys.PreciseTime() - dwell.seen > DWELL_GAP then
+            &_dwell = nil
+            return
+         end
+
+         -- An unavailable folder is not opened.  The dwell is retained, so that it is not retried until the drag
+         -- moves to another row.
+         if dwell.target != ':' and not resolveDropFolder(dwell.target) then return end
+
+         &_dwell = nil
+         &_dwellRest = { session=dwell.session, x=view.scene.dropX, y=view.scene.dropY }
+         &browse(dwell.target)
+      end)
+   end
+
    -- Run the open command for all currently selected files.
 
    self.openFiles = function[self]()
@@ -1517,19 +1613,40 @@ gui.fileview = function(Options)
       end
 
       &view.events.dragOver = function[&&](View, Item, Drop)
-         if not Drop.datatypes?.find(string.char(DATA_FILE), 0, true) then return false end
+         if not Drop.datatypes?.find(string.char(DATA_FILE), 0, true) then
+            &_dwell = nil
+            return false
+         end
+
          local dest = dropDestination(Item)
-         if not dest or not io.isFolder(dest) then return false end
+         if not dest or not io.isFolder(dest) then
+            &_dwell = nil
+            return false
+         end
+         local accepted = true
          if Drop.session?.files then
+            accepted = false
             local dest_key = pathKey(dest)
             for src in values(Drop.session.files) do
                local folder = src.endsWith('/') or src.endsWith('\\') or io.isFolder(src)
                if pathKey(parentFolder(src) ?? '') != dest_key and
-                  not (folder and (dest_key .. '/').startsWith(pathKey(src) .. '/')) then return true end
+                  not (folder and (dest_key .. '/').startsWith(pathKey(src) .. '/')) then
+                  accepted = true
+                  break
+               end
             end
-            return false
          end
-         return true
+
+         -- Only accepted hovers accrue dwell.  The release freezes the destination, so navigation cannot follow it.
+         if not accepted or Drop.prepared then &_dwell = nil else trackDwell(View, Item, Drop) end
+         return accepted
+      end
+
+      -- Leaving the view, cancelling or ending the drag, and freeing the view all end the hover.
+
+      &view.events.dragLeave = function[&&](View, Item, Drop)
+         if &_dwell?.view is View then &_dwell = nil end
+         &_dwellRest = nil
       end
 
       &view.events.dragPrepare = function[&&](View, Item, Drop):any

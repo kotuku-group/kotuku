@@ -176,7 +176,8 @@ fontdialog_style.defaultStyle = function(Font:table!):str
    for style in values(Font.styles) do
       if style is 'Regular' then return style end
    end
-   return fontdialog_style.orderedStyles(Font)[0] ?? 'Regular'
+   styles = fontdialog_style.orderedStyles(Font)
+   return #styles > 0 ? styles[0] : 'Regular'
 end
 
 @Doc(text=[[
