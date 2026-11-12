@@ -75,6 +75,7 @@ typedef struct rkDropTarget {
    char Datatypes[8];
    int DatatypeCount;
    void *ItemData;
+   int Export; // The offer is this process's own outbound drag, which resumes its internal session
 } RK_IDROPTARGET;
 
 typedef struct rkDropTargetVTable
@@ -219,6 +220,12 @@ static ULONG STDMETHODCALLTYPE RKDT_Release(struct rkDropTarget *Self)
 static void release_offer(struct rkDropTarget *Self)
 {
    IDataObject *data = Self->CurrentDataObject;
+   if (Self->Export) {
+      POINT point = { 0, 0 };
+      GetCursorPos(&point);
+      Self->Export = 0;
+      winDragExport_Leave(point.x, point.y);
+   }
    Self->CurrentDataObject = NULL;
    Self->DatatypeCount = 0;
    memset(Self->Datatypes, 0, sizeof(Self->Datatypes));
@@ -243,9 +250,39 @@ static DWORD assess_drop(struct rkDropTarget *Self, DWORD Keys, POINTL Point, DW
       DROPEFFECT_COPY : DROPEFFECT_NONE;
 }
 
+// Resolves the surface under a screen point, or zero if the point is outside the client area of our windows.
+
+static int drop_surface(POINTL Point)
+{
+   POINT point = { Point.x, Point.y }, local = { Point.x, Point.y };
+   HWND window = WindowFromPoint(point);
+   int surface = winResolveSurfaceID(window);
+   RECT client;
+   if ((!surface) OR (!ScreenToClient(window, &local)) OR (!GetClientRect(window, &client)) OR
+       (!PtInRect(&client, local))) return 0;
+   return surface;
+}
+
+// Our own outbound drag has returned to one of our windows.  The internal session decides acceptance; OLE is told
+// copy because that is the only effect the export advertises.
+
+static DWORD assess_export(POINTL Point, DWORD Effects)
+{
+   int surface = drop_surface(Point);
+   if ((!surface) OR (!(Effects & DROPEFFECT_COPY))) {
+      winDragExport_Leave(Point.x, Point.y);
+      return DROPEFFECT_NONE;
+   }
+   return winDragExport_Over(surface, Point.x, Point.y) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+}
+
 static HRESULT STDMETHODCALLTYPE RKDT_DragOver(struct rkDropTarget *Self, DWORD Keys, POINTL Point, DWORD *Effect)
 {
    if (!Effect) return E_POINTER;
+   if (Self->Export) {
+      *Effect = assess_export(Point, *Effect);
+      return S_OK;
+   }
    *Effect = assess_drop(Self, Keys, Point, *Effect);
    return S_OK;
 }
@@ -263,6 +300,10 @@ static HRESULT STDMETHODCALLTYPE RKDT_DragEnter(struct rkDropTarget *Self, IData
    release_offer(Self);
    Data->lpVtbl->AddRef(Data);
    Self->CurrentDataObject = Data;
+   if ((Self->Export = winIsDragExport(Data))) {
+      *Effect = assess_export(Point, *Effect);
+      return S_OK;
+   }
    Self->DatatypeCount = RKDT_AssessDatatype(Self, Data, Self->Datatypes, sizeof(Self->Datatypes));
    *Effect = assess_drop(Self, Keys, Point, *Effect);
    return S_OK;
@@ -277,6 +318,16 @@ static HRESULT STDMETHODCALLTYPE RKDT_Drop(struct rkDropTarget *Self, IDataObjec
    if ((!Data) OR (!Effect)) return E_INVALIDARG;
    allowed = *Effect;
    *Effect = DROPEFFECT_NONE;
+   if (winIsDragExport(Data)) {
+      // The internal session performs the drop after DoDragDrop() returns, through the ordinary button release.
+      surface = drop_surface(point);
+      Self->Export = 0;
+      if ((surface) AND (allowed & DROPEFFECT_COPY) AND (winDragExport_Drop(surface, Point.x, Point.y))) {
+         *Effect = DROPEFFECT_COPY;
+      }
+      release_offer(Self);
+      return S_OK;
+   }
    if (Data != Self->CurrentDataObject) {
       release_offer(Self);
       Data->lpVtbl->AddRef(Data);

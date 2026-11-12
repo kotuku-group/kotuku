@@ -146,6 +146,298 @@ void winDragDropFromHost_Leave(void)
    }
 }
 
+//********************************************************************************************************************
+// Outbound native dragging.  An internal session started by StartCursorDrag() is handed to OLE when the captured
+// pointer leaves all of our windows.  The payload is requested from the source once, at the handoff, and copied into
+// an immutable offer, so the native recipient never depends on the source, its widget or the preview surface.
+//
+// The internal session remains the single owner of the drag.  If the pointer returns to one of our windows, our drop
+// target recognises the offer and routes hover feedback through the original source, item and datatypes.  A release
+// there is completed by the ordinary internal button-release path after DoDragDrop() returns.  Otherwise the session
+// ends with ERR::Okay if the native recipient accepted a copy, or ERR::Cancelled.  Exactly one notification is sent.
+
+static OBJECTID glExportSource = 0;
+static int glExportItem = 0;
+static bool glExportPreview = false;
+
+static struct {
+   OBJECTID SourceID = 0;
+   std::string *Receipt = nullptr;
+} glExportRequest;
+
+// Called by Display.DataFeed() for DATA::RECEIPT.
+
+bool receive_export_receipt(OBJECTPTR Source, std::string_view Receipt)
+{
+   if ((not Source) or (not glExportRequest.Receipt) or (Source->UID != glExportRequest.SourceID)) return false;
+   glExportRequest.Receipt->assign(Receipt);
+   return true;
+}
+
+// Sources answer requests synchronously, as they do for internal drops.
+
+static std::string request_export(OBJECTID SourceID, int Item, DATA Datatype, OBJECTID RequesterID)
+{
+   std::string receipt;
+   kt::ScopedObjectLock source(SourceID);
+   kt::ScopedObjectLock requester(RequesterID);
+   if ((not source.granted()) or (not requester.granted())) return receipt;
+
+   struct dcRequest request = { .Item = Item, .Preference = { char(Datatype), 0, 0, 0 } };
+   glExportRequest.SourceID = SourceID;
+   glExportRequest.Receipt = &receipt;
+   auto restore = kt::Defer([&]() { glExportRequest.SourceID = 0; glExportRequest.Receipt = nullptr; });
+   if (acDataFeed(*source, *requester, DATA::REQUEST,
+         std::span<const int8_t>((const int8_t *)&request, sizeof(request))) != ERR::Okay) receipt.clear();
+   return receipt;
+}
+
+// Extracts native file paths or text from a receipt.  Paths on virtual volumes, or that do not exist, cannot be
+// offered to another process and are omitted.
+
+static void parse_export_receipt(const std::string &Receipt, DATA Datatype, std::vector<std::string> &Files,
+   std::string &Text, bool &HasText)
+{
+   kt::Log log(__FUNCTION__);
+   if (Receipt.empty()) return;
+   auto xml = objXML::create::local(fl::Statement(Receipt));
+   if (not xml) return;
+   auto free_xml = kt::Defer([&]() { FreeResource(xml); });
+   if (xml->Tags.empty() or (not iequals("receipt", xml->Tags[0].name()))) return;
+
+   for (auto &tag : xml->Tags[0].Children) {
+      if ((Datatype IS DATA::FILE) and iequals("file", tag.name())) {
+         auto path = tag.attrib("path");
+         if ((not path) or path->empty()) continue;
+         std::string native;
+         if ((ResolvePath(*path, RSF::NIL, &native) IS ERR::Okay) and (native.size() >= 3) and
+             ((native[1] IS ':') or ((native[0] IS '\\') and (native[1] IS '\\')) or
+              ((native[0] IS '/') and (native[1] IS '/')))) {
+            Files.push_back(native);
+         }
+         else log.msg("Path '%s' has no native location and cannot be exported.", path->c_str());
+      }
+      else if ((Datatype IS DATA::TEXT) and iequals("text", tag.name())) {
+         if (HasText) Text += '\n';
+         Text += tag.getContent();
+         HasText = true;
+      }
+   }
+}
+
+static void show_export_preview(extPointer *Pointer, bool Show)
+{
+   if ((not Pointer->DragSurface) or (glExportPreview IS Show)) return;
+   kt::ScopedObjectLock surface(Pointer->DragSurface);
+   if (surface.granted()) {
+      if (Show) { acShow(*surface); acMoveToFront(*surface); }
+      else acHide(*surface);
+   }
+   glExportPreview = Show;
+}
+
+// Called after pointer movement that is outside all of our windows.
+
+void check_native_export(OBJECTID SurfaceID)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (SurfaceID) return;
+
+   OBJECTID source_id, requester_id = 0;
+   int item;
+   bool want_files = false, want_text = false;
+
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+      if ((not pointer->DragSourceID) or pointer->NativeDrag or pointer->NativeExport or pointer->DragDelivering or
+          pointer->ExportTried or pointer->ButtonClicks.empty() or (not pointer->ButtonClicks[0].LastClicked)) return;
+      pointer->ExportTried = true; // Attempted once per session, whatever the outcome
+
+      source_id = pointer->DragSourceID;
+      item      = pointer->DragItem;
+      for (int i=0; i < pointer->DragDataSize; i++) {
+         if (DATA(pointer->DragData[i]) IS DATA::FILE) want_files = true;
+         else if (DATA(pointer->DragData[i]) IS DATA::TEXT) want_text = true;
+      }
+
+      SURFACEINFO *info;
+      if (gfx::GetSurfaceInfo(pointer->ButtonClicks[0].LastClicked, &info) IS ERR::Okay) {
+         requester_id = info->DisplayID;
+      }
+   }
+   else return;
+
+   if ((not requester_id) or ((not want_files) and (not want_text))) return;
+
+   log.branch("Exporting item %d from source #%d.", item, source_id);
+
+   std::vector<std::string> files;
+   std::string text;
+   bool has_text = false;
+   if (want_files) parse_export_receipt(request_export(source_id, item, DATA::FILE, requester_id), DATA::FILE,
+      files, text, has_text);
+   if (want_text) parse_export_receipt(request_export(source_id, item, DATA::TEXT, requester_id), DATA::TEXT,
+      files, text, has_text);
+
+   if (files.empty() and (not has_text)) {
+      log.msg("The source provided no data that can be exported.");
+      return;
+   }
+
+   {
+      auto pointer = (extPointer *)gfx::AccessPointer();
+      if (not pointer) return;
+      auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+      // The source may have ended the session while answering.
+      if ((pointer->DragSourceID != source_id) or (pointer->DragItem != item) or pointer->NativeDrag) {
+         log.msg("The drag session changed while the payload was requested.");
+         return;
+      }
+      pointer->NativeExport  = true;
+      pointer->ExportDropped = false;
+      glExportPreview = true;
+      show_export_preview(pointer, false); // The preview cannot follow the cursor over other applications
+   }
+
+   std::vector<CSTRING> paths;
+   for (auto &path : files) paths.push_back(path.c_str());
+
+   glExportSource = source_id;
+   glExportItem   = item;
+   int effect = 0;
+   auto error = ERR(winStartDragExport(paths.data(), int(paths.size()), has_text ? text.c_str() : nullptr,
+      int(text.size()), &effect));
+   glExportSource = 0;
+   glExportItem   = 0;
+
+   bool synthesise_release = false, deliver_internally = false;
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+      const bool dropped_internally = pointer->ExportDropped;
+      pointer->NativeExport  = false;
+      pointer->ExportDropped = false;
+
+      const bool alive = (pointer->DragSourceID IS source_id) and (pointer->DragItem IS item);
+      const bool started = (error IS ERR::Okay) or (error IS ERR::Cancelled) or (error IS ERR::Failed);
+
+      if (not started) {
+         // DoDragDrop() was never entered, so the internal drag continues unchanged.
+         log.msg("Native export not started: %s", GetErrorMsg(error));
+         if (alive) show_export_preview(pointer, true);
+         return;
+      }
+
+      // OLE consumed the button release.  It is synthesised so that the press ends, and so that a drop over one of
+      // our own surfaces is delivered by the ordinary internal release path.  That path does not depend on the press
+      // record, which is lost if the pressed surface was destroyed during the export.
+
+      deliver_internally = alive and dropped_internally;
+      synthesise_release = deliver_internally or
+         ((not pointer->ButtonClicks.empty()) and pointer->ButtonClicks[0].LastClicked);
+
+      log.msg("Native export ended: %s, effect %d, internal drop: %c, session active: %c.", GetErrorMsg(error),
+         effect, dropped_internally ? 'Y' : 'N', alive ? 'Y' : 'N');
+
+      if (alive and (not dropped_internally)) {
+         constexpr int DROP_EFFECT_COPY = 1; // DROPEFFECT_COPY
+         const auto result = ((error IS ERR::Okay) and (effect & DROP_EFFECT_COPY)) ? ERR::Okay : ERR::Cancelled;
+         glExportPreview = false;
+         end_cursor_drag(pointer);
+         notify_drag_end(source_id, item, result);
+      }
+   }
+
+   glExportPreview = false;
+   if (synthesise_release) display::DriverButtonInput(0x0001, false);
+
+   if (deliver_internally) {
+      // The session must not outlive the export, even if the release could not be delivered.
+      if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+         const bool pending = (pointer->DragSourceID IS source_id) and (pointer->DragItem IS item) and
+            (not pointer->DragDelivering);
+         if (pending) {
+            log.warning("The internal drop was not delivered; the drag is cancelled.");
+            end_cursor_drag(pointer);
+         }
+         ReleaseObject(pointer);
+         if (pending) notify_drag_end(source_id, item, ERR::Cancelled);
+      }
+   }
+}
+
+// Returns false once the internal session has ended, which cancels the native drag.
+
+extern "C" int winDragExport_Active(void)
+{
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return 0;
+   const bool active = pointer->NativeExport and (pointer->DragSourceID IS glExportSource) and
+      (pointer->DragItem IS glExportItem);
+   ReleaseObject(pointer);
+   return active;
+}
+
+// The exported drag is over one of our surfaces.  Feedback is computed by the internal session.
+
+extern "C" int winDragExport_Over(int SurfaceID, int X, int Y)
+{
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return 0;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if ((not pointer->NativeExport) or (pointer->DragSourceID != glExportSource)) return 0;
+
+   show_export_preview(pointer, true);
+
+   const auto previous_x = pointer->X, previous_y = pointer->Y;
+   display::DriverMovement(SurfaceID, X, Y, false);
+
+   if ((pointer->X IS previous_x) and (pointer->Y IS previous_y)) {
+      // OLE also polls while the cursor is stationary.  Without movement no drag event is generated, so the
+      // destination is asked to restate its feedback.
+      InputEvent event = {};
+      event.Type = JET::ABS_XY;
+      event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+      event.RecipientID = event.OverID = pointer->OverObjectID;
+      event.X = pointer->OverX;
+      event.Y = pointer->OverY;
+      const std::lock_guard lock(glInputLock);
+      glInputEvents.push_back(event);
+   }
+
+   // OLE runs a nested message loop.  Feedback cannot wait for the application's next input cycle.
+   input_event_loop(HOSTHANDLE{}, nullptr);
+
+   if ((not pointer->NativeExport) or (pointer->DragSourceID != glExportSource)) return 0;
+   const auto modal = gfx::GetModalSurface();
+   if ((modal) and (not in_modal_scope(modal, pointer->OverObjectID))) return 0;
+   return pointer->DragFeedback != 0;
+}
+
+extern "C" int winDragExport_Drop(int SurfaceID, int X, int Y)
+{
+   const auto accepted = winDragExport_Over(SurfaceID, X, Y);
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      if (pointer->NativeExport and (pointer->DragSourceID IS glExportSource)) pointer->ExportDropped = true;
+      ReleaseObject(pointer);
+   }
+   return accepted;
+}
+
+// The exported drag has left our windows.  Moving the pointer outside clears destination feedback, exactly as an
+// internal drag that leaves the window does.
+
+extern "C" void winDragExport_Leave(int X, int Y)
+{
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if (not pointer->NativeExport) return;
+   show_export_preview(pointer, false);
+   display::DriverMovement(0, X, Y, false);
+   input_event_loop(HOSTHANDLE{}, nullptr);
+}
+
 #endif
 
 //********************************************************************************************************************

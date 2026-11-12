@@ -22,6 +22,20 @@ void winInitialiseClipboard(void);
 int winDragDropFromHost_Over(int, int, int, const char *, int);
 int winDragDropFromHost_Drop(int, int, int, const char *);
 void winDragDropFromHost_Leave(void);
+
+// Outbound dragging.  The display module implements the winDragExport_ callbacks; drag_source.c owns the OLE objects.
+
+int winDragExport_Active(void);
+int winDragExport_Over(int SurfaceID, int X, int Y);
+int winDragExport_Drop(int SurfaceID, int X, int Y);
+void winDragExport_Leave(int X, int Y);
+int winStartDragExport(const char *const *Files, int FileCount, const char *Text, int TextLength, int *Effect);
+#ifdef __objidl_h__
+int winIsDragExport(IDataObject *Data);
+IDataObject * winCreateDragExport(const char *const *Files, int FileCount, const char *Text, int TextLength,
+   DWORD Cookie);
+#endif
+
 void win_clipboard_updated(void);
 void winTerminateClipboard(void);
 

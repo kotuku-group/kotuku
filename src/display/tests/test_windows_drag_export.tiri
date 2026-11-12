@@ -1,0 +1,180 @@
+-- End-to-end OLE export to a separate native process.  Run with --gfx-driver=windows and
+-- target=<absolute path to test_display_windows_drop.exe>.  The helper drives the real cursor from a press in our
+-- window, so these tests require an unlocked, idle desktop.  The cursor is restored afterwards.
+
+   import 'gui/window', 'gui/fileview'
+   module display as mGfx
+
+glBase = nil
+
+@BeforeEach function prepare()
+   glBase = f'temp:windows_export_{mSys.PreciseTime()}/'
+   for folder in values(array<str> { 'src/', 'dst/' }) do
+      check mSys.CreateFolder(glBase .. folder, PERMIT_USER_READ | PERMIT_USER_WRITE | PERMIT_USER_EXEC)
+   end
+   local file <close> = obj.new('File', { path=glBase .. 'src/export & 三😀.txt', flags=FL_NEW | FL_WRITE })
+   check file.acWrite('exported')
+end
+
+@AfterEach function cleanup()
+   if glBase then mSys.DeleteFile(glBase); glBase = nil end
+end
+
+-- A source window whose press starts an internal drag served by a Clipboard, as a widget would.
+
+function sourceSession(Datatype:num!, Receipt:str!):table
+   local session = { requests=0, ends=array<int> { } }
+   session.window = gui.window({ quit=false, dragDrop=true, stickToFront=true, x=100, y=100, insideWidth=300,
+      insideHeight=200 })
+   session.clipboard = obj.new('clipboard', {
+      flags = CPF_DRAG_DROP,
+      requestHandler = function(Clipboard, Requester, Item, Datatypes):num
+         session.requests++
+         if Item != 7 or Datatypes[0] != Datatype then return ERR_NoSupport end
+         return Requester.acDataFeed(Clipboard, DATA_RECEIPT, Receipt)
+      end,
+      dragEndHandler = function(Clipboard, Item, Result)
+         assert(Item is 7, 'The drag end must report the original item')
+         session.ends.push(Result)
+      end
+   })
+   session.input = input.subscribe(JTYPE_BUTTON, nil, 0, function(Handler, Msg)
+      if Msg.type is JET_BUTTON_1 and Msg.value > 0 and not session.started then
+         session.started = true
+         session.startError = mGfx.StartCursorDrag(session.clipboard.id, 7, string.char(Datatype), 0)
+      end
+   end)
+   session.window.show()
+   session.window.surface.acMoveToFront()
+   session.window.surface.acFocus()
+   session.window.surface.acDraw()
+   processing.sleep(0)
+   session.pressX = session.window.surface.absX + 150
+   session.pressY = session.window.surface.absY + 100
+   return session
+end
+
+function closeSession(Session:table!)
+   Session.input?.unsubscribe()
+   Session.clipboard?.free()
+   Session.window.surface?.free()
+end
+
+function runTarget(Session:table!, Args:array<str>!):num
+   local executable = arg('target')
+   assert(executable, 'The native OLE target executable must be provided')
+   local done = false
+   local output = ''
+   local task <close> = obj.new('Task', {
+      location=executable,
+      exitCallback=function() done = true end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   check task.mtAddArgument('target')
+   check task.mtAddArgument(f'{math.floor(Session.pressX)}')
+   check task.mtAddArgument(f'{math.floor(Session.pressY)}')
+   for value in values(Args) do check task.mtAddArgument(value) end
+   check task.acActivate()
+   local deadline = mSys.PreciseTime() + 15000000
+   while not done and mSys.PreciseTime() < deadline do processing.sleep(0.02) end
+   assert(done, 'The external OLE target must complete: ' .. output)
+   if task.returnCode != 0 then print(output) end
+   processing.sleep(0.1)
+   return task.returnCode
+end
+
+function assertEnded(Session:table!, Result:num!, Message:str!)
+   assert(Session.started and Session.startError is ERR_Okay, 'The press must start an internal drag')
+   assert(#Session.ends is 1, f'{Message}: the source must be told exactly once, not {#Session.ends} times')
+   assert(Session.ends[0] is Result, f'{Message}: expected {mSys.GetErrorMsg(Result)}, received ' ..
+      mSys.GetErrorMsg(Session.ends[0]))
+   assert(not obj.find('SystemPointer').dragSource, Message .. ': no drag session may remain')
+end
+
+@Test function FilesAreExportedToANativeRecipient()
+   assert(mGfx.GetDisplayType() is DT_WINGDI, 'This test requires the Windows display driver')
+   local path = glBase .. 'src/export & 三😀.txt'
+   local session = sourceSession(DATA_FILE, f'<receipt id="7"><file path="{path.escXML()}"/></receipt>')
+   defer closeSession(session) end
+   local _, native = check mSys.ResolvePath(path, 0)
+   assert(runTarget(session, array<str> { 'drop', 'file:' .. native }) is 0,
+      'The native recipient must receive exactly the exported Unicode path')
+   assert(session.requests is 1, 'The payload must be requested from the source once, at the handoff')
+   assertEnded(session, ERR_Okay, 'An accepted native copy')
+end
+
+@Test function TextIsExportedWithNativeLineEndings()
+   local session = sourceSession(DATA_TEXT,
+      '<receipt id="7"><text>Line &lt;one&gt; &amp; 三😀\nline two</text></receipt>')
+   defer closeSession(session) end
+   assert(runTarget(session, array<str> { 'drop', 'text:Line <one> & 三😀|line two' }) is 0,
+      'The native recipient must receive UTF-16 text with CRLF line endings')
+   assertEnded(session, ERR_Okay, 'An accepted native text copy')
+end
+
+@Test function EscapeCancelsTheExportedDrag()
+   local session = sourceSession(DATA_FILE, f'<receipt id="7"><file path="{(glBase .. 'src/').escXML()}"/></receipt>')
+   defer closeSession(session) end
+   assert(runTarget(session, array<str> { 'escape' }) is 0,
+      'The drag must reach the native recipient and be cancelled there without dropping')
+   assertEnded(session, ERR_Cancelled, 'Escape')
+end
+
+function returnToFileView(FreeWindow:bool)
+   local path = glBase .. 'src/export & 三😀.txt'
+   local session = sourceSession(DATA_FILE, f'<receipt id="7"><file path="{path.escXML()}"/></receipt>')
+   defer closeSession(session) end
+
+   local dest = gui.window({ quit=false, dragDrop=true, stickToFront=true, x=500, y=100, insideWidth=400,
+      insideHeight=300 })
+   defer dest.surface?.free() end
+   local completed = 0
+   local view = gui.fileview({ target=dest.clientViewport(), path=glBase .. 'dst/', style='list',
+      transferComplete=function(View, Sources, Dest, Error)
+         assert(Error is ERR_Okay, 'The internal copy must succeed')
+         completed++
+      end })
+   dest.show()
+   dest.surface.acMoveToFront()
+   dest.surface.acDraw()
+   processing.sleep(0)
+   local frame = view.view.frame
+   if FreeWindow then
+      -- The drag crosses the destination on its way to the native recipient, then returns.  The pressed window is
+      -- freed on the return, while OLE's modal loop is running, so the press record is lost before the drop.
+      -- A gap in drag feedback events marks the return; the drag spends over a second outside.
+      local passes, last = 0, 0
+      frame.mtSubscribeInput(JTYPE_DRAG_ITEM, function(Viewport:obj!, Msg:any!)
+         local now = mSys.PreciseTime()
+         if now - last > 300000 then
+            passes++
+            if passes is 2 then session.window.surface?.free() end
+         end
+         last = now
+      end)
+   end
+   local x = dest.surface.absX + frame.absX + 150
+   local y = dest.surface.absY + frame.absY + 100
+
+   assert(runTarget(session, array<str> { 'return', f'{math.floor(x)}', f'{math.floor(y)}' }) is 0,
+      'The drag must hover over the native recipient, then return to Kotuku without dropping there')
+   local deadline = mSys.PreciseTime() + 3000000
+   while completed is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.02) end
+   assert(completed is 1, 'The returned drag must be delivered once to the internal destination')
+   assert(io.readAll(glBase .. 'dst/export & 三😀.txt') is 'exported', 'The source file must be copied')
+   if FreeWindow then assert(not session.window.surface, 'The pressed window must be freed during the export') end
+   assertEnded(session, ERR_Okay, 'An internal drop after export')
+   local restart = mGfx.StartCursorDrag(session.clipboard.id, 8, string.char(DATA_FILE), 0)
+   if restart is ERR_Okay then obj.find('SystemPointer').acDeactivate() end
+   assert(restart != ERR_InUse, 'A new drag must not be refused once the exported drag has ended')
+end
+
+@Test function ReturningToKotukuDeliversThroughTheOriginalSource()
+   returnToFileView(false)
+end
+
+-- The press record is lost when the pressed window is destroyed, but the source survives and must still deliver.
+
+@Test function ReturningAfterThePressedSurfaceIsFreedStillDelivers()
+   returnToFileView(true)
+end

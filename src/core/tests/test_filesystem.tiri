@@ -969,10 +969,18 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Regression: stripping the trailing slash from the root folder used to leave an empty path for inotify.
+-- Regression: stripping the trailing slash from the root folder used to leave an empty path for inotify.  The
+-- 'drive1:' volume is only defined on Linux and macOS, so Windows watches the root of the drive hosting temp: instead.
 
 @Test function WatchRootFolder()
-   local folder <close> = obj.new('file', { path='drive1:' })
+   local root = 'drive1:'
+   if mSys.GetSystemState().platform is 'Windows' then
+      local err, temp_path = mSys.ResolvePath('temp:', RSF_NO_FILE_CHECK)
+      assert(err is ERR_Okay, 'Failed to resolve temp: - ' .. mSys.GetErrorMsg(err))
+      root = temp_path.sub(0, 1) .. ':'
+   end
+
+   local folder <close> = obj.new('file', { path=root })
 
    local err = folder.mtWatch(function(File, Path, Flags) return ERR_Okay end, MFF_CREATE)
    if err is ERR_NoSupport then
