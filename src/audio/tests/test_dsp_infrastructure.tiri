@@ -70,6 +70,29 @@ end
    check audio.mtResetEffects(0)
 end
 
+-- Owned native snapshots must remain valid after the objects that produced them have been destroyed.
+
+@Test function MeterSnapshotsOutliveTarget()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = audio.new('AudioEqualiser', { })
+   err, layout = eq.mtGetMeterLayout()
+   assert(err is ERR_Okay)
+   err, reading = eq.mtReadMeters()
+   assert(err is ERR_Okay)
+   generation = layout.id
+
+   eq.free()
+   audio.free()
+   processing.collect()
+   assert(layout.id is generation and #layout.meters is 4, 'The meter layout must outlive its target')
+   assert(layout.meters[0].key is 'input_peak_left', 'Meter descriptors must remain readable')
+   assert(reading.id is generation and #reading.values is 4, 'The meter reading must outlive its target')
+   assert(reading.flags has AMF_NO_SAMPLES, 'The snapshot must preserve its original flags')
+   layout = nil
+   reading = nil
+   processing.collect()
+end
+
 @Test function MeterLayoutDescriptors()
    audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
    err, channel = audio.mtOpenChannels(1)

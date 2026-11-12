@@ -439,6 +439,31 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+-- Class metadata also has to survive module shutdown.  A child process checks cleanup after the script has returned.
+
+@Test function SubclassModulesExitCleanly()
+   local output = ''
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local task <close> = obj.new('task', {
+      location=executable, flags=TSF_WAIT, timeout=10,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for parameter in values(array<str> {
+      obj.find('self').path, 'file=' .. arg('file'), 'test=ConstrainedObjectFieldAcceptsSubClass',
+      '--no-crash-handler', '--log-api', '--gfx-driver=headless'
+   }) do
+      check task.mtAddArgument(parameter)
+   end
+   check task.acActivate()
+   assert(task.returnCode is 0, 'The subclass fixture must exit cleanly after its assertions pass:\n' .. output)
+   assert(output.find('Out-of-order termination: Base-class') is nil,
+      'A module must remain loaded until its derived classes have been destroyed:\n' .. output)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function NativeStructDeclarationLayoutParity()
    MAKESTRUCT('LegacyDeclaredChild', 'lValue')
    MAKESTRUCT('LegacyDeclaredLayout',

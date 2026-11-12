@@ -92,6 +92,14 @@ if (ALSA_INSTALLED OR WIN32)
    flute_test (audio_effect_schema "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioeffect_schema.tiri")
    flute_test (audio_effect_batch "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioeffect_batch.tiri")
    flute_test (audio_format_layout "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_format_layout.tiri")
+
+   # These files contain several tail-drain cases, each with its own 20-second deadline.  Windows' paced null
+   # endpoint needs longer than the default of ten seconds.
+
+   if (WIN32 AND BUILD_TESTS)
+      set_tests_properties (audio_reverb audio_delay audio_flanger audio_phaser audio_splitter
+         PROPERTIES TIMEOUT 120)
+   endif ()
 endif ()
 
 if (WIN32 AND BUILD_TESTS)

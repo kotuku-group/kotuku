@@ -499,9 +499,9 @@ __export void Expunge(int16_t Force)
 
       // If we are shutting down, force the expunging of any stubborn modules.  A forced expunge can release module
       // handles and make other roots normally eligible, so always process those roots before forcing another module.
-      // Forcing a root that another loaded module still holds a handle on would leave that handle referencing a freed
-      // root, so stubborn modules that no other root holds are forced first.  If every stubborn module is held (a
-      // cyclic dependency) then the one with the lowest open count is chosen.
+      // Module handles and classes derived from another module both require their dependency to remain alive.  Prefer
+      // roots without dependants, even when a dependency has a zero open count.  If every remaining root has dependants
+      // (a cyclic dependency), choose the one with the lowest open count.
 
       objRootModule *sanity_check = nullptr;
 restart_forced_expunge:
@@ -515,6 +515,13 @@ restart_forced_expunge:
                   if (child->classID() IS CLASSID::MODULE) {
                      if (auto root = ((extModule *)child)->Root; (root) and (root != scan)) held_roots.insert(root);
                   }
+                  else if (child->classID() IS CLASSID::METACLASS) {
+                     // Any derived class owned outside this module counts as a dependant, including classes owned
+                     // by scripts or tasks, not just those whose Root is another module.
+                     for (auto derived : ((extMetaClass *)child)->SubClasses) {
+                        if (derived->ownerID() != scan->UID) held_roots.insert(scan);
+                     }
+                  }
                }
             }
          }
@@ -525,16 +532,9 @@ restart_forced_expunge:
       };
 
       objRootModule *mod_master = nullptr;
-      objRootModule *stubborn_module = nullptr;
       for (auto scan=glModuleList; scan; scan=scan->Next) {
-         if (scan->OpenCount <= 0) {
-            if ((not mod_master) or (scan->UID < mod_master->UID)) mod_master = scan;
-         }
-         else if ((not stubborn_module) or (force_priority(scan) < force_priority(stubborn_module))) {
-            stubborn_module = scan;
-         }
+         if ((not mod_master) or (force_priority(scan) < force_priority(mod_master))) mod_master = scan;
       }
-      if (not mod_master) mod_master = stubborn_module;
 
       if ((mod_master) and (sanity_check != mod_master)) {
          if (mod_master->Expunge) {
