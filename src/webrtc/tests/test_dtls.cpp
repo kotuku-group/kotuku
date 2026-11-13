@@ -24,9 +24,11 @@ This executable has no object-system dependencies and is registered with ctest u
 #include <chrono>
 #include <cstdio>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 using namespace rtc;
 
@@ -349,12 +351,19 @@ void test_reordering()
    report("reordered handshake flights");
 }
 
-// Splits each client ClientHello in two (both, when the server sends a HelloVerifyRequest), as browsers do once a
-// post-quantum key share pushes it past the MTU.  The fragments travel as separate datagrams, or together in reverse
-// order when Together is set.  Epoch-0 client records are renumbered so the extra record keeps sequence numbers unique
-// and increasing.
+// How split_client_hello() packs the two halves of a ClientHello.
 
-std::vector<std::vector<uint8_t>> split_client_hello(const std::vector<uint8_t> &Datagram, bool Together)
+enum class Packing {
+   DATAGRAMS, // One record per fragment, each in its own datagram
+   RECORDS,   // One record per fragment, both in one datagram in reverse order
+   FRAGMENTS  // Both fragments in a single record in reverse order, as RFC 6347 section 4.2.3 permits
+};
+
+// Splits each client ClientHello in two (both, when the server sends a HelloVerifyRequest), as browsers do once a
+// post-quantum key share pushes it past the MTU.  Epoch-0 client records are renumbered so that an extra record keeps
+// sequence numbers unique and increasing.
+
+std::vector<std::vector<uint8_t>> split_client_hello(const std::vector<uint8_t> &Datagram, Packing Layout)
 {
    auto renumber = [](std::vector<uint8_t> &Record, uint64_t Sequence) {
       for (int i = 0; i < 6; i++) Record[5 + i] = uint8_t(Sequence >> ((5 - i) * 8));
@@ -386,23 +395,39 @@ std::vector<std::vector<uint8_t>> split_client_hello(const std::vector<uint8_t> 
          continue;
       }
 
+      // Build both handshake fragments: the original header's msg_type, length and message_seq, then the span.
+
       size_t body = length - 12, first = body / 2;
+      std::vector<uint8_t> parts[2];
       for (size_t part = 0; part < 2; part++) {
          size_t offset = part ? first : 0, size = part ? body - first : first;
-         std::vector<uint8_t> fragment(record.begin(), record.begin() + 13 + 6);
-         fragment[11] = uint8_t((size + 12) >> 8);
-         fragment[12] = uint8_t(size + 12);
+         parts[part].assign(record.begin() + 13, record.begin() + 13 + 6);
          const uint8_t span[6] = { uint8_t(offset >> 16), uint8_t(offset >> 8), uint8_t(offset),
             uint8_t(size >> 16), uint8_t(size >> 8), uint8_t(size) };
-         fragment.insert(fragment.end(), span, span + 6);
-         fragment.insert(fragment.end(), record.begin() + 25 + offset, record.begin() + 25 + offset + size);
-         renumber(fragment, sequence * 2 + part);
-         records.push_back(std::move(fragment));
+         parts[part].insert(parts[part].end(), span, span + 6);
+         parts[part].insert(parts[part].end(), record.begin() + 25 + offset, record.begin() + 25 + offset + size);
       }
-      if (Together) std::swap(records[records.size() - 2], records.back());
+
+      auto add_record = [&](std::initializer_list<const std::vector<uint8_t> *> Fragments, uint64_t Sequence) {
+         size_t payload = 0;
+         for (auto fragment : Fragments) payload += fragment->size();
+         std::vector<uint8_t> out(record.begin(), record.begin() + 13);
+         out[11] = uint8_t(payload >> 8);
+         out[12] = uint8_t(payload);
+         for (auto fragment : Fragments) out.insert(out.end(), fragment->begin(), fragment->end());
+         renumber(out, Sequence);
+         records.push_back(std::move(out));
+      };
+
+      if (Layout IS Packing::FRAGMENTS) add_record({ &parts[1], &parts[0] }, sequence * 2);
+      else {
+         add_record({ &parts[0] }, sequence * 2);
+         add_record({ &parts[1] }, sequence * 2 + 1);
+         if (Layout IS Packing::RECORDS) std::swap(records[records.size() - 2], records.back());
+      }
    }
 
-   if (not Together) return records;
+   if (Layout IS Packing::DATAGRAMS) return records;
 
    std::vector<uint8_t> combined;
    for (auto &record : records) combined.insert(combined.end(), record.begin(), record.end());
@@ -411,12 +436,18 @@ std::vector<std::vector<uint8_t>> split_client_hello(const std::vector<uint8_t> 
 
 void test_fragmented_client_hello()
 {
-   for (bool together : { false, true }) {
+   static constexpr std::pair<Packing, const char *> CASES[] = {
+      { Packing::DATAGRAMS, "ClientHello fragments in separate datagrams were not reassembled" },
+      { Packing::RECORDS, "Reversed ClientHello fragment records in one datagram were not reassembled" },
+      { Packing::FRAGMENTS, "Reversed ClientHello fragments in a single record were not reassembled" }
+   };
+
+   for (auto [packing, failure] : CASES) {
       auto link = make_link();
       size_t splits = 0;
       link->rewrite = [&](char From, const std::vector<uint8_t> &Datagram) {
          if (From != 'a') return std::vector<std::vector<uint8_t>>{ Datagram };
-         auto result = split_client_hello(Datagram, together);
+         auto result = split_client_hello(Datagram, packing);
          size_t size = 0;
          for (auto &datagram : result) size += datagram.size();
          if (size > Datagram.size()) splits++;
@@ -424,9 +455,7 @@ void test_fragmented_client_hello()
       };
 
       CHECK(start(*link), "start() failed");
-      CHECK(link->pump([&]() { return link->both_connected(); }),
-         together ? "Reversed ClientHello fragments in one datagram were not reassembled" :
-            "ClientHello fragments in separate datagrams were not reassembled");
+      CHECK(link->pump([&]() { return link->both_connected(); }), failure);
       CHECK(splits >= 1, "Fixture did not fragment the ClientHello");
 
       SrtpKeyMaterial ka, kb;

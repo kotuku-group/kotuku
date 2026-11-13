@@ -148,6 +148,10 @@ std::string describe(const Bytes &Datagram)
       uint16_t epoch = uint16_t((Datagram[pos + 3] << 8) | Datagram[pos + 4]);
       size_t length = size_t((Datagram[pos + 11] << 8) | Datagram[pos + 12]);
       if (not out.empty()) out += ' ';
+      if (length > Datagram.size() - pos - 13) { // The declared payload is not all present
+         out += "truncated(" + std::to_string(type) + ")";
+         break;
+      }
       if (type IS 22 and epoch IS 0 and length >= 12) {
          static const std::map<int, const char *> names = { { 1, "CH" }, { 2, "SH" }, { 3, "HVR" }, { 11, "Cert" },
             { 12, "SKE" }, { 13, "CertReq" }, { 14, "SHD" }, { 15, "CV" }, { 16, "CKE" }, { 20, "Fin" } };

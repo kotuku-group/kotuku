@@ -24,14 +24,18 @@ if (WIN32)
 else ()
    set (WEBRTC_DEFAULT_DTLS_BACKEND OPENSSL)
 endif ()
+
 set (WEBRTC_DTLS_BACKEND "${WEBRTC_DEFAULT_DTLS_BACKEND}" CACHE STRING "WebRTC DTLS backend: SCHANNEL or OPENSSL")
 set_property (CACHE WEBRTC_DTLS_BACKEND PROPERTY STRINGS SCHANNEL OPENSSL)
+
 if (NOT WEBRTC_DTLS_BACKEND MATCHES "^(SCHANNEL|OPENSSL)$")
    message (FATAL_ERROR "WEBRTC_DTLS_BACKEND must be SCHANNEL or OPENSSL.")
 endif ()
+
 if (WEBRTC_DTLS_BACKEND STREQUAL "SCHANNEL" AND NOT WIN32)
    message (FATAL_ERROR "WEBRTC_DTLS_BACKEND=SCHANNEL requires Windows.")
 endif ()
+
 if (DISABLE_SSL)
    message (STATUS "WebRTC disabled: SSL support is disabled.")
    return ()
@@ -78,10 +82,12 @@ else ()
       message (STATUS "WebRTC disabled: OpenSSL is required for the OPENSSL DTLS backend.")
       return ()
    endif ()
+
    set (WEBRTC_CRYPTO_SOURCE ../crypto/protocol_openssl.cpp)
    set (WEBRTC_CRYPTO_DEFINITION CRYPTO_PROTOCOL_OPENSSL=1)
    set (WEBRTC_DTLS_SOURCE dtls/dtls_openssl.cpp)
 endif ()
+
 message (STATUS "WebRTC DTLS backend: ${WEBRTC_DTLS_BACKEND}")
 
 find_package (Threads REQUIRED)
@@ -124,6 +130,7 @@ add_library (crypto_protocol STATIC ../crypto/protocol_primitives.cpp ${WEBRTC_C
 set_target_properties (crypto_protocol PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions (crypto_protocol PUBLIC ${WEBRTC_CRYPTO_DEFINITION})
 target_link_libraries (crypto_protocol PUBLIC ${WEBRTC_BACKEND_LIBS})
+
 if (WEBRTC_DTLS_BACKEND STREQUAL "OPENSSL")
    target_include_directories (crypto_protocol PUBLIC "${OPENSSL_INCLUDE_DIR}")
 endif ()
@@ -283,7 +290,9 @@ if (UNIT_TESTS)
    if (WIN32 AND WEBRTC_DTLS_BACKEND STREQUAL "SCHANNEL")
       find_package (OpenSSL 1.1.1 QUIET)
    endif ()
+
    set (WEBRTC_TURN_ADAPTER_TLS FALSE)
+
    if (OpenSSL_FOUND)
       set (WEBRTC_TURN_ADAPTER_TLS TRUE)
       target_compile_definitions (test_webrtc_peer_connection PRIVATE WEBRTC_TEST_OPENSSL=1)
@@ -381,9 +390,11 @@ if (UNIT_TESTS AND WEBRTC_FUZZ)
       add_executable (fuzz_webrtc_${Name} ${ARGN})
       set_target_properties (fuzz_webrtc_${Name} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
       target_include_directories (fuzz_webrtc_${Name} PRIVATE "${utf8proc_SOURCE_DIR}")
+
       if (WEBRTC_DTLS_BACKEND STREQUAL "OPENSSL")
          target_include_directories (fuzz_webrtc_${Name} PRIVATE "${OPENSSL_INCLUDE_DIR}")
       endif ()
+
       target_compile_definitions (fuzz_webrtc_${Name} PRIVATE ${WEBRTC_CRYPTO_DEFINITION} UTF8PROC_STATIC)
       target_link_libraries (fuzz_webrtc_${Name} PRIVATE ${WEBRTC_BACKEND_LIBS})
       target_compile_options (fuzz_webrtc_${Name} PRIVATE ${FUZZ_FLAGS})

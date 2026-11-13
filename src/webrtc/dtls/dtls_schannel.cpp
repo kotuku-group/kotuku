@@ -116,8 +116,8 @@ struct DtlsTransport::Native {
    bool timer_armed = false;
    bool retransmitting = false;
 
-   // A ClientHello under reassembly.  Schannel servers reject a ClientHello that spans several records, before and
-   // after the cookie exchange, whereas browsers fragment theirs once it carries a post-quantum key share.
+   // A ClientHello under reassembly.  Schannel servers reject a fragmented ClientHello, before and after the cookie
+   // exchange, whereas browsers fragment theirs once it carries a post-quantum key share.
 
    Bytes hello;                // Message body, excluding the handshake header
    std::vector<bool> received; // Body bytes present
@@ -207,74 +207,100 @@ struct DtlsTransport::Native {
       return status;
    }
 
-   // Replaces fragmented ClientHello records in Datagram with one unfragmented record once the whole message has
-   // arrived.  DTLS hashes the reassembled message for Finished, so the handshake transcript is unchanged.  Partial
-   // fragments are removed from Datagram and every other record passes through unchanged.
+   // Replaces ClientHello fragments in Datagram with one unfragmented record once the whole message has arrived.
+   // RFC 6347 lets a record carry several handshake fragments, so every fragment in each epoch-0 handshake record is
+   // parsed.  DTLS hashes the reassembled message for Finished, so the handshake transcript is unchanged.  Records
+   // holding only partial fragments are removed from Datagram, and every other record passes through unchanged.
 
    void assemble_hello(Bytes &Datagram) {
       static constexpr size_t RECORD_HEADER = 13;
       static constexpr size_t HANDSHAKE_HEADER = 12;
       static constexpr size_t MAX_BODY = 16384 - HANDSHAKE_HEADER; // Largest body that fits one DTLS record
 
+      struct Fragment {
+         const uint8_t *header;
+         size_t total, offset, size;
+      };
+
       auto read24 = [](const uint8_t *Data) { return (size_t(Data[0]) << 16) | (size_t(Data[1]) << 8) | Data[2]; };
 
       Bytes output;
+      std::vector<Fragment> fragments;
       size_t position = 0;
       while (position + RECORD_HEADER <= Datagram.size()) {
          auto record = Datagram.data() + position;
          size_t length = (size_t(record[11]) << 8) | record[12];
          if (length + RECORD_HEADER > Datagram.size() - position) break; // Truncated datagram
          auto next = position + RECORD_HEADER + length;
-         auto fragment = record + RECORD_HEADER;
 
+         // Only records made entirely of well-formed ClientHello fragments are reassembled.
+
+         fragments.clear();
          bool epoch_zero = not record[3] and not record[4];
-         bool client_hello = record[0] IS 22 and epoch_zero and length >= HANDSHAKE_HEADER and fragment[0] IS 1;
-         size_t total = client_hello ? read24(fragment + 1) : 0;
-         size_t offset = client_hello ? read24(fragment + 6) : 0;
-         size_t size = client_hello ? read24(fragment + 9) : 0;
+         bool hello_only = record[0] IS 22 and epoch_zero and length > 0;
+         for (size_t at = 0; hello_only and at < length; ) {
+            auto header = record + RECORD_HEADER + at;
+            if (length - at < HANDSHAKE_HEADER or header[0] != 1) {
+               hello_only = false;
+               break;
+            }
 
-         // Whole messages, records coalescing several messages and malformed fragments are left to Schannel.
+            Fragment fragment = { header, read24(header + 1), read24(header + 6), read24(header + 9) };
+            if ((fragment.size > length - at - HANDSHAKE_HEADER) or (fragment.total IS 0) or
+                (fragment.total > MAX_BODY) or (fragment.offset + fragment.size > fragment.total)) {
+               hello_only = false;
+               break;
+            }
 
-         if ((not client_hello) or (size + HANDSHAKE_HEADER != length) or (offset IS 0 and size IS total) or
-             (total > MAX_BODY) or (offset + size > total)) {
+            fragments.push_back(fragment);
+            at += HANDSHAKE_HEADER + fragment.size;
+         }
+
+         // Schannel accepts a whole ClientHello in its own record, so that record is passed through untouched.
+
+         bool whole = fragments.size() IS 1 and fragments[0].offset IS 0 and fragments[0].size IS fragments[0].total;
+         if ((not hello_only) or whole) {
             output.insert(output.end(), record, Datagram.data() + next);
             position = next;
             continue;
          }
 
-         int sequence = (int(fragment[4]) << 8) | fragment[5];
-         if (sequence != hello_sequence or hello.size() != total) {
-            hello.assign(total, 0);
-            received.assign(total, false);
-            hello_received = 0;
-            hello_sequence = sequence;
-         }
-
-         std::memcpy(hello.data() + offset, fragment + HANDSHAKE_HEADER, size);
-         for (size_t i = offset; i < offset + size; i++) {
-            if (not received[i]) {
-               received[i] = true;
-               hello_received++;
+         for (auto &fragment : fragments) {
+            int sequence = (int(fragment.header[4]) << 8) | fragment.header[5];
+            if (sequence != hello_sequence or hello.size() != fragment.total) {
+               hello.assign(fragment.total, 0);
+               received.assign(fragment.total, false);
+               hello_received = 0;
+               hello_sequence = sequence;
             }
-         }
 
-         if (hello_received IS total) {
-            // The completing record supplies the version, epoch and sequence number, so record sequences still
-            // advance.  The handshake header keeps msg_type, length and message_seq, with one fragment spanning all.
+            std::memcpy(hello.data() + fragment.offset, fragment.header + HANDSHAKE_HEADER, fragment.size);
+            for (size_t i = fragment.offset; i < fragment.offset + fragment.size; i++) {
+               if (not received[i]) {
+                  received[i] = true;
+                  hello_received++;
+               }
+            }
 
-            auto record_length = total + HANDSHAKE_HEADER;
-            output.insert(output.end(), record, record + 11);
-            output.push_back(uint8_t(record_length >> 8));
-            output.push_back(uint8_t(record_length));
-            output.insert(output.end(), fragment, fragment + 6);
-            const uint8_t span[6] = { 0, 0, 0, fragment[1], fragment[2], fragment[3] };
-            output.insert(output.end(), span, span + 6);
-            output.insert(output.end(), hello.begin(), hello.end());
+            if (hello_received IS fragment.total) {
+               // The completing record supplies the version, epoch and sequence number, so record sequences still
+               // advance.  The handshake header keeps msg_type, length and message_seq, with one fragment spanning
+               // the message.
 
-            hello.clear();
-            received.clear();
-            hello_received = 0;
-            hello_sequence = -1;
+               auto record_length = fragment.total + HANDSHAKE_HEADER;
+               output.insert(output.end(), record, record + 11);
+               output.push_back(uint8_t(record_length >> 8));
+               output.push_back(uint8_t(record_length));
+               output.insert(output.end(), fragment.header, fragment.header + 6);
+               const uint8_t span[6] = { 0, 0, 0, fragment.header[1], fragment.header[2], fragment.header[3] };
+               output.insert(output.end(), span, span + 6);
+               output.insert(output.end(), hello.begin(), hello.end());
+
+               hello.clear();
+               received.clear();
+               hello_received = 0;
+               hello_sequence = -1;
+            }
          }
 
          position = next;
