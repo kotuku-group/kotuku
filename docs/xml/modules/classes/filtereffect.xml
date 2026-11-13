@@ -120,6 +120,7 @@
       <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the effect within the target clipping area.</p>
+<p>If a primitive subregion value is undefined, it defaults to the union of the subregions of the effects referenced as inputs.  If the effect has no referenced inputs, or uses a standard input such as <code>SourceGraphic</code>, the default is the filter region.  Output that falls outside of the primitive subregion is cleared.</p>
       </description>
     </field>
 
@@ -129,7 +130,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>UNIT</type>
       <description>
-<p>The (X,Y) field values define the offset of the effect within the target clipping area.</p>
+<p>The (X,Y) field values define the offset of the effect within the target clipping area.  Undefined values default as described for <fl>Width</fl>.</p>
       </description>
     </field>
 

@@ -194,10 +194,15 @@ Width: Primitive width of the effect area.
 
 The (Width,Height) field values define the dimensions of the effect within the target clipping area.
 
+If a primitive subregion value is undefined, it defaults to the union of the subregions of the effects referenced as
+inputs.  If the effect has no referenced inputs, or uses a standard input such as `SourceGraphic`, the default is the
+filter region.  Output that falls outside of the primitive subregion is cleared.
+
 -FIELD-
 X: Primitive X coordinate for the effect.
 
-The (X,Y) field values define the offset of the effect within the target clipping area.
+The (X,Y) field values define the offset of the effect within the target clipping area.  Undefined values default
+as described for #Width.
 
 -FIELD-
 Y: Primitive Y coordinate for the effect.

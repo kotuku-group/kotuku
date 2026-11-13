@@ -768,6 +768,7 @@ class extFilterEffect : public objFilterEffect {
    using create = kt::Create<extFilterEffect>;
 
    extVectorFilter *Filter; // Direct reference to the parent filter
+   TClipRectangle<double> Subregion; // Primitive subregion in the client's user space, computed by render_filter()
    uint16_t UsageCount;     // Total number of other effects utilising this effect to build a pipeline
 
 #ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes

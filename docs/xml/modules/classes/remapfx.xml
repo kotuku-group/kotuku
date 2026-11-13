@@ -109,7 +109,7 @@
         <param type="DOUBLE" name="Intercept">The intercept of the linear function.</param>
       </input>
       <description>
-<p>This method will apply the linear function to a selected RGBA pixel component.  The function is written as <code>C' = (Slope * C) + Intercept</code>.</p>
+<p>This method will apply the linear function to a selected RGBA pixel component.  The function is written as <code>C' = (Slope * C) + Intercept</code>.  Any slope is permitted; for example a slope of <code>-1</code> with an intercept of <code>1</code> inverts the component.  Results are clamped to the valid range of <code>0</code> to <code>1</code>.</p>
       </description>
       <tags>mutates-object</tags>
     </method>

@@ -60,37 +60,11 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
 {
    auto filter = Self->Filter;
 
-   // The image's x,y,width,height default to (0,0,100%,100%) of the target region.
+   // The image is fitted to the primitive subregion, which render_filter() computes before drawing the effect.  In
+   // objectBoundingBox mode the subregion is measured against the bounding box of the client vector, as per SVG.
 
-   double p_x = std::round(filter->TargetX), p_y = std::round(filter->TargetY);
-   double p_width = std::round(filter->TargetWidth), p_height = std::round(filter->TargetHeight);
-
-   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      // In this mode image dimensions typically remain at the default, i.e. (0,0,100%,100%) of the target.
-      // If the user does set the XYWH of the image then 'fixed' coordinates act as multipliers, as if they were relative.
-
-      // W3 spec on whether to use the bounds or the filter target region:
-      // "Any length values within the filter definitions represent fractions or percentages of the bounding box
-      // on the referencing element."
-
-      if (Self->X.defined()) p_x = std::round(filter->TargetX + (Self->X * filter->BoundWidth));
-      if (Self->Y.defined()) p_y = std::round(filter->TargetY + (Self->Y * filter->BoundHeight));
-      if (Self->Width.defined()) p_width = std::round(Self->Width * filter->BoundWidth);
-      if (Self->Height.defined()) p_height = std::round(Self->Height * filter->BoundHeight);
-   }
-   else {
-      if (Self->X.scaled()) p_x = std::round(filter->TargetX + (Self->X * filter->TargetWidth));
-      else if (Self->X.defined()) p_x = std::round(Self->X);
-
-      if (Self->Y.scaled()) p_y = std::round(filter->TargetY + (Self->Y * filter->TargetHeight));
-      else if (Self->Y.defined()) p_y = std::round(Self->Y);
-
-      if (Self->Width.scaled()) p_width = std::round(filter->TargetWidth * Self->Width);
-      else if (Self->Width.defined()) p_width = std::round(Self->Width);
-
-      if (Self->Height.scaled()) p_height = std::round(filter->TargetHeight * Self->Height);
-      else if (Self->Height.defined()) p_height = std::round(Self->Height);
-   }
+   double p_x = std::round(Self->Subregion.left), p_y = std::round(Self->Subregion.top);
+   double p_width = std::round(Self->Subregion.width()), p_height = std::round(Self->Subregion.height());
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
    calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap->Width, Bitmap->Height, align_x, align_y, x_scale, y_scale);
@@ -707,6 +681,95 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
 }
 
 //********************************************************************************************************************
+// Compute the primitive subregion of an effect in the client's user space, which is the coordinate system of the
+// Target* values.  Any of x, y, width and height that are undefined default to the union of the subregions of the
+// referenced effects.  If there are no referenced effects, or any input is a standard input such as SourceGraphic,
+// the filter region is the default.  Effects are rendered in sequence, so referenced effects are always computed
+// before the effects that use them.  Bounds are only required if PrimitiveUnits is BOUNDING_BOX.
+
+static void compute_subregion(extVectorFilter *Self, extFilterEffect *Effect, const TClipRectangle<double> &Bounds)
+{
+   const TClipRectangle<double> filter_region = { Self->TargetX, Self->TargetY,
+      Self->TargetX + Self->TargetWidth, Self->TargetY + Self->TargetHeight };
+
+   TClipRectangle<double> inputs = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
+      std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
+   bool referenced = false, standard = false;
+
+   auto include = [&](VSF Type, objFilterEffect *Input) {
+      if (Type IS VSF::NONE) return;
+      else if ((Type IS VSF::REFERENCE) and (Input)) {
+         inputs.expanding(((extFilterEffect *)Input)->Subregion);
+         referenced = true;
+      }
+      else standard = true;
+   };
+
+   if (Effect->classID() IS CLASSID::MERGEFX) {
+      for (auto &source : ((extMergeFX *)Effect)->List) include(source.SourceType, source.Effect);
+   }
+   else if (Effect->classID() != CLASSID::IMAGEFX) { // ImageFX does not read from its input
+      include(Effect->SourceType, Effect->Input);
+      include(Effect->MixType, Effect->Mix);
+   }
+
+   auto region = (referenced and (not standard)) ? inputs : filter_region;
+
+   double x = region.left, y = region.top, width = region.width(), height = region.height();
+   if (Self->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      if (Effect->X.defined()) x = Bounds.left + (Effect->X * Bounds.width());
+      if (Effect->Y.defined()) y = Bounds.top + (Effect->Y * Bounds.height());
+      if (Effect->Width.defined()) width = Effect->Width * Bounds.width();
+      if (Effect->Height.defined()) height = Effect->Height * Bounds.height();
+   }
+   else { // Explicit percentages are relative to the client's viewport in user space.
+      const double viewport_width = viewport_coordinate_width(Self->ClientViewport);
+      const double viewport_height = viewport_coordinate_height(Self->ClientViewport);
+      if (Effect->X.scaled()) x = Effect->X * viewport_width;
+      else if (Effect->X.defined()) x = Effect->X;
+      if (Effect->Y.scaled()) y = Effect->Y * viewport_height;
+      else if (Effect->Y.defined()) y = Effect->Y;
+      if (Effect->Width.scaled()) width = Effect->Width * viewport_width;
+      else if (Effect->Width.defined()) width = Effect->Width;
+      if (Effect->Height.scaled()) height = Effect->Height * viewport_height;
+      else if (Effect->Height.defined()) height = Effect->Height;
+   }
+
+   Effect->Subregion = { x, y, x + width, y + height };
+}
+
+//********************************************************************************************************************
+// Clear the pixels of an effect's output that fall outside of its primitive subregion.  Pixels are tested at their
+// centres in user space, which matches the sampling used by TurbulenceFX.  Nothing is done if the subregion covers
+// the filter region, which is the most common case.
+
+static void clip_to_subregion(extVectorFilter *Self, extFilterEffect *Effect)
+{
+   const auto &sub = Effect->Subregion;
+   if ((sub.left <= Self->TargetX) and (sub.top <= Self->TargetY) and
+       (sub.right >= Self->TargetX + Self->TargetWidth) and (sub.bottom >= Self->TargetY + Self->TargetHeight)) {
+      return;
+   }
+
+   auto bmp = Effect->Target;
+   if ((not bmp) or (bmp->BytesPerPixel != 4)) return;
+
+   auto inverse = Self->Transform;
+   const double determinant = inverse.determinant();
+   if ((not std::isfinite(determinant)) or (determinant IS 0)) return;
+   inverse.invert();
+
+   for (int y=bmp->Clip.Top; y < bmp->Clip.Bottom; y++) {
+      auto pixel = (uint32_t *)(bmp->Data + (y * bmp->LineWidth));
+      for (int x=bmp->Clip.Left; x < bmp->Clip.Right; x++) {
+         double px = x + 0.5, py = y + 0.5;
+         inverse.transform(&px, &py);
+         if (not sub.hit_test(px, py)) pixel[x] = 0;
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Main rendering routine for filter effects.  Called by the scene graph renderer whenever a vector uses a filter.
 // ColourSpace is the client's resolved colour space in the renderer, which can be inherited from a vector that is not
 // a physical ancestor, e.g. the viewport that consumes a live pattern.
@@ -757,6 +820,14 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    // TODO: Effects that don't have dependencies could be threaded.  Big pipelines could benefit from effects
    // being rendered to independent bitmaps in threads, then composited at the last stage.
 
+   // Effect subregions in objectBoundingBox units are relative to the unrounded bounds of the client.
+
+   TClipRectangle<double> bounds = { 0, 0, 0, 0 };
+   if (Self->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
+      calc_local_boundary(Self->ClientVector, bounds);
+   }
+
    objBitmap *out = nullptr;
    for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
       log.detail("Effect: %s #%u, Pipelined: %c; Use Count: %d", e->Class->ClassName.c_str(), e->UID,
@@ -776,10 +847,14 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
          e->Target = out;
       }
 
+      compute_subregion(Self, e, bounds);
+
       if (auto error = acDraw(e); error != ERR::Okay) {
          Self->ActiveEffect = nullptr;
          return error;
       }
+
+      clip_to_subregion(Self, e);
    }
    Self->ActiveEffect = nullptr;
 

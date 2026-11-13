@@ -72,32 +72,12 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 
    auto &filter = Self->Filter;
 
-   // The configuration of the img values must be identical to the ImageFX code.
+   // Use the same primitive subregion for placement and clipping as ImageFX.
 
-   double img_x = filter->TargetX;
-   double img_y = filter->TargetY;
-   double img_width = filter->TargetWidth;
-   double img_height = filter->TargetHeight;
-
-   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (Self->X.defined()) img_x = trunc(filter->TargetX + (Self->X * filter->BoundWidth));
-      if (Self->Y.defined()) img_y = trunc(filter->TargetY + (Self->Y * filter->BoundHeight));
-      if (Self->Width.defined()) img_width = Self->Width * filter->BoundWidth;
-      if (Self->Height.defined()) img_height = Self->Height * filter->BoundHeight;
-   }
-   else {
-      if (Self->X.scaled()) img_x = filter->TargetX + (Self->X * filter->TargetWidth);
-      else if (Self->X.defined()) img_x = Self->X;
-
-      if (Self->Y.scaled()) img_y = filter->TargetY + (Self->Y * filter->TargetHeight);
-      else if (Self->Y.defined()) img_y = Self->Y;
-
-      if (Self->Width.scaled()) img_width = filter->TargetWidth * Self->Width;
-      else if (Self->Width.defined()) img_width = Self->Width;
-
-      if (Self->Height.scaled()) img_height = filter->TargetHeight * Self->Height;
-      else if (Self->Height.defined()) img_height = Self->Height;
-   }
+   const double img_x = Self->Subregion.left;
+   const double img_y = Self->Subregion.top;
+   const double img_width = Self->Subregion.width();
+   const double img_height = Self->Subregion.height();
 
    if ((filter->ClientViewport->Scene->PageWidth > Self->Scene->PageWidth) or
        (filter->ClientViewport->Scene->PageHeight > Self->Scene->PageHeight)) {

@@ -184,27 +184,10 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       if ((unit_width <= 0) or (unit_height <= 0)) return ERR::Okay;
    }
 
-   double region_x = (filter->TargetX - origin_x) / unit_width;
-   double region_y = (filter->TargetY - origin_y) / unit_height;
-   double region_width = filter->TargetWidth / unit_width;
-   double region_height = filter->TargetHeight / unit_height;
-
-   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (Self->X.defined()) region_x = Self->X;
-      if (Self->Y.defined()) region_y = Self->Y;
-      if (Self->Width.defined()) region_width = Self->Width;
-      if (Self->Height.defined()) region_height = Self->Height;
-   }
-   else {
-      if (Self->X.scaled()) region_x += Self->X * filter->TargetWidth;
-      else if (Self->X.defined()) region_x = Self->X;
-      if (Self->Y.scaled()) region_y += Self->Y * filter->TargetHeight;
-      else if (Self->Y.defined()) region_y = Self->Y;
-      if (Self->Width.scaled()) region_width *= Self->Width;
-      else if (Self->Width.defined()) region_width = Self->Width;
-      if (Self->Height.scaled()) region_height *= Self->Height;
-      else if (Self->Height.defined()) region_height = Self->Height;
-   }
+   const double region_x = (Self->Subregion.left - origin_x) / unit_width;
+   const double region_y = (Self->Subregion.top - origin_y) / unit_height;
+   const double region_width = Self->Subregion.width() / unit_width;
+   const double region_height = Self->Subregion.height() / unit_height;
    const TClipRectangle<double> region = { region_x, region_y, region_x + region_width, region_y + region_height };
 
    agg::trans_affine sampling;

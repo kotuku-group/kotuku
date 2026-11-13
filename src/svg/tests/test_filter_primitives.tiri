@@ -219,3 +219,83 @@ end
          f'Default in2 must use the previous result or SourceGraphic, got alpha {p.alpha}')
    end
 end
+
+-- Returns the RGBA values of each listed pixel, rendered from a 64x64 filter region.
+
+function samples(Effects:str, Content:str, Points:table):table
+   local svg <close> = document(Effects, Content, 64, nil, 'filterUnits="userSpaceOnUse"')
+   local bmp <close> = draw(svg, 64)
+   local result = {}
+   for _, point in Points do
+      local p = mGfx.ReadRGBPixel(bmp, point[0], point[1])
+      result[#result] = { red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }
+   end
+   return result
+end
+
+function assertRGBA(P:table, Red:num, Green:num, Blue:num, Alpha:num, Message:str)
+   assert((P.red is Red) and (P.green is Green) and (P.blue is Blue) and (P.alpha is Alpha),
+      f'{Message}: got {P.red},{P.green},{P.blue},{P.alpha}')
+end
+
+-- feComponentTransfer applies to every pixel including transparent ones, so inverting alpha must make empty areas
+-- opaque and the shape transparent.  Both a negative linear slope and a descending table are valid inversions.
+
+@Test function TransferInvertsAlpha()
+   local circle = '<circle cx="32" cy="32" r="16" filter="url(#f)"/>'
+   for func in values(array<str> { '<feFuncA type="linear" slope="-1" intercept="1"/>',
+      '<feFuncA type="table" tableValues="1 0"/>' }) do
+      local p = samples(f'<feComponentTransfer in="SourceAlpha">{func}</feComponentTransfer>', circle,
+         { { 2, 2 }, { 32, 32 } })
+      assertRGBA(p[0], 0, 0, 0, 255, f'{func} must make transparent pixels opaque')
+      assert(p[1].alpha is 0, f'{func} must make the opaque shape transparent, got alpha {p[1].alpha}')
+   end
+end
+
+-- The colour of a transparent pixel is treated as black before the colour transfer functions are applied.
+
+@Test function TransferAppliesColourToTransparentPixels()
+   local p = samples([[<feFlood flood-opacity="0"/><feComponentTransfer>
+      <feFuncR type="linear" slope="0" intercept="1"/><feFuncG type="table" tableValues="1 0"/>
+      <feFuncB type="discrete" tableValues="0.4 1"/><feFuncA type="linear" slope="0" intercept="1"/>
+      </feComponentTransfer>]], nil, { { 20, 20 } })
+   assertRGBA(p[0], 255, 255, 102, 255, 'Transfer functions must apply to transparent input')
+end
+
+@Test function TransferIdentityKeepsTransparentPixelsEmpty()
+   local p = samples('<feComponentTransfer><feFuncA type="table" tableValues=""/></feComponentTransfer>',
+      '<circle cx="32" cy="32" r="16" filter="url(#f)"/>', { { 2, 2 }, { 32, 32 } })
+   assert(p[0].alpha is 0, 'An empty table must behave as the identity function')
+   assertRGBA(p[1], 0, 0, 0, 255, 'An empty table must preserve the shape')
+end
+
+-- A primitive's x, y, width and height clip its output, even for effects that render to the full filter region.
+
+@Test function ExplicitSubregionClipsOutput()
+   local p = samples('<feFlood flood-color="red" x="16" y="16" width="32" height="32"/>', nil,
+      { { 8, 8 }, { 16, 16 }, { 47, 47 }, { 48, 20 } })
+   assert(p[0].alpha is 0, 'Pixels before the subregion must be transparent')
+   assertRGBA(p[1], 255, 0, 0, 255, 'The first pixel of the subregion must be filled')
+   assertRGBA(p[2], 255, 0, 0, 255, 'The last pixel of the subregion must be filled')
+   assert(p[3].alpha is 0, 'Pixels after the subregion must be transparent')
+end
+
+-- Without x, y, width and height, a primitive's subregion is the union of its referenced inputs' subregions.  A
+-- standard input such as SourceGraphic widens the default to the filter region.
+
+@Test function DefaultSubregionIsTheUnionOfInputs()
+   local floods = [[<feFlood flood-color="red" x="8" y="8" width="16" height="16" result="a"/>
+      <feFlood flood-color="blue" x="40" y="40" width="16" height="16" result="b"/>]]
+   local raise_alpha = '<feComponentTransfer><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer>'
+   local points = { { 4, 4 }, { 32, 32 }, { 60, 60 } }
+
+   local p = samples(floods .. '<feMerge><feMergeNode in="a"/><feMergeNode in="b"/></feMerge>' .. raise_alpha,
+      '<rect width="64" height="64" fill="none" filter="url(#f)"/>', points)
+   assert(p[0].alpha is 0, f'Pixels before the union must be transparent, got alpha {p[0].alpha}')
+   assertRGBA(p[1], 0, 0, 0, 255, 'Transparent pixels inside the union must be transformed')
+   assert(p[2].alpha is 0, f'Pixels after the union must be transparent, got alpha {p[2].alpha}')
+
+   p = samples(floods .. '<feMerge><feMergeNode in="a"/><feMergeNode in="SourceGraphic"/></feMerge>' .. raise_alpha,
+      '<rect width="64" height="64" fill="none" filter="url(#f)"/>', points)
+   assert((p[0].alpha is 255) and (p[2].alpha is 255), 'SourceGraphic must widen the subregion to the filter region')
+end

@@ -171,13 +171,26 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
    const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
 
+   const bool linear_rgb = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+
+   // The transfer functions apply to every pixel, including transparent ones, so that functions such as an inverted
+   // alpha can raise empty areas to full opacity.  The colour of a transparent pixel is undefined, so it is treated
+   // as black (consistent with ColourMatrixFX and premultiplied pipelines) and its output can be computed once.
+
+   uint8_t empty[4];
+   empty[R] = linear_rgb ? Self->Red.ILookup[0] : Self->Red.Lookup[0];
+   empty[G] = linear_rgb ? Self->Green.ILookup[0] : Self->Green.Lookup[0];
+   empty[B] = linear_rgb ? Self->Blue.ILookup[0] : Self->Blue.Lookup[0];
+   empty[A] = Self->Alpha.Lookup[0];
+   const uint32_t empty_pixel = ((uint32_t *)empty)[0];
+
    uint8_t *in = bmp->Data + (bmp->Clip.Left * 4) + (bmp->Clip.Top * bmp->LineWidth);
    uint8_t *dest = Self->Target->Data + (Self->Target->Clip.Left * 4) + (Self->Target->Clip.Top * Self->Target->LineWidth);
    for (int y=0; y < height; y++) {
       auto dp = (uint32_t *)dest;
       auto sp = in;
 
-      if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) {
+      if (linear_rgb) {
          for (int x=0; x < width; x++) {
             if (auto a = sp[A]) {
                uint8_t out[4];
@@ -187,7 +200,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
                out[A] = Self->Alpha.Lookup[a];
                dp[0] = ((uint32_t *)out)[0];
             }
-            else dp[0] = 0;
+            else dp[0] = empty_pixel;
             dp++;
             sp += 4;
          }
@@ -202,7 +215,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
                out[A] = Self->Alpha.Lookup[a];
                dp[0] = ((uint32_t *)out)[0];
             }
-            else dp[0] = 0;
+            else dp[0] = empty_pixel;
             dp++;
             sp += 4;
          }
@@ -365,7 +378,8 @@ static ERR REMAPFX_SelectInvert(extRemapFX *Self, struct rf::SelectInvert *Args)
 SelectLinear: Apply the linear function to a pixel component.
 
 This method will apply the linear function to a selected RGBA pixel component.  The function is written as
-`C' = (Slope * C) + Intercept`.
+`C' = (Slope * C) + Intercept`.  Any slope is permitted; for example a slope of `-1` with an intercept of `1` inverts
+the component.  Results are clamped to the valid range of `0` to `1`.
 
 -INPUT-
 int(CMP) Component: The pixel component to which the function must be applied.
@@ -387,7 +401,6 @@ static ERR REMAPFX_SelectLinear(extRemapFX *Self, struct rf::SelectLinear *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if (Args->Slope < 0) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_linear(Args->Slope, Args->Intercept);

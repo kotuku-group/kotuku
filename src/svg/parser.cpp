@@ -1830,18 +1830,27 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
          }
 
          if (type) {
+            // An empty tableValues list is equivalent to the identity function for table and discrete types.
+
+            if (((type IS SVF_table) or (type IS SVF_discrete)) and (values.empty())) type = SVF_identity;
+
+            ERR error;
             switch(type) {
-               case SVF_table:    fx->selectTable(cmp, values); break;
-               case SVF_linear:   fx->selectLinear(cmp, slope, intercept);  break;
-               case SVF_gamma:    fx->selectGamma(cmp, amp, offset, exp);  break;
-               case SVF_discrete: fx->selectDiscrete(cmp, values);  break;
-               case SVF_identity: fx->selectIdentity(cmp); break;
+               case SVF_table:    error = fx->selectTable(cmp, values); break;
+               case SVF_linear:   error = fx->selectLinear(cmp, slope, intercept);  break;
+               case SVF_gamma:    error = fx->selectGamma(cmp, amp, offset, exp);  break;
+               case SVF_discrete: error = fx->selectDiscrete(cmp, values);  break;
+               case SVF_identity: error = fx->selectIdentity(cmp); break;
                // The following additions are specific to Kotuku and not SVG compatible.
-               case SVF_invert:   fx->selectInvert(cmp); break;
-               case SVF_mask:     fx->selectMask(cmp, mask); break;
+               case SVF_invert:   error = fx->selectInvert(cmp); break;
+               case SVF_mask:     error = fx->selectMask(cmp, mask); break;
                default:
                   log.warning("feComponentTransfer type invalid.");
                   return ERR::InvalidValue;
+            }
+
+            if (error != ERR::Okay) {
+               log.warning("Failed to apply the %s transfer function: %s", child.name(), GetErrorMsg(error));
             }
          }
          else {
