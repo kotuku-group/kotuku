@@ -1,15 +1,20 @@
 #define PRV_CRYPTO_MODULE
 #include <kotuku/modules/crypto.h>
 #include "../crypto_internal.h"
+#include "../protocol_primitives.h"
+#ifdef CRYPTO_PROTOCOL_CNG
+#include "../protocol_cng.h"
+#endif
 
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
-#ifdef CRYPTO_PROTOCOL_OPENSSL
+#ifdef CRYPTO_TEST_OPENSSL
 #include <openssl/bio.h>
 #include <openssl/ec.h>
 #include <openssl/evp.h>
@@ -43,6 +48,158 @@ static bool matches_hex(std::span<const int8_t> Bytes, std::string_view Hex) {
 static int failure(const char *Message) {
    std::fprintf(stderr, "%s\n", Message);
    return 1;
+}
+
+// Published vectors for the protocol primitives used by WebRTC, run against the backend that this platform selects
+// (CNG on Windows, OpenSSL elsewhere).  The long-term keys are checked end to end through the MESSAGE-INTEGRITY values
+// of the RFC 5769 and RFC 8489 sample requests.
+
+static int test_protocol_primitives() {
+#ifdef CRYPTO_PROTOCOL_BACKEND
+   auto bytes = [](std::string_view Value) {
+      return std::span<const uint8_t>((const uint8_t *)Value.data(), Value.size());
+   };
+   auto equals = [](std::span<const uint8_t> Value, std::string_view Hex) {
+      auto expected = from_hex(Hex);
+      return std::equal(Value.begin(), Value.end(), expected.begin(), expected.end());
+   };
+
+   std::array<uint8_t, 20> sha1{};
+   std::array<uint8_t, 32> sha256{};
+   std::vector<uint8_t> key_0b(20, 0x0b), key_aa(131, 0xaa);
+   auto large_key_data = bytes("Test Using Larger Than Block-Size Key - Hash Key First");
+
+   if (not crypto_protocol::hmac_sha1(key_0b, bytes("Hi There"), sha1) or
+       not equals(sha1, "b617318655057264e28bc0b6fb378c8ef146be00")) {
+      return failure("RFC 2202 case 1 HMAC-SHA1 differs");
+   }
+   if (not crypto_protocol::hmac_sha1(bytes("Jefe"), bytes("what do ya want for nothing?"), sha1) or
+       not equals(sha1, "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79")) {
+      return failure("RFC 2202 case 2 HMAC-SHA1 differs");
+   }
+   if (not crypto_protocol::hmac_sha1(std::span<const uint8_t>(key_aa.data(), 80), large_key_data, sha1) or
+       not equals(sha1, "aa4ae5e15272d00e95705637ce8a3b55ed402112")) {
+      return failure("RFC 2202 case 6 HMAC-SHA1 differs");
+   }
+   if (not crypto_protocol::hmac_sha1({}, {}, sha1) or
+       not equals(sha1, "fbdb1d1b18aa6c08324b7d64b71fb76370690e1d")) {
+      return failure("Empty-key HMAC-SHA1 differs");
+   }
+   if (not crypto_protocol::hmac_sha256(key_0b, bytes("Hi There"), sha256) or
+       not equals(sha256, "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")) {
+      return failure("RFC 4231 case 1 HMAC-SHA256 differs");
+   }
+   if (not crypto_protocol::hmac_sha256(bytes("Jefe"), bytes("what do ya want for nothing?"), sha256) or
+       not equals(sha256, "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")) {
+      return failure("RFC 4231 case 2 HMAC-SHA256 differs");
+   }
+   if (not crypto_protocol::hmac_sha256(key_aa, large_key_data, sha256) or
+       not equals(sha256, "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")) {
+      return failure("RFC 4231 case 6 HMAC-SHA256 differs");
+   }
+   if (not crypto_protocol::hmac_sha256({}, {}, sha256) or
+       not equals(sha256, "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad")) {
+      return failure("Empty-key HMAC-SHA256 differs");
+   }
+   if (not crypto_protocol::sha256(bytes("abc"), sha256) or
+       not equals(sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")) {
+      return failure("FIPS SHA-256 vector differs (protocol)");
+   }
+
+   // RFC 8489 Appendix B.1: USERHASH is SHA-256("<username>:<realm>").
+
+   static constexpr std::string_view MATRIX =
+      "\xe3\x83\x9e\xe3\x83\x88\xe3\x83\xaa\xe3\x83\x83\xe3\x82\xaf\xe3\x82\xb9";
+   auto userhash_input = std::string(MATRIX) + ":example.org";
+   if (not crypto_protocol::sha256(bytes(userhash_input), sha256) or
+       not equals(sha256, "4a3cf38fef6992bda952c6780417da0f24819415569e60b205c46e41407f1704")) {
+      return failure("RFC 8489 USERHASH differs");
+   }
+
+   // RFC 5769 section 2.4: MD5 long-term key; MESSAGE-INTEGRITY covers the 92 bytes before it.
+
+   auto md5_request = from_hex(
+      "000100602112a44278ad3433c6ad72c029da412e"
+      "00060012e3839ee38388e383aae38383e382afe382b90000"
+      "0015001c662f2f3439396b39353464364f4c33346f4c39465354767936347341"
+      "0014000b6578616d706c652e6f726700");
+   std::vector<uint8_t> key;
+   if (not crypto_protocol::long_term_key(MATRIX, "example.org", "TheMatrIX", key, false) or key.size() != 16 or
+       not crypto_protocol::hmac_sha1(key, md5_request, sha1) or
+       not equals(sha1, "f67024656dd64a3e02b8e0712e85c9a28ca89666")) {
+      return failure("RFC 5769 MD5 long-term key differs");
+   }
+
+   // RFC 8489 Appendix B.1 with erratum 6268: SHA-256 long-term key; MESSAGE-INTEGRITY-SHA256 covers 128 bytes.
+
+   auto sha256_request = from_hex(
+      "000100902112a44278ad3433c6ad72c029da412e"
+      "001e00204a3cf38fef6992bda952c6780417da0f24819415569e60b205c46e41407f1704"
+      "001500296f624d61744a6f733241414143662f2f3439396b39353464364f4c33346f4c39465354767936347341000000"
+      "0014000b6578616d706c652e6f726700"
+      "001d000400020000");
+   if (not crypto_protocol::long_term_key(MATRIX, "example.org", "TheMatrIX", key, true) or key.size() != 32 or
+       not crypto_protocol::hmac_sha256(key, sha256_request, sha256) or
+       not equals(sha256, "b5c7bf005b6c52a21c51c5e892f81924136296cb927c43149309278cc6518e65")) {
+      return failure("RFC 8489 SHA-256 long-term key differs");
+   }
+   if (not crypto_protocol::long_term_key("user", "example.org", "pass", key, true) or
+       not equals(key, "2eab843d62723b5549ca4dde2641a8c07ba67a3c7df8919c8da81ee206a4b907")) {
+      return failure("SHA-256 long-term key for user:example.org:pass differs");
+   }
+
+   std::array<uint8_t, 4> left = { 1, 2, 3, 4 }, right = { 1, 2, 3, 5 };
+   if (not crypto_protocol::constant_time_equal(left, left) or
+       crypto_protocol::constant_time_equal(left, right) or
+       crypto_protocol::constant_time_equal(left, std::span<const uint8_t>(left.data(), 3)) or
+       not crypto_protocol::constant_time_equal({}, {})) {
+      return failure("Protocol constant_time_equal differs");
+   }
+
+   // Two 32-byte random draws colliding, or either being all zero, indicates a broken generator.
+
+   std::array<uint8_t, 32> random_a{}, random_b{}, zero{};
+   if (not crypto_protocol::random_bytes(random_a) or not crypto_protocol::random_bytes(random_b) or
+       random_a IS random_b or random_a IS zero or random_b IS zero or
+       not crypto_protocol::random_bytes({})) {
+      return failure("Protocol random_bytes failed");
+   }
+   crypto_protocol::secure_wipe(random_a);
+   if (random_a != zero) return failure("Protocol secure_wipe left data behind");
+#endif
+
+#ifdef CRYPTO_PROTOCOL_CNG
+   crypto_protocol::CngCertificate certificate;
+   if (not crypto_protocol::generate_p256_certificate_cng("kotuku-test", false, certificate) or
+       not certificate.context or not certificate.key or certificate.der().empty()) {
+      return failure("CNG P-256 certificate generation failed");
+   }
+   std::array<uint8_t, 32> der_digest{};
+   if (not crypto_protocol::sha256(certificate.der(), der_digest) or der_digest != certificate.fingerprint) {
+      return failure("CNG certificate fingerprint is not the SHA-256 of its DER encoding");
+   }
+   certificate.reset();
+   if (certificate.context or certificate.key or not certificate.der().empty()) {
+      return failure("CNG certificate reset left state behind");
+   }
+
+   // A persisted (named) key is required by Schannel and must be deleted from the key store on reset.
+
+   if (not crypto_protocol::generate_p256_certificate_cng("kotuku-dtls-test", false, certificate, true) or
+       not certificate.persisted or not certificate.context or not certificate.key or certificate.der().empty()) {
+      return failure("CNG persisted P-256 certificate generation failed");
+   }
+
+   if (not crypto_protocol::sha256(certificate.der(), der_digest) or der_digest != certificate.fingerprint) {
+      return failure("CNG persisted certificate fingerprint differs");
+   }
+
+   certificate.reset();
+   if (certificate.context or certificate.key or certificate.persisted or not certificate.der().empty()) {
+      return failure("CNG persisted certificate reset left state behind");
+   }
+#endif
+   return 0;
 }
 
 int main() {
@@ -136,7 +293,7 @@ int main() {
       return failure("Empty CRC-32 vector differs");
    if (crypto::CRC32(digits, nullptr) != ERR::Args) return failure("Null CRC-32 output was accepted");
 
-#ifdef CRYPTO_PROTOCOL_OPENSSL
+#ifdef CRYPTO_TEST_OPENSSL
    std::string certificate_pem, private_key_pem, fingerprint;
    if (crypto::GenerateP256Certificate("kotuku-test", &certificate_pem, &private_key_pem, &fingerprint) != ERR::Okay)
       return failure("P-256 certificate generation failed");
@@ -297,5 +454,5 @@ int main() {
    if (crypto_backend::aes_ctr(std::span<const uint8_t>(zero_key.data(), 15), zero_nonce, 0, gcm_data) != ERR::Args) {
       return failure("Invalid AES key length accepted");
    }
-   return 0;
+   return test_protocol_primitives();
 }

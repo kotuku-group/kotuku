@@ -30,7 +30,8 @@ end
 @Test function PendingParityErrorOrder()
    local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
    local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
-   local bad = channelTest.create(first, 'bad-parity', '', true, false, 1)
+   local first_parity = channelTest.prepareAnswer(first, second)
+   local bad = channelTest.create(first, 'bad-parity', '', true, false, 1 - first_parity)
    local events = array<str>
    bad.onError = function(Child, Error)
       assert(Error is ERR_InvalidValue and Child.error is Error and Child.state is WCS_CLOSED,
@@ -38,7 +39,8 @@ end
       events.push('error')
    end
    bad.onClose = function() events.push('close') end
-   channelTest.connect(first, second)
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
    channelTest.waitFor(function() return #events is 2 end)
    assert(events[0] is 'error' and events[1] is 'close', 'Terminal failure event order changed')
 end
@@ -121,11 +123,14 @@ end
 @Test function AutomaticAllocationPreservesExplicitReservation()
    local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
    local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local first_parity = channelTest.prepareAnswer(first, second)
    local automatic = channelTest.create(first, 'automatic')
-   local explicit = channelTest.create(first, 'explicit', '', true, false, 0)
-   channelTest.connect(first, second)
+   local explicit = channelTest.create(first, 'explicit', '', true, false, first_parity)
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
    channelTest.waitFor(function() return automatic.state is WCS_OPEN and explicit.state is WCS_OPEN end)
-   assert(explicit.streamID is 0 and automatic.streamID is 2, 'Automatic allocation stole an explicit ID reservation')
+   assert(explicit.streamID is first_parity and automatic.streamID is first_parity + 2,
+      'Automatic allocation stole an explicit ID reservation')
 end
 
 @Test function ZeroLifetimeAndTerminalFree()
@@ -173,12 +178,14 @@ end
 @Test function FreeFromErrorAndLow()
    local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
    local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
-   local bad = channelTest.create(first, 'bad', '', true, false, 1)
+   local first_parity = channelTest.prepareAnswer(first, second)
+   local bad = channelTest.create(first, 'bad', '', true, false, 1 - first_parity)
    local terminal = 0
    bad.onError = function(Child, Error) Child.free() end
    bad.onClose = function() terminal += 1 end
    local channel = channelTest.create(first, 'low-free')
-   channelTest.connect(first, second)
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
    channelTest.waitFor(function() return not bad.exists() and channel.state is WCS_OPEN end)
    assert(terminal is 0, 'Explicit error-callback free emitted a terminal callback')
    channel.onBufferedAmountLow = function(Child) Child.free() end

@@ -3,8 +3,10 @@
 #include "turn_test_support.h"
 #include "../turn/turn_socket.h"
 #include <chrono>
+#ifdef WEBRTC_TEST_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
 #ifndef _WIN32
 #include <netinet/tcp.h>
 #endif
@@ -27,6 +29,7 @@ inline bool adapter_failure(int Line) {
 }
 inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
    const char *Certificate = nullptr, const char *Key = nullptr, bool CancelStall = false, bool ResumeStall = false) {
+#ifdef WEBRTC_TEST_OPENSSL
    SSL_CTX *tls_context = Certificate ? SSL_CTX_new(TLS_server_method()) : nullptr;
    auto release_context = kt::Defer([&]() { if (tls_context) SSL_CTX_free(tls_context); });
    if (Certificate and (not tls_context or SSL_CTX_use_certificate_chain_file(tls_context, Certificate) != 1 or
@@ -34,6 +37,10 @@ inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
    SSL *tls = nullptr;
    auto release_tls = kt::Defer([&]() { if (tls) SSL_free(tls); });
    bool handshake = false;
+#else
+   if (Certificate) return adapter_failure(__LINE__);
+   (void)Key;
+#endif
    const char *transport = Certificate ? "TLS" : "TCP";
    auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
    if (listener IS INVALID_SOCKET_VALUE) return adapter_failure(__LINE__);
@@ -71,6 +78,7 @@ inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
       }
       if (incoming != INVALID_SOCKET_VALUE) {
          std::array<uint8_t, 16384> bytes{};
+#ifdef WEBRTC_TEST_OPENSSL
          if (Certificate and not tls) {
             tls = SSL_new(tls_context);
             if (not tls or SSL_set_fd(tls, int(incoming)) != 1) return adapter_failure(__LINE__);
@@ -87,12 +95,14 @@ inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
                return adapter.failure() IS ERR::Okay;
             }
          }
+#endif
          // Drain ready TLS records in bounded batches; SSL_read can return one small record per call.
          // Sleeping after each record makes resumption depend on the host timer resolution.
          size_t drained = 0;
          for (unsigned reads = 0; reads < 32 and drained < 65536; ++reads) {
-            if (tls) ERR_clear_error();
             auto capacity = std::min(bytes.size(), size_t(65536 - drained));
+#ifdef WEBRTC_TEST_OPENSSL
+            if (tls) ERR_clear_error();
             auto count = tls ? SSL_read(tls, bytes.data(), int(capacity)) :
                receive(incoming, bytes.data(), capacity, 0);
             if (tls and count <= 0) {
@@ -103,6 +113,9 @@ inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
                   return adapter_failure(__LINE__);
                }
             }
+#else
+            auto count = receive(incoming, bytes.data(), capacity, 0);
+#endif
             if (count <= 0) break;
             drained += size_t(count);
             wire_received += uint64_t(count);
@@ -130,8 +143,12 @@ inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
                }
                if (message.type IS turn::REFRESH) ++refreshes;
                if (message.type IS turn::CHANNEL_BIND or message.type IS turn::CREATE_PERMISSION) ++grants;
+#ifdef WEBRTC_TEST_OPENSSL
                auto sent = tls ? SSL_write(tls, response.data(), int(response.size())) :
                   send(incoming, response.data(), response.size(), 0);
+#else
+               auto sent = send(incoming, response.data(), response.size(), 0);
+#endif
                if (sent != int(response.size())) {
                   return adapter_failure(__LINE__);
                }
@@ -229,9 +246,13 @@ inline bool turn_adapter_stall(bool Stall = true, bool CancelRefresh = false,
       if (data_frames != accepted + 3 or not adapter.active()) {
          std::fprintf(stderr, "Resume: %u/%zu frames, room %zu, error %d\n",
             data_frames, accepted + 3, adapter.available(), int(adapter.failure()));
+         int pending = 0;
+#ifdef WEBRTC_TEST_OPENSSL
+         pending = tls ? SSL_pending(tls) : 0;
+#endif
          std::fprintf(stderr, "Resume bytes: received=%llu accepted=%llu decoder=%zu TLS-pending=%d\n",
             (unsigned long long)wire_received, (unsigned long long)adapter.counters.turn_sent_bytes,
-            decoder.buffered(), tls ? SSL_pending(tls) : 0);
+            decoder.buffered(), pending);
          return adapter_failure(__LINE__);
       }
       // All accepted application frames must survive back-pressure; admission must reopen after draining.

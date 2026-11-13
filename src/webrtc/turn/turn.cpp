@@ -4,10 +4,9 @@
 
 #include "turn.h"
 #include "../precis/opaque_string.h"
+#include "../../crypto/protocol_primitives.h"
 
 #include <algorithm>
-
-#include <openssl/crypto.h>
 
 namespace rtc::turn {
 namespace {
@@ -242,7 +241,7 @@ bool StreamDecoder::feed(std::span<const uint8_t> Input, size_t &Consumed,
 
 Client::Client(Config Options) : config(std::move(Options)) { }
 
-Client::~Client() { OPENSSL_cleanse(config.password.data(), config.password.size()); }
+Client::~Client() { crypto_protocol::secure_wipe(config.password.data(), config.password.size()); }
 
 //********************************************************************************************************************
 // Generates a transaction ID that is not in use and has not been used recently.
@@ -415,7 +414,7 @@ bool Client::start(uint64_t Now)
    }
 
    config.username = std::move(username);
-   OPENSSL_cleanse(config.password.data(), config.password.size());
+   crypto_protocol::secure_wipe(config.password.data(), config.password.size());
    config.password = std::move(password);
 
    now = Now;
@@ -739,7 +738,7 @@ Result Client::receive(const Identity &Source, std::span<const uint8_t> Wire, ui
       bool verified = found->authenticated and stun::long_term_key(config.username, found->challenge.realm,
          config.password, key, found->challenge.password_algorithm IS stun::PASSWORD_SHA256) and
          stun::verify_integrity(Wire, message, key, found->challenge.sha256_integrity);
-      OPENSSL_cleanse(key.data(), key.size());
+      crypto_protocol::secure_wipe(key.data(), key.size());
       if (not verified) return Result::IGNORED;
 
       for (const auto &attribute : message.attributes) {

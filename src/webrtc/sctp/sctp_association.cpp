@@ -5,9 +5,6 @@
 #include "sctp_association.h"
 #include "../../crypto/protocol_primitives.h"
 
-#include <openssl/crypto.h>
-#include <openssl/rand.h>
-
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -105,14 +102,15 @@ struct SctpAssociation::Init {
 
 SctpAssociation::SctpAssociation(SctpConfig Config) : config(std::move(Config)) { }
 
-SctpAssociation::~SctpAssociation() { OPENSSL_cleanse(secret.data(), secret.size()); }
+SctpAssociation::~SctpAssociation() { crypto_protocol::secure_wipe(secret.data(), secret.size()); }
 
 //********************************************************************************************************************
-// Fills Bytes from the configured random source, defaulting to OpenSSL.  Tests can supply a deterministic source.
+// Fills Bytes from the configured random source, defaulting to the system generator.  Tests can supply a
+// deterministic source.
 
 bool SctpAssociation::random_bytes(std::span<uint8_t> Bytes)
 {
-   return config.random ? config.random(Bytes) : RAND_bytes(Bytes.data(), int(Bytes.size())) IS 1;
+   return config.random ? config.random(Bytes) : crypto_protocol::random_bytes(Bytes);
 }
 
 //********************************************************************************************************************
@@ -669,7 +667,7 @@ void SctpAssociation::close()
    clear_transfer();
    remote = {};
    ready = false;
-   OPENSSL_cleanse(secret.data(), secret.size());
+   crypto_protocol::secure_wipe(secret.data(), secret.size());
    set_state(SctpState::CLOSED);
 }
 

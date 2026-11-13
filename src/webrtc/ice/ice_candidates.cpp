@@ -22,7 +22,7 @@
 #include "ice_candidates.h"
 #include "../../network/mdns/mdns.h"
 
-#include <openssl/rand.h>
+#include "../../crypto/protocol_primitives.h"
 
 #include <algorithm>
 #include <array>
@@ -384,7 +384,7 @@ bool ServerReflexiveGatherer::start()
    request_bytes.clear();
    if (base_endpoint.port IS 0 or server_endpoint.port IS 0 or
        base_endpoint.ipv6 != server_endpoint.ipv6 or
-       RAND_bytes(transaction_id.data(), transaction_id.size()) != 1) return false;
+       not crypto_protocol::random_bytes(transaction_id)) return false;
 
    return stun::encode(stun::BINDING_REQUEST, transaction_id, {}, {}, false, true, request_bytes);
 }

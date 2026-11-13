@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <string_view>
 #include <vector>
 
 CSTRING ProgName = "WebChannelPublicTest";
@@ -78,9 +79,12 @@ int exercise(int Mode, size_t Size) {
        second->setRemoteDescription(first->LocalDescription) != ERR::Okay or second->createAnswer() != ERR::Okay or
        second->setLocalDescription(second->LocalDescription) != ERR::Okay or
        first->setRemoteDescription(second->LocalDescription) != ERR::Okay) return 7;
+   bool answer_active = std::string_view(second->LocalDescription).find("\r\na=setup:active\r\n") !=
+      std::string_view::npos;
+   if (answer_active) return 28; // Answers take the passive DTLS role on every backend
    if (not wait_for([&]() { return a.opens IS 1 and b.opens IS 1; })) return 8;
    if (channel->getStream(stream_id) != ERR::Okay or
-       (negotiated ? stream_id != 42 : (stream_id < 0 or stream_id % 2 != 0))) return 27;
+       (negotiated ? stream_id != 42 : (stream_id < 0 or stream_id % 2 != (answer_active ? 1 : 0)))) return 27;
    int64_t limit = 0;
    if (channel->getMaxMessageSize(limit) != ERR::Okay or limit != 16777216) return 9;
    a.expected.resize(Size); b.expected.resize(Size);

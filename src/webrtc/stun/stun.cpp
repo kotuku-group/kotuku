@@ -10,9 +10,6 @@
 #include <cstring>
 #include <string>
 
-#include <openssl/crypto.h>
-#include <openssl/evp.h>
-
 namespace rtc::stun {
 
 //********************************************************************************************************************
@@ -45,7 +42,7 @@ static void write32(uint8_t *Bytes, uint32_t Value)
 
 struct SensitiveString {
    std::string value;
-   ~SensitiveString() { OPENSSL_cleanse(value.data(), value.size()); }
+   ~SensitiveString() { crypto_protocol::secure_wipe(value.data(), value.size()); }
 };
 
 //********************************************************************************************************************
@@ -469,9 +466,8 @@ bool encode_long_term_request(uint16_t Type, std::span<const uint8_t, 12> Transa
    std::array<uint8_t, 32> userhash{};
    if (Challenge.userhash) {
       auto value = username + ":" + realm;
-      unsigned int written = 0;
-      if (EVP_Digest(value.data(), value.size(), userhash.data(), &written, EVP_sha256(), nullptr) != 1 or
-          written != userhash.size()) return false;
+      if (not crypto_protocol::sha256(std::span<const uint8_t>((const uint8_t *)value.data(), value.size()),
+          userhash)) return false;
    }
 
    std::array<uint8_t, 4> algorithm{};
@@ -509,7 +505,7 @@ bool encode_long_term_request(uint16_t Type, std::span<const uint8_t, 12> Transa
 
    auto success = encode(Type, TransactionId, std::span(attributes.data(), count), key,
       Challenge.sha256_integrity, true, Result);
-   OPENSSL_cleanse(key.data(), key.size());
+   crypto_protocol::secure_wipe(key.data(), key.size());
    return success;
 }
 
@@ -725,8 +721,8 @@ LongTermBindingClient::LongTermBindingClient(std::string_view Username, std::str
 
 LongTermBindingClient::~LongTermBindingClient()
 {
-   OPENSSL_cleanse(password.data(), password.size());
-   OPENSSL_cleanse(key.data(), key.size());
+   crypto_protocol::secure_wipe(password.data(), password.size());
+   crypto_protocol::secure_wipe(key.data(), key.size());
 }
 
 //********************************************************************************************************************
@@ -746,7 +742,7 @@ bool LongTermBindingClient::start(std::span<const uint8_t, 12> TransactionId,
        prepared_username.size() >= 509 or
        not encode(BINDING_REQUEST, TransactionId, {}, {}, false, true, Request)) return false;
 
-   OPENSSL_cleanse(password.data(), password.size());
+   crypto_protocol::secure_wipe(password.data(), password.size());
    username = std::move(prepared_username);
    password = prepared_password.value;
    std::copy(TransactionId.begin(), TransactionId.end(), transaction_id.begin());
@@ -792,7 +788,7 @@ LongTermStatus LongTermBindingClient::receive(std::span<const uint8_t> Datagram,
          return fail();
       }
 
-      OPENSSL_cleanse(key.data(), key.size());
+      crypto_protocol::secure_wipe(key.data(), key.size());
       key = std::move(new_key);
       challenge = NewChallenge;
       std::copy(NextTransactionId.begin(), NextTransactionId.end(), transaction_id.begin());

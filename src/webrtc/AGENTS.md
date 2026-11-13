@@ -22,5 +22,5 @@ Points to remember:
 * Use relative includes between folders, e.g. `#include "../stun/stun.h"`.
 * The module IDL is generated into `module_def.c`, and class definitions into each class folder's `*_def.c`.  Run the
   `build_headers` target after changing `webrtc.tdl` or embedded class documentation.
-* All protocol state runs on the thread that owns the PeerConnection.  The module uses OpenSSL for DTLS on every
-  platform, including Windows, where the Network module uses Schannel for TLS.
+* All protocol state runs on the thread that owns the PeerConnection.  Windows defaults to Schannel DTLS and CNG primitives;
+  Linux uses OpenSSL. `WEBRTC_DTLS_BACKEND=OPENSSL` selects the Windows reference backend.

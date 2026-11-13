@@ -5,7 +5,7 @@
 
 #include "ice_agent.h"
 
-#include <openssl/rand.h>
+#include "../../crypto/protocol_primitives.h"
 
 #include <algorithm>
 #include <array>
@@ -95,7 +95,7 @@ FullAgent::FullAgent(std::string_view LocalUfrag, std::string_view LocalPassword
    local_ufrag(LocalUfrag), local_password(LocalPassword), current_role(InitialRole),
    pair_limit(std::clamp(PairLimit, size_t(1), size_t(2048)))
 {
-   (void)RAND_bytes((uint8_t *)&tie_breaker, sizeof(tie_breaker));
+   (void)crypto_protocol::random_bytes(std::span<uint8_t>((uint8_t *)&tie_breaker, sizeof(tie_breaker)));
 }
 
 //********************************************************************************************************************
@@ -375,7 +375,7 @@ void FullAgent::send_check(size_t PairIndex, bool Nomination, bool Consent, uint
    };
 
    Transaction next;
-   if (RAND_bytes(next.id.data(), next.id.size()) != 1 or
+   if (not crypto_protocol::random_bytes(next.id) or
        not stun::encode(stun::BINDING_REQUEST, next.id,
           std::span<const stun::Attribute>(attributes.data(), Nomination ? 4u : 3u),
           password_bytes(remote_password), false, true, next.datagram)) {
@@ -414,7 +414,8 @@ bool FullAgent::switch_role()
    triggered_checks.clear();
    current_role = current_role IS Role::CONTROLLING ? Role::CONTROLLED : Role::CONTROLLING;
 
-   if (RAND_bytes((uint8_t *)&tie_breaker, sizeof(tie_breaker)) != 1 or tie_breaker IS 0) {
+   if (not crypto_protocol::random_bytes(std::span<uint8_t>((uint8_t *)&tie_breaker, sizeof(tie_breaker))) or
+       tie_breaker IS 0) {
       current_state = State::FAILED;
       return false;
    }
@@ -429,7 +430,7 @@ bool FullAgent::switch_role()
 bool FullAgent::schedule_consent(uint64_t NowUs)
 {
    uint32_t random = 0;
-   if (RAND_bytes((uint8_t *)&random, sizeof(random)) != 1) {
+   if (not crypto_protocol::random_bytes(std::span<uint8_t>((uint8_t *)&random, sizeof(random)))) {
       current_state = State::FAILED;
       return false;
    }
@@ -976,7 +977,7 @@ void FullAgent::restart(std::string_view LocalUfrag, std::string_view LocalPassw
    checked_family = false;
    remote_lite = false;
    remote_complete = false;
-   (void)RAND_bytes((uint8_t *)&tie_breaker, sizeof(tie_breaker));
+   (void)crypto_protocol::random_bytes(std::span<uint8_t>((uint8_t *)&tie_breaker, sizeof(tie_breaker)));
 }
 
 //********************************************************************************************************************

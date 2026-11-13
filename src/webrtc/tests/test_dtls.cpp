@@ -1,15 +1,15 @@
 /*********************************************************************************************************************
 
-Unit tests for the WebRTC DTLS transport (OpenSSL backend).
+Unit tests for the WebRTC DTLS transport (OpenSSL or Schannel backend).
 
 Two DtlsTransport instances are connected through a simulated datagram network that can drop and reorder packets.
 Every datagram is checked against the configured MTU and the RFC 7983 DTLS first-byte range.  The tests cover what
-WebRTC needs from DTLS when OpenSSL does not own the socket:
+WebRTC needs from a socket-independent DTLS backend:
 
   * ECDSA P-256 self-signed certificates and SDP-style SHA-256 fingerprints
   * Fingerprint verification, both before and after the handshake completes
   * use_srtp negotiation and RFC 5764 keying material export
-  * Handshake message fragmentation at a fixed MTU
+  * Handshake message fragmentation at a fixed MTU, and reassembly of a ClientHello fragmented by the peer
   * Retransmission on loss, tolerance of reordering
   * Application data exchange and close_notify
 
@@ -24,9 +24,11 @@ This executable has no object-system dependencies and is registered with ctest u
 #include <chrono>
 #include <cstdio>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 using namespace rtc;
 
@@ -55,6 +57,7 @@ struct Link {
    Endpoint a, b;
    int mtu = DtlsTransport::DEFAULT_MTU;
    std::function<bool(char, size_t)> drop;
+   std::function<std::vector<std::vector<uint8_t>>(char, const std::vector<uint8_t> &)> rewrite;
    bool reverse_flights = false;
    size_t index_a = 0, index_b = 0;
 
@@ -85,11 +88,15 @@ struct Link {
 
       auto transfer = [this](std::deque<std::vector<uint8_t>> &Flight, char From, size_t &Index, Endpoint &To) {
          if (reverse_flights) std::reverse(Flight.begin(), Flight.end());
-         for (auto &datagram : Flight) {
+         for (auto &sent : Flight) {
             auto index = Index++;
             if (drop and drop(From, index)) continue;
-            if ((To.transport->state() IS DtlsState::CONNECTING) or (To.transport->state() IS DtlsState::CONNECTED)) {
-               (void)To.transport->feed(datagram);
+            auto datagrams = rewrite ? rewrite(From, sent) : std::vector<std::vector<uint8_t>>{ sent };
+            for (auto &datagram : datagrams) {
+               auto state = To.transport->state();
+               if ((state IS DtlsState::CONNECTING) or (state IS DtlsState::CONNECTED)) {
+                  (void)To.transport->feed(datagram);
+               }
             }
          }
       };
@@ -262,6 +269,20 @@ void test_application_data()
    CHECK(link->b.received.size() IS 1, "Bad-MAC record delivered application data");
    CHECK(link->pump([&]() { return link->b.received.size() IS 2; }), "Fresh record was lost after bad-MAC/replay");
 
+   // Two application records coalesced into a single datagram.
+
+   CHECK(link->a.transport->send(small) IS ERR::Okay, "First coalesced send failed");
+   CHECK(link->a.transport->send(small) IS ERR::Okay, "Second coalesced send failed");
+
+   auto combined = std::move(link->a.outbox.front());
+   link->a.outbox.pop_front();
+   combined.insert(combined.end(), link->a.outbox.front().begin(), link->a.outbox.front().end());
+   link->a.outbox.pop_front();
+
+   CHECK(link->b.transport->feed(combined) IS ERR::Okay, "Coalesced records failed");
+   CHECK(link->b.received.size() IS 4 and link->b.received[2] IS small and link->b.received[3] IS small,
+      "Every application record in a coalesced datagram must be delivered");
+
    std::printf("    max application payload at 1200-byte MTU: %d bytes\n", max_payload);
    report("application data within the MTU");
 }
@@ -286,8 +307,28 @@ void test_loss_recovery()
    CHECK(start(*link), "start() failed");
    CHECK(link->pump([&]() { return link->both_connected(); }), "Handshake did not recover from loss");
    auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-   // OpenSSL treats a remaining timeout below 15 ms as expired, so a 20 ms timer fires after roughly 5 ms.
+   // Backends can round timer expiry differently; report the observed recovery time without assuming exact expiry.
    std::printf("    recovered in %.1f ms with a 20 ms initial retransmission timer\n", elapsed);
+
+   // The server has already completed when its Finished is lost.  A backend must still retransmit that flight
+   // without reopening or destroying the connected context.
+
+   auto final_loss = make_link();
+   bool dropped = false;
+   final_loss->drop = [&](char From, size_t) {
+      if (From IS 'b' and not dropped and final_loss->b.transport->state() IS DtlsState::CONNECTED) {
+         dropped = true;
+         return true;
+      }
+      return false;
+   };
+
+   CHECK(start(*final_loss), "Final-flight loss start failed");
+   CHECK(final_loss->pump([&]() { return final_loss->both_connected(); }), "Lost server Finished did not recover");
+   CHECK(dropped, "Final-flight loss fixture did not drop the server Finished");
+   CHECK(final_loss->a.transport->timeout_us() < 0 and final_loss->b.transport->timeout_us() < 0,
+      "Retransmission timers must stop after completion");
+
    report("retransmission after loss");
 }
 
@@ -308,6 +349,121 @@ void test_reordering()
    CHECK(start(*link), "start() failed");
    CHECK(link->pump([&]() { return link->both_connected(); }), "Handshake did not tolerate reordering");
    report("reordered handshake flights");
+}
+
+// How split_client_hello() packs the two halves of a ClientHello.
+
+enum class Packing {
+   DATAGRAMS, // One record per fragment, each in its own datagram
+   RECORDS,   // One record per fragment, both in one datagram in reverse order
+   FRAGMENTS  // Both fragments in a single record in reverse order, as RFC 6347 section 4.2.3 permits
+};
+
+// Splits each client ClientHello in two (both, when the server sends a HelloVerifyRequest), as browsers do once a
+// post-quantum key share pushes it past the MTU.  Epoch-0 client records are renumbered so that an extra record keeps
+// sequence numbers unique and increasing.
+
+std::vector<std::vector<uint8_t>> split_client_hello(const std::vector<uint8_t> &Datagram, Packing Layout)
+{
+   auto renumber = [](std::vector<uint8_t> &Record, uint64_t Sequence) {
+      for (int i = 0; i < 6; i++) Record[5 + i] = uint8_t(Sequence >> ((5 - i) * 8));
+   };
+
+   std::vector<std::vector<uint8_t>> records;
+   size_t position = 0;
+   while (position + 13 <= Datagram.size()) {
+      size_t length = (size_t(Datagram[position + 11]) << 8) | Datagram[position + 12];
+      if (position + 13 + length > Datagram.size()) break;
+      std::vector<uint8_t> record(Datagram.begin() + position, Datagram.begin() + position + 13 + length);
+      position += 13 + length;
+
+      bool epoch_zero = not record[3] and not record[4];
+      if (not epoch_zero) {
+         records.push_back(std::move(record));
+         continue;
+      }
+
+      uint64_t sequence = 0;
+      for (int i = 0; i < 6; i++) sequence = (sequence << 8) | record[5 + i];
+
+      bool whole_hello = record[0] IS 22 and length > 12 and record[13] IS 1 and
+         record[19] IS 0 and record[20] IS 0 and record[21] IS 0 and
+         (size_t(record[22]) << 16 | size_t(record[23]) << 8 | record[24]) + 12 IS length;
+      if (not whole_hello) {
+         renumber(record, sequence * 2);
+         records.push_back(std::move(record));
+         continue;
+      }
+
+      // Build both handshake fragments: the original header's msg_type, length and message_seq, then the span.
+
+      size_t body = length - 12, first = body / 2;
+      std::vector<uint8_t> parts[2];
+      for (size_t part = 0; part < 2; part++) {
+         size_t offset = part ? first : 0, size = part ? body - first : first;
+         parts[part].assign(record.begin() + 13, record.begin() + 13 + 6);
+         const uint8_t span[6] = { uint8_t(offset >> 16), uint8_t(offset >> 8), uint8_t(offset),
+            uint8_t(size >> 16), uint8_t(size >> 8), uint8_t(size) };
+         parts[part].insert(parts[part].end(), span, span + 6);
+         parts[part].insert(parts[part].end(), record.begin() + 25 + offset, record.begin() + 25 + offset + size);
+      }
+
+      auto add_record = [&](std::initializer_list<const std::vector<uint8_t> *> Fragments, uint64_t Sequence) {
+         size_t payload = 0;
+         for (auto fragment : Fragments) payload += fragment->size();
+         std::vector<uint8_t> out(record.begin(), record.begin() + 13);
+         out[11] = uint8_t(payload >> 8);
+         out[12] = uint8_t(payload);
+         for (auto fragment : Fragments) out.insert(out.end(), fragment->begin(), fragment->end());
+         renumber(out, Sequence);
+         records.push_back(std::move(out));
+      };
+
+      if (Layout IS Packing::FRAGMENTS) add_record({ &parts[1], &parts[0] }, sequence * 2);
+      else {
+         add_record({ &parts[0] }, sequence * 2);
+         add_record({ &parts[1] }, sequence * 2 + 1);
+         if (Layout IS Packing::RECORDS) std::swap(records[records.size() - 2], records.back());
+      }
+   }
+
+   if (Layout IS Packing::DATAGRAMS) return records;
+
+   std::vector<uint8_t> combined;
+   for (auto &record : records) combined.insert(combined.end(), record.begin(), record.end());
+   return { combined };
+}
+
+void test_fragmented_client_hello()
+{
+   static constexpr std::pair<Packing, const char *> CASES[] = {
+      { Packing::DATAGRAMS, "ClientHello fragments in separate datagrams were not reassembled" },
+      { Packing::RECORDS, "Reversed ClientHello fragment records in one datagram were not reassembled" },
+      { Packing::FRAGMENTS, "Reversed ClientHello fragments in a single record were not reassembled" }
+   };
+
+   for (auto [packing, failure] : CASES) {
+      auto link = make_link();
+      size_t splits = 0;
+      link->rewrite = [&](char From, const std::vector<uint8_t> &Datagram) {
+         if (From != 'a') return std::vector<std::vector<uint8_t>>{ Datagram };
+         auto result = split_client_hello(Datagram, packing);
+         size_t size = 0;
+         for (auto &datagram : result) size += datagram.size();
+         if (size > Datagram.size()) splits++;
+         return result;
+      };
+
+      CHECK(start(*link), "start() failed");
+      CHECK(link->pump([&]() { return link->both_connected(); }), failure);
+      CHECK(splits >= 1, "Fixture did not fragment the ClientHello");
+
+      SrtpKeyMaterial ka, kb;
+      CHECK(link->a.transport->srtp_keys(ka) IS ERR::Okay and link->b.transport->srtp_keys(kb) IS ERR::Okay,
+         "Key export failed after a fragmented ClientHello");
+      CHECK(ka.local_key IS kb.remote_key, "Keys disagree after a fragmented ClientHello");
+   }
+   report("fragmented ClientHello reassembly");
 }
 
 void test_fingerprint_mismatch()
@@ -384,6 +540,16 @@ void test_close()
    CHECK(link->pump([&]() { return link->b.transport->state() IS DtlsState::CLOSED; }),
       "Peer did not observe close_notify");
    CHECK(link->b.transport->send(std::vector<uint8_t>{ 1 }) IS ERR::InvalidState, "Send after close must fail");
+
+   // The server initiates the close.
+
+   auto server_close = make_link();
+   CHECK(start(*server_close), "Server-close start failed");
+   CHECK(server_close->pump([&]() { return server_close->both_connected(); }), "Server-close handshake failed");
+   CHECK(server_close->b.transport->close() IS ERR::Okay, "Server close failed");
+   CHECK(server_close->pump([&]() { return server_close->a.transport->state() IS DtlsState::CLOSED; }),
+      "Client did not observe the server close_notify");
+
    report("close_notify");
 }
 
@@ -403,7 +569,11 @@ void test_classifier()
 
 int main()
 {
+#ifdef CRYPTO_PROTOCOL_CNG
+   std::printf("WebRTC DTLS transport (Schannel)\n");
+#else
    std::printf("WebRTC DTLS transport (OpenSSL)\n");
+#endif
 
    if ((DtlsCertificate::generate(glCerts.a, "kotuku-a") != ERR::Okay) or
        (DtlsCertificate::generate(glCerts.b, "kotuku-b") != ERR::Okay)) {
@@ -421,6 +591,7 @@ int main()
    test_loss_recovery();
    test_heavy_loss_recovery();
    test_reordering();
+   test_fragmented_client_hello();
    test_fingerprint_mismatch();
    test_deferred_fingerprint();
    test_close();
