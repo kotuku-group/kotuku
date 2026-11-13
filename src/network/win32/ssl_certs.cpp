@@ -174,22 +174,25 @@ static bool decode_pem_block(const std::string &PemData, const char *Label, PemB
 
    Block = {};
 
+   // Encrypted traditional keys precede the Base64 body with RFC 1421 headers, which CryptStringToBinary() cannot
+   // parse.  The headers are consumed here and only the body is passed on for decoding.
+
    std::istringstream stream(pem_block);
    std::string line;
-   bool in_headers = false;
+   std::string body;
+   bool in_headers = true;
    while (std::getline(stream, line)) {
       if ((!line.empty()) and (line.back() IS '\r')) line.pop_back();
 
-      if (line.find(begin) IS 0) {
-         in_headers = true;
+      if (line.find(begin) IS 0) continue;
+      if (line.find(end) IS 0) break;
+
+      auto colon = in_headers ? line.find(':') : std::string::npos;
+      if (colon IS std::string::npos) {
+         in_headers = false;
+         body.append(line);
          continue;
       }
-
-      if (line.empty()) break;
-      if (!in_headers) continue;
-
-      auto colon = line.find(':');
-      if (colon IS std::string::npos) continue;
 
       auto header_name = trim_pem_header(line.substr(0, colon));
       auto header_value = trim_pem_header(line.substr(colon + 1));
@@ -204,14 +207,19 @@ static bool decode_pem_block(const std::string &PemData, const char *Label, PemB
    }
 
    DWORD der_size = 0;
-   if (!CryptStringToBinaryA(pem_block.c_str(), 0, CRYPT_STRING_BASE64HEADER, nullptr, &der_size, nullptr,
+   if (!CryptStringToBinaryA(body.c_str(), DWORD(body.size()), CRYPT_STRING_BASE64, nullptr, &der_size, nullptr,
        nullptr)) {
       return false;
    }
 
    Block.DerData.resize(der_size);
-   return CryptStringToBinaryA(pem_block.c_str(), 0, CRYPT_STRING_BASE64HEADER, Block.DerData.data(), &der_size,
-      nullptr, nullptr);
+   if (!CryptStringToBinaryA(body.c_str(), DWORD(body.size()), CRYPT_STRING_BASE64, Block.DerData.data(), &der_size,
+       nullptr, nullptr)) {
+      return false;
+   }
+
+   Block.DerData.resize(der_size);
+   return true;
 }
 
 //********************************************************************************************************************
@@ -567,21 +575,25 @@ static bool bytes_match(const std::vector<BYTE> &Data, std::initializer_list<BYT
 
 //********************************************************************************************************************
 
-static bool ec_curve_info(const std::vector<BYTE> &CurveOid, DWORD &Magic, DWORD &KeySize)
+static bool ec_curve_info(const std::vector<BYTE> &CurveOid, const wchar_t *&Algorithm, DWORD &Magic,
+   DWORD &KeySize)
 {
    if (bytes_match(CurveOid, { 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07 })) {
+      Algorithm = BCRYPT_ECDSA_P256_ALGORITHM;
       Magic = BCRYPT_ECDSA_PRIVATE_P256_MAGIC;
       KeySize = 32;
       return true;
    }
 
    if (bytes_match(CurveOid, { 0x2b, 0x81, 0x04, 0x00, 0x22 })) {
+      Algorithm = BCRYPT_ECDSA_P384_ALGORITHM;
       Magic = BCRYPT_ECDSA_PRIVATE_P384_MAGIC;
       KeySize = 48;
       return true;
    }
 
    if (bytes_match(CurveOid, { 0x2b, 0x81, 0x04, 0x00, 0x23 })) {
+      Algorithm = BCRYPT_ECDSA_P521_ALGORITHM;
       Magic = BCRYPT_ECDSA_PRIVATE_P521_MAGIC;
       KeySize = 66;
       return true;
@@ -603,21 +615,47 @@ static bool append_fixed_ec_component(std::vector<BYTE> &Blob, const std::vector
 
 //********************************************************************************************************************
 
-static void free_imported_private_key(NCRYPT_KEY_HANDLE KeyHandle)
+// Removes a persisted private key from the key storage provider.  NCryptDeleteKey() releases the handle when it
+// succeeds, otherwise the handle must be freed directly.
+
+static void delete_imported_private_key(NCRYPT_KEY_HANDLE KeyHandle)
 {
    if (!KeyHandle) return;
-   NCryptFreeObject(KeyHandle);
+
+   auto status = NCryptDeleteKey(KeyHandle, NCRYPT_SILENT_FLAG);
+   if (status != ERROR_SUCCESS) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptDeleteKey() failed for an imported private key: 0x%08x", status);
+      NCryptFreeObject(KeyHandle);
+   }
 }
 
 //********************************************************************************************************************
+// Schannel performs server-side private key operations outside of the calling process, so it cannot use a key that
+// exists only as a transient handle.  PEM keys are therefore persisted in the key storage provider under a name that
+// is unique to the certificate, the process and the import, then deleted when the certificate is released.
 
-static void allow_private_key_use(NCRYPT_KEY_HANDLE KeyHandle)
+static std::wstring make_private_key_name(PCCERT_CONTEXT Cert)
 {
-   DWORD key_usage = NCRYPT_ALLOW_ALL_USAGES;
-   NCryptSetProperty(KeyHandle, NCRYPT_KEY_USAGE_PROPERTY, (PBYTE)&key_usage, sizeof(key_usage), 0);
+   static std::atomic<uint32_t> import_counter { 0 };
+   static const wchar_t hex_digits[] = L"0123456789abcdef";
 
-   DWORD export_policy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
-   NCryptSetProperty(KeyHandle, NCRYPT_EXPORT_POLICY_PROPERTY, (PBYTE)&export_policy, sizeof(export_policy), 0);
+   std::array<BYTE, 20> thumbprint {};
+   DWORD thumbprint_size = DWORD(thumbprint.size());
+   if (!CertGetCertificateContextProperty(Cert, CERT_HASH_PROP_ID, thumbprint.data(), &thumbprint_size)) {
+      thumbprint_size = 0;
+   }
+
+   std::wstring name = L"Kotuku-PEM-";
+   for (DWORD i = 0; i < thumbprint_size; i++) {
+      name.push_back(hex_digits[thumbprint[i] >> 4]);
+      name.push_back(hex_digits[thumbprint[i] & 0xf]);
+   }
+
+   name.append(L"-");
+   name.append(std::to_wstring(GetCurrentProcessId()));
+   name.append(L"-");
+   name.append(std::to_wstring(++import_counter));
+   return name;
 }
 
 //********************************************************************************************************************
@@ -642,21 +680,23 @@ static bool certificate_has_private_key(PCCERT_CONTEXT);
 
 //********************************************************************************************************************
 
-static bool import_sec1_ec_private_key(const std::vector<BYTE> &PrivateKey, NCRYPT_KEY_HANDLE &KeyHandle)
+static bool import_sec1_ec_private_key(const std::vector<BYTE> &PrivateKey, const std::wstring &KeyName,
+   NCRYPT_KEY_HANDLE &KeyHandle)
 {
    std::vector<BYTE> curve_oid;
    std::vector<BYTE> private_scalar;
    std::vector<BYTE> public_x;
    std::vector<BYTE> public_y;
    if (!extract_sec1_ec_key(PrivateKey, curve_oid, private_scalar, public_x, public_y)) {
-      ssl_debug_log(SSL_DEBUG_INFO, "Failed to parse SEC1 EC private key.");
+      ssl_debug_log(SSL_DEBUG_WARNING, "Failed to parse SEC1 EC private key.");
       return false;
    }
 
+   const wchar_t *algorithm;
    DWORD magic;
    DWORD key_size;
-   if (!ec_curve_info(curve_oid, magic, key_size)) {
-      ssl_debug_log(SSL_DEBUG_INFO, "Unsupported SEC1 EC private key curve.");
+   if (!ec_curve_info(curve_oid, algorithm, magic, key_size)) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "Unsupported SEC1 EC private key curve.");
       return false;
    }
 
@@ -674,100 +714,144 @@ static bool import_sec1_ec_private_key(const std::vector<BYTE> &PrivateKey, NCRY
    NCRYPT_PROV_HANDLE provider = 0;
    auto status = NCryptOpenStorageProvider(&provider, MS_KEY_STORAGE_PROVIDER, 0);
    if (status != ERROR_SUCCESS) {
-      ssl_debug_log(SSL_DEBUG_INFO, "NCryptOpenStorageProvider() failed for EC private key: 0x%08x", status);
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptOpenStorageProvider() failed for EC private key: 0x%08x", status);
       return false;
    }
 
-   status = NCryptImportKey(provider, 0, BCRYPT_ECCPRIVATE_BLOB, nullptr, &KeyHandle, blob.data(),
-      DWORD(blob.size()), NCRYPT_SILENT_FLAG);
+   // A raw key blob can only be persisted by assigning it to a named key prior to finalisation.
+
+   NCRYPT_KEY_HANDLE key_handle = 0;
+   status = NCryptCreatePersistedKey(provider, &key_handle, algorithm, KeyName.c_str(), 0, NCRYPT_OVERWRITE_KEY_FLAG);
    NCryptFreeObject(provider);
 
    if (status != ERROR_SUCCESS) {
-      ssl_debug_log(SSL_DEBUG_INFO, "NCryptImportKey() failed for EC private key: 0x%08x", status);
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptCreatePersistedKey() failed for EC private key: 0x%08x", status);
       return false;
    }
 
-   allow_private_key_use(KeyHandle);
+   status = NCryptSetProperty(key_handle, BCRYPT_ECCPRIVATE_BLOB, blob.data(), DWORD(blob.size()), NCRYPT_SILENT_FLAG);
+   if (status != ERROR_SUCCESS) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptSetProperty() failed for EC private key blob: 0x%08x", status);
+      NCryptFreeObject(key_handle);
+      return false;
+   }
+
+   status = NCryptFinalizeKey(key_handle, NCRYPT_SILENT_FLAG);
+   if (status != ERROR_SUCCESS) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptFinalizeKey() failed for EC private key: 0x%08x", status);
+      NCryptFreeObject(key_handle);
+      return false;
+   }
+
+   KeyHandle = key_handle;
    return true;
 }
 
 //********************************************************************************************************************
 
 static bool import_pkcs8_private_key(const std::vector<BYTE> &, std::optional<const std::string> &,
-   NCRYPT_KEY_HANDLE &);
+   const std::wstring &, NCRYPT_KEY_HANDLE &);
 
 //********************************************************************************************************************
 
 static bool import_private_key_pem(const std::string &PEMData, std::optional<const std::string> &Password,
-   NCRYPT_KEY_HANDLE &KeyHandle)
+   const std::wstring &KeyName, NCRYPT_KEY_HANDLE &KeyHandle)
 {
    std::vector<BYTE> key_der;
 
    if (decode_pem_section(PEMData, "PRIVATE KEY", key_der)) {
-      return import_pkcs8_private_key(key_der, Password, KeyHandle);
+      return import_pkcs8_private_key(key_der, Password, KeyName, KeyHandle);
    }
 
    if (decode_pem_section(PEMData, "ENCRYPTED PRIVATE KEY", key_der)) {
-      return import_pkcs8_private_key(key_der, Password, KeyHandle);
+      return import_pkcs8_private_key(key_der, Password, KeyName, KeyHandle);
    }
 
    PemBlock key_block;
    if (decode_pem_block(PEMData, "RSA PRIVATE KEY", key_block)) {
-      if (!decrypt_traditional_pem_key(key_block, Password, key_der)) return false;
+      if (!decrypt_traditional_pem_key(key_block, Password, key_der)) {
+         ssl_debug_log(SSL_DEBUG_WARNING, "Failed to decrypt the traditional RSA PEM private key.");
+         return false;
+      }
+
+      // The key is in plain text once unwrapped, so the password is not passed on.
+
+      std::optional<const std::string> no_password;
       key_der = wrap_rsa_private_key_as_pkcs8(key_der);
-      return import_pkcs8_private_key(key_der, Password, KeyHandle);
+      return import_pkcs8_private_key(key_der, no_password, KeyName, KeyHandle);
    }
 
    if (decode_pem_block(PEMData, "EC PRIVATE KEY", key_block)) {
-      if (!decrypt_traditional_pem_key(key_block, Password, key_der)) return false;
-      return import_sec1_ec_private_key(key_der, KeyHandle);
+      if (!decrypt_traditional_pem_key(key_block, Password, key_der)) {
+         ssl_debug_log(SSL_DEBUG_WARNING, "Failed to decrypt the traditional EC PEM private key.");
+         return false;
+      }
+
+      return import_sec1_ec_private_key(key_der, KeyName, KeyHandle);
    }
 
+   ssl_debug_log(SSL_DEBUG_WARNING, "No supported private key section was found in the PEM data.");
    return false;
 }
 
 //********************************************************************************************************************
+// The key name buffer directs the key storage provider to persist the imported key.
 
-static bool try_import_pkcs8_private_key(NCRYPT_PROV_HANDLE Provider, const std::vector<BYTE> &KeyDer,
-   NCryptBufferDesc *Params, NCRYPT_KEY_HANDLE &KeyHandle)
+static SECURITY_STATUS try_import_pkcs8_private_key(NCRYPT_PROV_HANDLE Provider, const std::vector<BYTE> &KeyDer,
+   const std::wstring &KeyName, const std::wstring *Password, NCRYPT_KEY_HANDLE &KeyHandle)
 {
-   auto status = NCryptImportKey(Provider, 0, NCRYPT_PKCS8_PRIVATE_KEY_BLOB, Params, &KeyHandle,
-      (PBYTE)KeyDer.data(), DWORD(KeyDer.size()), NCRYPT_SILENT_FLAG);
-   return status IS ERROR_SUCCESS;
+   std::array<NCryptBuffer, 2> buffers {};
+   ULONG buffer_count = 0;
+
+   buffers[buffer_count].cbBuffer = DWORD((KeyName.size() + 1) * sizeof(wchar_t));
+   buffers[buffer_count].BufferType = NCRYPTBUFFER_PKCS_KEY_NAME;
+   buffers[buffer_count].pvBuffer = (PVOID)KeyName.c_str();
+   buffer_count++;
+
+   if (Password) {
+      buffers[buffer_count].cbBuffer = DWORD((Password->size() + 1) * sizeof(wchar_t));
+      buffers[buffer_count].BufferType = NCRYPTBUFFER_PKCS_SECRET;
+      buffers[buffer_count].pvBuffer = (PVOID)Password->c_str();
+      buffer_count++;
+   }
+
+   NCryptBufferDesc params {};
+   params.ulVersion = NCRYPTBUFFER_VERSION;
+   params.cBuffers = buffer_count;
+   params.pBuffers = buffers.data();
+
+   return NCryptImportKey(Provider, 0, NCRYPT_PKCS8_PRIVATE_KEY_BLOB, &params, &KeyHandle, (PBYTE)KeyDer.data(),
+      DWORD(KeyDer.size()), NCRYPT_SILENT_FLAG | NCRYPT_OVERWRITE_KEY_FLAG);
 }
 
 //********************************************************************************************************************
 
 static bool import_pkcs8_private_key(const std::vector<BYTE> &KeyDer, std::optional<const std::string> &Password,
-   NCRYPT_KEY_HANDLE &KeyHandle)
+   const std::wstring &KeyName, NCRYPT_KEY_HANDLE &KeyHandle)
 {
    NCRYPT_PROV_HANDLE provider = 0;
-   if (NCryptOpenStorageProvider(&provider, MS_KEY_STORAGE_PROVIDER, 0) != ERROR_SUCCESS) return false;
-
-   std::wstring wide_password = password_to_wide(Password);
-   NCryptBuffer password_buffer {};
-   NCryptBufferDesc password_desc {};
-
-   if (Password.has_value()) {
-      password_buffer.cbBuffer = DWORD((wide_password.size() + 1) * sizeof(wchar_t));
-      password_buffer.BufferType = NCRYPTBUFFER_PKCS_SECRET;
-      password_buffer.pvBuffer = (PVOID)wide_password.c_str();
-
-      password_desc.ulVersion = NCRYPTBUFFER_VERSION;
-      password_desc.cBuffers = 1;
-      password_desc.pBuffers = &password_buffer;
+   auto status = NCryptOpenStorageProvider(&provider, MS_KEY_STORAGE_PROVIDER, 0);
+   if (status != ERROR_SUCCESS) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptOpenStorageProvider() failed for PKCS#8 private key: 0x%08x", status);
+      return false;
    }
 
-   auto result = try_import_pkcs8_private_key(provider, KeyDer, Password.has_value() ? &password_desc : nullptr,
+   std::wstring wide_password = password_to_wide(Password);
+
+   status = try_import_pkcs8_private_key(provider, KeyDer, KeyName, Password.has_value() ? &wide_password : nullptr,
       KeyHandle);
-   if ((!result) and Password.has_value()) {
-      result = try_import_pkcs8_private_key(provider, KeyDer, nullptr, KeyHandle);
+   if ((status != ERROR_SUCCESS) and Password.has_value()) {
+      status = try_import_pkcs8_private_key(provider, KeyDer, KeyName, nullptr, KeyHandle);
    }
 
    NCryptFreeObject(provider);
-   if (result) allow_private_key_use(KeyHandle);
 
-   return result;
+   if (status != ERROR_SUCCESS) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "NCryptImportKey() failed for PKCS#8 private key: 0x%08x", status);
+      return false;
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -864,6 +948,31 @@ static bool attach_private_key(PCCERT_CONTEXT Cert, NCRYPT_KEY_HANDLE KeyHandle)
 }
 
 //********************************************************************************************************************
+// Links a certificate to a persisted private key by name, which is the form that Schannel requires in order to
+// acquire the key for server credentials.
+
+static bool attach_persisted_private_key(PCCERT_CONTEXT Cert, const std::wstring &KeyName)
+{
+   CRYPT_KEY_PROV_INFO key_info {};
+   key_info.pwszContainerName = (LPWSTR)KeyName.c_str();
+   key_info.pwszProvName = (LPWSTR)MS_KEY_STORAGE_PROVIDER;
+
+   if (!CertSetCertificateContextProperty(Cert, CERT_KEY_PROV_INFO_PROP_ID, 0, &key_info)) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "Failed to set the private key provider of the certificate: 0x%08x",
+         GetLastError());
+      return false;
+   }
+
+   if (!certificate_has_private_key(Cert)) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "The persisted private key cannot be acquired from the certificate: 0x%08x",
+         GetLastError());
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
 
 bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &Password)
 {
@@ -915,61 +1024,57 @@ bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional
    std::vector<BYTE> cert_der;
    if (!decode_pem_section(cert_pem, "CERTIFICATE", cert_der)) return false;
 
-   PCCERT_CONTEXT cert_context = CertCreateCertificateContext(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-      cert_der.data(), DWORD(cert_der.size()));
-   if (!cert_context) return false;
-
    std::string key_pem;
    if (KeyPath.has_value()) {
-      if (!read_text_file(KeyPath.value(), key_pem)) {
-         CertFreeCertificateContext(cert_context);
-         return false;
-      }
+      if (!read_text_file(KeyPath.value(), key_pem)) return false;
    }
    else key_pem = cert_pem;
 
-   NCRYPT_KEY_HANDLE key_handle = 0;
-   if (!import_private_key_pem(key_pem, Password, key_handle)) {
-      CertFreeCertificateContext(cert_context);
-      return false;
-   }
-
-   if (!private_key_matches_certificate(cert_context, key_handle)) {
-      ssl_debug_log(SSL_DEBUG_INFO, "PEM private key does not match the certificate public key.");
-      free_imported_private_key(key_handle);
-      CertFreeCertificateContext(cert_context);
-      return false;
-   }
-
-   if (!attach_private_key(cert_context, key_handle)) {
-      free_imported_private_key(key_handle);
-      CertFreeCertificateContext(cert_context);
+   PCCERT_CONTEXT cert_context = CertCreateCertificateContext(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+      cert_der.data(), DWORD(cert_der.size()));
+   if (!cert_context) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "Failed to parse the PEM certificate: 0x%08x", GetLastError());
       return false;
    }
 
    HCERTSTORE cert_store = nullptr;
    PCCERT_CONTEXT store_cert_context = nullptr;
-   if (!add_certificate_to_memory_store(cert_context, cert_store, store_cert_context)) {
-      free_imported_private_key(key_handle);
-      CertFreeCertificateContext(cert_context);
-      return false;
-   }
-
+   auto stored = add_certificate_to_memory_store(cert_context, cert_store, store_cert_context);
    CertFreeCertificateContext(cert_context);
+   if (!stored) return false;
 
-   if (!attach_private_key(store_cert_context, key_handle)) {
+   auto key_name = make_private_key_name(store_cert_context);
+
+   NCRYPT_KEY_HANDLE key_handle = 0;
+   if (!import_private_key_pem(key_pem, Password, key_name, key_handle)) {
       CertFreeCertificateContext(store_cert_context);
       CertCloseStore(cert_store, 0);
-      free_imported_private_key(key_handle);
       return false;
    }
+
+   if (!private_key_matches_certificate(store_cert_context, key_handle)) {
+      ssl_debug_log(SSL_DEBUG_WARNING, "PEM private key does not match the certificate public key.");
+      delete_imported_private_key(key_handle);
+      CertFreeCertificateContext(store_cert_context);
+      CertCloseStore(cert_store, 0);
+      return false;
+   }
+
+   if (!attach_persisted_private_key(store_cert_context, key_name)) {
+      delete_imported_private_key(key_handle);
+      CertFreeCertificateContext(store_cert_context);
+      CertCloseStore(cert_store, 0);
+      return false;
+   }
+
+   ssl_debug_log(SSL_DEBUG_INFO, "Imported PEM private key as %S", key_name.c_str());
 
    clear_server_certificate(SSL);
    SSL->server_certificate_store = cert_store;
    SSL->server_certificate = store_cert_context;
    SSL->imported_private_key = key_handle;
    SSL->imported_private_key_owned = true;
-   SSL->imported_private_key_persistent = false;
+   SSL->imported_private_key_persistent = true;
    return true;
 }
 

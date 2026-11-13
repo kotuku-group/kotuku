@@ -527,23 +527,15 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function customCertificateFilesAvailable(CertPath, KeyPath)
-   if mSys.AnalysePath(CertPath) != ERR_Okay then
-      logOutput('Test certificate not installed, skipping test: ' .. CertPath)
-      return false
+-- The localhost fixtures are staged in the repository and installed on every platform, so a missing file is a
+-- failure and never a reason to skip a test.
+
+function requireCustomCertificateFile(CertPath, KeyPath)
+   assert(mSys.AnalysePath(CertPath) is ERR_Okay, 'Required test certificate is not installed: ' .. CertPath)
+
+   if KeyPath then
+      assert(mSys.AnalysePath(KeyPath) is ERR_Okay, 'Required test private key is not installed: ' .. KeyPath)
    end
-
-   if KeyPath and mSys.AnalysePath(KeyPath) != ERR_Okay then
-      logOutput('Test private key not installed, skipping test: ' .. KeyPath)
-      return false
-   end
-
-   return true
-end
-
-function requireCustomCertificateFile(CertPath)
-   assert(mSys.AnalysePath(CertPath) is ERR_Okay,
-      'Required PKCS#12 test certificate is not installed: ' .. CertPath)
 end
 
 function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
@@ -653,34 +645,30 @@ end
 
 @Test(priority=43); @Requires(ssl=true)
 function PEMCustomCertificate()
-   -- Windows installs only the PKCS#12 localhost certificates because Schannel currently cannot acquire the
-   -- private keys imported through this PEM path.  The missing key skips this test there; OpenSSL platforms still
-   -- install the PEM key and exercise this path.
+   -- PKCS#8 private key in a separate PEM file
    cert_path = 'config:ssl/localhost.pem'
    key_path = 'config:ssl/localhost-key.pem'
-   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+   requireCustomCertificateFile(cert_path, key_path)
 
    runCustomCertificateHandshake('PEMCert', cert_path, key_path, nil)
 end
 
 @Test(priority=44); @Requires(ssl=true)
 function TraditionalRSAPEMCustomCertificate()
-   -- Windows intentionally omits this generated RSA PEM key for now.  The Schannel private-key import path needs
-   -- follow-up work before this certificate form can be validated on Windows.
+   -- Traditional PKCS#1 'RSA PRIVATE KEY' form of the same key
    cert_path = 'config:ssl/localhost.pem'
    key_path = 'config:ssl/localhost-rsa-key.pem'
-   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+   requireCustomCertificateFile(cert_path, key_path)
 
    runCustomCertificateHandshake('TraditionalRSACert', cert_path, key_path, nil)
 end
 
 @Test(priority=45); @Requires(ssl=true)
 function TraditionalECPEMCustomCertificate()
-   -- Windows intentionally omits this generated EC PEM certificate/key pair for now.  PKCS#12 coverage remains
-   -- active there while Schannel PEM private-key acquisition is unresolved.
+   -- Traditional SEC1 'EC PRIVATE KEY' paired with an ECDSA certificate
    cert_path = 'config:ssl/localhost-ec.pem'
    key_path = 'config:ssl/localhost-ec-key.pem'
-   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+   requireCustomCertificateFile(cert_path, key_path)
 
    runCustomCertificateHandshake('TraditionalECCert', cert_path, key_path, nil)
 end
