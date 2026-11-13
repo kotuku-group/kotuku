@@ -299,3 +299,64 @@ end
       '<rect width="64" height="64" fill="none" filter="url(#f)"/>', points)
    assert((p[0].alpha is 255) and (p[2].alpha is 255), 'SourceGraphic must widen the subregion to the filter region')
 end
+
+-- Explicit percentages use the viewport in user space, even when the filter has a different origin and size.
+
+@Test function UserSpaceSubregionPercentagesUseTheViewport()
+   for size in values(array<int> { 64, 192 }) do
+      local scale = size / 64
+      for effect in values(array<str> { 'flood', 'noise', 'source' }) do
+         local absolute_region = 'x="16" y="16" width="16" height="16"'
+         local percent_region = 'x="25%" y="25%" width="25%" height="25%"'
+         local absolute_effect = (effect is 'flood') ? f'<feFlood flood-color="red" {absolute_region}/>' :
+            noise(f'stitchTiles="stitch" {absolute_region}')
+         local percent_effect = (effect is 'flood') ? f'<feFlood flood-color="red" {percent_region}/>' :
+            noise(f'stitchTiles="stitch" {percent_region}')
+         local content:str
+         if effect is 'source' then
+            absolute_effect = f'<feImage xlink:href="#source" {absolute_region}/>'
+            percent_effect = f'<feImage xlink:href="#source" {percent_region}/>'
+            content = [[<defs><rect id="source" width="16" height="16" fill="red"/></defs>
+               <rect width="64" height="64" filter="url(#f)"/>]]
+         end
+         local attribs = 'viewBox="0 0 64 64" xmlns:xlink="http://www.w3.org/1999/xlink"'
+         local reference <close> = document(absolute_effect, content, size, attribs,
+            'filterUnits="userSpaceOnUse"')
+         local percent <close> = document(percent_effect, content, size, attribs,
+            'filterUnits="userSpaceOnUse"')
+         for svg in values({ reference, percent }) do
+            local _, filter = check svg.scene.mtFindDef('f')
+            filter.{ x=16, y=16, width=32, height=32 }
+         end
+         local expected <close> = draw(reference, size)
+         local actual <close> = draw(percent, size)
+         assert(mGfx.ReadRGBPixel(expected, 20 * scale, 20 * scale).alpha is 255,
+            f'The absolute {effect} subregion must fill the control sample')
+         for y in {17 to 47 by 7} do
+            for x in {17 to 47 by 7} do
+               assertSame(actual, expected, x * scale, y * scale, x * scale, y * scale)
+            end
+         end
+      end
+   end
+end
+
+-- Vector-backed feImage rendering and clipping must agree on the primitive subregion's origin.
+
+@Test function SourceImageUsesTheBoundingBoxSubregion()
+   local content = [[<defs><rect id="source" width="16" height="16" fill="red"/></defs>
+      <rect id="source_client" x="32" y="32" width="16" height="16" filter="url(#f)"/>]]
+   local svg <close> = document([[<feImage xlink:href="#source" x="0" y="0" width="1" height="1"
+      preserveAspectRatio="none"/>]], content, 64, 'xmlns:xlink="http://www.w3.org/1999/xlink"',
+      'primitiveUnits="objectBoundingBox"')
+   local _, filter = check svg.scene.mtFindDef('f')
+   filter.{ x=-1, y=-1, width=3, height=3 }
+   for offset in values(array<int> { 32, 40, 32 }) do
+      obj.find('source_client').x = offset
+      local bmp <close> = draw(svg, 64)
+      local p = mGfx.ReadRGBPixel(bmp, offset + 8, 40)
+      assert((p.red is 255) and (p.alpha is 255), 'The vector source must fill the client bounding box')
+      assert(mGfx.ReadRGBPixel(bmp, offset - 4, 40).alpha is 0,
+         'The vector source must not use the filter region origin')
+   end
+end

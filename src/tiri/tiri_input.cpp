@@ -244,21 +244,6 @@ static int input_reserve(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Releases requests that have not been answered within DATA_REQUEST_EXPIRY.
-
-void expire_data_requests(extTiri *Self)
-{
-   auto now = PreciseTime();
-   for (auto it = Self->Requests.begin(); it != Self->Requests.end(); ) {
-      if (now - it->TimeCreated > DATA_REQUEST_EXPIRY) {
-         kt::Log(__FUNCTION__).msg("Request for item %d from #%d has expired.", it->Item, it->SourceID);
-         release_tiri_function(Self->Lua, &it->Callback);
-         it = Self->Requests.erase(it);
-      }
-      else it++;
-   }
-}
-
 // Removes a request if it is still pending.  A synchronous receipt may have consumed it already.
 
 static void cancel_data_request(lua_State *Lua, extTiri *Self, OBJECTID SourceID, int Item, const FUNCTION &Callback)

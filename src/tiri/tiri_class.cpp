@@ -627,6 +627,23 @@ static ERR TIRI_Activate(extTiri *Self)
 }
 
 //********************************************************************************************************************
+// Releases data requests that have not been answered within DATA_REQUEST_EXPIRY.  Defined here rather than in
+// tiri_input.cpp because DataFeed receipts are processed even when the Display module is excluded from the build.
+
+void expire_data_requests(extTiri *Self)
+{
+   auto now = PreciseTime();
+   for (auto it = Self->Requests.begin(); it != Self->Requests.end(); ) {
+      if (now - it->TimeCreated > DATA_REQUEST_EXPIRY) {
+         kt::Log(__FUNCTION__).msg("Request for item %d from #%d has expired.", it->Item, it->SourceID);
+         release_tiri_function(Self->Lua, &it->Callback);
+         it = Self->Requests.erase(it);
+      }
+      else it++;
+   }
+}
+
+//********************************************************************************************************************
 
 static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 {
