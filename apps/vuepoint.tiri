@@ -8,6 +8,10 @@ A file viewer for recognised documents like SVG and RIPL
 
    include 'svg', 'image'
 
+   @if(exists='modules:scintilla')
+   include 'scintilla'
+   @end
+
 CLASSID_IMAGE <const> = 'Image'.hash()
 
 glBody = [[<body fill="rgb(68 68 90)" font-fill="white" font-face="Noto Sans" font-size="12pt" margins="2em"/>]]
@@ -29,7 +33,7 @@ glIntroduction = [[
 
 <p>Vuepoint is a simple file browser that supports the following file types:</p>
 
-<p indent="1em">SVG, RIPL, JPEG, PNG</p>
+<p indent="1em">SVG, RIPL, JPEG, PNG, plain text and source code</p>
 
 <h2>Command Line</h2>
 
@@ -79,6 +83,22 @@ glIntroduction = [[
    }
 
    glSaveFilter = array<table> { }
+
+   -- Text files are displayed with Scintilla, which chooses a syntax highlighter from the file extension.  Files with
+   -- an extension that it does not recognise are shown as plain text.  SVG and RIPL files are excluded because they
+   -- are rendered.
+
+   glTextExtensions = array<str> { }
+
+   @if(exists='modules:scintilla')
+   glTextExtensions = array<str> {
+      'txt', 'text', 'log', 'md', 'markdown', 'csv', 'ini', 'cfg', 'prop', 'yaml', 'yml', 'toml',
+      'tiri', 'tdl', 'lua', 'c', 'cc', 'cpp', 'cxx', 'h', 'hh', 'hpp', 'hxx', 'py', 'rb', 'pl', 'php', 'sql',
+      'sh', 'bash', 'bat', 'asm', 'pas', 'vb', 'diff', 'cmake',
+      'xml', 'json', 'jsonld', 'html', 'htm', 'xhtml', 'css'
+   }
+   glOpenFilter.push({ name='Text Files', ext=glTextExtensions })
+   @end
 
    glScript = obj.find('self')
    mSys.SetVolume('vuepoint', glScript.workingPath, 'misc/gallery', 'Vuepoint', nil, VOLUME_HIDDEN)
@@ -230,8 +250,70 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displayText(Path:str)
+-- Displays a text file in a read-only Scintilla editor.  Scintilla refuses files of 10MB or more.
 
+MAX_TEXT_SIZE <const> = 10 * 1024 * 1024
+
+function displayText(Path:str!)
+   msg(f'displayText() {Path}')
+
+   @if(exists='modules:scintilla')
+   local editor:obj
+   try
+      do
+         local file <close> = obj.new('file', { path=Path, flags=FL_READ })
+         if file.size >= MAX_TEXT_SIZE then
+            raise ERR_BufferOverflow, string.format('The file size of %.1fMB exceeds the 10MB limit.', file.size / 1048576)
+         end
+      end
+
+      -- The editor reads the palette when ThemeXML is set, so the XML object is not needed afterwards.  The palette's
+      -- handle colour is too dark for comments against a dark background, so dark palettes use fixed colours for
+      -- comments and numbers.
+
+      local p = glWindow.theme.palette
+      local comment = p.handle
+      local number  = p.contrast
+      if p.type is 'dark' then
+         comment = 'oklch(0.68 0.02 250)'
+         number  = 'oklch(0.80 0.10 300)'
+      end
+
+      local theme <close> = obj.new('XML', { statement=f'<theme><palette background="{p.bkgd}" text="{p.text}" ' ..
+         f'operator="{p.text}" keyword="{p.prime}" comment="{comment}" number="{number}" string="{p.success}" ' ..
+         f'preprocessor="{p.success}" type="{p.contrast}" error="{p.error}" margin="{comment}" ' ..
+         f'marginBackground="{p.surround}" cursor="{p.text}" selectionBackground="{p.prime}" ' ..
+         f'selectionForeground="{p.altText}"/></theme>' })
+
+      editor = glViewArea.new('Scintilla', {
+         path           = Path,
+         flags          = SCIF_DETECT_LEXER,
+         textStyle      = f'face=Source Code Pro; size={math.round(14 * gui.interface.dpi / 96)}px',
+         lineNumbers    = true,
+         foldingMarkers = true,
+         themeXML       = theme
+      })
+
+      configureScrollbar(editor.view, editor.page)
+
+      glStats = { lines = editor.lineCount }
+
+      glTerminateView = function()
+         editor.free() -- Also frees the editor's View, Page and image definition
+      end
+   except e
+      editor?.free()
+      displayError(f'<p>Failed to load "{Path}" as text: {e.message}</p>')
+   end
+   @end
+end
+
+-- Returns the lower-case extension of a file path, or an empty string if there is none.
+
+RX_FILE_EXT <const> = r'\.([A-Za-z0-9]+)$'
+
+function fileExtension(Path:str!):str
+   return RX_FILE_EXT.extract(Path)?.lower() ?? ''
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -258,6 +340,8 @@ function displayFile(Path:str)
       displaySVG(Path)
    elseif lpath.endsWith('.ripl') or lpath.endsWith('.rpl') then
       displayDoc(Path)
+   elseif fileExtension(Path) in glTextExtensions then
+      displayText(Path)
    else -- File is unsupported
       displayError(f'<p>Unrecognised file "{Path}"</p>')
    end
@@ -398,6 +482,8 @@ end
             title = FileView.selectionFile()
             if glStats.width and glStats.height then
                title ..= f' [ {glStats.width} x {glStats.height} ]'
+            elseif glStats.lines then
+               title ..= f' [ {glStats.lines} lines ]'
             end
             glWindow.setTitle(title)
          end
