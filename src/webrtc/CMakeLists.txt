@@ -304,7 +304,6 @@ if (UNIT_TESTS)
 
    add_executable (test_webrtc_public_webchannel tests/test_public_webchannel.cpp)
    set_target_properties (test_webrtc_public_webchannel PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-   target_compile_definitions (test_webrtc_public_webchannel PRIVATE ${WEBRTC_CRYPTO_DEFINITION})
    target_link_libraries (test_webrtc_public_webchannel PRIVATE ${INIT_LINK})
    add_dependencies (test_webrtc_public_webchannel ${MOD})
    webrtc_native_program (test_webrtc_public_webchannel PUBLIC_WEBCHANNEL_PROGRAM)

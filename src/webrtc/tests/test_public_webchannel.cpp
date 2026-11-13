@@ -81,11 +81,7 @@ int exercise(int Mode, size_t Size) {
        first->setRemoteDescription(second->LocalDescription) != ERR::Okay) return 7;
    bool answer_active = std::string_view(second->LocalDescription).find("\r\na=setup:active\r\n") !=
       std::string_view::npos;
-#ifdef CRYPTO_PROTOCOL_CNG
-   if (not answer_active) return 28;
-#else
-   if (answer_active) return 28;
-#endif
+   if (answer_active) return 28; // Answers take the passive DTLS role on every backend
    if (not wait_for([&]() { return a.opens IS 1 and b.opens IS 1; })) return 8;
    if (channel->getStream(stream_id) != ERR::Okay or
        (negotiated ? stream_id != 42 : (stream_id < 0 or stream_id % 2 != (answer_active ? 1 : 0)))) return 27;

@@ -9,7 +9,7 @@ WebRTC needs from a socket-independent DTLS backend:
   * ECDSA P-256 self-signed certificates and SDP-style SHA-256 fingerprints
   * Fingerprint verification, both before and after the handshake completes
   * use_srtp negotiation and RFC 5764 keying material export
-  * Handshake message fragmentation at a fixed MTU
+  * Handshake message fragmentation at a fixed MTU, and reassembly of a ClientHello fragmented by the peer
   * Retransmission on loss, tolerance of reordering
   * Application data exchange and close_notify
 
@@ -55,6 +55,7 @@ struct Link {
    Endpoint a, b;
    int mtu = DtlsTransport::DEFAULT_MTU;
    std::function<bool(char, size_t)> drop;
+   std::function<std::vector<std::vector<uint8_t>>(char, const std::vector<uint8_t> &)> rewrite;
    bool reverse_flights = false;
    size_t index_a = 0, index_b = 0;
 
@@ -85,11 +86,15 @@ struct Link {
 
       auto transfer = [this](std::deque<std::vector<uint8_t>> &Flight, char From, size_t &Index, Endpoint &To) {
          if (reverse_flights) std::reverse(Flight.begin(), Flight.end());
-         for (auto &datagram : Flight) {
+         for (auto &sent : Flight) {
             auto index = Index++;
             if (drop and drop(From, index)) continue;
-            if ((To.transport->state() IS DtlsState::CONNECTING) or (To.transport->state() IS DtlsState::CONNECTED)) {
-               (void)To.transport->feed(datagram);
+            auto datagrams = rewrite ? rewrite(From, sent) : std::vector<std::vector<uint8_t>>{ sent };
+            for (auto &datagram : datagrams) {
+               auto state = To.transport->state();
+               if ((state IS DtlsState::CONNECTING) or (state IS DtlsState::CONNECTED)) {
+                  (void)To.transport->feed(datagram);
+               }
             }
          }
       };
@@ -344,6 +349,94 @@ void test_reordering()
    report("reordered handshake flights");
 }
 
+// Splits each client ClientHello in two (both, when the server sends a HelloVerifyRequest), as browsers do once a
+// post-quantum key share pushes it past the MTU.  The fragments travel as separate datagrams, or together in reverse
+// order when Together is set.  Epoch-0 client records are renumbered so the extra record keeps sequence numbers unique
+// and increasing.
+
+std::vector<std::vector<uint8_t>> split_client_hello(const std::vector<uint8_t> &Datagram, bool Together)
+{
+   auto renumber = [](std::vector<uint8_t> &Record, uint64_t Sequence) {
+      for (int i = 0; i < 6; i++) Record[5 + i] = uint8_t(Sequence >> ((5 - i) * 8));
+   };
+
+   std::vector<std::vector<uint8_t>> records;
+   size_t position = 0;
+   while (position + 13 <= Datagram.size()) {
+      size_t length = (size_t(Datagram[position + 11]) << 8) | Datagram[position + 12];
+      if (position + 13 + length > Datagram.size()) break;
+      std::vector<uint8_t> record(Datagram.begin() + position, Datagram.begin() + position + 13 + length);
+      position += 13 + length;
+
+      bool epoch_zero = not record[3] and not record[4];
+      if (not epoch_zero) {
+         records.push_back(std::move(record));
+         continue;
+      }
+
+      uint64_t sequence = 0;
+      for (int i = 0; i < 6; i++) sequence = (sequence << 8) | record[5 + i];
+
+      bool whole_hello = record[0] IS 22 and length > 12 and record[13] IS 1 and
+         record[19] IS 0 and record[20] IS 0 and record[21] IS 0 and
+         (size_t(record[22]) << 16 | size_t(record[23]) << 8 | record[24]) + 12 IS length;
+      if (not whole_hello) {
+         renumber(record, sequence * 2);
+         records.push_back(std::move(record));
+         continue;
+      }
+
+      size_t body = length - 12, first = body / 2;
+      for (size_t part = 0; part < 2; part++) {
+         size_t offset = part ? first : 0, size = part ? body - first : first;
+         std::vector<uint8_t> fragment(record.begin(), record.begin() + 13 + 6);
+         fragment[11] = uint8_t((size + 12) >> 8);
+         fragment[12] = uint8_t(size + 12);
+         const uint8_t span[6] = { uint8_t(offset >> 16), uint8_t(offset >> 8), uint8_t(offset),
+            uint8_t(size >> 16), uint8_t(size >> 8), uint8_t(size) };
+         fragment.insert(fragment.end(), span, span + 6);
+         fragment.insert(fragment.end(), record.begin() + 25 + offset, record.begin() + 25 + offset + size);
+         renumber(fragment, sequence * 2 + part);
+         records.push_back(std::move(fragment));
+      }
+      if (Together) std::swap(records[records.size() - 2], records.back());
+   }
+
+   if (not Together) return records;
+
+   std::vector<uint8_t> combined;
+   for (auto &record : records) combined.insert(combined.end(), record.begin(), record.end());
+   return { combined };
+}
+
+void test_fragmented_client_hello()
+{
+   for (bool together : { false, true }) {
+      auto link = make_link();
+      size_t splits = 0;
+      link->rewrite = [&](char From, const std::vector<uint8_t> &Datagram) {
+         if (From != 'a') return std::vector<std::vector<uint8_t>>{ Datagram };
+         auto result = split_client_hello(Datagram, together);
+         size_t size = 0;
+         for (auto &datagram : result) size += datagram.size();
+         if (size > Datagram.size()) splits++;
+         return result;
+      };
+
+      CHECK(start(*link), "start() failed");
+      CHECK(link->pump([&]() { return link->both_connected(); }),
+         together ? "Reversed ClientHello fragments in one datagram were not reassembled" :
+            "ClientHello fragments in separate datagrams were not reassembled");
+      CHECK(splits >= 1, "Fixture did not fragment the ClientHello");
+
+      SrtpKeyMaterial ka, kb;
+      CHECK(link->a.transport->srtp_keys(ka) IS ERR::Okay and link->b.transport->srtp_keys(kb) IS ERR::Okay,
+         "Key export failed after a fragmented ClientHello");
+      CHECK(ka.local_key IS kb.remote_key, "Keys disagree after a fragmented ClientHello");
+   }
+   report("fragmented ClientHello reassembly");
+}
+
 void test_fingerprint_mismatch()
 {
    auto link = make_link();
@@ -469,6 +562,7 @@ int main()
    test_loss_recovery();
    test_heavy_loss_recovery();
    test_reordering();
+   test_fragmented_client_hello();
    test_fingerprint_mismatch();
    test_deferred_fingerprint();
    test_close();

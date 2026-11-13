@@ -116,6 +116,14 @@ struct DtlsTransport::Native {
    bool timer_armed = false;
    bool retransmitting = false;
 
+   // A ClientHello under reassembly.  Schannel servers reject a ClientHello that spans several records, before and
+   // after the cookie exchange, whereas browsers fragment theirs once it carries a post-quantum key share.
+
+   Bytes hello;                // Message body, excluding the handshake header
+   std::vector<bool> received; // Body bytes present
+   size_t hello_received = 0;
+   int hello_sequence = -1;    // Handshake message_seq of the ClientHello under reassembly
+
    Native() {
       SecInvalidateHandle(&credentials);
       SecInvalidateHandle(&context);
@@ -197,6 +205,83 @@ struct DtlsTransport::Native {
       } while (status IS SEC_I_MESSAGE_FRAGMENT);
 
       return status;
+   }
+
+   // Replaces fragmented ClientHello records in Datagram with one unfragmented record once the whole message has
+   // arrived.  DTLS hashes the reassembled message for Finished, so the handshake transcript is unchanged.  Partial
+   // fragments are removed from Datagram and every other record passes through unchanged.
+
+   void assemble_hello(Bytes &Datagram) {
+      static constexpr size_t RECORD_HEADER = 13;
+      static constexpr size_t HANDSHAKE_HEADER = 12;
+      static constexpr size_t MAX_BODY = 16384 - HANDSHAKE_HEADER; // Largest body that fits one DTLS record
+
+      auto read24 = [](const uint8_t *Data) { return (size_t(Data[0]) << 16) | (size_t(Data[1]) << 8) | Data[2]; };
+
+      Bytes output;
+      size_t position = 0;
+      while (position + RECORD_HEADER <= Datagram.size()) {
+         auto record = Datagram.data() + position;
+         size_t length = (size_t(record[11]) << 8) | record[12];
+         if (length + RECORD_HEADER > Datagram.size() - position) break; // Truncated datagram
+         auto next = position + RECORD_HEADER + length;
+         auto fragment = record + RECORD_HEADER;
+
+         bool epoch_zero = not record[3] and not record[4];
+         bool client_hello = record[0] IS 22 and epoch_zero and length >= HANDSHAKE_HEADER and fragment[0] IS 1;
+         size_t total = client_hello ? read24(fragment + 1) : 0;
+         size_t offset = client_hello ? read24(fragment + 6) : 0;
+         size_t size = client_hello ? read24(fragment + 9) : 0;
+
+         // Whole messages, records coalescing several messages and malformed fragments are left to Schannel.
+
+         if ((not client_hello) or (size + HANDSHAKE_HEADER != length) or (offset IS 0 and size IS total) or
+             (total > MAX_BODY) or (offset + size > total)) {
+            output.insert(output.end(), record, Datagram.data() + next);
+            position = next;
+            continue;
+         }
+
+         int sequence = (int(fragment[4]) << 8) | fragment[5];
+         if (sequence != hello_sequence or hello.size() != total) {
+            hello.assign(total, 0);
+            received.assign(total, false);
+            hello_received = 0;
+            hello_sequence = sequence;
+         }
+
+         std::memcpy(hello.data() + offset, fragment + HANDSHAKE_HEADER, size);
+         for (size_t i = offset; i < offset + size; i++) {
+            if (not received[i]) {
+               received[i] = true;
+               hello_received++;
+            }
+         }
+
+         if (hello_received IS total) {
+            // The completing record supplies the version, epoch and sequence number, so record sequences still
+            // advance.  The handshake header keeps msg_type, length and message_seq, with one fragment spanning all.
+
+            auto record_length = total + HANDSHAKE_HEADER;
+            output.insert(output.end(), record, record + 11);
+            output.push_back(uint8_t(record_length >> 8));
+            output.push_back(uint8_t(record_length));
+            output.insert(output.end(), fragment, fragment + 6);
+            const uint8_t span[6] = { 0, 0, 0, fragment[1], fragment[2], fragment[3] };
+            output.insert(output.end(), span, span + 6);
+            output.insert(output.end(), hello.begin(), hello.end());
+
+            hello.clear();
+            received.clear();
+            hello_received = 0;
+            hello_sequence = -1;
+         }
+
+         position = next;
+      }
+
+      if (position < Datagram.size()) output.insert(output.end(), Datagram.begin() + position, Datagram.end());
+      Datagram = std::move(output);
    }
 
    SECURITY_STATUS encrypt(std::span<const uint8_t> Plain, ULONG Qop, Bytes &Output) {
@@ -282,6 +367,14 @@ ERR DtlsTransport::drive()
       }
 
       if (not handshake_done) {
+         // An empty datagram is a retransmission request, so a datagram holding only buffered fragments is not
+         // passed on.
+
+         if (local_role IS DtlsRole::SERVER and not datagram.empty()) {
+            native.assemble_hello(datagram);
+            if (datagram.empty()) continue;
+         }
+
          std::vector<Bytes> flight;
          Bytes extra;
          auto status = native.handshake(local_role, mtu, srtp_profiles, datagram, flight, extra);

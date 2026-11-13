@@ -457,14 +457,7 @@ static ERR PEERCONNECTION_CreateAnswer(extPeerConnection *Self)
       if (configured != ERR::Okay) return configured;
    }
 
-   // Prefer the interoperable client role when Schannel answers a browser's actpass offer.  The engine retains
-   // the established role on ICE restarts, including when the original answerer becomes the offerer.
-
-#ifdef CRYPTO_PROTOCOL_CNG
-   auto error = Self->Connection->create_answer(true);
-#else
    auto error = Self->Connection->create_answer();
-#endif
    if (error != ERR::Okay) return error;
 
    peer_refresh(Self);
