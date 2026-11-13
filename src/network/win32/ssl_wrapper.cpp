@@ -30,6 +30,7 @@ Pure Windows implementation that avoids all Kotuku headers to prevent conflicts.
 #include <string>
 #include <sstream>
 #include <array>
+#include <atomic>
 #include <algorithm>
 #include <span>
 #include <climits>

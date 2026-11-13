@@ -9,4 +9,5 @@
 *.dll binary
 *.so binary
 *.crt binary
+*.p12 binary
 *.png diff=exif
