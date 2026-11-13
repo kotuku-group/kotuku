@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/namespaces/kotuku">
+  <!-- Created in 2026 by Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Spindle plate</title>
+  <desc>Steel tread plate, with raised spindles that are pointed at both ends and ridged along the crown, laid in a
+    herringbone over a satin sheet.  Lighting comes from the upper left.  Parameters: metal.</desc>
+  <defs>
+    <!-- Each lug is a spindle, shaded across its width so that it rises to a sharp ridge, drawn in the alpha channel and blurred into a rounded relief.  The relief is
+         lit twice: diffusely for the shading of the plate, and specularly for the glints on the crowns of the lugs.
+         The Kotuku namespace enables the enhanced lighting model, which casts the soft shadows of the lugs.
+
+         The filter is clipped to the tile, so the relief is kept flat or smooth at the tile's edges to avoid seams:
+         the lugs stand clear of the edges, and the brushed grain is applied to the colour rather than the relief.
+         Every noise source is stitched so that the plate repeats with the tile. -->
+    <filter id="metalsSpindlePlateFX" filterUnits="userSpaceOnUse" x="0" y="0" width="48" height="48"
+      color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.45" result="height"/>
+      <feDiffuseLighting in="height" surfaceScale="4" diffuseConstant="1.1"
+        lighting-color="#fff" result="diffuse">
+        <feDistantLight azimuth="225" elevation="52"/>
+      </feDiffuseLighting>
+      <feSpecularLighting in="height" surfaceScale="4" specularConstant="0.95"
+        specularExponent="30" lighting-color="#fff" result="specular">
+        <feDistantLight azimuth="225" elevation="52"/>
+      </feSpecularLighting>
+      <!-- Colour: the metal is mottled by a broad sheen and streaked by the brushed grain. -->
+      <feFlood flood-color="param(metal) #9aa1a9" result="metal"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".0417" numOctaves="2" seed="4" stitchTiles="stitch"
+        result="sheen"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".01 .6" numOctaves="2" seed="11" stitchTiles="stitch"
+        result="grain"/>
+      <feComposite in="sheen" in2="grain" operator="arithmetic" k2="0.36" k3="0.1"
+        k4="0.77" result="mottle"/>
+      <feColorMatrix in="mottle" type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  0 0 0 0 1" result="tone"/>
+      <feComposite in="metal" in2="tone" operator="arithmetic" k1="1" result="brushed"/>
+      <feComposite in="brushed" in2="diffuse" operator="arithmetic" k1=".92" k2="0.32" result="lit"/>
+      <feComposite in="specular" in2="lit" operator="arithmetic" k2=".8" k3="1"/>
+    </filter>
+    <linearGradient id="metalsSpindlePlateRidge" gradientUnits="userSpaceOnUse" x1="0" y1="-3.2" x2="0"
+      y2="3.2">
+      <stop offset="0" stop-color="#fff" stop-opacity=".2"/>
+      <stop offset=".5" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".2"/>
+    </linearGradient>
+    <path id="metalsSpindlePlateLug" fill="url(#metalsSpindlePlateRidge)"
+      d="M-11,0L-4,-2.9Q0,-3.2 4,-2.9L11,0L4,2.9Q0,3.2 -4,2.9Z"/>
+    <pattern id="pidMetalsSpindlePlate" patternUnits="userSpaceOnUse" width="48" height="48" viewBox="0 0 48 48">
+      <g filter="url(#metalsSpindlePlateFX)" fill="#fff">
+        <use href="#metalsSpindlePlateLug" transform="translate(12 12) rotate(-45)"/>
+        <use href="#metalsSpindlePlateLug" transform="translate(36 12) rotate(45)"/>
+        <use href="#metalsSpindlePlateLug" transform="translate(12 36) rotate(45)"/>
+        <use href="#metalsSpindlePlateLug" transform="translate(36 36) rotate(-45)"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidMetalsSpindlePlate)"/>
+</svg>

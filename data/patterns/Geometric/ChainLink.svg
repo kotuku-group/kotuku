@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Created in 2026 by Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Chain link</title>
+  <desc>Charcoal wires zigzag across the tile and meet at short flat joins, forming a mesh of rounded diamonds.  The
+    background is transparent.  Parameters: fore.</desc>
+  <defs>
+    <!-- One wire, zigzagging between joins at y=0 and y=42.5.  Its troughs sit 2.5 units above the peaks of the next
+         wire, so that the doubled wire thickens the joins.  The path runs past both sides of the tile so that every
+         copy reaches the tile edges. -->
+    <path id="geoChainLinkWire" fill="none" stroke="param(fore) #2b2b2b" stroke-width="6" d="M-50,42.5L-40,42.5
+      C-27,42.5 -18,0 -5,0L5,0C18,0 27,42.5 40,42.5L50,42.5C63,42.5 72,0 85,0L95,0"/>
+    <!-- Alternate wires are offset by half a period, so that each trough rests on the peak of the wire below -->
+    <pattern id="pidGeometricChainLink" patternUnits="userSpaceOnUse" width="90" height="90" viewBox="0 0 90 90">
+      <use href="#geoChainLinkWire" x="45" y="-45"/>
+      <use href="#geoChainLinkWire"/>
+      <use href="#geoChainLinkWire" x="45" y="45"/>
+      <use href="#geoChainLinkWire" y="90"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidGeometricChainLink)"/>
+</svg>

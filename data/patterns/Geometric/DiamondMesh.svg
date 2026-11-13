@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Created in 2026 by Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Diamond mesh</title>
+  <desc>A white mesh perforated with rounded diamond holes that alternate between large and small, each small hole
+    set between four large ones.  The holes are transparent.  Parameters: fore.</desc>
+  <defs>
+    <!-- The tile is filled and the holes are cut from it by the even-odd rule.  Each hole is a square with 5 unit
+         corner radii, turned 45 degrees.  The large holes (25.5 unit sides) sit on the corners of the tile and the
+         small hole (19.5 unit sides) sits at its centre.  The mesh between neighbouring holes is 5.78 units wide. -->
+    <pattern id="pidGeometricDiamondMesh" patternUnits="userSpaceOnUse" width="36" height="36"
+      viewBox="0 0 40 40">
+      <path fill="param(fore) #fff" fill-rule="evenodd" d="M0,0H40V40H0Z
+        M-3.54,-14.5a5,5 0 0 1 7.07,0l10.96,10.96a5,5 0 0 1 0,7.07l-10.96,10.96a5,5 0 0 1 -7.07,0l-10.96,-10.96
+          a5,5 0 0 1 0,-7.07Z
+        M36.46,-14.5a5,5 0 0 1 7.07,0l10.96,10.96a5,5 0 0 1 0,7.07l-10.96,10.96a5,5 0 0 1 -7.07,0l-10.96,-10.96
+          a5,5 0 0 1 0,-7.07Z
+        M-3.54,25.5a5,5 0 0 1 7.07,0l10.96,10.96a5,5 0 0 1 0,7.07l-10.96,10.96a5,5 0 0 1 -7.07,0l-10.96,-10.96
+          a5,5 0 0 1 0,-7.07Z
+        M36.46,25.5a5,5 0 0 1 7.07,0l10.96,10.96a5,5 0 0 1 0,7.07l-10.96,10.96a5,5 0 0 1 -7.07,0l-10.96,-10.96
+          a5,5 0 0 1 0,-7.07Z
+        M16.46,9.75a5,5 0 0 1 7.07,0l6.72,6.72a5,5 0 0 1 0,7.07l-6.72,6.72a5,5 0 0 1 -7.07,0l-6.72,-6.72
+          a5,5 0 0 1 0,-7.07Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidGeometricDiamondMesh)"/>
+</svg>

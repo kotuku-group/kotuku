@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Created in 2026 by Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
+  <title>Deltas</title>
+  <desc>A zig-zag running between two rails divides the band into alternating upward and downward triangles, each
+    holding a triangular ring.  Rendered as a flat fill for use as a horizontal border.  Parameters: fore.</desc>
+  <defs>
+    <!-- A roller tiles seamlessly on the horizontal so that it can be run along a border of any length.  The tile
+         is 120 wide and 128 high, and the artwork is a single filled outline on a transparent background. -->
+    <pattern id="pidRollersDeltas" patternUnits="userSpaceOnUse" width="120" height="128" viewBox="0 0 120 128">
+      <path fill="param(fore) #fff" fill-rule="evenodd" d="M0,4H120V124H0ZM60,14L10,114L110,114Z
+        M60,40.83L29.42,102L90.58,102ZM60,58.72L42.36,94L77.64,94Z
+        M0,14L50,14L0,114ZM0,26L30.58,26L0,87.17ZM0,34L17.64,34L0,69.28Z
+        M70,14L120,14L120,114ZM89.42,26L120,26L120,87.17ZM102.36,34L120,34L120,69.28Z"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#pidRollersDeltas)"/>
+</svg>
