@@ -1,0 +1,37 @@
+-- Shared lexer availability checks for reduced Scintilla builds.
+
+   include 'scintilla'
+
+namespace lexer_utils { }
+
+function lexer_utils.supports(Editor:obj!, Name:str!):bool
+   return ('\n' .. Editor.supportedLexers .. '\n').find('\n' .. Name .. '\n') != nil
+end
+
+-- Call after declaring the tests.  @RequiresLexers(cpp=true, tiri=true) disables only tests that need an unavailable
+-- profile, using Flute's existing @Disabled annotation and preserving the other annotations and source information.
+
+function lexer_utils.configureTests()
+   local editor <close> = obj.new('Scintilla')
+   for func, entry in pairs(debug.anno.list()) do
+      local missing
+      for annotation in values(entry.annotations) do
+         if annotation.name is 'RequiresLexers' then
+            for name, required in pairs(annotation.args) do
+               if required and not lexer_utils.supports(editor, name) then
+                  missing = name
+                  break
+               end
+            end
+         end
+         if missing then break end
+      end
+      if missing then
+         local annotations = array<table> { }
+         for annotation in values(entry.annotations) do annotations.push(annotation) end
+         annotations.push({ name='Disabled', args={ } })
+         debug.anno.set(func, annotations, entry.source, entry.name)
+         print(f'SKIPPED: {entry.name} requires the {missing} lexer')
+      end
+   end
+end

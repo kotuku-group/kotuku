@@ -8,6 +8,7 @@
 -- drawn in grey (128,128,128).
 
    include 'scintilla', 'vector', 'display'
+   import './lexer_utils'
    module display as mGfx
    import './theme_utils'
 
@@ -317,6 +318,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Folding
 
+@RequiresLexers(cpp=true)
 @Test function FoldMarginShowsFoldMarkers()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    render(scene)
@@ -328,6 +330,7 @@ end
    assert(shownLines(bmp, 4) is '0,1,2,3', f'All lines must be shown, got {shownLines(bmp, 4)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldMarginIsOptional()
    local scene <close>, vp, sci, bmp = newEditor({ lexer=SCLEX_CPP })
    sci.string = FOLD_DOC
@@ -340,6 +343,7 @@ end
    assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isFoldGrey) > 20, 'Enabling folding must show the markers')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ToggleFoldHidesAndShowsLines()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    render(scene)
@@ -354,6 +358,7 @@ end
    assert(shownLines(bmp, 4) is '0,1,2,3', f'Expanding the fold must show every line, got {shownLines(bmp, 4)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ToggleFoldBeforeFirstPaint()
    -- Fold levels are computed during styling, which normally happens when a line is painted.
    local scene <close>, vp, sci, bmp = newFoldEditor()
@@ -362,6 +367,7 @@ end
    assert(shownLines(bmp, 2) is '0,3', f'The fold must be contracted, got {shownLines(bmp, 2)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ToggleFoldInsideFoldTogglesParent()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    check sci.mtToggleFold(1)
@@ -369,6 +375,7 @@ end
    assert(shownLines(bmp, 2) is '0,3', f'Toggling line 1 must contract the fold of line 0, got {shownLines(bmp, 2)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ToggleFoldAtCursor()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    check sci.mtGotoLine(2)
@@ -377,6 +384,7 @@ end
    assert(shownLines(bmp, 2) is '0,3', f'A Line of -1 must use the cursor line, got {shownLines(bmp, 2)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ToggleFoldOutsideFold()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    assert(sci.mtToggleFold(3) is ERR_NothingDone, 'Line 3 is not within a fold')
@@ -387,11 +395,13 @@ end
    assert(sci.mtToggleFold(-2) is ERR_OutOfRange, 'A line below -1 is invalid')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ToggleFoldRequiresFolding()
    local scene <close>, vp, sci, bmp = newFoldEditor({ foldingMarkers=false })
    assert(sci.mtToggleFold(0) is ERR_NothingDone, 'Without FoldingMarkers, the lexer computes no folds')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldingReducesPageExtent()
    local text = 'a {'
    for i in {0 to 100} do text ..= '\nx;' end
@@ -408,6 +418,7 @@ end
       f'Hiding 101 lines must shorten the Page by {101 * LINE_HEIGHT}, got {height - sci.page.height}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function DisablingFoldingExpandsFolds()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    check sci.mtToggleFold(0)
@@ -419,6 +430,7 @@ end
    assert(sci.mtToggleFold(0) is ERR_NothingDone, 'Folding must be disabled')
 end
 
+@RequiresLexers(cpp=true)
 @Test function GotoLineExpandsFold()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    check sci.mtToggleFold(0)
@@ -428,6 +440,7 @@ end
    assert(sci.cursorRow is 1, 'The cursor must be on line 1')
 end
 
+@RequiresLexers(cpp=true)
 @Test function SelectRangeExpandsFold()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    check sci.mtToggleFold(0)
@@ -436,6 +449,7 @@ end
    assert(shownLines(bmp, 4) is '0,1,2,3', f'Selecting text in a fold must expand it, got {shownLines(bmp, 4)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function EditingHiddenLineShowsIt()
    local scene <close>, vp, sci, bmp = newFoldEditor()
    check sci.mtToggleFold(0)
@@ -447,6 +461,7 @@ end
    assert(glyphsOnRow(bmp, 1, FOLD_TEXT_LEFT) is 8, 'An edited line must be shown')
 end
 
+@RequiresLexers(cpp=true)
 @Test function RemovingContractedHeaderShowsLines()
    -- Removing the brace that opens a contracted fold must not leave its lines hidden with no fold to expand.
    local scene <close>, vp, sci, bmp = newFoldEditor()
@@ -459,6 +474,7 @@ end
    assert(shownLines(bmp, 4) is '0,1,2,3', f'The lines of the removed fold must be shown, got {shownLines(bmp, 4)}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldingSurvivesLexerChange()
    -- Scintilla does not pass its stored properties to a new lexer, so the fold property must be applied again.
    writeTempFile(TEMP_FILE, FOLD_DOC)
@@ -564,6 +580,7 @@ end
    if obj.find('SystemPointer') then feed(JET_ABS_XY, 1000, 1000) end
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldMarginClickTogglesFold()
    local surface <close>, sci = newSurfaceEditor()
 
@@ -576,6 +593,7 @@ end
    assert(lineAtRow(surface, sci, 1) is 1, 'A second click must expand the fold')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldMarginClickIsReported()
    local clicks = { }
    local surface <close>, sci = newSurfaceEditor({
@@ -598,6 +616,7 @@ end
    assert(lineAtRow(surface, sci, 1) is 1, 'A click beside a non-header line must not toggle a fold')
 end
 
+@RequiresLexers(cpp=true)
 @Test function SymbolMarginClickIsReported()
    local clicks = { }
    local surface <close>, sci = newSurfaceEditor({
@@ -613,6 +632,7 @@ end
    assert(sci.cursorRow is 0 and sci.cursorCol is 0, 'A reported symbol margin click must not move the cursor')
 end
 
+@RequiresLexers(cpp=true)
 @Test function SymbolMarginSelectsLineWithoutCallback()
    local surface <close>, sci = newSurfaceEditor({ foldingMarkers=false })
 
@@ -621,6 +641,7 @@ end
    assert(sci.string is 'a {\n}\ncccccccccc;', f'A symbol margin click must select the line, got "{sci.string}"')
 end
 
+@RequiresLexers(cpp=true)
 @Test function ClearingMarginClickRestoresLineSelection()
    local clicks = 0
    local surface <close>, sci = newSurfaceEditor({ marginClick = function() clicks++ end })
@@ -635,6 +656,7 @@ end
    assert(sci.string is 'a {\n}\ncccccccccc;', f'The symbol margin must select the line again, got "{sci.string}"')
 end
 
+@RequiresLexers(cpp=true)
 @Test function MarginClickReportsQualifiers()
    local qualifiers = 0
    local surface <close>, sci = newSurfaceEditor({
@@ -652,6 +674,7 @@ end
    assert(qualifiers is KQ_CTRL, f'Ctrl must be reported as KQ_CTRL, got {qualifiers}')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FreeingEditorInMarginClick()
    -- The callback is made while Scintilla is processing the button press.  The free must be deferred until the
    -- editor has finished with the event.
@@ -661,3 +684,5 @@ end
    processing.sleep(0.05)
    assert(obj.find(uid) is nil, 'The editor must be freed after the click')
 end
+
+lexer_utils.configureTests()

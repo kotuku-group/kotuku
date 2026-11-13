@@ -2,6 +2,7 @@
 -- these tests cover initialisation, text manipulation, search and undo, but not drawing or user input.
 
    include 'scintilla', 'vector'
+   import './lexer_utils'
    module vector as mVec
    import './theme_utils'
 
@@ -274,6 +275,7 @@ end
    assert(#events is 1, 'Further edits to a modified document must not repeat the event')
 end
 
+@RequiresLexers(cpp=true)
 @Test function PathDetectsLexer()
    local source = 'int main() {\n   return 0;\n}\n'
    writeTempFile('temp:scintilla_test.cpp', source)
@@ -299,11 +301,17 @@ end
 -- Regression: Lexer was registered as init-only, so it could not be changed after initialisation.
 
 @Test function ChangeLexerAfterInit()
-   local scene <close>, vp, sci = newEditor({ lexer=SCLEX_CPP })
+   local scene <close>, vp, sci = newEditor()
    sci.string = 'def main():\n   return 0\n'
 
-   sci.lexer = SCLEX_PYTHON
-   assert(sci.lexer is SCLEX_PYTHON, f'The lexer must be changeable after initialisation, got {sci.lexer}')
+   for name in values(sci.supportedLexers.split('\n')) do
+      sci.lexerName = name
+      local lexer = sci.lexer
+      sci.lexer = 0
+      sci.lexer = lexer
+      assert(sci.lexer is lexer, f'The numeric lexer must be changeable after initialisation, got {sci.lexer}')
+      assert(sci.lexerName is name, 'Numeric selection must restore the configured profile')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -756,3 +764,5 @@ end
    assert(sci.mtBeginUndoAction() is ERR_NotInitialised, 'Undo groups require initialisation')
    assert(sci.mtEndUndoAction() is ERR_NotInitialised, 'Ending a group requires initialisation')
 end
+
+lexer_utils.configureTests()

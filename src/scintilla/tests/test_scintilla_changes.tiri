@@ -1,5 +1,6 @@
 -- Lossless deferred text notifications and revision tracking through the public editor API.
    include 'scintilla', 'vector', 'display'
+   import './lexer_utils'
 
 function newEditor(Options:table):<obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
@@ -91,6 +92,7 @@ end
    mSys.DeleteFile('temp:scintilla_changes.txt')
 end
 
+@RequiresLexers(tiri=true)
 @Test function RevisionTracksUnsubscribedEditsAndIgnoresStyles()
    local scene <close>, sci = newEditor()
    sci.string = 'local value = 1\n'
@@ -339,3 +341,5 @@ end
    check sci.mtReplaceRange(0, 0, 'live')
    verifyMirror(sci, state)
 end
+
+lexer_utils.configureTests()

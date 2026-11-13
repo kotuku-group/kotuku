@@ -1,0 +1,46 @@
+-- The advertised profiles must all have working factories, including in reduced builds.
+   include 'scintilla', 'vector'
+
+@Test function ConfiguredProfilesMatchFactories()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   local sci = viewport.new('Scintilla', { })
+   local supported = '\n' .. sci.supportedLexers .. '\n'
+   local names = array<str> { 'null', 'python', 'cpp', 'html', 'xml', 'perl', 'sql', 'vb', 'props', 'errorlist',
+      'makefile', 'batch', 'tiri', 'diff', 'pascal', 'ruby', 'vbscript', 'asp', 'asm', 'css', 'bash',
+      'phpscript', 'rebol', 'markdown', 'json' }
+   assert(supported.find('\nnull\n') != nil, 'Plain text must always be available')
+   for name in values(names) do
+      sci.lexerName = 'null'
+      if supported.find('\n' .. name .. '\n') != nil then
+         sci.lexerName = name
+         assert(sci.lexerName is name, f'Advertised profile {name} must have a working factory')
+      else
+         local rejected = false
+         try
+            sci.lexerName = name
+         except e
+            rejected = true
+         end
+         assert(rejected, f'Disabled profile {name} must be rejected')
+         assert(sci.lexerName is 'null', 'A disabled profile must leave the current lexer intact')
+      end
+   end
+end
+
+@Test function DisabledDetectionKeepsPlainText()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   local sci = viewport.new('Scintilla', { flags=SCIF_DETECT_LEXER })
+   if ('\n' .. sci.supportedLexers .. '\n').find('\ncpp\n') is nil then
+      local path = 'temp:scintilla_disabled_lexer.cpp'
+      defer mSys.DeleteFile(path) end
+      do
+         local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+         check file.acWrite('int value;')
+      end
+      sci.path = path
+      assert(sci.string is 'int value;', 'A file with a disabled lexer must still load')
+      assert(sci.lexerName is 'null', 'Detection must skip a disabled lexer')
+   end
+end
