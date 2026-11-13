@@ -39,7 +39,7 @@ if (BUILD_TESTS AND TARGET network)
    add_executable (webrtc_native_sctp_probe tests/native_sctp_probe.cpp ${WEBRTC_TRANSPORT_SOURCES} sdp/sdp.cpp
       ${WEBRTC_SCTP_SOURCES})
    set_target_properties (webrtc_native_sctp_probe PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-   target_link_libraries (webrtc_native_sctp_probe PRIVATE ${INIT_LINK} ${KOTUKU_OPENSSL_LIBS} Threads::Threads
+   target_link_libraries (webrtc_native_sctp_probe PRIVATE ${INIT_LINK} ${WEBRTC_PROTOCOL_LIBS} Threads::Threads
       network_mdns)
    add_dependencies (webrtc_native_sctp_probe network)
    webrtc_native_program (webrtc_native_sctp_probe SCTP_PROBE_PROGRAM)
@@ -129,9 +129,11 @@ if (BUILD_TESTS AND TARGET test_webrtc_public_turn AND WEBRTC_TURN_SERVER AND WE
    set (TURN_FIXTURE_ARGS
       --turnserver "${WEBRTC_TURN_SERVER}" --uclient "${WEBRTC_TURN_UCLIENT}"
       --origo "${WEBRTC_ORIGO}" --public-turn "${PUBLIC_TURN_PROGRAM}"
-      --turn-adapter "${PEER_CONNECTION_PROGRAM}"
       --relay-min "${WEBRTC_TURN_RELAY_MIN}" --relay-max "${WEBRTC_TURN_RELAY_MAX}"
       --evidence-dir "${CMAKE_CURRENT_BINARY_DIR}/interop/turn")
+   if (WEBRTC_TURN_ADAPTER_TLS)
+      list (APPEND TURN_FIXTURE_ARGS --turn-adapter "${PEER_CONNECTION_PROGRAM}")
+   endif ()
    find_program (OPENSSL_EXECUTABLE NAMES openssl REQUIRED)
    list (APPEND TURN_FIXTURE_ARGS --openssl "${OPENSSL_EXECUTABLE}")
    if (WIN32 AND WEBRTC_WINDOWS_TRUST_FIXTURE_CA)

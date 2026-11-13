@@ -37,6 +37,7 @@
    end
    assert(modes[2].maxRetransmits is 0 and modes[2].maxPacketLifeTime is -1, 'Zero option became omitted')
    channelTest.connect(first, second)
+   local first_parity = first.remoteDescription.find('a=setup:active') != nil ? 1 : 0
    channelTest.waitFor(function()
       for _, channel in modes do if channel.state != WCS_OPEN then return false end end
       return true
@@ -46,7 +47,7 @@
       assert(order[i].startsWith('remote:') and order[i + 1].startsWith('open:'), 'Remote event order changed')
    end
    for _, channel in modes do
-      assert(channel.streamID % 2 is 0, 'Offerer DTLS client did not receive even IDs')
+      assert(channel.streamID % 2 is first_parity, 'Channel ID parity does not match the negotiated DTLS role')
       assert(channel.maxMessageSize is 262144, 'Remote default receive capacity was not applied')
       check channel.mtSend('hello\0' .. channel.label, WCM_TEXT)
    end
@@ -77,7 +78,8 @@
       Channel.onMessage = function(Child, Buffer, Type) received.reverse = Buffer.getString() end
    end
    channelTest.waitFor(function() return reverse.state is WCS_OPEN end)
-   assert(reverse.streamID % 2 is 1, 'DTLS server did not receive an odd ID')
+   assert(reverse.streamID % 2 is 1 - first_parity,
+      'Reverse channel ID parity does not match the negotiated DTLS role')
    check reverse.mtSend('reverse', WCM_TEXT)
    channelTest.waitFor(function() return received.reverse is 'reverse' end)
    local closed = 0

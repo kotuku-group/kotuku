@@ -1,10 +1,10 @@
 /*********************************************************************************************************************
 
-Unit tests for the WebRTC DTLS transport (OpenSSL backend).
+Unit tests for the WebRTC DTLS transport (OpenSSL or Schannel backend).
 
 Two DtlsTransport instances are connected through a simulated datagram network that can drop and reorder packets.
 Every datagram is checked against the configured MTU and the RFC 7983 DTLS first-byte range.  The tests cover what
-WebRTC needs from DTLS when OpenSSL does not own the socket:
+WebRTC needs from a socket-independent DTLS backend:
 
   * ECDSA P-256 self-signed certificates and SDP-style SHA-256 fingerprints
   * Fingerprint verification, both before and after the handshake completes
@@ -262,6 +262,20 @@ void test_application_data()
    CHECK(link->b.received.size() IS 1, "Bad-MAC record delivered application data");
    CHECK(link->pump([&]() { return link->b.received.size() IS 2; }), "Fresh record was lost after bad-MAC/replay");
 
+   // Two application records coalesced into a single datagram.
+
+   CHECK(link->a.transport->send(small) IS ERR::Okay, "First coalesced send failed");
+   CHECK(link->a.transport->send(small) IS ERR::Okay, "Second coalesced send failed");
+
+   auto combined = std::move(link->a.outbox.front());
+   link->a.outbox.pop_front();
+   combined.insert(combined.end(), link->a.outbox.front().begin(), link->a.outbox.front().end());
+   link->a.outbox.pop_front();
+
+   CHECK(link->b.transport->feed(combined) IS ERR::Okay, "Coalesced records failed");
+   CHECK(link->b.received.size() IS 4 and link->b.received[2] IS small and link->b.received[3] IS small,
+      "Every application record in a coalesced datagram must be delivered");
+
    std::printf("    max application payload at 1200-byte MTU: %d bytes\n", max_payload);
    report("application data within the MTU");
 }
@@ -286,8 +300,28 @@ void test_loss_recovery()
    CHECK(start(*link), "start() failed");
    CHECK(link->pump([&]() { return link->both_connected(); }), "Handshake did not recover from loss");
    auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-   // OpenSSL treats a remaining timeout below 15 ms as expired, so a 20 ms timer fires after roughly 5 ms.
+   // Backends can round timer expiry differently; report the observed recovery time without assuming exact expiry.
    std::printf("    recovered in %.1f ms with a 20 ms initial retransmission timer\n", elapsed);
+
+   // The server has already completed when its Finished is lost.  A backend must still retransmit that flight
+   // without reopening or destroying the connected context.
+
+   auto final_loss = make_link();
+   bool dropped = false;
+   final_loss->drop = [&](char From, size_t) {
+      if (From IS 'b' and not dropped and final_loss->b.transport->state() IS DtlsState::CONNECTED) {
+         dropped = true;
+         return true;
+      }
+      return false;
+   };
+
+   CHECK(start(*final_loss), "Final-flight loss start failed");
+   CHECK(final_loss->pump([&]() { return final_loss->both_connected(); }), "Lost server Finished did not recover");
+   CHECK(dropped, "Final-flight loss fixture did not drop the server Finished");
+   CHECK(final_loss->a.transport->timeout_us() < 0 and final_loss->b.transport->timeout_us() < 0,
+      "Retransmission timers must stop after completion");
+
    report("retransmission after loss");
 }
 
@@ -384,6 +418,16 @@ void test_close()
    CHECK(link->pump([&]() { return link->b.transport->state() IS DtlsState::CLOSED; }),
       "Peer did not observe close_notify");
    CHECK(link->b.transport->send(std::vector<uint8_t>{ 1 }) IS ERR::InvalidState, "Send after close must fail");
+
+   // The server initiates the close.
+
+   auto server_close = make_link();
+   CHECK(start(*server_close), "Server-close start failed");
+   CHECK(server_close->pump([&]() { return server_close->both_connected(); }), "Server-close handshake failed");
+   CHECK(server_close->b.transport->close() IS ERR::Okay, "Server close failed");
+   CHECK(server_close->pump([&]() { return server_close->a.transport->state() IS DtlsState::CLOSED; }),
+      "Client did not observe the server close_notify");
+
    report("close_notify");
 }
 
@@ -403,7 +447,11 @@ void test_classifier()
 
 int main()
 {
+#ifdef CRYPTO_PROTOCOL_CNG
+   std::printf("WebRTC DTLS transport (Schannel)\n");
+#else
    std::printf("WebRTC DTLS transport (OpenSSL)\n");
+#endif
 
    if ((DtlsCertificate::generate(glCerts.a, "kotuku-a") != ERR::Okay) or
        (DtlsCertificate::generate(glCerts.b, "kotuku-b") != ERR::Okay)) {

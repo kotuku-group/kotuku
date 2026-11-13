@@ -1,0 +1,29 @@
+{
+  "version": 8,
+  "configurePresets": [
+    {
+      "name": "agents",
+      "binaryDir": "${sourceDir}/../../../../build/schannel-dtls",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/../../../../build/schannel-dtls-install"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "agents-install",
+      "configurePreset": "agents",
+      "configuration": "Debug",
+      "targets": ["install"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "agents",
+      "configurePreset": "agents",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

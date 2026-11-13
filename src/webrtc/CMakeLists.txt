@@ -17,18 +17,72 @@ if (NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
    return ()
 endif ()
 
-# Windows uses the same socket-independent OpenSSL DTLS backend; Network TLS remains on Schannel.
+# Windows defaults to native Schannel DTLS and CNG primitives; OpenSSL remains an explicit reference backend.
 
-if (WIN32 AND NOT DISABLE_SSL)
-   add_compile_definitions (WIN32_LEAN_AND_MEAN NOMINMAX)
-   find_package (OpenSSL 1.1.1 REQUIRED)
-   set (KOTUKU_OPENSSL_LIBS OpenSSL::SSL OpenSSL::Crypto ws2_32 iphlpapi)
+if (WIN32)
+   set (WEBRTC_DEFAULT_DTLS_BACKEND SCHANNEL)
+else ()
+   set (WEBRTC_DEFAULT_DTLS_BACKEND OPENSSL)
 endif ()
-
-if (DISABLE_SSL OR NOT KOTUKU_OPENSSL_LIBS)
-   message (STATUS "WebRTC disabled: OpenSSL is required for DTLS.")
+set (WEBRTC_DTLS_BACKEND "${WEBRTC_DEFAULT_DTLS_BACKEND}" CACHE STRING "WebRTC DTLS backend: SCHANNEL or OPENSSL")
+set_property (CACHE WEBRTC_DTLS_BACKEND PROPERTY STRINGS SCHANNEL OPENSSL)
+if (NOT WEBRTC_DTLS_BACKEND MATCHES "^(SCHANNEL|OPENSSL)$")
+   message (FATAL_ERROR "WEBRTC_DTLS_BACKEND must be SCHANNEL or OPENSSL.")
+endif ()
+if (WEBRTC_DTLS_BACKEND STREQUAL "SCHANNEL" AND NOT WIN32)
+   message (FATAL_ERROR "WEBRTC_DTLS_BACKEND=SCHANNEL requires Windows.")
+endif ()
+if (DISABLE_SSL)
+   message (STATUS "WebRTC disabled: SSL support is disabled.")
    return ()
 endif ()
+
+if (WIN32)
+   add_compile_definitions (WIN32_LEAN_AND_MEAN NOMINMAX)
+   check_cxx_source_compiles ("
+#define SECURITY_WIN32
+#define SCHANNEL_USE_BLACKLISTS
+#include <windows.h>
+#include <security.h>
+#include <subauth.h>
+#include <schannel.h>
+int main() {
+   SCH_CREDENTIALS credentials{};
+   TLS_PARAMETERS parameters{};
+   credentials.dwVersion = SCH_CREDENTIALS_VERSION;
+   credentials.pTlsParameters = &parameters;
+   return 0;
+}" WEBRTC_HAVE_SCH_CREDENTIALS)
+   if (NOT WEBRTC_HAVE_SCH_CREDENTIALS)
+      message (STATUS "WebRTC disabled: Windows SDK with SCH_CREDENTIALS (Windows 10 1809 or newer) required.")
+      return ()
+   endif ()
+endif ()
+
+if (WEBRTC_DTLS_BACKEND STREQUAL "SCHANNEL")
+   set (WEBRTC_CRYPTO_SOURCE ../crypto/protocol_cng.cpp)
+   set (WEBRTC_CRYPTO_DEFINITION CRYPTO_PROTOCOL_CNG=1)
+   set (WEBRTC_BACKEND_LIBS secur32 crypt32 ncrypt bcrypt ws2_32 iphlpapi)
+   set (WEBRTC_DTLS_SOURCE dtls/dtls_schannel.cpp)
+else ()
+   if (WIN32)
+      find_package (OpenSSL 1.1.1 QUIET)
+      if (NOT OpenSSL_FOUND)
+         message (FATAL_ERROR "WEBRTC_DTLS_BACKEND=OPENSSL requires OpenSSL 1.1.1 or newer. "
+            "Install OpenSSL or select SCHANNEL.")
+      endif ()
+      set (WEBRTC_BACKEND_LIBS OpenSSL::SSL OpenSSL::Crypto ws2_32 iphlpapi)
+   elseif (KOTUKU_OPENSSL_LIBS)
+      set (WEBRTC_BACKEND_LIBS ${KOTUKU_OPENSSL_LIBS})
+   else ()
+      message (STATUS "WebRTC disabled: OpenSSL is required for the OPENSSL DTLS backend.")
+      return ()
+   endif ()
+   set (WEBRTC_CRYPTO_SOURCE ../crypto/protocol_openssl.cpp)
+   set (WEBRTC_CRYPTO_DEFINITION CRYPTO_PROTOCOL_OPENSSL=1)
+   set (WEBRTC_DTLS_SOURCE dtls/dtls_openssl.cpp)
+endif ()
+message (STATUS "WebRTC DTLS backend: ${WEBRTC_DTLS_BACKEND}")
 
 find_package (Threads REQUIRED)
 
@@ -66,15 +120,15 @@ add_library (webrtc_precis STATIC precis/opaque_string.cpp)
 set_target_properties (webrtc_precis PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
 target_link_libraries (webrtc_precis PUBLIC utf8proc unicode)
 
-add_library (crypto_protocol STATIC ../crypto/protocol_primitives.cpp ../crypto/protocol_openssl.cpp)
+add_library (crypto_protocol STATIC ../crypto/protocol_primitives.cpp ${WEBRTC_CRYPTO_SOURCE})
 set_target_properties (crypto_protocol PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
-target_compile_definitions (crypto_protocol PUBLIC CRYPTO_PROTOCOL_OPENSSL=1)
-target_include_directories (crypto_protocol PRIVATE "${OPENSSL_INCLUDE_DIR}")
-target_link_libraries (crypto_protocol PUBLIC ${KOTUKU_OPENSSL_LIBS})
+target_compile_definitions (crypto_protocol PUBLIC ${WEBRTC_CRYPTO_DEFINITION})
+target_link_libraries (crypto_protocol PUBLIC ${WEBRTC_BACKEND_LIBS})
+if (WEBRTC_DTLS_BACKEND STREQUAL "OPENSSL")
+   target_include_directories (crypto_protocol PUBLIC "${OPENSSL_INCLUDE_DIR}")
+endif ()
 
-# WEBRTC_OPENSSL_LIBS is OpenSSL alone, for fuzz targets that compile their dependencies with instrumentation.
-set (WEBRTC_OPENSSL_LIBS ${KOTUKU_OPENSSL_LIBS})
-list (PREPEND KOTUKU_OPENSSL_LIBS crypto_protocol webrtc_precis)
+set (WEBRTC_PROTOCOL_LIBS crypto_protocol webrtc_precis ${WEBRTC_BACKEND_LIBS})
 
 # Interface notifications are owned by the task driving PeerConnection, including native test implementations.
 
@@ -91,7 +145,7 @@ endif ()
 
 set (WEBRTC_STUN_SOURCES stun/stun.cpp)
 set (WEBRTC_ICE_SOURCES ice/ice.cpp ice/ice_agent.cpp ${WEBRTC_STUN_SOURCES})
-set (WEBRTC_DTLS_SOURCES dtls/dtls_transport.cpp dtls/dtls_openssl.cpp)
+set (WEBRTC_DTLS_SOURCES dtls/dtls_transport.cpp ${WEBRTC_DTLS_SOURCE})
 set (WEBRTC_ICE_DTLS_SOURCES ice/ice_dtls.cpp ${WEBRTC_DTLS_SOURCES} ${WEBRTC_ICE_SOURCES})
 set (WEBRTC_TRANSPORT_SOURCES ice/ice_socket.cpp ice/ice_candidates.cpp ice/ice_servers.cpp turn/turn.cpp
    turn/turn_socket.cpp ${WEBRTC_ICE_DTLS_SOURCES})
@@ -112,8 +166,10 @@ idl_gen ("${MOD}.tdl" NAME ${MOD}_defs OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.
 add_library (${MOD})
 set_module_defaults (${MOD} "WebRTC")
 target_sources (${MOD} PRIVATE webrtc.cpp ${WEBRTC_PEER_SOURCES})
-target_include_directories (${MOD} PRIVATE "${OPENSSL_INCLUDE_DIR}")
-target_link_libraries (${MOD} PRIVATE ${KOTUKU_OPENSSL_LIBS} network_mdns webrtc_interfaces Threads::Threads)
+if (WIN32)
+   target_sources (${MOD} PRIVATE windows_support.cpp)
+endif ()
+target_link_libraries (${MOD} PRIVATE ${WEBRTC_PROTOCOL_LIBS} network_mdns webrtc_interfaces Threads::Threads)
 add_dependencies (${MOD} network)
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -158,7 +214,6 @@ function (webrtc_unit_test Name)
    set (TARGET_NAME test_webrtc_${Name})
    add_executable (${TARGET_NAME} tests/test_${Name}.cpp ${ARG_SOURCES})
    set_target_properties (${TARGET_NAME} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-   target_include_directories (${TARGET_NAME} PRIVATE "${OPENSSL_INCLUDE_DIR}")
    if (ARG_NATIVE)
       target_link_libraries (${TARGET_NAME} PRIVATE ${INIT_LINK} ${ARG_LIBS})
    else ()
@@ -182,30 +237,30 @@ function (webrtc_unit_test Name)
 endfunction ()
 
 if (UNIT_TESTS)
-   set (DTLS_LIBS ${KOTUKU_OPENSSL_LIBS} ${CMAKE_DL_LIBS} Threads::Threads)
+   set (DTLS_LIBS ${WEBRTC_PROTOCOL_LIBS} ${CMAKE_DL_LIBS} Threads::Threads)
 
    # STUN, TURN and PRECIS
 
    webrtc_unit_test (opaque_string LIBS webrtc_precis)
-   webrtc_unit_test (stun SOURCES ${WEBRTC_STUN_SOURCES} LIBS ${KOTUKU_OPENSSL_LIBS})
-   webrtc_unit_test (stun_long_term SOURCES ${WEBRTC_STUN_SOURCES} LIBS ${KOTUKU_OPENSSL_LIBS})
-   webrtc_unit_test (turn FIXTURES SOURCES turn/turn.cpp ${WEBRTC_STUN_SOURCES} LIBS ${KOTUKU_OPENSSL_LIBS})
+   webrtc_unit_test (stun SOURCES ${WEBRTC_STUN_SOURCES} LIBS ${WEBRTC_PROTOCOL_LIBS})
+   webrtc_unit_test (stun_long_term SOURCES ${WEBRTC_STUN_SOURCES} LIBS ${WEBRTC_PROTOCOL_LIBS})
+   webrtc_unit_test (turn FIXTURES SOURCES turn/turn.cpp ${WEBRTC_STUN_SOURCES} LIBS ${WEBRTC_PROTOCOL_LIBS})
 
    # ICE and DTLS
 
-   webrtc_unit_test (ice SOURCES ice/ice.cpp ${WEBRTC_STUN_SOURCES} LIBS ${KOTUKU_OPENSSL_LIBS})
-   webrtc_unit_test (ice_agent SOURCES ${WEBRTC_ICE_SOURCES} LIBS ${KOTUKU_OPENSSL_LIBS})
+   webrtc_unit_test (ice SOURCES ice/ice.cpp ${WEBRTC_STUN_SOURCES} LIBS ${WEBRTC_PROTOCOL_LIBS})
+   webrtc_unit_test (ice_agent SOURCES ${WEBRTC_ICE_SOURCES} LIBS ${WEBRTC_PROTOCOL_LIBS})
    webrtc_unit_test (ice_candidates SOURCES ice/ice_candidates.cpp ${WEBRTC_STUN_SOURCES}
-      LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns)
+      LIBS ${WEBRTC_PROTOCOL_LIBS} network_mdns)
    webrtc_unit_test (ice_servers SOURCES ice/ice_servers.cpp ice/ice_candidates.cpp ${WEBRTC_STUN_SOURCES}
-      LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns)
+      LIBS ${WEBRTC_PROTOCOL_LIBS} network_mdns)
    webrtc_unit_test (dtls SOURCES ${WEBRTC_DTLS_SOURCES} LIBS ${DTLS_LIBS})
    webrtc_unit_test (ice_dtls SOURCES ${WEBRTC_ICE_DTLS_SOURCES} LIBS ${DTLS_LIBS})
    webrtc_unit_test (full_ice_dtls SOURCES ${WEBRTC_ICE_DTLS_SOURCES} LIBS ${DTLS_LIBS})
    webrtc_unit_test (ice_socket NATIVE SOURCES ${WEBRTC_TRANSPORT_SOURCES}
-      LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns Threads::Threads)
+      LIBS ${WEBRTC_PROTOCOL_LIBS} network_mdns Threads::Threads)
    webrtc_unit_test (full_ice_socket NATIVE SOURCES ${WEBRTC_TRANSPORT_SOURCES}
-      LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns Threads::Threads)
+      LIBS ${WEBRTC_PROTOCOL_LIBS} network_mdns Threads::Threads)
 
    webrtc_unit_test (interface_monitor LIBS webrtc_interfaces)
    set_tests_properties (webrtc_interface_monitor PROPERTIES TIMEOUT 30)
@@ -222,7 +277,22 @@ if (UNIT_TESTS)
    # PeerConnection
 
    webrtc_unit_test (peer_connection NATIVE PROGRAM PEER_CONNECTION_PROGRAM SOURCES ${WEBRTC_PEER_SOURCES}
-      LIBS ${KOTUKU_OPENSSL_LIBS} network_mdns webrtc_interfaces Threads::Threads)
+      LIBS ${WEBRTC_PROTOCOL_LIBS} network_mdns webrtc_interfaces Threads::Threads)
+
+   # Keep the fixture's raw-socket stall controls. Only its TLS server needs optional OpenSSL.
+   if (WIN32 AND WEBRTC_DTLS_BACKEND STREQUAL "SCHANNEL")
+      find_package (OpenSSL 1.1.1 QUIET)
+   endif ()
+   set (WEBRTC_TURN_ADAPTER_TLS FALSE)
+   if (OpenSSL_FOUND)
+      set (WEBRTC_TURN_ADAPTER_TLS TRUE)
+      target_compile_definitions (test_webrtc_peer_connection PRIVATE WEBRTC_TEST_OPENSSL=1)
+      if (WIN32)
+         target_link_libraries (test_webrtc_peer_connection PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+      endif ()
+   else ()
+      message (STATUS "WebRTC TURN adapter TLS fixture disabled: optional OpenSSL not found; TCP tests remain enabled.")
+   endif ()
 
    # Public API programs load the installed module rather than compiling the protocol sources.
 
@@ -234,6 +304,7 @@ if (UNIT_TESTS)
 
    add_executable (test_webrtc_public_webchannel tests/test_public_webchannel.cpp)
    set_target_properties (test_webrtc_public_webchannel PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+   target_compile_definitions (test_webrtc_public_webchannel PRIVATE ${WEBRTC_CRYPTO_DEFINITION})
    target_link_libraries (test_webrtc_public_webchannel PRIVATE ${INIT_LINK})
    add_dependencies (test_webrtc_public_webchannel ${MOD})
    webrtc_native_program (test_webrtc_public_webchannel PUBLIC_WEBCHANNEL_PROGRAM)
@@ -303,16 +374,19 @@ if (UNIT_TESTS AND WEBRTC_FUZZ)
    endif ()
 
    set (FUZZ_FLAGS -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
-   set (FUZZ_CRYPTO_SOURCES ../crypto/protocol_primitives.cpp ../crypto/protocol_openssl.cpp)
+   set (FUZZ_CRYPTO_SOURCES ../crypto/protocol_primitives.cpp ${WEBRTC_CRYPTO_SOURCE})
    set (FUZZ_PRECIS_SOURCES precis/opaque_string.cpp ../link/unicode.cpp ${FUZZ_CRYPTO_SOURCES}
       "${utf8proc_SOURCE_DIR}/utf8proc.c")
 
    function (webrtc_fuzz_target Name)
       add_executable (fuzz_webrtc_${Name} ${ARGN})
       set_target_properties (fuzz_webrtc_${Name} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-      target_include_directories (fuzz_webrtc_${Name} PRIVATE "${OPENSSL_INCLUDE_DIR}" "${utf8proc_SOURCE_DIR}")
-      target_compile_definitions (fuzz_webrtc_${Name} PRIVATE CRYPTO_PROTOCOL_OPENSSL=1 UTF8PROC_STATIC)
-      target_link_libraries (fuzz_webrtc_${Name} PRIVATE ${WEBRTC_OPENSSL_LIBS})
+      target_include_directories (fuzz_webrtc_${Name} PRIVATE "${utf8proc_SOURCE_DIR}")
+      if (WEBRTC_DTLS_BACKEND STREQUAL "OPENSSL")
+         target_include_directories (fuzz_webrtc_${Name} PRIVATE "${OPENSSL_INCLUDE_DIR}")
+      endif ()
+      target_compile_definitions (fuzz_webrtc_${Name} PRIVATE ${WEBRTC_CRYPTO_DEFINITION} UTF8PROC_STATIC)
+      target_link_libraries (fuzz_webrtc_${Name} PRIVATE ${WEBRTC_BACKEND_LIBS})
       target_compile_options (fuzz_webrtc_${Name} PRIVATE ${FUZZ_FLAGS})
       target_link_options (fuzz_webrtc_${Name} PRIVATE ${FUZZ_FLAGS})
    endfunction ()

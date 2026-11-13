@@ -708,11 +708,16 @@ int main(int Argc, CSTRING *Argv) {
    }
    int result = 0;
    if (Argc >= 4 and std::string_view(Argv[1]) IS "--turn-tls-stall") {
+#ifdef WEBRTC_TEST_OPENSSL
       if (not rtc::test::turn_adapter_stall(true, false, Argv[2], Argv[3]) or
           not rtc::test::turn_adapter_stall(false, false, Argv[2], Argv[3]) or
           not rtc::test::turn_adapter_stall(false, true, Argv[2], Argv[3]) or
           not rtc::test::turn_adapter_stall(true, false, Argv[2], Argv[3], true) or
           not rtc::test::turn_adapter_stall(true, false, Argv[2], Argv[3], false, true)) result = 40;
+#else
+      std::fprintf(stderr, "TURN adapter TLS fixture requires optional OpenSSL at build time.\n");
+      result = 40;
+#endif
    } else
 #ifndef _WIN32
    if (Argc > 1 and std::string_view(Argv[1]).ends_with(".json")) {

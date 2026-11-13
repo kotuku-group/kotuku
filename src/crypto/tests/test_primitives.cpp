@@ -182,6 +182,22 @@ static int test_protocol_primitives() {
    if (certificate.context or certificate.key or not certificate.der().empty()) {
       return failure("CNG certificate reset left state behind");
    }
+
+   // A persisted (named) key is required by Schannel and must be deleted from the key store on reset.
+
+   if (not crypto_protocol::generate_p256_certificate_cng("kotuku-dtls-test", false, certificate, true) or
+       not certificate.persisted or not certificate.context or not certificate.key or certificate.der().empty()) {
+      return failure("CNG persisted P-256 certificate generation failed");
+   }
+
+   if (not crypto_protocol::sha256(certificate.der(), der_digest) or der_digest != certificate.fingerprint) {
+      return failure("CNG persisted certificate fingerprint differs");
+   }
+
+   certificate.reset();
+   if (certificate.context or certificate.key or certificate.persisted or not certificate.der().empty()) {
+      return failure("CNG persisted certificate reset left state behind");
+   }
 #endif
    return 0;
 }

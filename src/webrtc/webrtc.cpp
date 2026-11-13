@@ -14,6 +14,8 @@ The WebRTC module is a host for the @PeerConnection and @WebChannel classes.
 
 *********************************************************************************************************************/
 
+// Windows uses native Schannel DTLS and CNG by default; Linux uses OpenSSL.
+
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
 #include <kotuku/modules/webrtc.h>
@@ -30,6 +32,10 @@ The WebRTC module is a host for the @PeerConnection and @WebChannel classes.
 #include <utility>
 
 #include "peerconnection/peer_engine.h"
+
+#ifdef _WIN32
+uint32_t webrtc_windows_build();
+#endif
 
 class extWebChannel;
 
@@ -191,6 +197,16 @@ public:
 static ERR MODInit(OBJECTPTR, struct CoreBase *Core)
 {
    CoreBase = Core;
+
+#ifdef _WIN32
+   auto windows_build = webrtc_windows_build();
+   if (windows_build < 17763) {
+      kt::Log log("Init");
+      log.warning(
+         "WebRTC requires Windows 10 1809 / Server 2019 (build 17763) or newer; detected build %u.", windows_build);
+      return ERR::NoSupport;
+   }
+#endif
 
    if (objModule::load("network", &modNetwork, &NetworkBase) != ERR::Okay) return ERR::InitModule;
 

@@ -25,12 +25,16 @@ end
    channelTest.waitFor(function() return channel.state is WCS_OPEN end)
    local id = channel.streamID
    local fingerprint = first.certificateFingerprint
+   local answerer_active = second.localDescription.find('a=setup:active') != nil
    local payload = string.rep('queued-data-', 16000)
    for _, initiator in array<obj> { first, second } do
       local other = initiator is first ? second : first
       local before = #messages
       check channel.mtSend(payload, WCM_TEXT)
       restartPair(initiator, other)
+      local expected_active = other is second ? answerer_active : not answerer_active
+      assert((other.localDescription.find('a=setup:active') != nil) is expected_active,
+         'ICE restart changed the established DTLS role')
       channelTest.waitFor(function() return #messages is before + 1 end)
       assert(messages[before] is payload, 'Reliable data changed across route replacement')
       processing.sleep(0.05)

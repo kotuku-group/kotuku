@@ -25,13 +25,21 @@ function channelTest.waitFor(Condition:func, Seconds:num)
    assert(Condition(), 'Timed out waiting for channel progress')
 end
 
-function channelTest.connect(First:obj, Second:obj)
+-- Prepare the answer without committing it, so pending stream tests can use the negotiated DTLS role.
+-- Returns the offerer's stream ID parity.
+
+function channelTest.prepareAnswer(First:obj, Second:obj):num
    check First.mtCreateOffer()
    channelTest.waitFor(function() return First.gatheringState is RTCGATHER_COMPLETE end)
    check First.mtSetLocalDescription(First.localDescription)
    check Second.mtSetRemoteDescription(First.localDescription)
    check Second.mtCreateAnswer()
    channelTest.waitFor(function() return Second.gatheringState is RTCGATHER_COMPLETE end)
+   return Second.localDescription.find('a=setup:active') != nil ? 1 : 0
+end
+
+function channelTest.connect(First:obj, Second:obj)
+   channelTest.prepareAnswer(First, Second)
    check Second.mtSetLocalDescription(Second.localDescription)
    check First.mtSetRemoteDescription(Second.localDescription)
 end

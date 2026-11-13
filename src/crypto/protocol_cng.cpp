@@ -16,7 +16,10 @@
 
 #include <kotuku/config.h>
 
+#include <cstdio>
+#include <cwchar>
 #include <limits>
+#include <mutex>
 #include <string>
 
 namespace crypto_protocol {
@@ -94,6 +97,68 @@ bool encode_subject(std::string_view CommonName, std::vector<uint8_t> &Output)
    return true;
 }
 
+uint64_t process_creation_time(HANDLE Process)
+{
+   FILETIME created, exited, kernel, user;
+   if (not GetProcessTimes(Process, &created, &exited, &kernel, &user)) return 0;
+   return (uint64_t(created.dwHighDateTime) << 32) | created.dwLowDateTime;
+}
+
+// Remove persisted DTLS keys abandoned by exited processes.  Key names include both the PID and the process creation
+// time so that a recycled PID cannot keep an abandoned key alive.  Keys belonging to live processes (including other
+// Kotuku instances), or to processes that cannot be inspected, are never removed.
+
+void sweep_dtls_keys(NCRYPT_PROV_HANDLE Provider)
+{
+   static constexpr std::wstring_view PREFIX = L"kotuku-webrtc-";
+
+   void *enumeration = nullptr;
+   NCryptKeyName *name = nullptr;
+   while (NCryptEnumKeys(Provider, nullptr, &name, &enumeration, NCRYPT_SILENT_FLAG) IS ERROR_SUCCESS) {
+      std::wstring_view text(name->pszName);
+      unsigned long pid = 0;
+      uint64_t created = 0;
+      bool recognised = false;
+
+      if (text.starts_with(PREFIX)) {
+         wchar_t *end = nullptr;
+         auto start = name->pszName + PREFIX.size();
+         pid = std::wcstoul(start, &end, 10);
+         if (end != start and *end IS '-') {
+            start = end + 1;
+            created = std::wcstoull(start, &end, 16);
+            if (end != start and *end IS '-') {
+               std::wstring_view suffix(end + 1);
+               recognised = pid and created and suffix.size() IS 32 and
+                  suffix.find_first_not_of(L"0123456789abcdef") IS std::wstring_view::npos;
+            }
+         }
+      }
+
+      bool stale = false;
+      if (recognised) {
+         auto process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+         if (process) {
+            auto actual = process_creation_time(process);
+            stale = WaitForSingleObject(process, 0) IS WAIT_OBJECT_0 or (actual and actual != created);
+            CloseHandle(process);
+         }
+         else stale = GetLastError() IS ERROR_INVALID_PARAMETER;
+      }
+
+      if (stale) {
+         NCRYPT_KEY_HANDLE key = 0;
+         if (NCryptOpenKey(Provider, &key, name->pszName, 0, NCRYPT_SILENT_FLAG) IS ERROR_SUCCESS) {
+            if (NCryptDeleteKey(key, NCRYPT_SILENT_FLAG) != ERROR_SUCCESS) NCryptFreeObject(key);
+         }
+      }
+
+      NCryptFreeBuffer(name);
+   }
+
+   if (enumeration) NCryptFreeBuffer(enumeration);
+}
+
 }
 
 inline namespace CRYPTO_PROTOCOL_ABI {
@@ -145,13 +210,20 @@ std::span<const uint8_t> CngCertificate::der() const noexcept {
 
 void CngCertificate::reset() noexcept {
    if (context) CertFreeCertificateContext(context);
-   if (key) NCryptFreeObject(NCRYPT_KEY_HANDLE(key));
+   if (key) {
+      if (not persisted or NCryptDeleteKey(NCRYPT_KEY_HANDLE(key), NCRYPT_SILENT_FLAG) != ERROR_SUCCESS) {
+         NCryptFreeObject(NCRYPT_KEY_HANDLE(key));
+      }
+   }
+
    context = nullptr;
    key = 0;
+   persisted = false;
    fingerprint.fill(0);
 }
 
-bool generate_p256_certificate_cng(std::string_view CommonName, bool Exportable, CngCertificate &Result) {
+bool generate_p256_certificate_cng(std::string_view CommonName, bool Exportable, CngCertificate &Result,
+   bool Persisted) {
    Result.reset();
 
    std::vector<uint8_t> subject_bytes;
@@ -161,12 +233,40 @@ bool generate_p256_certificate_cng(std::string_view CommonName, bool Exportable,
    NCRYPT_PROV_HANDLE provider = 0;
    if (NCryptOpenStorageProvider(&provider, MS_KEY_STORAGE_PROVIDER, 0) != ERROR_SUCCESS) return false;
 
+   std::wstring key_name;
+   if (Persisted) {
+      static std::once_flag sweep_once;
+      std::call_once(sweep_once, [provider]() { sweep_dtls_keys(provider); });
+
+      std::array<uint8_t, 16> random;
+      auto created = process_creation_time(GetCurrentProcess());
+      if (not created or not random_bytes(random)) {
+         NCryptFreeObject(provider);
+         return false;
+      }
+
+      // Key names take the form kotuku-webrtc-<pid>-<creation time>-<random>, as parsed by sweep_dtls_keys().
+
+      wchar_t prefix[80];
+      std::swprintf(prefix, std::size(prefix), L"kotuku-webrtc-%lu-%llx-", GetCurrentProcessId(),
+         (unsigned long long)created);
+      key_name = prefix;
+
+      static constexpr wchar_t HEX[] = L"0123456789abcdef";
+      for (auto value : random) {
+         key_name += HEX[value >> 4];
+         key_name += HEX[value & 15];
+      }
+   }
+
    NCRYPT_KEY_HANDLE key = 0;
-   auto status = NCryptCreatePersistedKey(provider, &key, NCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0,
-      NCRYPT_SILENT_FLAG);
+   auto status = NCryptCreatePersistedKey(provider, &key, NCRYPT_ECDSA_P256_ALGORITHM,
+      Persisted ? key_name.c_str() : nullptr, 0, NCRYPT_SILENT_FLAG);
    NCryptFreeObject(provider);
    if (status != ERROR_SUCCESS) return false;
+
    Result.key = uintptr_t(key);
+   Result.persisted = Persisted;
 
    DWORD export_policy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
    if ((Exportable and NCryptSetProperty(key, NCRYPT_EXPORT_POLICY_PROPERTY, (PBYTE)&export_policy,
@@ -179,8 +279,14 @@ bool generate_p256_certificate_cng(std::string_view CommonName, bool Exportable,
    CRYPT_ALGORITHM_IDENTIFIER signature{};
    signature.pszObjId = (LPSTR)szOID_ECDSA_SHA256;
    auto start = certificate_time(-1), end = certificate_time(30);
-   auto certificate = CertCreateSelfSignCertificate(key, &subject, CERT_CREATE_SELFSIGN_NO_KEY_INFO,
-      nullptr, &signature, &start, &end, nullptr);
+
+   CRYPT_KEY_PROV_INFO key_info{};
+   key_info.pwszContainerName = key_name.data();
+   key_info.pwszProvName = (LPWSTR)MS_KEY_STORAGE_PROVIDER;
+   key_info.dwFlags = NCRYPT_SILENT_FLAG;
+
+   auto certificate = CertCreateSelfSignCertificate(key, &subject, Persisted ? 0 : CERT_CREATE_SELFSIGN_NO_KEY_INFO,
+      Persisted ? &key_info : nullptr, &signature, &start, &end, nullptr);
    if (not certificate) {
       Result.reset();
       return false;

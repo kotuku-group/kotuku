@@ -1,5 +1,5 @@
 // Backend-independent parts of DtlsTransport: fingerprint handling, state reporting, retransmission back-off and SRTP
-// key splitting.  The handshake and record layers are implemented by a backend (dtls_openssl.cpp).
+// key splitting.  The handshake and record layers are implemented by the OpenSSL or Schannel backend.
 
 #include "dtls_internal.h"
 
