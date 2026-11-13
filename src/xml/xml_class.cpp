@@ -206,7 +206,7 @@ static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
    log.branch("");
 
    objXQuery *xq;
-   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+   if (!NewObject(CLASSID::XQUERY, &xq)) {
       xq->setStatement(Args->Statement);
       if (auto error = xq->init(); !error) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); !error) {
@@ -270,7 +270,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
    if ((not Args) or Args->XPath.empty()) return log.warning(ERR::NullArgs);
 
    objXQuery *xq;
-   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+   if (!NewObject(CLASSID::XQUERY, &xq)) {
       xq->setStatement(Args->XPath);
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
@@ -367,7 +367,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
    if (Self->Tags.empty()) return ERR::NoData;
 
    objXQuery *xq;
-   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+   if (!NewObject(CLASSID::XQUERY, &xq)) {
       xq->setStatement(Args->Expression);
 
       if (auto error = xq->init(); !error) {
@@ -950,7 +950,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
    log.branch("Insert: %d, XPath: %.*s", int(Args->Where), int(Args->XPath.size()), Args->XPath.data());
 
    objXQuery *xq;
-   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+   if (!NewObject(CLASSID::XQUERY, &xq)) {
       xq->setStatement(Args->XPath);
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
@@ -1243,7 +1243,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
    else if (not limit) limit = 1;
 
    objXQuery *xq;
-   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+   if (!NewObject(CLASSID::XQUERY, &xq)) {
       xq->setStatement(Args->XPath);
       if (auto error = xq->init(); !error) {
          while (limit > 0) {
@@ -1609,7 +1609,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
    if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
    objXQuery *xq;
-   if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+   if (!NewObject(CLASSID::XQUERY, &xq)) {
       xq->setStatement(std::string_view(Args->Key));
       if (auto error = xq->init(); !error) {
          matching_tag_opt opt;
@@ -1755,7 +1755,7 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
    }
    else {
       objXQuery *xq;
-      if (!NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq)) {
+      if (!NewObject(CLASSID::XQUERY, &xq)) {
          xq->setStatement(Args->XPath);
          if (auto error = xq->init(); !error) {
             matching_tag_opt opt;

@@ -776,7 +776,7 @@ static ERR xq_prepare_query(parser *Parser, std::string_view Expression, XQEval 
    }
 
    objXQuery *query = nullptr;
-   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&query) != ERR::Okay) {
+   if (NewObject(CLASSID::XQUERY, &query) != ERR::Okay) {
       Self->Error = ERR::NewObject;
       return ERR::NewObject;
    }

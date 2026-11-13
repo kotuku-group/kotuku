@@ -90,6 +90,7 @@ option (KOTUKU_INSTALL           "Create installation targets" ON)
 option (LINKED_PACKAGES          "Link installed package versions to their SDK source directories" OFF)
 option (KOTUKU_VLOG              "Enable verbose log messages in the generated binaries" OFF)
 option (KOTUKU_ICON_DEPENDENCIES "Track icon source files as dependencies for rebuilding the icon package." ON)
+option (KOTUKU_NO_STRICT_ALIASING "Restore the former -fno-strict-aliasing policy (GCC/Clang)" OFF)
 option (ORIGO_CONSOLE            "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
 if (UNIX)
    option (RUN_ANYWHERE  "Create a build that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
@@ -676,22 +677,29 @@ if (MSVC)
 
    # Specifying the fast FP option shows no discernible improvement in benchmarked release builds.
 else ()
+   # Strict aliasing follows the compiler default.  KOTUKU_NO_STRICT_ALIASING restores -fno-strict-aliasing as a
+   # rollback.  Non-MSVC Windows builds (deprecated) keep the flag because Windows-only sources contain known
+   # incompatible accesses.
+
    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
       add_compile_definitions ("_DARWIN_C_SOURCE")
    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
       add_compile_definitions ("_GNU_SOURCE")
-      add_compile_options (-fdata-sections -ffunction-sections -fno-strict-aliasing
-         "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-sign>")
+      add_compile_options (-fdata-sections -ffunction-sections "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-sign>")
    elseif (WIN32)
       add_compile_definitions ("_WIN32")
-      add_compile_options (-U__unix__ -fdata-sections -ffunction-sections -fno-strict-aliasing
-         "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-sign>")
+      add_compile_options (-U__unix__ -fdata-sections -ffunction-sections
+         "$<$<COMPILE_LANGUAGE:C,CXX>:-fno-strict-aliasing>" "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-sign>")
       if (PRINTF64_ID)
          add_compile_definitions ("PRINTF64I")
       endif ()
       if (PRINTF64_PRID)
          add_compile_definitions ("PRINTF64_PRID")
       endif ()
+   endif ()
+
+   if (KOTUKU_NO_STRICT_ALIASING)
+      add_compile_options ("$<$<COMPILE_LANGUAGE:C,CXX>:-fno-strict-aliasing>")
    endif ()
 
    add_compile_options ("$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CONFIG:Release>>:-fno-exceptions>")

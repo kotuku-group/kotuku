@@ -116,7 +116,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
       // Check data
 
       if (*ClassID IS CLASSID::NIL) {
-         log.trace("Loading file header to identify '%s' against class registry", res_path);
+         log.trace("Loading file header to identify '%s' against class registry", res_path.c_str());
 
          if ((!ReadFileToBuffer(res_path, std::span((int8_t *)buffer, size_t(HEADER_SIZE)), &bytes_read)) and
              (bytes_read >= 4)) {

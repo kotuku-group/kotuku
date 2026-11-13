@@ -265,11 +265,13 @@ static ERR MODULE_Init(extModule *Self)
    log.trace("Finding module %s (%s)", Self->Name.c_str(), name.data());
 
    objRootModule *root;
+   OBJECTPTR new_root = nullptr;
    struct ModHeader *table = nullptr;
    if ((root = check_resident(Self, name))) {
       Self->Root = root;
    }
-   else if (!NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, (OBJECTPTR *)&root)) {
+   else if (!NewObject(CLASSID::ROOTMODULE, NF::UNTRACKED, &new_root)) {
+      root = (objRootModule *)new_root;
       root->Next = glModuleList; // Insert the RootModule at the start of the chain.
       if (glModuleList) glModuleList->Prev = root;
       glModuleList = root;

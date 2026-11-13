@@ -638,10 +638,11 @@ static ERR position_decoder(objMP3 *Self, int64_t Offset)
    }
 
    Self->Position = prv->WriteOffset;
-   std::array<int8_t, 16 * 1024> discard;
+   // The decoder stores int16_t samples here; unsigned char storage with sample alignment keeps that well-defined.
+   alignas(16) std::array<uint8_t, 16 * 1024> discard;
    while (prv->WriteOffset < Offset) {
       const int count = int(std::min<int64_t>(discard.size(), Offset - prv->WriteOffset));
-      struct acRead read_args { std::span<int8_t>(discard.data(), count), 0 };
+      struct acRead read_args { std::span<int8_t>((int8_t *)discard.data(), count), 0 };
       if (auto error = MP3_Read(Self, &read_args); error != ERR::Okay) return error;
       if (!read_args.Result) return ERR::Seek;
    }

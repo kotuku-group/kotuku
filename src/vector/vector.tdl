@@ -5,6 +5,13 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   }, function()
   c_include('<kotuku/modules/display.h>', '<kotuku/modules/image.h>', '<kotuku/modules/config.h>')
 
+  -- Opaque result type of ReadTextStyle(); clients cast it to KEYVALUE *.  Declared at global scope so that modular
+  -- and static builds agree on ::KeyValue (otherwise its first use inside namespace vec declares vec::KeyValue).
+
+  c_insert([[
+struct KeyValue;
+]])
+
   restrict(function()
     loadFile(glPath .. 'common.tdl')
     loadFile(glPath .. 'common-graphics.tdl')

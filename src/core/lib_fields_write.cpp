@@ -284,36 +284,47 @@ static ERR writeval_lookup(OBJECTPTR Object, const Field *Field, int Flags, CPTR
    return writeval_default(Object, Field, Flags, Data);
 }
 
+// Numeric fields are stored with memcpy because their declared types are often enums or flag types, which GCC and
+// Clang treat as distinct from the underlying integer type for strict aliasing purposes.
+
+template <class T> static void store_field(OBJECTPTR Object, const Field *Field, T Value)
+{
+   std::memcpy((int8_t *)Object + Field->Offset, &Value, sizeof(T));
+}
+
 static ERR writeval_long(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
-   auto offset = (int *)((int8_t *)Object + Field->Offset);
-   if (Flags & FD_INT)         *offset = *((int *)Data);
-   else if (Flags & FD_INT64)  *offset = (int)(*((int64_t *)Data));
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = std::lrint(*((double *)Data));
-   else if (Flags & FD_STRING) *offset = kt::svtonum<int>(*((std::string_view *)Data));
+   int value;
+   if (Flags & FD_INT)         value = *((int *)Data);
+   else if (Flags & FD_INT64)  value = (int)(*((int64_t *)Data));
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) value = std::lrint(*((double *)Data));
+   else if (Flags & FD_STRING) value = kt::svtonum<int>(*((std::string_view *)Data));
    else return ERR::SetValueNotNumeric;
+   store_field(Object, Field, value);
    return ERR::Okay;
 }
 
 static ERR writeval_large(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
-   auto offset = (int64_t *)((int8_t *)Object + Field->Offset);
-   if (Flags & FD_INT64)      *offset = *((int64_t *)Data);
-   else if (Flags & FD_INT)   *offset = *((int *)Data);
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = std::lrint(*((double *)Data));
-   else if (Flags & FD_STRING) *offset = kt::svtonum<int64_t>(*((std::string_view *)Data));
+   int64_t value;
+   if (Flags & FD_INT64)      value = *((int64_t *)Data);
+   else if (Flags & FD_INT)   value = *((int *)Data);
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) value = std::lrint(*((double *)Data));
+   else if (Flags & FD_STRING) value = kt::svtonum<int64_t>(*((std::string_view *)Data));
    else return ERR::SetValueNotNumeric;
+   store_field(Object, Field, value);
    return ERR::Okay;
 }
 
 static ERR writeval_double(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
-   auto offset = (double *)((int8_t *)Object + Field->Offset);
-   if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = *((double *)Data);
-   else if (Flags & FD_INT)    *offset = *((int *)Data);
-   else if (Flags & FD_INT64)  *offset = (*((int64_t *)Data));
-   else if (Flags & FD_STRING) *offset = kt::svtonum<double>(*((std::string_view *)Data));
+   double value;
+   if (Flags & (FD_DOUBLE|FD_FLOAT)) value = *((double *)Data);
+   else if (Flags & FD_INT)    value = *((int *)Data);
+   else if (Flags & FD_INT64)  value = (*((int64_t *)Data));
+   else if (Flags & FD_STRING) value = kt::svtonum<double>(*((std::string_view *)Data));
    else return ERR::SetValueNotNumeric;
+   store_field(Object, Field, value);
    return ERR::Okay;
 }
 

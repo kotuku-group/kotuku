@@ -418,7 +418,7 @@ static ERR NETLOOKUP_ResolveName(extNetLookup *Self, struct nl::ResolveName *Arg
 
       if (found) {
          Self->Info = cached;
-         log.trace("Cache hit for host %s", Self->Info.HostName);
+         log.trace("Cache hit for host %s", Self->Info.HostName.c_str());
          resolve_callback(Self, ERR::Okay, Self->Info.HostName, Self->Info.Addresses);
          return ERR::Okay;
       }

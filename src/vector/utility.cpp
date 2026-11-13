@@ -785,10 +785,10 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
                                     // Decode UTF16 Big Endian
                                     char buffer[100];
                                     int out = 0;
-                                    auto str = (uint16_t *)sft_name.string;
+                                    const FT_Byte *str = sft_name.string; // Big-endian bytes, possibly unaligned
                                     uint16_t prev_unicode = 0;
                                     for (FT_UInt i=0; (i < sft_name.string_len>>1) and (out < std::ssize(buffer)-8); i++) {
-                                       uint16_t unicode = (str[i]>>8) | (uint8_t(str[i])<<8);
+                                       uint16_t unicode = uint16_t((str[i*2]<<8) | str[(i*2)+1]);
                                        if ((unicode >= 'A') and (unicode <= 'Z')) {
                                           if ((i > 0) and (prev_unicode >= 'a') and (prev_unicode <= 'z')) {
                                              buffer[out++] = ' ';

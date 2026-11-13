@@ -49,22 +49,22 @@ api-owns-result, nullable-result, blocking
 
 objPointer * AccessPointer(void)
 {
-   objPointer *pointer = nullptr;
+   OBJECTPTR pointer = nullptr;
 
    if (!glPointerID) {
       if (!FindObject("SystemPointer", CLASSID::POINTER, &glPointerID)) {
-         AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer);
+         AccessObject(glPointerID, 2000, &pointer);
       }
-      return pointer;
+      return (objPointer *)pointer;
    }
 
-   if (AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer) IS ERR::NoMatchingObject) {
+   if (AccessObject(glPointerID, 2000, &pointer) IS ERR::NoMatchingObject) {
       if (!FindObject("SystemPointer", CLASSID::POINTER, &glPointerID)) {
-         AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer);
+         AccessObject(glPointerID, 2000, &pointer);
       }
    }
 
-   return pointer;
+   return (objPointer *)pointer;
 }
 
 /*********************************************************************************************************************

@@ -961,7 +961,7 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
 
    while (bytes_remaining > 0) {
       int read_size = (bytes_remaining < chunk_size) ? bytes_remaining : chunk_size;
-      uint8_t buffer[8192];
+      alignas(16) uint8_t buffer[8192]; // Derived decoders may store samples of any type here
       int bytes_read;
       if (acRead(Self, std::span<int8_t>((int8_t *)buffer, read_size), &bytes_read) != ERR::Okay) {
          return log.warning(ERR::Read);

@@ -1402,9 +1402,9 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
    clearmem(&feedback, sizeof(feedback));
 
    for (auto &zf : Self->Files) {
-      log.trace("Found %s", zf.Name);
+      log.trace("Found %s", zf.Name.c_str());
       if (wildcmp(Args->Path, zf.Name)) {
-         log.trace("Extracting \"%s\"", zf.Name);
+         log.trace("Extracting \"%s\"", zf.Name.c_str());
 
          if (Self->OutputID) {
             std::ostringstream out;
@@ -1575,7 +1575,7 @@ static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::Decomp
       total_scanned++;
       if (!wildcmp(Args->Path, list.Name)) continue;
 
-      log.trace("Decompressing \"%s\"", list.Name);
+      log.trace("Decompressing \"%s\"", list.Name.c_str());
 
       // Send compression feedback
 
@@ -1930,7 +1930,7 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
    ERR error = ERR::Okay;
 
    for (auto &item : Self->Files) {
-      log.trace("Item: %s", item.Name);
+      log.trace("Item: %s", item.Name.c_str());
 
       std::string_view item_name(item.Name);
       if (folder.empty()) {

@@ -298,7 +298,7 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
 
    // Check if other draw messages are queued for this object - if so, do not do anything until the final message is reached.
 
-   uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acDraw)];
+   alignas(Message) uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acDraw)];
    int msgindex = 0;
    while (!ScanMessages(&msgindex, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
@@ -383,7 +383,7 @@ static ERR SURFACE_ExposeToDisplay(extSurface *Self, struct drw::ExposeToDisplay
 
    // Check if other draw messages are queued for this object - if so, do not do anything until the final message is reached.
 
-   uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
+   alignas(Message) uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
    int msgindex = 0;
    while (!ScanMessages(&msgindex, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
@@ -484,7 +484,7 @@ static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegi
    // Check if other draw messages are queued for this object - if so, do not do anything until the final message is reached.
 
    int msgindex = 0;
-   uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
+   alignas(Message) uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
    while (!ScanMessages(&msgindex, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
       if ((action->ActionID IS drw::InvalidateRegion::id) and (action->ObjectID IS Self->UID)) {

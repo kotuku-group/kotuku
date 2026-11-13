@@ -733,11 +733,12 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             // Failed wrapping must leave the remaining GC references safe to visit during collection.
             if (byte_size) std::memset(storage, 0, byte_size);
             auto refs = arr->get<GCRef>();
-            auto objects = (OBJECTPTR *)Data;
+            // Source arrays may be declared with a derived class type; APTR reads are compatible with all pointers.
+            auto objects = (const APTR *)Data;
             for (uint32_t i=0; i < Length; i++) {
-               if (objects[i]) {
-                  auto obj = lj_object_new(L, objects[i]->UID, nullptr, objects[i]->Class, GCOBJ_DETACHED);
-                  lj_object_pin(obj, objects[i]);
+               if (auto object = (OBJECTPTR)objects[i]) {
+                  auto obj = lj_object_new(L, object->UID, nullptr, object->Class, GCOBJ_DETACHED);
+                  lj_object_pin(obj, object);
                   setgcref(refs[i], obj2gco(obj));
                   lj_gc_objbarrier(L, arr, obj);
                }

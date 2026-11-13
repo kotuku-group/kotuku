@@ -251,8 +251,9 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Va
       Self->Source = nullptr;
    }
 
-   objVector *src;
-   if (!Self->Filter->Scene->findDef(Value.data(), (OBJECTPTR *)&src)) {
+   OBJECTPTR def;
+   if (!Self->Filter->Scene->findDef(Value.data(), &def)) {
+      auto src = (objVector *)def;
       if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
       src->pinWeak();
       Self->Source = src;

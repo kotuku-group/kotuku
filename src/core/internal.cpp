@@ -575,7 +575,9 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          if (type & FD_OBJECT) {
             if (type & FD_RESULT) *param = nullptr;
             else {
-               auto object = *(OBJECTPTR *)(Parameters + pos);
+               // Object arguments can be declared with a derived class type (e.g. objBitmap *).  Read them as APTR,
+               // which GCC and Clang treat as compatible with every pointer type, rather than as OBJECTPTR.
+               auto object = (OBJECTPTR)*(APTR *)(Parameters + pos);
                *param = object;
                if (object) object->pin();
             }
@@ -641,8 +643,8 @@ ERR make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
             auto view = (std::string_view *)(Buffer + pos);
             if (view->data()) *view = std::string_view((CSTRING)(view->data() - (CSTRING)Buffer), view->length());
          }
-         else if (auto str = (int8_t **)(Buffer + pos); *str) {
-            *str = (int8_t *)(*str - Buffer);
+         else if (auto str = (APTR *)(Buffer + pos); *str) { // APTR: the slot is declared CSTRING or STRING
+            *str = APTR((int8_t *)*str - Buffer);
          }
       }
       else if (type & FD_PTR) {
@@ -691,7 +693,7 @@ ERR make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
             auto view = (std::string_view *)(Buffer + pos);
             if (view->data()) *view = std::string_view((CSTRING)Buffer + (MAXINT)view->data(), view->length());
          }
-         else if (auto str = (int8_t **)(Buffer + pos); *str) {
+         else if (auto str = (APTR *)(Buffer + pos); *str) {
             *str = Buffer + (MAXINT)*str;
          }
       }
@@ -766,8 +768,8 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
          pos = align_arg_offset(pos);
          if (pos < 0) return;
          if ((type & FD_OBJECT) and (not (type & FD_RESULT))) {
-            if (auto object = *(OBJECTPTR *)(Parameters + pos)) object->unpin(true);
-            *(OBJECTPTR *)(Parameters + pos) = nullptr;
+            if (auto object = (OBJECTPTR)*(APTR *)(Parameters + pos)) object->unpin(true);
+            *(APTR *)(Parameters + pos) = nullptr;
          }
          pos += sizeof(APTR);
       }

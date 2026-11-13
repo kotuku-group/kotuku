@@ -1788,15 +1788,10 @@ static constexpr int dbl_to_int26p6(double p) { return int(p * 64.0); }
 //********************************************************************************************************************
 
 inline double fast_inv_sqrt(double x) {
-    union {
-        double d;
-        uint64_t i;
-    } conv = {.d = x};
-
-    conv.i = 0x5fe6eb50c7b537a9ULL - (conv.i >> 1);  // Magic number for double
-    conv.d *= 1.5 - (x * 0.5 * conv.d * conv.d);    // One Newton-Raphson iteration
-    conv.d *= 1.5 - (x * 0.5 * conv.d * conv.d);    // Second iteration for better accuracy
-    return conv.d;
+    auto y = std::bit_cast<double>(0x5fe6eb50c7b537a9ULL - (std::bit_cast<uint64_t>(x) >> 1)); // Magic number
+    y *= 1.5 - (x * 0.5 * y * y);    // One Newton-Raphson iteration
+    y *= 1.5 - (x * 0.5 * y * y);    // Second iteration for better accuracy
+    return y;
 }
 
 //********************************************************************************************************************
@@ -1883,13 +1878,9 @@ inline bool point_in_rectangle(const agg::vertex_d &X, const agg::vertex_d &Y, c
 //********************************************************************************************************************
 
 inline double fastPow(double a, double b) {
-   union {
-     double d;
-     int x[2];
-   } u = { a };
-   u.x[1] = (int)(b * (u.x[1] - 1072632447) + 1072632447);
-   u.x[0] = 0;
-   return u.d;
+   const auto high = int(std::bit_cast<uint64_t>(a) >> 32); // High word of the IEEE 754 representation
+   const auto result_high = uint32_t(int(b * (high - 1072632447) + 1072632447));
+   return std::bit_cast<double>(uint64_t(result_high) << 32);
 }
 
 //********************************************************************************************************************

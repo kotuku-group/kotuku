@@ -2167,8 +2167,10 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
    }
 
    objVector *vector = nullptr;
+   OBJECTPTR def = nullptr;
    if (!ref.empty()) {
-      if (Self->Scene->findDef(ref, (OBJECTPTR *)&vector) != ERR::Okay) {
+      if (Self->Scene->findDef(ref, &def) IS ERR::Okay) vector = (objVector *)def;
+      else {
          // The reference is not an existing vector but should be a pre-registered declaration that would allow
          // us to create it.  Note that creation only occurs once.  Subsequent use of the ID will result in the
          // live reference being found.
@@ -4036,9 +4038,9 @@ ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
             if (!href) href = child.attrib("href");
 
             if (href) {
-               objVector *path;
-               if (!Self->Scene->findDef(href->c_str(), (OBJECTPTR *)&path)) {
-                  anim.mpath = path;
+               OBJECTPTR path;
+               if (!Self->Scene->findDef(href->c_str(), &path)) {
+                  anim.mpath = (objVector *)path;
                }
             }
          }

@@ -651,9 +651,11 @@ static ERR PEERCONNECTION_GetStats(extPeerConnection *Self, struct rtc::GetStats
    if (not Self->Connection) return ERR::NotInitialised;
 
    auto text = Self->Connection->stats();
-   if (AllocResource(text.size() + 1, MEM::NO_CLEAR, (APTR *)&Args->Stats, nullptr) != ERR::Okay) {
+   APTR memory;
+   if (AllocResource(text.size() + 1, MEM::NO_CLEAR, &memory, nullptr) != ERR::Okay) {
       return ERR::AllocMemory;
    }
+   Args->Stats = (STRING)memory;
 
    // Results belong to the caller, rather than the peer action's current allocation context.
 

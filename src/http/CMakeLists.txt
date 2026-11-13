@@ -68,4 +68,17 @@ flute_test (http_connection_lifecycle "tests/test_connection_lifecycle.tiri")
 
 if (UNIT_TESTS)
    target_compile_definitions(http PRIVATE UNIT_TESTS)
+
+   # Standalone known-answer test for md5.c.  It is compiled with optimisation and strict aliasing in every build
+   # type; these private options follow the inherited flags, including KOTUKU_NO_STRICT_ALIASING, and take precedence.
+
+   add_executable (test_http_md5 "tests/test_md5.cpp")
+   set_target_properties (test_http_md5 PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+
+   if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+      target_compile_options (test_http_md5 PRIVATE -O2 -fstrict-aliasing -Wstrict-aliasing=2)
+   endif ()
+
+   add_test (NAME http_md5 COMMAND test_http_md5)
+   set_tests_properties (http_md5 PROPERTIES LABELS http TIMEOUT 30)
 endif ()

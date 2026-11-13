@@ -1928,10 +1928,11 @@ static ERR AUDIO_GetEffectStatus(extAudio *Self, struct snd::GetEffectStatus *Ar
    if (!Args) return ERR::NullArgs;
 
    Args->Status = nullptr;
-   struct EffectStatus *status;
-   if (AllocResource(sizeof(struct EffectStatus), MEM::NIL, (APTR *)&status, nullptr) != ERR::Okay) {
+   APTR memory;
+   if (AllocResource(sizeof(struct EffectStatus), MEM::NIL, &memory, nullptr) != ERR::Okay) {
       return ERR::AllocMemory;
    }
+   auto status = (struct EffectStatus *)memory;
    Args->Status = status;
 
    std::lock_guard lock(Self->MixerMutex);

@@ -19,6 +19,7 @@ constexpr int SIZE_READ = 1024;
 #include <thread>
 #include <string_view>
 #include <span>
+#include <cstring>
 #include <concepts>
 #include <format>
 #include <memory>
@@ -39,6 +40,19 @@ using StaticModuleHandle = const static_module_signature *;
 
 template <class T> T ALIGN64(T a) { return (((a) + 7) & (~7)); }
 template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
+
+// Generic marshalling accesses foreign struct fields, argument buffers and result slots through their FD representation
+// type, which can differ from the declared type.  An enum registered as FD_INT is a distinct type from int for strict
+// aliasing, so integer values are copied with memcpy, which carries no type.
+
+template <class T> inline void store_scalar(APTR Address, T Value) { std::memcpy(Address, &Value, sizeof(T)); }
+
+template <class T> inline T load_scalar(CPTR Address)
+{
+   T value;
+   std::memcpy(&value, Address, sizeof(T));
+   return value;
+}
 
 namespace tiri {
 extern CSTRING const glBytecodeNames[];
