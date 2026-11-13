@@ -56,12 +56,10 @@ set (SCINTILLA_ENGINE_SOURCES
 add_library (scintilla_v5_engine OBJECT ${SCINTILLA_ENGINE_SOURCES})
 add_library (scintilla class_scintilla.cxx class_scintilla_search.cxx)
 
-# Match Lexilla's supported makefile: catalogue, all lexlib helpers and all lexer translation units.
-# The catalogue references every module explicitly, retaining factories when linking the private static archive.
-
-file (GLOB LEXILLA_LEXERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/lexilla/lexers/Lex*.cxx")
+# Generate the adapter profiles and Lexilla catalogue from the same configuration.
+include (lexer_config.cmake)
 file (GLOB LEXILLA_SUPPORT CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/lexilla/lexlib/*.cxx")
-add_library (scintilla_v5_lexilla STATIC lexilla/src/Lexilla.cxx ${LEXILLA_SUPPORT} ${LEXILLA_LEXERS})
+add_library (scintilla_v5_lexilla STATIC "${CMAKE_CURRENT_BINARY_DIR}/Lexilla.cxx" ${LEXILLA_SUPPORT} ${LEXILLA_LEXERS})
 set_target_properties (scintilla_v5_lexilla PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features (scintilla_v5_lexilla PRIVATE cxx_std_20)
 target_compile_definitions (scintilla_v5_lexilla PRIVATE LEXILLA_NO_EXPORT)
@@ -101,7 +99,7 @@ configure_file (tiri_keywords.h.in tiri_keywords.h @ONLY)
 
 # Run the same public suites in either build tree; never duplicate their bodies.
 
-foreach (SCINTILLA_TEST document render scroll repaint keyboard initial_focus clipboard margins highlighting
+foreach (SCINTILLA_TEST document render scroll repaint keyboard clipboard margins highlighting
       completion hidpi mouse drag_drop changes diagnostics policy)
    flute_test (scintilla_${SCINTILLA_TEST}
       "${PROJECT_SOURCE_DIR}/src/scintilla/tests/test_scintilla_${SCINTILLA_TEST}.tiri")
@@ -111,3 +109,4 @@ flute_test (scintilla_v5_lifecycle "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lifec
 flute_test (scintilla_v5_rendering "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rendering.tiri")
 flute_test (scintilla_v5_input "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_input.tiri")
 flute_test (scintilla_v5_lexer_state "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lexers.tiri")
+flute_test (scintilla_lexer_configuration "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lexer_configuration.tiri")

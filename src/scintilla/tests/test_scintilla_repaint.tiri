@@ -5,6 +5,7 @@
 -- Vertical scrolls of up to ten lines shift the Bitmap and repaint only the exposed band (see ScrollText()).
 
    include 'scintilla', 'vector', 'display'
+   import './lexer_utils'
    module display as mGfx
    import './repaint_utils'
    import './theme_utils'
@@ -58,6 +59,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Scrolling
 
+@RequiresLexers(cpp=true)
 @Test function ScrollShiftMatchesFullRepaint()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtSelectRange(40, 300)
@@ -72,6 +74,7 @@ end
 
 -- Several scrolls between renders accumulate in the Bitmap before it is painted.
 
+@RequiresLexers(cpp=true)
 @Test function ConsecutiveScrollsBeforePaint()
    local scene <close>, vp, sci, bmp = newEditor()
    scrollToLine(sci, 10)
@@ -84,6 +87,7 @@ end
 
 -- Large scrolls exceed the shift limit and take the full repaint path.
 
+@RequiresLexers(cpp=true)
 @Test function LargeScrollsRepaintFully()
    local scene <close>, vp, sci, bmp = newEditor()
    for _, line in array<int> { 50, 44, 120, 115, 0 } do
@@ -94,6 +98,7 @@ end
 
 -- Edits that are pending when the editor scrolls must be painted at their scrolled positions.
 
+@RequiresLexers(cpp=true)
 @Test function PendingEditsSurviveScroll()
    local scene <close>, vp, sci, bmp = newEditor()
    scrollToLine(sci, 20)
@@ -109,6 +114,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function HorizontalScroll()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtInsertText(('x').rep(200) .. '\n', 0)
@@ -119,6 +125,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function WrappedScroll()
    local scene <close>, vp, sci, bmp = newEditor({ wordwrap=true })
    check sci.mtInsertText(('word ').rep(80) .. '\n', 0)
@@ -129,6 +136,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function DisabledScroll()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.acDisable()
@@ -141,6 +149,7 @@ end
    repaint_utils.assertFull(scene, sci, bmp, 'Scroll after enabling')
 end
 
+@RequiresLexers(cpp=true)
 @Test function TrueTypeScroll()
    local scene <close>, vp, sci, bmp = newEditor({ textStyle='face=Source Code Pro; size=12px' })
    check sci.mtSelectRange(10, 120)
@@ -154,6 +163,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Dirty regions of edits, selection, margins, folding and resizing
 
+@RequiresLexers(cpp=true)
 @Test function TextEdits()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtInsertText('x', 5)
@@ -168,6 +178,7 @@ end
    repaint_utils.assertFull(scene, sci, bmp, 'Restyle following lines')
 end
 
+@RequiresLexers(cpp=true)
 @Test function SelectionChanges()
    local scene <close>, vp, sci, bmp = newEditor()
    for _, range in array<array> { array<int> { 5, 20 }, array<int> { 10, 140 }, array<int> { 140, 10 },
@@ -177,6 +188,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function MarginWidthChange()
    local scene <close>, vp, sci, bmp = newEditor()
    sci.string = newDocument(98)
@@ -187,6 +199,7 @@ end
    repaint_utils.assertFull(scene, sci, bmp, 'Margin narrows for two digits')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldToggle()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtToggleFold(0)
@@ -197,6 +210,7 @@ end
    repaint_utils.assertFull(scene, sci, bmp, 'Expand a fold')
 end
 
+@RequiresLexers(cpp=true)
 @Test function HostResize()
    local scene <close>, vp, sci, bmp = newEditor()
    scrollToLine(sci, 5)
@@ -245,3 +259,5 @@ end
       assert(incremental is full, f'The caret at line {line} must match a full repaint')
    end
 end
+
+lexer_utils.configureTests()

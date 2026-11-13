@@ -1,6 +1,7 @@
 -- Document insertion policy, explicit EOL conversion, indentation and deterministic nested folding.
 
    include 'scintilla', 'vector', 'display'
+   import './lexer_utils'
    module display as mGfx
    import './theme_utils'
 
@@ -155,6 +156,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function IndependentIndentationAndTabs()
    local surface <close>, sci = newInputEditor({ tabWidth=8, indentWidth=3, allowTabs=false })
    pressKey(KEY_TAB)
@@ -177,6 +179,7 @@ end
       'Guides survive lexer changes without text edits')
 end
 
+@RequiresLexers(cpp=true)
 @Test function DeterministicNestedFolds()
    local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
    sci.string = NESTED
@@ -200,6 +203,7 @@ end
    assert(sci.string is NESTED and sci.documentRevision is revision, 'Folding must not modify document bytes')
 end
 
+@RequiresLexers(cpp=true)
 @Test function FoldAllAndCaretSentinel()
    local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
    sci.string = NESTED
@@ -218,6 +222,7 @@ end
    assertFold(sci, 2, 1, 1, 1)
 end
 
+@RequiresLexers(cpp=true, tiri=true)
 @Test function FoldStateAfterEditsAndLexerChanges()
    local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
    sci.string = NESTED
@@ -244,6 +249,7 @@ end
    assert(sci.mtCollapseFold(0) is ERR_NothingDone, 'A fresh document must not restore stale fold identities')
 end
 
+@RequiresLexers(cpp=true)
 @Test function NotificationGuardsPolicyAndFolds()
    local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
    sci.eventFlags = SEF_MODIFIED
@@ -304,6 +310,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function ExpandingHiddenHeaderRevealsAncestors()
    local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
    sci.string = NESTED
@@ -316,3 +323,5 @@ end
    assertFold(sci, 0, 0, 1, 1)
    assertFold(sci, 2, 1, 1, 1)
 end
+
+lexer_utils.configureTests()

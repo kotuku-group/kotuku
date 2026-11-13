@@ -1,6 +1,7 @@
 -- Pixel-level lexer regressions use Clean's fixed 7 by 13 geometry.  No display or GUI wrapper is required.
 
    include 'scintilla', 'vector', 'display', 'xml'
+   import './lexer_utils'
    module display as mGfx
    module vector as mVec
 
@@ -54,40 +55,42 @@ end
 
 @Test function EveryPublicLexerHasAProfile()
    local samples = array<table> {
-      { SCLEX_JSON, 'true', 'true', KEYWORD },
-      { SCLEX_MARKDOWN, '# Heading', 'Heading', KEYWORD, 2 },
-      { SCLEX_CPP, 'int value;', 'int', KEYWORD },
-      { SCLEX_TIRI, 'defer print(value) end', 'defer', KEYWORD },
-      { SCLEX_PYTHON, 'def example():', 'def', KEYWORD },
-      { SCLEX_PERL, 'my $value;', 'my', KEYWORD },
-      { SCLEX_SQL, 'SELECT value FROM example;', 'SELECT', KEYWORD },
-      { SCLEX_VB, 'Dim value', 'Dim', KEYWORD },
-      { SCLEX_PROPERTIES, '[main]', '[main]', KEYWORD },
-      { SCLEX_ERRORLIST, 'example.c:3: error: missing value', 'example.c', ERROR },
-      { SCLEX_MAKEFILE, '# comment', '# comment', COMMENT },
-      { SCLEX_BATCH, 'echo value', 'echo', KEYWORD },
-      { SCLEX_DIFF, '+added', '+added', STRING },
-      { SCLEX_PASCAL, 'begin', 'begin', KEYWORD },
-      { SCLEX_RUBY, 'class Example', 'class', KEYWORD },
-      { SCLEX_VBSCRIPT, 'Dim value', 'Dim', KEYWORD },
-      { SCLEX_ASP, '<% Dim value %>', 'Dim', KEYWORD, 3 },
-      { SCLEX_ASSEMBLER, 'mov eax, ebx', 'mov', KEYWORD },
-      { SCLEX_CSS, 'a { color: red; }', 'color', TYPE, 4 },
-      { SCLEX_BASH, 'if true; then', 'if', KEYWORD },
-      { SCLEX_HTML, '<div class="example">', 'div', KEYWORD, 1 },
-      { SCLEX_XML, '<custom value="example"/>', 'custom', KEYWORD, 1 },
-      { SCLEX_PHPSCRIPT, 'function example() {}', 'function', KEYWORD },
-      { SCLEX_REBOL, 'REBOL [] func [value] [print value]', 'func', KEYWORD, 9 }
+      { 'json', 'true', 'true', KEYWORD },
+      { 'markdown', '# Heading', 'Heading', KEYWORD, 2 },
+      { 'cpp', 'int value;', 'int', KEYWORD },
+      { 'tiri', 'defer print(value) end', 'defer', KEYWORD },
+      { 'python', 'def example():', 'def', KEYWORD },
+      { 'perl', 'my $value;', 'my', KEYWORD },
+      { 'sql', 'SELECT value FROM example;', 'SELECT', KEYWORD },
+      { 'vb', 'Dim value', 'Dim', KEYWORD },
+      { 'props', '[main]', '[main]', KEYWORD },
+      { 'errorlist', 'example.c:3: error: missing value', 'example.c', ERROR },
+      { 'makefile', '# comment', '# comment', COMMENT },
+      { 'batch', 'echo value', 'echo', KEYWORD },
+      { 'diff', '+added', '+added', STRING },
+      { 'pascal', 'begin', 'begin', KEYWORD },
+      { 'ruby', 'class Example', 'class', KEYWORD },
+      { 'vbscript', 'Dim value', 'Dim', KEYWORD },
+      { 'asp', '<% Dim value %>', 'Dim', KEYWORD, 3 },
+      { 'asm', 'mov eax, ebx', 'mov', KEYWORD },
+      { 'css', 'a { color: red; }', 'color', TYPE, 4 },
+      { 'bash', 'if true; then', 'if', KEYWORD },
+      { 'html', '<div class="example">', 'div', KEYWORD, 1 },
+      { 'xml', '<custom value="example"/>', 'custom', KEYWORD, 1 },
+      { 'phpscript', 'function example() {}', 'function', KEYWORD },
+      { 'rebol', 'REBOL [] func [value] [print value]', 'func', KEYWORD, 9 }
    }
    local scene <close>, sci, bmp = newEditor()
    for sample in values(samples) do
-      sci.lexer = sample[0]
+      if not lexer_utils.supports(sci, sample[0]) then continue end
+      sci.lexerName = sample[0]
       sci.string = sample[1]
       render(scene)
       expectToken(bmp, sample[2], sample[3], sample[4], 0)
    end
 end
 
+@RequiresLexers(tiri=true)
 @Test function TiriReservedWords()
    -- Includes extensions and words reserved for future syntax.
    local words = ('and as break choose checkall continue defer do else elseif end enum extern false for from ' ..
@@ -109,6 +112,7 @@ end
    expectToken(bmp, 'identifier', TEXT, 0, 3)
 end
 
+@RequiresLexers(cpp=true, python=true, tiri=true)
 @Test function LexerChangesRefreshKeywordsAndColours()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
    sci.string = 'defer int\n"text"\n// comment'
@@ -133,6 +137,7 @@ end
    expectToken(bmp, '"text"', TEXT, 0, 1)
 end
 
+@RequiresLexers(cpp=true, tiri=true)
 @Test function ThemeUpdatesAreLocalAndPreserveState()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI, foldingMarkers=true })
    local other_scene <close>, other, other_bmp = newEditor({ lexer=SCLEX_TIRI })
@@ -170,6 +175,7 @@ end
    assert(pixelsOf(bmp, '20,240,160', 24, 0, 21, 13) > 0, 'Custom colours must survive a lexer switch')
 end
 
+@RequiresLexers(cpp=true, tiri=true)
 @Test function FileDetectionRefreshesProfilesAndFolding()
    local scene <close>, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER, foldingMarkers=true })
    for sample in values(array<table> {
@@ -205,6 +211,7 @@ function paletteColour(Value:str):struct
    }
 end
 
+@RequiresLexers(tiri=true)
 @Test function GuiPaletteColoursReachDirectEditors()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
    sci.string = 'defer value'
@@ -222,6 +229,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true, python=true, tiri=true)
 @Test function DifferentLexersRemainIndependent()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
    sci.string = 'int value;'
@@ -240,6 +248,7 @@ end
    expectToken(other_bmp, 'defer', KEYWORD, 0, 0)
 end
 
+@RequiresLexers(html=true)
 @Test function EmbeddedHtmlStylesFollowTheTheme()
    local theme <close> = obj.new('XML', {
       statement='<theme><palette background="#141e28" keyword="#14f0a0" string="#f0d278"/></theme>' })
@@ -257,6 +266,7 @@ end
       'A theme update must replace backgrounds in every embedded script style')
 end
 
+@RequiresLexers(tiri=true)
 @Test function ThemeXMLIsCopiedAndCanBeShared()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
    local other_scene <close>, other, other_bmp = newEditor({ lexer=SCLEX_TIRI })
@@ -289,6 +299,7 @@ function expectRejectedTheme(Sci:obj, Theme:obj)
    assert(rejected, 'An invalid theme assignment must fail')
 end
 
+@RequiresLexers(tiri=true)
 @Test function InvalidThemesLeaveColoursUnchanged()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
    sci.string = 'defer value'
@@ -356,6 +367,7 @@ end
 
 -- Reading ThemeXML describes the full palette, so the result can be assigned to another editor without loss.
 
+@RequiresLexers(tiri=true)
 @Test function ThemeXMLReadback()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
    local expected = '<theme><palette comment="#808080" keyword="#b22222" string="#b00000" number="#0000ff" ' ..
@@ -403,6 +415,7 @@ end
 -- Derived colours follow their source until they are assigned, and 'inherit' restores the link.  Line 2 of the
 -- document has six columns of indentation, which shows whitespace dots and an indentation guide at column 3.
 
+@RequiresLexers(cpp=true)
 @Test function DerivedColoursFollowTheirSources()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP, showWhitespace=true, indentWidth=3,
       indentationGuides=SCGUIDE_REAL })
@@ -449,6 +462,7 @@ end
    assert(pixelsOf(bmp, '192,0,0', 11, 0, 7, 13) > 0, 'An unmatched brace must inherit the error colour')
 end
 
+@RequiresLexers(cpp=true, json=true)
 @Test function CustomKeywordsSurviveLexerSwitches()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
    sci.string = 'Widget value;'
@@ -475,6 +489,7 @@ end
    expectToken(bmp, 'Widget', TEXT, 0, 0)
 end
 
+@RequiresLexers(json=true, markdown=true, tiri=true)
 @Test function LexerPropertiesAndNames()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_JSON })
    sci.string = '// comment\ntrue'
@@ -524,6 +539,7 @@ end
    assert(pixelsOf(bmp, '0,255,0', 53, 0, 28, 16) > 0, 'Explicit colours survive theme updates')
 end
 
+@RequiresLexers(cpp=true, json=true, markdown=true)
 @Test function ConfigurationBuffersAndUnsupportedSettings()
    local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
    local buffer = array<byte, 4>
@@ -547,6 +563,7 @@ end
    check sci.mtColourise(0, 0)
 end
 
+@RequiresLexers(json=true, markdown=true)
 @Test function DetectsJSONAndMarkdownFiles()
    local scene <close>, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER })
    for sample in values(array<table> {
@@ -565,3 +582,5 @@ end
       expectToken(bmp, sample[3], KEYWORD, sample[4], 0)
    end
 end
+
+lexer_utils.configureTests()

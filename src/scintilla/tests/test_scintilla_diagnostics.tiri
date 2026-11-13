@@ -1,5 +1,6 @@
 -- Public diagnostic ranges use exact document bytes and remain independent of lexer styles.
    include 'scintilla', 'vector'
+   import './lexer_utils'
 
 function newEditor():<obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
@@ -60,6 +61,7 @@ end
    assert(sci.mtFillIndicator(10, 0, 1, 1) is ERR_Args, 'Undefined slots must fail')
 end
 
+@RequiresLexers(json=true)
 @Test function EditsAdjustMarksAndRedefinitionPreservesValues()
    local scene <close>, sci = newEditor()
    sci.string = 'abcdefgh'
@@ -77,3 +79,5 @@ end
    local err, value = sci.mtGetIndicator(8, 4)
    assert(err is ERR_Okay and value is 0, 'Clearing removes all marks')
 end
+
+lexer_utils.configureTests()

@@ -4,7 +4,7 @@
 function newEditor():<obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
    local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
-   return scene, viewport.new('Scintilla', { lexer=SCLEX_TIRI, flags=SCIF_EDIT })
+   return scene, viewport.new('Scintilla', { flags=SCIF_EDIT })
 end
 
 @Test function SwitchingAndThemePreserveUndoHistory()
@@ -15,8 +15,8 @@ end
    local edited = sci.string
    local theme <close> = obj.new('XML', { statement='<theme><palette keyword="#14f0a0"/></theme>' })
    for _ in {0 to 10} do
-      for lexer in values(array<int> { SCLEX_CPP, 0, SCLEX_XML, SCLEX_ASP, SCLEX_HTML, SCLEX_PHPSCRIPT, SCLEX_TIRI }) do
-         sci.lexer = lexer
+      for name in values(sci.supportedLexers.split('\n')) do
+         sci.lexerName = name
          sci.themeXML = theme
          assert(sci.string is edited, 'Switching and theme changes preserve the complete document')
       end
@@ -27,6 +27,9 @@ end
 
 @Test function UnsupportedLexerLeavesWorkingProfile()
    local scene <close>, sci = newEditor()
+   local names = sci.supportedLexers.split('\n')
+   sci.lexerName = names[#names - 1]
+   local original = sci.lexer
    sci.string = 'defer print(value) end'
    local rejected = false
    try
@@ -35,8 +38,10 @@ end
       rejected = true
    end
    assert(rejected, 'An unknown public lexer must report an error')
-   assert(sci.lexer is SCLEX_TIRI, 'A failed assignment must retain the previous public lexer')
+   assert(sci.lexer is original, 'A failed assignment must retain the previous public lexer')
    assert(sci.string is 'defer print(value) end', 'A failed assignment must preserve text')
-   sci.lexer = SCLEX_CPP
-   assert(sci.lexer is SCLEX_CPP, 'A successful assignment must still work after failure')
+   for name in values(names) do
+      sci.lexerName = name
+      assert(sci.lexerName is name, 'A successful assignment must still work after failure')
+   end
 end

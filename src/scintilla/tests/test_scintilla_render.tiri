@@ -6,6 +6,7 @@
 -- means that text starts at x = 4.
 
    include 'scintilla', 'vector', 'display'
+   import './lexer_utils'
    module vector as mVec
    module display as mGfx
    import './theme_utils'
@@ -408,6 +409,7 @@ end
    assert(small_profile.sub(10, 20) != '0000000000', 'Line 1 of the Small editor must start within 10 pixels')
 end
 
+@RequiresLexers(cpp=true)
 @Test function LexerChangeAfterInit()
    -- Loading a file with DETECT_LEXER changes the lexer after initialisation.  The style data must be refreshed, or
    -- the document is painted with stale colours (previously black).
@@ -521,6 +523,7 @@ end
    end
 end
 
+@RequiresLexers(cpp=true)
 @Test function BoldStyleIsHeavier()
    -- C++ brace matching uses the bold brace-light style.  Move the caret away for the regular reference.
    local scene <close>, vp, sci, bmp = newEditor({ textStyle='face=Source Code Pro; size=32px', lexer=SCLEX_CPP })
@@ -533,3 +536,5 @@ end
    local bold = countPixels(bmp, TEXT_LEFT, 0, 40, 50, (R, G, B) => R < 240 or G < 240 or B < 240)
    assert(bold > regular, f'The bold brace style must add ink: regular={regular}, bold={bold}')
 end
+
+lexer_utils.configureTests()

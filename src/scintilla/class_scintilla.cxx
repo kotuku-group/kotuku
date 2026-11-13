@@ -4430,7 +4430,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
       if (i != std::string::npos) Path.remove_prefix(i+1);
 
       for (i=0; i < std::size(glLexers); i++) {
-         if (wildcmp(glLexers[i].File, Path)) {
+         if (find_lexer_profile(glLexers[i].Lexer) and wildcmp(glLexers[i].File, Path)) {
             kt::Log log;
             error = SET_Lexer(Self, glLexers[i].Lexer);
             if (error != ERR::Okay) break;
