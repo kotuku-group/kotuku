@@ -182,7 +182,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    empty[G] = linear_rgb ? Self->Green.ILookup[0] : Self->Green.Lookup[0];
    empty[B] = linear_rgb ? Self->Blue.ILookup[0] : Self->Blue.Lookup[0];
    empty[A] = Self->Alpha.Lookup[0];
-   const uint32_t empty_pixel = ((uint32_t *)empty)[0];
+   const uint32_t empty_pixel = std::bit_cast<uint32_t>(empty);
 
    uint8_t *in = bmp->Data + (bmp->Clip.Left * 4) + (bmp->Clip.Top * bmp->LineWidth);
    uint8_t *dest = Self->Target->Data + (Self->Target->Clip.Left * 4) + (Self->Target->Clip.Top * Self->Target->LineWidth);
@@ -198,7 +198,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
                out[G] = Self->Green.ILookup[sp[G]];
                out[B] = Self->Blue.ILookup[sp[B]];
                out[A] = Self->Alpha.Lookup[a];
-               dp[0] = ((uint32_t *)out)[0];
+               dp[0] = std::bit_cast<uint32_t>(out);
             }
             else dp[0] = empty_pixel;
             dp++;
@@ -213,7 +213,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
                out[G] = Self->Green.Lookup[sp[G]];
                out[B] = Self->Blue.Lookup[sp[B]];
                out[A] = Self->Alpha.Lookup[a];
-               dp[0] = ((uint32_t *)out)[0];
+               dp[0] = std::bit_cast<uint32_t>(out);
             }
             else dp[0] = empty_pixel;
             dp++;

@@ -917,7 +917,7 @@ void svgState::parse_radialgradient(const XTag &Tag, objGradientRadial *Gradient
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
-      log.trace("Processing radial gradient attribute %s = %s", Tag.Attribs[a].Name, val);
+      log.trace("Processing radial gradient attribute %s = %s", Tag.Attribs[a].Name.c_str(), val.c_str());
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
@@ -955,7 +955,7 @@ void svgState::parse_diamondgradient(const XTag &Tag, objGradientDiamond *Gradie
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
-      log.trace("Processing diamond gradient attribute %s = %s", Tag.Attribs[a].Name, val);
+      log.trace("Processing diamond gradient attribute %s = %s", Tag.Attribs[a].Name.c_str(), val.c_str());
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
@@ -986,7 +986,7 @@ void svgState::parse_contourgradient(const XTag &Tag, objGradientContour *Gradie
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
-      log.trace("Processing contour gradient attribute %s = %s", Tag.Attribs[a].Name, val);
+      log.trace("Processing contour gradient attribute %s = %s", Tag.Attribs[a].Name.c_str(), val.c_str());
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
@@ -1154,7 +1154,7 @@ void svgState::parse_distalgradient(const XTag &Tag, objGradientDistal *Gradient
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
-      log.trace("Processing distal gradient attribute %s = %s", Tag.Attribs[a].Name, val);
+      log.trace("Processing distal gradient attribute %s = %s", Tag.Attribs[a].Name.c_str(), val.c_str());
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
@@ -1220,7 +1220,7 @@ void svgState::parse_conicgradient(const XTag &Tag, objGradientConic *Gradient, 
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
-      log.trace("Processing conic gradient attribute %s = %s", Tag.Attribs[a].Name, val);
+      log.trace("Processing conic gradient attribute %s = %s", Tag.Attribs[a].Name.c_str(), val.c_str());
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {

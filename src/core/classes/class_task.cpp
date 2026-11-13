@@ -1292,24 +1292,34 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
 
       std::string full_path(Args->Name);
 
+      // Buffer is a byte array, so numeric values are copied out rather than read through a cast.
+
       auto format_value = [](int Type, int8_t *Buffer, int Length, std::string &Output) -> bool {
          switch(Type) {
             case REG_DWORD:
-               if (unsigned(Length) >= sizeof(int)) Output = std::to_string(((int *)Buffer)[0]);
+               if (unsigned(Length) >= sizeof(int)) {
+                  int value;
+                  copymem(Buffer, &value, sizeof(value));
+                  Output = std::to_string(value);
+               }
                return true;
 
             case REG_DWORD_BIG_ENDIAN:
                if (unsigned(Length) >= sizeof(int)) {
+                  int value;
+                  copymem(Buffer, &value, sizeof(value));
                   if constexpr (std::endian::native IS std::endian::little) {
-                     Output = std::to_string(reverse_long(((int *)Buffer)[0]));
+                     Output = std::to_string(reverse_long(value));
                   }
-                  else Output = std::to_string(((int *)Buffer)[0]);
+                  else Output = std::to_string(value);
                }
                return true;
 
             case REG_QWORD:
                if (unsigned(Length) >= sizeof(int64_t)) {
-                  Output = std::to_string(((int64_t *)Buffer)[0]);
+                  int64_t value;
+                  copymem(Buffer, &value, sizeof(value));
+                  Output = std::to_string(value);
                }
                return true;
 

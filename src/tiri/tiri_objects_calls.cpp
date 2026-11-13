@@ -944,18 +944,18 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             if (auto obj_ref = lj_lib_optobject(Lua, n, false)) { // Performs thunk resolution
                OBJECTPTR ptr_obj;
                if (auto direct = direct_object_ptr(obj_ref)) {
-                  ((OBJECTPTR *)(ArgBuffer + j))[0] = direct;
+                  ((APTR *)(ArgBuffer + j))[0] = direct;
                }
                else if (!access_object(obj_ref, ptr_obj)) {
-                  ((OBJECTPTR *)(ArgBuffer + j))[0] = ptr_obj;
+                  ((APTR *)(ArgBuffer + j))[0] = ptr_obj;
                   release_object(obj_ref);
                }
                else {
                   log.warning("Unable to resolve object pointer for #%d.", obj_ref->uid);
-                  ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
+                  ((APTR *)(ArgBuffer + j))[0] = nullptr;
                }
             }
-            else if (type IS LUA_TNIL) ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
+            else if (type IS LUA_TNIL) ((APTR *)(ArgBuffer + j))[0] = nullptr;
             else return fail_arg(n, "Object required.");
          }
          else if (Args[i].Type & FD_FUNCTION) {
@@ -995,20 +995,20 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       else if (Args[i].Type & FD_INT) {
          if (type IS LUA_TOBJECT) {
             if (auto obj = lj_lib_optobject(Lua, n, false)) {
-               ((int *)(ArgBuffer + j))[0] = obj->uid;
+               store_scalar<int>(ArgBuffer + j, obj->uid);
             }
             else return fail_arg(n, "Failed to read object type.");
          }
          else if (type IS LUA_TBOOLEAN) {
             auto value = lua_toboolean(Lua, n);
-            ((int *)(ArgBuffer + j))[0] = value;
+            store_scalar<int>(ArgBuffer + j, value);
          }
          else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
             return fail_arg(n, "Unable to convert usertype to an integer.");
          }
          else if (type != LUA_TNIL) { // Attempt numeric conversion
             auto value = lua_tointeger(Lua, n);
-            ((int *)(ArgBuffer + j))[0] = value;
+            store_scalar<int>(ArgBuffer + j, value);
          }
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
          j += sizeof(int);
@@ -1023,7 +1023,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          j = ALIGN64(j);
          if (type != LUA_TNIL) {
             auto value = lua_tointeger(Lua, n);
-            ((int64_t *)(ArgBuffer + j))[0] = value;
+            store_scalar<int64_t>(ArgBuffer + j, value);
          }
          //log.trace("Arg: %s, Value: %" PF64, Args[i].Name, ((LARGE *)(ArgBuffer + j))[0]);
          j += sizeof(int64_t);
@@ -1178,8 +1178,9 @@ static int get_results(lua_State *Lua, const FunctionField *Args, int8_t *ArgBuf
       }
       else if (type & FD_INT) {
          if (type & FD_RESULT) {
-            RMSG("Result-Arg: %s, Value: %d (Long)", Args[i].Name, ((int *)(ArgBuf+of))[0]);
-            lua_pushinteger(Lua, ((int *)(ArgBuf+of))[0]);
+            const auto value = load_scalar<int>(ArgBuf + of);
+            RMSG("Result-Arg: %s, Value: %d (Long)", Args[i].Name, value);
+            lua_pushinteger(Lua, value);
             total++;
          }
          of += sizeof(int);
@@ -1196,8 +1197,9 @@ static int get_results(lua_State *Lua, const FunctionField *Args, int8_t *ArgBuf
       else if (type & FD_INT64) {
          of = ALIGN64(of);
          if (type & FD_RESULT) {
-            RMSG("Result-Arg: %s, Value: %" PF64 " (Large)", Args[i].Name, ((int64_t *)(ArgBuf+of))[0]);
-            lua_pushnumber(Lua, ((int64_t *)(ArgBuf+of))[0]);
+            const auto value = load_scalar<int64_t>(ArgBuf + of);
+            RMSG("Result-Arg: %s, Value: %" PF64 " (Large)", Args[i].Name, value);
+            lua_pushnumber(Lua, value);
             total++;
          }
          of += sizeof(int64_t);

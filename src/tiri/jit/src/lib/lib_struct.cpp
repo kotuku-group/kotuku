@@ -83,7 +83,7 @@ template <typename T> static void write_integer_field(lua_State *L, APTR Address
       struct_field_error(L, CurrentFrame, ERR::OutOfRange, "Field '%s' value is out of range for %s.", FieldName,
          scalar_type_name(Type));
    }
-   ((T *)Address)[ElementIndex] = T(value);
+   store_scalar((T *)Address + ElementIndex, T(value));
 }
 
 static bool write_primitive_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex,
@@ -309,7 +309,7 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
       auto ltype = lua_type(L, StackIndex);
       if (ltype IS LUA_TNIL) {
          if (uid_backed) ((OBJECTID *)Address)[0] = OBJECTID(0);
-         else ((OBJECTPTR *)Address)[0] = nullptr;
+         else ((APTR *)Address)[0] = nullptr;
       }
       else if (lua_isobject(L, StackIndex)) {
          auto object = lua_toobject(L, StackIndex);
@@ -328,14 +328,14 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
             }
          }
          if (uid_backed) ((OBJECTID *)Address)[0] = OBJECTID(object->uid);
-         else ((OBJECTPTR *)Address)[0] = object->ptr;
+         else ((APTR *)Address)[0] = object->ptr;
       }
       else if (lua_islightuserdata(L, StackIndex)) {
          if (uid_backed or Field.ObjectClassID != CLASSID::NIL) {
             struct_field_error(L, CurrentFrame, ERR::InvalidType,
                "Field '%s' requires a typed object reference.", FieldName);
          }
-         ((OBJECTPTR *)Address)[0] = (OBJECTPTR)lua_touserdata(L, StackIndex);
+         ((APTR *)Address)[0] = lua_touserdata(L, StackIndex);
       }
       else struct_field_error(L, CurrentFrame, ERR::InvalidType,
          "Field '%s' requires an object, lightuserdata or nil.", FieldName);
@@ -419,25 +419,25 @@ static bool read_primitive_field(lua_State *L, APTR Address, const struct_field 
    else if (Field.NativeType IS NativeStructType::Char or Field.NativeType IS NativeStructType::UInt8) {
       lua_pushinteger(L, ((uint8_t *)Address)[0]);
    }
-   else if (Field.NativeType IS NativeStructType::Int16) lua_pushinteger(L, ((int16_t *)Address)[0]);
-   else if (Field.NativeType IS NativeStructType::UInt16) lua_pushinteger(L, ((uint16_t *)Address)[0]);
-   else if (Field.NativeType IS NativeStructType::Int32) lua_pushinteger(L, ((int32_t *)Address)[0]);
-   else if (Field.NativeType IS NativeStructType::UInt32) lua_pushnumber(L, ((uint32_t *)Address)[0]);
-   else if (Field.NativeType IS NativeStructType::Int64) lua_pushnumber(L, ((int64_t *)Address)[0]);
-   else if (Field.NativeType IS NativeStructType::UInt64) lua_pushnumber(L, ((uint64_t *)Address)[0]);
+   else if (Field.NativeType IS NativeStructType::Int16) lua_pushinteger(L, load_scalar<int16_t>(Address));
+   else if (Field.NativeType IS NativeStructType::UInt16) lua_pushinteger(L, load_scalar<uint16_t>(Address));
+   else if (Field.NativeType IS NativeStructType::Int32) lua_pushinteger(L, load_scalar<int32_t>(Address));
+   else if (Field.NativeType IS NativeStructType::UInt32) lua_pushnumber(L, load_scalar<uint32_t>(Address));
+   else if (Field.NativeType IS NativeStructType::Int64) lua_pushnumber(L, load_scalar<int64_t>(Address));
+   else if (Field.NativeType IS NativeStructType::UInt64) lua_pushnumber(L, load_scalar<uint64_t>(Address));
    else if (Type & FD_FLOAT)  lua_pushnumber(L, ((float *)Address)[0]);
    else if (Type & FD_DOUBLE) lua_pushnumber(L, ((double *)Address)[0]);
    else if (Type & FD_INT64) {
-      if (Type & FD_UNSIGNED) lua_pushnumber(L, ((uint64_t *)Address)[0]);
-      else lua_pushnumber(L, ((int64_t *)Address)[0]);
+      if (Type & FD_UNSIGNED) lua_pushnumber(L, load_scalar<uint64_t>(Address));
+      else lua_pushnumber(L, load_scalar<int64_t>(Address));
    }
    else if (Type & FD_INT) {
-      if (Type & FD_UNSIGNED) lua_pushinteger(L, ((uint32_t *)Address)[0]);
-      else lua_pushinteger(L, ((int32_t *)Address)[0]);
+      if (Type & FD_UNSIGNED) lua_pushinteger(L, load_scalar<uint32_t>(Address));
+      else lua_pushinteger(L, load_scalar<int32_t>(Address));
    }
    else if (Type & FD_WORD) {
-      if (Type & FD_UNSIGNED) lua_pushinteger(L, ((uint16_t *)Address)[0]);
-      else lua_pushinteger(L, ((int16_t *)Address)[0]);
+      if (Type & FD_UNSIGNED) lua_pushinteger(L, load_scalar<uint16_t>(Address));
+      else lua_pushinteger(L, load_scalar<int16_t>(Address));
    }
    else if (Type & FD_BYTE)   lua_pushinteger(L, ((uint8_t *)Address)[0]);
    return true;
@@ -697,7 +697,7 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
    }
    else if (Field.Type & FD_OBJECT) {
       if (Field.Type & FD_INT) push_object_id(L, ((OBJECTID *)Address)[0]);
-      else if (auto object = ((OBJECTPTR *)Address)[0]) push_object(L, object);
+      else if (auto object = (OBJECTPTR)((APTR *)Address)[0]) push_object(L, object);
       else lua_pushnil(L);
    }
    else if (Field.Type & FD_POINTER) {

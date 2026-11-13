@@ -918,8 +918,10 @@ class TaskMessage {
    int     Size;
    // struct Message - END
    private:
-   char *ExtBuffer;
-   std::array<char, 64> Buffer;
+   // Message payloads are read by handlers as their own structure types.  Unsigned char storage (and storage from
+   // operator new[]) can hold objects of other types; the alignment matches operator new for large payloads.
+   unsigned char *ExtBuffer;
+   alignas(16) std::array<unsigned char, 64> Buffer;
 
    // Constructors
 
@@ -981,14 +983,14 @@ class TaskMessage {
 
    // Public methods
 
-   char * getBuffer() { return ExtBuffer ? ExtBuffer : Buffer.data(); }
+   unsigned char * getBuffer() { return ExtBuffer ? ExtBuffer : Buffer.data(); }
 
    void setBuffer(APTR Data, size_t Size) {
       if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
 
       if (Size <= Buffer.size()) copymem(Data, Buffer.data(), Size);
       else {
-         ExtBuffer = new (std::nothrow) char[Size];
+         ExtBuffer = new (std::nothrow) unsigned char[Size];
          if (ExtBuffer) copymem(Data, ExtBuffer, Size);
       }
 

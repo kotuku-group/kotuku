@@ -36,10 +36,9 @@ static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_
 
 static SimpleVector * new_simplevector(void)
 {
-   SimpleVector *vector;
-   if (AllocResource(sizeof(SimpleVector), MEM::NIL, (APTR *)&vector, &glResourceSimpleVector) != ERR::Okay) return nullptr;
-   new(vector) SimpleVector;
-   return vector;
+   APTR memory;
+   if (AllocResource(sizeof(SimpleVector), MEM::NIL, &memory, &glResourceSimpleVector) != ERR::Okay) return nullptr;
+   return new (memory) SimpleVector;
 }
 
 namespace vec {

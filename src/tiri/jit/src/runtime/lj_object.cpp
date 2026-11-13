@@ -498,7 +498,8 @@ extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, 
 {
    if (not Obj->accesscount) Obj->ptr->lock();
    Obj->accesscount++;
-   OBJECTPTR child = *(OBJECTPTR *)(((int8_t *)Obj->ptr) + Offset);
+   // The field can be declared with a derived class type; APTR reads are compatible with every pointer type.
+   auto child = (OBJECTPTR)*(APTR *)(((int8_t *)Obj->ptr) + Offset);
    if (child) {
       auto gcobj = lj_object_new(L, child->UID, nullptr, child->Class, GCOBJ_DETACHED);
       lj_object_pin(gcobj, child);

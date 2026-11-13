@@ -432,7 +432,7 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
          of += sizeof(APTR);
       }
       else if (args[i].Type & FD_INT) {
-         lua_pushinteger(Lua, ((int *)(Buffer + of))[0]);
+         lua_pushinteger(Lua, load_scalar<int>(Buffer + of));
          of += sizeof(int);
       }
       else if (args[i].Type & FD_DOUBLE) {
@@ -442,7 +442,7 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
       }
       else if (args[i].Type & FD_INT64) {
          if (sizeof(APTR) IS 8) of = ALIGN64(of);
-         lua_pushnumber(Lua, ((int64_t *)(Buffer + of))[0]);
+         lua_pushnumber(Lua, load_scalar<int64_t>(Buffer + of));
          of += sizeof(int64_t);
       }
       else {
@@ -1352,7 +1352,7 @@ static ERR run_script(extTiri *Self)
                double value = lua_tonumber(Self->Lua, -results);
                if ((value >= 0) and (value <= std::numeric_limits<int>::max()) and (value IS double(int(value)))) {
                   if (arg.Type & FD_ERROR) *((ERR *)arg.Address) = ERR(int(value));
-                  else *((int *)arg.Address) = int(value);
+                  else store_scalar(arg.Address, int(value));
                }
             }
          }

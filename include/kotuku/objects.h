@@ -1,6 +1,8 @@
 #pragma once
 
 #include "kotuku/strings.hpp"
+#include <bit>
+#include <cstring>
 
 // Field flags for classes.  These are intended to simplify field definitions, e.g. using FDF_BYTEARRAY combines
 // FD_ARRAY with FD_BYTE.  DO NOT use these for function definitions, they are not intended to be compatible.
@@ -488,18 +490,34 @@ struct alignas(8) Object { // Must be 64-bit aligned
       return error;
    }
 
-   inline std::pair<ERR, APTR> get_field_value(Object *Object, const struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)]) {
+   // Reads a field into correctly typed storage.  V must be the type that the field's getter writes, or the type that
+   // is stored at the field offset when there is no getter.  Consumers must not use Result unless ERR::Okay is
+   // returned.  Owning string getters require a constructed std::string, so they are rejected here.
+
+   template <class V> ERR read_field(Object *Object, const struct Field &Field, V &Result) {
       if (Field.GetValue) {
-         // Owning string getters require a constructed std::string, rather than this temporary value buffer.
-         if ((Field.Flags & FD_STRING) and (Field.Flags & FD_STORE)) return { ERR::FieldTypeMismatch, nullptr };
+         if ((Field.Flags & FD_STRING) and (Field.Flags & FD_STORE)) return ERR::FieldTypeMismatch;
 
          SetObjectContext(Object, &Field, AC::NIL);
-         auto get_field = (ERR (*)(APTR, APTR))Field.GetValue;
-         auto pair = std::make_pair(get_field(Object, Buffer), Buffer);
+         auto error = Field.GetValue(Object, &Result);
          RestoreObjectContext();
-         return pair;
+         return error;
       }
-      else return std::make_pair(ERR::Okay, ((int8_t *)Object) + Field.Offset);
+      else if constexpr (std::is_arithmetic_v<V> or std::is_pointer_v<V>) {
+         std::memcpy(&Result, ((int8_t *)Object) + Field.Offset, sizeof(V));
+         return ERR::Okay;
+      }
+      else return ERR::FieldTypeMismatch;
+   }
+
+   // Reads a numeric field as its declared type V, then converts it to the caller's type T.  Value is only written
+   // on success.
+
+   template <class V, class T> ERR read_numeric(Object *Object, const struct Field &Field, T &Value) {
+      V result{};
+      auto error = read_field(Object, Field, result);
+      if (error IS ERR::Okay) Value = T(result);
+      return error;
    }
 
    // There are two mechanisms for retrieving object values; the first allows the value to be retrieved with an error
@@ -515,16 +533,11 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
          auto flags = field->Flags;
 
-         if (flags & FD_UNIT) return get_unit<T>(target, *field, Value);
-
-         int8_t field_value[sizeof(std::string_view)];
-         auto fv = get_field_value(target, *field, field_value);
-
-         if (flags & FD_INT)         Value = *((int *)fv.second);
-         else if (flags & FD_INT64)  Value = *((int64_t *)fv.second);
-         else if (flags & FD_DOUBLE) Value = *((double *)fv.second);
+         if (flags & FD_UNIT)        return get_unit<T>(target, *field, Value);
+         else if (flags & FD_INT)    return read_numeric<int>(target, *field, Value);
+         else if (flags & FD_INT64)  return read_numeric<int64_t>(target, *field, Value);
+         else if (flags & FD_DOUBLE) return read_numeric<double>(target, *field, Value);
          else return ERR::FieldTypeMismatch;
-         return fv.first;
       }
       else return ERR::UnsupportedField;
    }
@@ -558,17 +571,13 @@ struct alignas(8) Object { // Must be 64-bit aligned
             return error;
          }
 
-         int8_t field_value[sizeof(std::string_view)];
-         auto fv = get_field_value(target, *field, field_value);
-         APTR data = fv.second;
-
-         if (fv.first != ERR::Okay) return fv.first;
-
          if (flags & FD_INT) {
+            int v;
+            if (auto error = read_field(target, *field, v); error != ERR::Okay) return error;
+
             if (flags & FD_LOOKUP) {
                // Reading a lookup field as a string is permissible, we just return the string registered in the lookup table
                if (auto lookup = (FieldDef *)field->Arg) {
-                  int v = ((int *)data)[0];
                   while (lookup->Name) {
                      if (v IS lookup->Value) {
                         Value = lookup->Name;
@@ -582,7 +591,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
             else if (flags & FD_FLAGS) {
                if (auto lookup = (FieldDef *)field->Arg) {
                   Value.clear();
-                  int v = ((int *)data)[0];
                   while (lookup->Name) {
                      const auto mask = lookup->Value;
                      if (((mask & (mask - 1)) IS 0) and (v & mask)) {
@@ -595,19 +603,27 @@ struct alignas(8) Object { // Must be 64-bit aligned
                   return ERR::Okay;
                }
             }
-            else Value = std::to_string(*((int *)data));
+            else Value = std::to_string(v);
          }
          else if (flags & FD_INT64) {
-            Value = std::to_string(*((int64_t *)data));
+            int64_t v;
+            if (auto error = read_field(target, *field, v); error != ERR::Okay) return error;
+            Value = std::to_string(v);
          }
          else if (flags & FD_DOUBLE) {
+            double v;
+            if (auto error = read_field(target, *field, v); error != ERR::Okay) return error;
             char buffer[64];
-            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), *((double *)data));
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), v);
             if (ec IS std::errc()) Value.assign(buffer, ptr);
          }
          else if (flags & FD_STRING) {
-            if (field->GetValue) Value.assign(*((std::string_view *)data));
-            else Value.assign(*((std::string *)data));
+            if (field->GetValue) { // Virtual std::string_view
+               std::string_view str;
+               if (auto error = read_field(target, *field, str); error != ERR::Okay) return error;
+               Value.assign(str);
+            }
+            else Value.assign(*((std::string *)(((int8_t *)target) + field->Offset))); // Direct std::string
          }
          else return ERR::UnrecognisedFieldType;
 
@@ -636,13 +652,11 @@ struct alignas(8) Object { // Must be 64-bit aligned
             return ERR::Okay;
          }
          else if ((field->Flags & FD_INT) and (field->Flags & FD_LOOKUP)) {
-            int8_t field_value[sizeof(std::string_view)];
-            auto fv = get_field_value(target, *field, field_value);
-            if (fv.first != ERR::Okay) return fv.first;
+            int value;
+            if (auto error = read_field(target, *field, value); error != ERR::Okay) return error;
 
             // Reading a lookup field as a string is permissible, we just return the string registered in the lookup table
             if (auto lookup = (FieldDef *)field->Arg) {
-               int value = ((int *)fv.second)[0];
                while (lookup->Name) {
                   if (value IS lookup->Value) {
                      Value = std::string_view(lookup->Name);
@@ -658,23 +672,23 @@ struct alignas(8) Object { // Must be 64-bit aligned
       else return ERR::UnsupportedField;
    }
 
+   // Pointer and struct reference fields are transported as APTR, which is the representation that getters write and
+   // that the object stores.  The result is then converted to the caller's pointer type.
+
    template <class T> ERR get(FIELD FieldID, T &Value) requires pcPointer<T> {
       Object *target;
       Value = nullptr;
       if (auto field = FindField(this, FieldID, &target)) {
          if (not field->readable()) return ERR::NoFieldAccess;
 
-         int8_t field_value[sizeof(std::string_view)];
-         auto fv = get_field_value(target, *field, field_value);
-         if (fv.first != ERR::Okay) return fv.first;
-
-         if (field->Flags & FD_POINTER) {
-            Value = *((T *)fv.second);
+         if ((field->Flags & FD_POINTER) or ((field->Flags & FD_STRUCT) and field->GetValue)) {
+            APTR ptr = nullptr;
+            if (auto error = read_field(target, *field, ptr); error != ERR::Okay) return error;
+            Value = std::bit_cast<T>(ptr);
             return ERR::Okay;
          }
-         else if (field->Flags & FD_STRUCT) {
-            if (field->GetValue) Value = *((T *)fv.second);
-            else Value = (T)fv.second;
+         else if (field->Flags & FD_STRUCT) { // Embedded struct; return its address
+            Value = std::bit_cast<T>(APTR(((int8_t *)target) + field->Offset));
             return ERR::Okay;
          }
          else if (field->Flags & FD_STRING) {
@@ -683,11 +697,12 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
             if constexpr (std::is_same_v<plain_pointee, char>) {
                if (field->GetValue) { // Virtual std::string_view
-                  auto str = (std::string_view *)fv.second;
-                  Value = (T)str->data();
+                  std::string_view str;
+                  if (auto error = read_field(target, *field, str); error != ERR::Okay) return error;
+                  Value = (T)str.data();
                }
                else { // Direct std::string
-                  auto str = (std::string *)fv.second;
+                  auto str = (std::string *)(((int8_t *)target) + field->Offset);
                   if constexpr (std::is_const_v<pointee>) Value = (T)str->c_str();
                   else Value = (T)str->data();
                }
@@ -884,7 +899,9 @@ class Create {
       // Create a scoped object that is not initialised.
 
       Create(NF Flags = NF::NIL) : obj(nullptr), error(ERR::NewObject) {
-         if (NewObject(T::CLASS_ID, Flags, (Object **)&obj) IS ERR::Okay) {
+         OBJECTPTR new_object = nullptr; // Correctly typed storage for NewObject() to write to
+         if (NewObject(T::CLASS_ID, Flags, &new_object) IS ERR::Okay) {
+            obj = (T *)new_object;
             error = ERR::Okay;
          }
       }
@@ -895,7 +912,9 @@ class Create {
          kt::Log log("CreateObject");
          log.branch(T::CLASS_NAME);
 
-         if (NewObject(T::CLASS_ID, NF::SUPPRESS_LOG|Flags, (Object **)&obj) IS ERR::Okay) {
+         OBJECTPTR new_object = nullptr; // Correctly typed storage for NewObject() to write to
+         if (NewObject(T::CLASS_ID, NF::SUPPRESS_LOG|Flags, &new_object) IS ERR::Okay) {
+            obj = (T *)new_object;
             for (auto &f : Fields) {
                OBJECTPTR target;
                if (auto field = FindField(obj, f.FieldID, &target)) {

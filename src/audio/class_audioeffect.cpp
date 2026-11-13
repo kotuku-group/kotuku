@@ -863,11 +863,11 @@ static ERR AUDIOEFFECT_GetMeterLayout(extAudioEffect *Self, struct fx::GetMeterL
    // Allocate before taking the mixer lock, as for ReadMeters().  Copy the descriptors while locked so no pointer
    // into the effect's storage escapes to the caller or the script marshaller.
 
-   struct MeterLayout *layout;
-   if (AllocResource(sizeof(struct MeterLayout), MEM::NIL, (APTR *)&layout, &glMeterLayoutHandler) != ERR::Okay) {
+   APTR memory;
+   if (AllocResource(sizeof(struct MeterLayout), MEM::NIL, &memory, &glMeterLayoutHandler) != ERR::Okay) {
       return ERR::AllocMemory;
    }
-   new (layout) struct MeterLayout;
+   auto layout = new (memory) struct MeterLayout;
 
    auto chain = Self->Chain.lock();
    std::unique_lock<AudioMixerMutex> lock;
@@ -980,11 +980,11 @@ static ERR AUDIOEFFECT_ReadMeters(extAudioEffect *Self, struct fx::ReadMeters *A
 
    // Allocate before taking the mixer lock, which the render thread also needs.
 
-   struct MeterReading *reading;
-   if (AllocResource(sizeof(struct MeterReading), MEM::NIL, (APTR *)&reading, &glMeterReadingHandler) != ERR::Okay) {
+   APTR memory;
+   if (AllocResource(sizeof(struct MeterReading), MEM::NIL, &memory, &glMeterReadingHandler) != ERR::Okay) {
       return ERR::AllocMemory;
    }
-   new (reading) struct MeterReading;
+   auto reading = new (memory) struct MeterReading;
 
    auto chain = Self->Chain.lock();
    std::unique_lock<AudioMixerMutex> lock;

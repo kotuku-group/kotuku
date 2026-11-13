@@ -396,9 +396,9 @@ static ERR parse_csv_struct(std::string_view String, struct_record &Def, APTR De
       auto type = field.Type;
       if (type & FD_DOUBLE)     ((double *)address)[0]  = strtod(buffer.c_str(), &end);
       else if (type & FD_FLOAT) ((float *)address)[0]   = strtod(buffer.c_str(), &end);
-      else if (type & FD_INT64) ((int64_t *)address)[0] = strtoll(buffer.c_str(), &end, 0);
-      else if (type & FD_INT)   ((int *)address)[0]      = strtol(buffer.c_str(), &end, 0);
-      else if (type & FD_WORD)  ((int16_t *)address)[0] = strtol(buffer.c_str(), &end, 0);
+      else if (type & FD_INT64) store_scalar(address, int64_t(strtoll(buffer.c_str(), &end, 0)));
+      else if (type & FD_INT)   store_scalar(address, int(strtol(buffer.c_str(), &end, 0)));
+      else if (type & FD_WORD)  store_scalar(address, int16_t(strtol(buffer.c_str(), &end, 0)));
       else if (type & FD_BYTE)  ((uint8_t *)address)[0] = strtol(buffer.c_str(), &end, 0);
       else return ERR::NoSupport;
 

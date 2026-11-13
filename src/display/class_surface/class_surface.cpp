@@ -83,7 +83,10 @@ void refresh_pointer()
 
 static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bitmap)
 {
-   if (!AccessObject(DisplayID, 5000, (OBJECTPTR *)Display)) {
+   OBJECTPTR object = nullptr;
+   auto locked = AccessObject(DisplayID, 5000, &object);
+   *Display = (objDisplay *)object;
+   if (locked IS ERR::Okay) {
       if (glDriver) {
          APTR window;
          if (Display[0]->getWindowHandle(window) IS ERR::Okay) {
@@ -1577,7 +1580,7 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
    // response times.
 
    int index = 0;
-   uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acMove)];
+   alignas(Message) uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acMove)];
    while (!ScanMessages(&index, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 

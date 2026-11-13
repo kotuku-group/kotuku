@@ -204,7 +204,7 @@ void Service::flush() {
       }
 #else
       iovec buffer{(void *)packet.bytes.data(), packet.bytes.size()};
-      alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(in6_pktinfo))> control{};
+      alignas(cmsghdr) std::array<unsigned char, CMSG_SPACE(sizeof(in6_pktinfo))> control{};
       msghdr message{}; message.msg_name = &destination; message.msg_namelen = socklen_t(length);
       message.msg_iov = &buffer; message.msg_iovlen = 1; message.msg_control = control.data();
       message.msg_controllen = packet.ipv6 ? CMSG_SPACE(sizeof(in6_pktinfo)) : CMSG_SPACE(sizeof(in_pktinfo));
@@ -267,7 +267,7 @@ void Service::tick(uint64_t NowUs) {
          }
 #else
          iovec buffer{bytes.data(), bytes.size()};
-         alignas(cmsghdr) std::array<char, 256> control{};
+         alignas(cmsghdr) std::array<unsigned char, 256> control{};
          msghdr message{}; message.msg_name = &source; message.msg_namelen = sizeof(source);
          message.msg_iov = &buffer; message.msg_iovlen = 1;
          message.msg_control = control.data(); message.msg_controllen = control.size();

@@ -213,8 +213,9 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
    log.branch("MsgType: %d", int(MsgType));
 
    std::unique_lock lock(glmMsgHandler);
-   MsgHandler *handler;
-   if (!AllocResource(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler, &glResourceMsgHandler)) {
+   APTR memory;
+   if (!AllocResource(sizeof(MsgHandler), MEM::NIL, &memory, &glResourceMsgHandler)) {
+      auto handler = (MsgHandler *)memory;
       handler->Prev     = nullptr;
       handler->Next     = nullptr;
       handler->MsgType  = MsgType;

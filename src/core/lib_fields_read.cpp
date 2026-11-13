@@ -47,7 +47,8 @@ Field * lookup_id(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target)
    // directly retrieving a pointer to the local object and then reading the field value from that.
 
    for (unsigned i=0; mc->Local[i] != 0xff; i++) {
-      OBJECTPTR child = *((OBJECTPTR *)(((int8_t *)Object) + mc->FieldLookup[mc->Local[i]].Offset));
+      // Local object fields are declared with their class type; APTR reads are compatible with every pointer type.
+      auto child = (OBJECTPTR)*((APTR *)(((int8_t *)Object) + mc->FieldLookup[mc->Local[i]].Offset));
       if (not child) continue;
       auto &field = child->ExtClass->FieldLookup;
       unsigned floor = 0;

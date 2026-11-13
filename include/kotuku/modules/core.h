@@ -32,7 +32,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20261112
+#define CORE_BUILD_DATE 20261113
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1839,12 +1839,23 @@ inline ERR UnpinResource(const void *Address) {
    return UnpinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
+// The typed helpers receive the result in a genuine OBJECTPTR before converting it, so that NewObject() never writes
+// through an incompatibly typed pointer.  *Result is always written, and is null on failure.
+
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
-   return NewObject(ClassID, NF::NIL, (OBJECTPTR *)Result);
+   if (not Result) return ERR::NullArgs;
+   OBJECTPTR object = nullptr;
+   auto error = NewObject(ClassID, NF::NIL, &object);
+   *Result = (T *)object;
+   return error;
 }
 
 template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
-   return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
+   if (not Result) return ERR::NullArgs;
+   OBJECTPTR object = nullptr;
+   auto error = NewObject(ClassID, NF::LOCAL, &object);
+   *Result = (T *)object;
+   return error;
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {

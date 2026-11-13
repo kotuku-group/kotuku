@@ -24,7 +24,7 @@ static ERR SURFACE_Redimension(extSurface *Self, struct acRedimension *Args)
    }
 
    if (Self->visible()) { // Visibility check because this sub-routine doesn't play nice with hidden surfaces.
-      uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage)];
+      alignas(Message) uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage)];
       int index = 0;
       while (!ScanMessages(&index, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
          auto action = (ActionMessage *)(msgbuffer + sizeof(Message));

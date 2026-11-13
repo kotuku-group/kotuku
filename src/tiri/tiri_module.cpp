@@ -2113,12 +2113,12 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             else if (arg_type IS LUA_TOBJECT) {
                auto obj = lua_toobject(Lua, i);
                if (auto direct = direct_object_ptr(obj)) {
-                  ((OBJECTPTR *)(buffer + j))[0] = direct;
+                  ((APTR *)(buffer + j))[0] = direct;
                }
                else {
                   OBJECTPTR ptr_obj;
                   if (auto error = access_object(obj, ptr_obj); error IS ERR::Okay) {
-                     ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
+                     ((APTR *)(buffer + j))[0] = ptr_obj;
                      release_object(obj);
                   }
                   else {
@@ -2337,7 +2337,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
             if (var) {
                if (argtype & FD_OBJECT) {
                   if (((APTR *)var)[0]) {
-                     auto object = push_object(lua, ((OBJECTPTR *)var)[0], true);
+                     auto object = push_object(lua, (OBJECTPTR)((APTR *)var)[0], true);
                      if (argtype & FD_ALLOC) {
                         object->flags &= ~GCOBJ_DETACHED;
                         ((APTR *)var)[0] = nullptr;
@@ -2369,7 +2369,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
       }
       else if (argtype & FD_INT) {
          if (argtype & FD_RESULT) {
-            if (auto var = ((APTR *)scan)[0]) lua_pushinteger(lua, ((int *)var)[0]);
+            if (auto var = ((APTR *)scan)[0]) lua_pushinteger(lua, load_scalar<int>(var));
             else lua_pushnil(lua);
             scan += sizeof(APTR);
             results++;
@@ -2387,7 +2387,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
       }
       else if (argtype & FD_INT64) {
          if (argtype & FD_RESULT) {
-            if (auto var = ((APTR *)scan)[0]) lua_pushnumber(lua, ((int64_t *)var)[0]);
+            if (auto var = ((APTR *)scan)[0]) lua_pushnumber(lua, load_scalar<int64_t>(var));
             else lua_pushnil(lua);
             scan += sizeof(APTR);
             results++;

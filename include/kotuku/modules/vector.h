@@ -617,6 +617,8 @@ enum class FM : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(FM)
 
+struct KeyValue;
+
 struct GradientStop {
    double Offset;    // An offset in the range of 0 - 1.0
    struct FRGB RGB;  // A floating point RGB value.

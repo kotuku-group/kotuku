@@ -490,7 +490,7 @@ static ERR fast_scan_zip(extCompression *Self)
       return ERR::Read; // Surface error, fail
    }
 
-   if (0x06054b50 != ((uint32_t *)&tail)[0]) {
+   if (0x06054b50 != tail.header) {
       // Tail not available, use the slow scanner instead
       return scan_zip(Self);
    }

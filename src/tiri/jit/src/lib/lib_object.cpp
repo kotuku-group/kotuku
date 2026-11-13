@@ -139,7 +139,7 @@ static int action_draw(lua_State *Lua)
    auto obj_ref = object_context(Lua);
 
    ERR error = ERR::Okay;
-   int8_t argbuffer[sizeof(struct acDraw)+8];
+   alignas(8) int8_t argbuffer[sizeof(struct acDraw)+8]; // build_args() aligns 64-bit slots to 8 bytes
    int arg_index = 0;
    CSTRING error_msg = nullptr;
 

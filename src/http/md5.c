@@ -11,7 +11,9 @@
 struct alignas(16) MD5Context {
    uint32_t buf[4];
    uint64_t bits;
-   unsigned char in[64];
+   uint32_t in[16]; // Message block.  Byte-level writes go through bytes(), which may alias any object type.
+
+   unsigned char * bytes() noexcept { return reinterpret_cast<unsigned char *>(in); }
 };
 
 void MD5Init(MD5Context *) noexcept;
@@ -51,7 +53,7 @@ void MD5Update(MD5Context *Context, const unsigned char *Buf, std::size_t Len) n
    const uint32_t bytes_in_buffer = (old_bits >> 3) & 0x3f;
 
    if (bytes_in_buffer) {
-      unsigned char *p = Context->in + bytes_in_buffer;
+      unsigned char *p = Context->bytes() + bytes_in_buffer;
       const uint32_t bytes_needed = 64 - bytes_in_buffer;
 
       if (Len < bytes_needed) {
@@ -60,16 +62,16 @@ void MD5Update(MD5Context *Context, const unsigned char *Buf, std::size_t Len) n
       }
 
       std::memcpy(p, Buf, bytes_needed);
-      byteReverse(Context->in, 16);
-      MD5Transform(Context->buf, reinterpret_cast<const uint32_t*>(Context->in));
+      byteReverse(Context->bytes(), 16);
+      MD5Transform(Context->buf, Context->in);
       Buf += bytes_needed;
       Len -= bytes_needed;
    }
 
    while (Len >= 64) {
       std::memcpy(Context->in, Buf, 64);
-      byteReverse(Context->in, 16);
-      MD5Transform(Context->buf, reinterpret_cast<const uint32_t*>(Context->in));
+      byteReverse(Context->bytes(), 16);
+      MD5Transform(Context->buf, Context->in);
       Buf += 64;
       Len -= 64;
    }
@@ -83,7 +85,7 @@ void MD5Update(MD5Context *Context, const unsigned char *Buf, std::size_t Len) n
 void MD5Final(unsigned char Digest[16], MD5Context *Context) noexcept
 {
    const uint32_t count = (Context->bits >> 3) & 0x3F;
-   unsigned char *p = Context->in + count;
+   unsigned char *p = Context->bytes() + count;
 
    *p++ = 0x80;
 
@@ -91,19 +93,18 @@ void MD5Final(unsigned char Digest[16], MD5Context *Context) noexcept
 
    if (pad_bytes < 8) {
       std::memset(p, 0, pad_bytes);
-      byteReverse(Context->in, 16);
-      MD5Transform(Context->buf, reinterpret_cast<const uint32_t*>(Context->in));
+      byteReverse(Context->bytes(), 16);
+      MD5Transform(Context->buf, Context->in);
       std::memset(Context->in, 0, 56);
    }
    else std::memset(p, 0, pad_bytes - 8);
 
-   byteReverse(Context->in, 14);
+   byteReverse(Context->bytes(), 14);
 
-   uint32_t *words = reinterpret_cast<uint32_t*>(Context->in);
-   words[14] = uint32_t(Context->bits);
-   words[15] = uint32_t(Context->bits >> 32);
+   Context->in[14] = uint32_t(Context->bits);
+   Context->in[15] = uint32_t(Context->bits >> 32);
 
-   MD5Transform(Context->buf, reinterpret_cast<const uint32_t*>(Context->in));
+   MD5Transform(Context->buf, Context->in);
    byteReverse(reinterpret_cast<unsigned char*>(Context->buf), 4);
    std::memcpy(Digest, Context->buf, 16);
 

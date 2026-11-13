@@ -287,11 +287,15 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
 {
    if (Type & FD_FLOAT)       ((float *)Address)[ElementIndex]   = lua_tonumber(Lua, StackIndex);
    else if (Type & FD_DOUBLE) ((double *)Address)[ElementIndex]  = lua_tonumber(Lua, StackIndex);
-   else if (Type & FD_INT64)  ((int64_t *)Address)[ElementIndex] = lua_tonumber(Lua, StackIndex);
-   else if (Type & FD_INT)    ((int *)Address)[ElementIndex]     = lua_tointeger(Lua, StackIndex);
+   else if (Type & FD_INT64) {
+      store_scalar((int64_t *)Address + ElementIndex, int64_t(lua_tonumber(Lua, StackIndex)));
+   }
+   else if (Type & FD_INT) store_scalar((int *)Address + ElementIndex, int(lua_tointeger(Lua, StackIndex)));
    else if (Type & FD_WORD) {
-      if (Type & FD_UNSIGNED) ((uint16_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
-      else ((int16_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
+      if (Type & FD_UNSIGNED) {
+         store_scalar((uint16_t *)Address + ElementIndex, uint16_t(lua_tointeger(Lua, StackIndex)));
+      }
+      else store_scalar((int16_t *)Address + ElementIndex, int16_t(lua_tointeger(Lua, StackIndex)));
    }
    else if (Type & FD_BYTE)   ((uint8_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
    else return false;
@@ -588,18 +592,18 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, const struct_fiel
          if (type & FD_CPP) lua_pushstring(Lua, ((std::string *)address)[0]);
          else lua_pushstring(Lua, ((STRING *)address)[0]);
       }
-      else if (type & FD_OBJECT) push_object(Lua, ((OBJECTPTR *)address)[0]);
+      else if (type & FD_OBJECT) push_object(Lua, (OBJECTPTR)((APTR *)address)[0]);
       else if (type & FD_POINTER) {
          if (((APTR *)address)[0]) lua_pushlightuserdata(Lua, ((APTR *)address)[0]);
          else lua_pushnil(Lua);
       }
       else if (type & FD_FLOAT)  lua_pushnumber(Lua, ((float *)address)[0]);
       else if (type & FD_DOUBLE) lua_pushnumber(Lua, ((double *)address)[0]);
-      else if (type & FD_INT64)  lua_pushnumber(Lua, ((int64_t *)address)[0]);
-      else if (type & FD_INT)    lua_pushinteger(Lua, ((int *)address)[0]);
+      else if (type & FD_INT64)  lua_pushnumber(Lua, load_scalar<int64_t>(address));
+      else if (type & FD_INT)    lua_pushinteger(Lua, load_scalar<int>(address));
       else if (type & FD_WORD) {
-         if (type & FD_UNSIGNED) lua_pushinteger(Lua, ((uint16_t *)address)[0]);
-         else lua_pushinteger(Lua, ((int16_t *)address)[0]);
+         if (type & FD_UNSIGNED) lua_pushinteger(Lua, load_scalar<uint16_t>(address));
+         else lua_pushinteger(Lua, load_scalar<int16_t>(address));
       }
       else if ((type & FD_BYTE) and field.NativeType IS NativeStructType::Int8) {
          lua_pushinteger(Lua, ((int8_t *)address)[0]);

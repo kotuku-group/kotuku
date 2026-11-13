@@ -1405,10 +1405,11 @@ ERR DISPLAY_Show(extDisplay *Self)
 
    Self->Flags |= SCR::VISIBLE;
 
-   objPointer *pointer;
+   OBJECTPTR new_pointer;
    OBJECTID pointer_id;
    if (FindObject("SystemPointer", CLASSID::POINTER, &pointer_id) != ERR::Okay) {
-      if (!NewObject(CLASSID::POINTER, NF::UNTRACKED, (OBJECTPTR *)&pointer)) {
+      if (!NewObject(CLASSID::POINTER, NF::UNTRACKED, &new_pointer)) {
+         auto pointer = (objPointer *)new_pointer;
          SetName(pointer, "SystemPointer");
          if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::SURFACE)) pointer->setSurface(Self->Owner->UID);
 

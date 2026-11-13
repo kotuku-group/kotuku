@@ -86,13 +86,16 @@ template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<8> { typedef int64_t type; };
 // used as an approximation of std::underlying_type<T>
 template <class T> struct _ENUM_FLAG_SIZED_INTEGER { typedef typename _ENUM_FLAG_INTEGER_FOR_SIZE<sizeof(T)>::type type; };
 
+// The compound assignments update the enum by value.  Writing through an integer reference would violate strict
+// aliasing: GCC and Clang treat an enum and its underlying integer type as distinct for alias analysis.
+
 #define DEFINE_ENUM_FLAG_OPERATORS(ENUMTYPE) \
 constexpr ENUMTYPE operator | (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) | ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
 constexpr ENUMTYPE operator & (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) & ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
 constexpr ENUMTYPE operator ~ (ENUMTYPE a) noexcept { return ENUMTYPE(~((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a)); } \
 constexpr ENUMTYPE operator ^ (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ^ ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator |= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) |= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator &= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) &= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }
+constexpr ENUMTYPE &operator |= (ENUMTYPE &a, ENUMTYPE b) noexcept { a = a | b; return a; } \
+constexpr ENUMTYPE &operator &= (ENUMTYPE &a, ENUMTYPE b) noexcept { a = a & b; return a; }
 #endif
 
 template<typename T>
@@ -276,7 +279,9 @@ class ScopedObjectLock {
       T *obj = nullptr;
 
       inline ScopedObjectLock(OBJECTID ObjectID, int Milliseconds = 3000) {
-         error = AccessObject(ObjectID, Milliseconds, (OBJECTPTR *)&obj);
+         OBJECTPTR locked = nullptr; // Correctly typed storage for AccessObject() to write to
+         error = AccessObject(ObjectID, Milliseconds, &locked);
+         obj = (T *)locked;
       }
 
       inline ScopedObjectLock(T *Object, int Milliseconds = 3000) {

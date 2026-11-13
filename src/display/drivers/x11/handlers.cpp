@@ -801,7 +801,11 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 #ifdef XFIXES_ENABLED
       if (glEventState->XFixes and
           (xevent.type IS glEventState->XFixesEventBase + XFixesSelectionNotify)) {
-         handle_xfixes_selection(*(XFixesSelectionNotifyEvent *)&xevent);
+         // XEvent does not include the extension event type, so copy it rather than accessing it through a cast.
+         static_assert(sizeof(XFixesSelectionNotifyEvent) <= sizeof(XEvent));
+         XFixesSelectionNotifyEvent selection_event;
+         std::memcpy(&selection_event, &xevent, sizeof(selection_event));
+         handle_xfixes_selection(selection_event);
          continue;
       }
 #endif
@@ -910,10 +914,13 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          // If the root window hosts a display (full-screen mode), resize the display to match.  Refer to
          // SetDisplay() for more information.
 
-         auto notify = (XRRScreenChangeNotifyEvent *)&xevent;
+         // XEvent does not include the extension event type, so copy it rather than accessing it through a cast.
+         static_assert(sizeof(XRRScreenChangeNotifyEvent) <= sizeof(XEvent));
+         XRRScreenChangeNotifyEvent notify;
+         std::memcpy(&notify, &xevent, sizeof(notify));
          if (auto surface_id = resolve_surface(xevent.xany.window)) {
-            glDriverCallbacks.WindowResized(surface_id, 0, 0, notify->width, notify->height,
-               0, 0, notify->width, notify->height);
+            glDriverCallbacks.WindowResized(surface_id, 0, 0, notify.width, notify.height,
+               0, 0, notify.width, notify.height);
          }
       }
       #endif
