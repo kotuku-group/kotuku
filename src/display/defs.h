@@ -482,6 +482,7 @@ extern void resolve_popover(extSurface *);
 extern void input_event_loop(HOSTHANDLE, APTR);
 extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);
+extern void fill_rectangle(extBitmap *, int, int, const int, const int, uint32_t);
 extern ERR  pointer_window(OBJECTID, HOSTWINDOW &);
 extern void end_cursor_drag(extPointer *, bool = true);
 extern void watch_drag_keys(extPointer *);

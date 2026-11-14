@@ -327,6 +327,111 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Fills a clipped rectangle without checking that the bitmap is initialised, so that BITMAP_Init() can clear a new
+// bitmap once its data, colour format and pixel routines are prepared.  Clients must use DrawRectangle().
+
+void fill_rectangle(extBitmap *Bitmap, int X, int Y, const int Width, const int Height, uint32_t Colour)
+{
+   uint8_t *data;
+   uint16_t *word;
+   uint32_t *longdata;
+   int xend, x, i;
+
+   if (X >= Bitmap->Clip.Right) return;
+   if (Y >= Bitmap->Clip.Bottom) return;
+   if (X + Width <= Bitmap->Clip.Left) return;
+   if (Y + Height <= Bitmap->Clip.Top) return;
+
+   auto w = Width;
+   auto h = Height;
+   if (X < Bitmap->Clip.Left) {
+      w -= Bitmap->Clip.Left - X;
+      X = Bitmap->Clip.Left;
+   }
+
+   if (Y < Bitmap->Clip.Top) {
+      h -= Bitmap->Clip.Top - Y;
+      Y = Bitmap->Clip.Top;
+   }
+
+   if ((X + w) >= Bitmap->Clip.Right)   w = Bitmap->Clip.Right - X;
+   if ((Y + h) >= Bitmap->Clip.Bottom) h = Bitmap->Clip.Bottom - Y;
+
+   uint16_t red   = Bitmap->unpackRed(Colour);
+   uint16_t green = Bitmap->unpackGreen(Colour);
+   uint16_t blue  = Bitmap->unpackBlue(Colour);
+
+   // Translucent rectangle support
+
+   // Standard rectangle (no translucency) video support
+
+   if ((glDriver) and (glDriver->fillBitmap(Bitmap, X, Y, w, h, Colour) IS ERR::Okay)) return;
+
+
+   // Standard rectangle data support
+
+   if (!lock_surface(Bitmap, SURFACE_WRITE)) {
+      if (!Bitmap->Data) {
+         unlock_surface(Bitmap);
+         return;
+      }
+
+      if (Bitmap->Type IS BMP::CHUNKY) {
+         if (Bitmap->BitsPerPixel IS 32) {
+            longdata = (uint32_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
+            while (h > 0) {
+               std::fill_n(longdata + X, w, Colour);
+               longdata = (uint32_t *)(((uint8_t *)longdata) + Bitmap->LineWidth);
+               h--;
+            }
+         }
+         else if (Bitmap->BitsPerPixel IS 24) {
+            data = Bitmap->Data + (Bitmap->LineWidth * Y);
+            X = X + X + X;
+            xend = X + w + w + w;
+            while (h > 0) {
+               for (x=X; x < xend;) {
+                  data[x++] = blue; data[x++] = green; data[x++] = red;
+               }
+               data += Bitmap->LineWidth;
+               h--;
+            }
+         }
+         else if ((Bitmap->BitsPerPixel IS 16) or (Bitmap->BitsPerPixel IS 15)) {
+            word = (uint16_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
+            while (h > 0) {
+               std::fill_n(word + X, w, uint16_t(Colour));
+               word = (uint16_t *)(((int8_t *)word) + Bitmap->LineWidth);
+               h--;
+            }
+         }
+         else if (Bitmap->BitsPerPixel IS 8) {
+            data = Bitmap->Data + (Bitmap->LineWidth * Y);
+            while (h > 0) {
+               memset(data + X, int(Colour), w);
+               data += Bitmap->LineWidth;
+               h--;
+            }
+         }
+         else while (h > 0) {
+            for (i=X; i < X + w; i++) Bitmap->DrawUCPixel(Bitmap, i, Y, Colour);
+            Y++;
+            h--;
+         }
+      }
+      else while (h > 0) {
+         for (i=X; i < X + w; i++) Bitmap->DrawUCPixel(Bitmap, i, Y, Colour);
+         Y++;
+         h--;
+      }
+
+      unlock_surface(Bitmap);
+   }
+
+   return;
+}
+
 namespace gfx {
 
 /*********************************************************************************************************************
@@ -1602,10 +1707,6 @@ mutates-object, blocking
 void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int Height, uint32_t Colour, BAF Flags)
 {
    kt::Log log(__FUNCTION__);
-   uint8_t *data;
-   uint16_t *word;
-   uint32_t *longdata;
-   int xend, x, EX, EY, i;
 
    auto Bitmap = (extBitmap *)Target;
    if (!Bitmap) return;
@@ -1613,8 +1714,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
    // If we are not going to fill the rectangle, use this routine to draw an outline.
 
    if (((Flags & BAF::FILL) IS BAF::NIL) and (Width > 1) and (Height > 1)) {
-      EX = X + Width - 1;
-      EY = Y + Height - 1;
+      auto EY = Y + Height - 1;
       if (X >= Bitmap->Clip.Left) gfx::DrawRectangle(Bitmap, X, Y, 1, Height, Colour, Flags|BAF::FILL); // Left
       if (Y >= Bitmap->Clip.Top)  gfx::DrawRectangle(Bitmap, X, Y, Width, 1, Colour, Flags|BAF::FILL); // Top
       if (Y + Height <= Bitmap->Clip.Bottom) gfx::DrawRectangle(Bitmap, X, EY, Width, 1, Colour, Flags|BAF::FILL); // Bottom
@@ -1624,98 +1724,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
 
    if (!Bitmap->initialised()) { log.warning(ERR::NotInitialised); return; }
 
-   if (X >= Bitmap->Clip.Right) return;
-   if (Y >= Bitmap->Clip.Bottom) return;
-   if (X + Width <= Bitmap->Clip.Left) return;
-   if (Y + Height <= Bitmap->Clip.Top) return;
-
-   auto w = Width;
-   auto h = Height;
-   if (X < Bitmap->Clip.Left) {
-      w -= Bitmap->Clip.Left - X;
-      X = Bitmap->Clip.Left;
-   }
-
-   if (Y < Bitmap->Clip.Top) {
-      h -= Bitmap->Clip.Top - Y;
-      Y = Bitmap->Clip.Top;
-   }
-
-   if ((X + w) >= Bitmap->Clip.Right)   w = Bitmap->Clip.Right - X;
-   if ((Y + h) >= Bitmap->Clip.Bottom) h = Bitmap->Clip.Bottom - Y;
-
-   uint16_t red   = Bitmap->unpackRed(Colour);
-   uint16_t green = Bitmap->unpackGreen(Colour);
-   uint16_t blue  = Bitmap->unpackBlue(Colour);
-
-   // Translucent rectangle support
-
-   // Standard rectangle (no translucency) video support
-
-   if ((glDriver) and (glDriver->fillBitmap(Bitmap, X, Y, w, h, Colour) IS ERR::Okay)) return;
-
-
-   // Standard rectangle data support
-
-   if (!lock_surface(Bitmap, SURFACE_WRITE)) {
-      if (!Bitmap->Data) {
-         unlock_surface(Bitmap);
-         return;
-      }
-
-      if (Bitmap->Type IS BMP::CHUNKY) {
-         if (Bitmap->BitsPerPixel IS 32) {
-            longdata = (uint32_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
-            while (h > 0) {
-               std::fill_n(longdata + X, w, Colour);
-               longdata = (uint32_t *)(((uint8_t *)longdata) + Bitmap->LineWidth);
-               h--;
-            }
-         }
-         else if (Bitmap->BitsPerPixel IS 24) {
-            data = Bitmap->Data + (Bitmap->LineWidth * Y);
-            X = X + X + X;
-            xend = X + w + w + w;
-            while (h > 0) {
-               for (x=X; x < xend;) {
-                  data[x++] = blue; data[x++] = green; data[x++] = red;
-               }
-               data += Bitmap->LineWidth;
-               h--;
-            }
-         }
-         else if ((Bitmap->BitsPerPixel IS 16) or (Bitmap->BitsPerPixel IS 15)) {
-            word = (uint16_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
-            while (h > 0) {
-               std::fill_n(word + X, w, uint16_t(Colour));
-               word = (uint16_t *)(((int8_t *)word) + Bitmap->LineWidth);
-               h--;
-            }
-         }
-         else if (Bitmap->BitsPerPixel IS 8) {
-            data = Bitmap->Data + (Bitmap->LineWidth * Y);
-            while (h > 0) {
-               memset(data + X, int(Colour), w);
-               data += Bitmap->LineWidth;
-               h--;
-            }
-         }
-         else while (h > 0) {
-            for (i=X; i < X + w; i++) Bitmap->DrawUCPixel(Bitmap, i, Y, Colour);
-            Y++;
-            h--;
-         }
-      }
-      else while (h > 0) {
-         for (i=X; i < X + w; i++) Bitmap->DrawUCPixel(Bitmap, i, Y, Colour);
-         Y++;
-         h--;
-      }
-
-      unlock_surface(Bitmap);
-   }
-
-   return;
+   fill_rectangle(Bitmap, X, Y, Width, Height, Colour);
 }
 
 /*********************************************************************************************************************

@@ -182,13 +182,12 @@ For alpha-capable bitmaps, setting #BkgdIndex to zero is an efficient way to cle
 
 -ERRORS-
 Okay
-LockFailed
+NotInitialised: The bitmap has not been initialised.  Use the `CLEAR` flag to clear a new bitmap.
 
 *********************************************************************************************************************/
 
-static ERR BITMAP_Clear(extBitmap *Self)
+static void clear_bitmap(extBitmap *Self)
 {
-
    // Clear any alignment padding first - some clients may expect the Data to be completely clear.
 
    if (Self->MemType IS BMT::DATA) {
@@ -203,8 +202,14 @@ static ERR BITMAP_Clear(extBitmap *Self)
 
    auto opacity = Self->Opacity;
    Self->Opacity = 255;
-   gfx::DrawRectangle(Self, 0, 0, Self->Width, Self->Height, Self->BkgdIndex, BAF::FILL);
+   fill_rectangle(Self, 0, 0, Self->Width, Self->Height, Self->BkgdIndex);
    Self->Opacity = opacity;
+}
+
+static ERR BITMAP_Clear(extBitmap *Self)
+{
+   if (not Self->initialised()) return kt::Log(__FUNCTION__).warning(ERR::NotInitialised);
+   clear_bitmap(Self);
    return ERR::Okay;
 }
 
@@ -757,8 +762,10 @@ static ERR BITMAP_Init(extBitmap *Self)
                         (((255 >> Self->prvColourFormat.AlphaShift) & Self->prvColourFormat.AlphaMask) << Self->prvColourFormat.AlphaPos);
    }
 
+   // acClear() cannot be used here because drawing functions reject a bitmap that has not finished initialising.
+
    if (((Self->Flags & BMF::NO_DATA) IS BMF::NIL) and ((Self->Flags & BMF::CLEAR) != BMF::NIL)) {
-      acClear(Self);
+      clear_bitmap(Self);
    }
 
    // Sanitise the Flags field
