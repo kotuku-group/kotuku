@@ -47,6 +47,17 @@ JUMPTABLE_VECTOR
 
 static OBJECTPTR clSVG = nullptr, clRSVG = nullptr, modDisplay = nullptr, modVector = nullptr, modImage = nullptr;
 
+// Byte offsets refer to the collected UTF-8 string; one source entry is retained per Unicode character.
+// Discarded whitespace has no output offset.  Path ranges remain distinct until shared run layout is available.
+
+struct svgTextContent {
+   struct Source { int Element; int Node; size_t Byte; size_t Output; };
+   struct Path { int Element; size_t Begin; size_t End; };
+   std::string Text;
+   std::vector<Source> Sources;
+   std::vector<Path> Paths;
+};
+
 struct svgInherit {
    OBJECTPTR Object;
    std::string ID;
@@ -132,7 +143,9 @@ class extSVG : public objSVG {
    std::vector<std::string> ParamNames; // Backing store for the ParamNames field
    TIMER AnimationTimer;
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
-   bool  PreserveWS; // Preserve white-space
+   std::unordered_map<OBJECTID, svgTextContent> TextContent;
+   Unit AutoscaleWidth;  // Resolved root dimensions before AUTOSCALE replaces them with percentages
+   Unit AutoscaleHeight;
 
    extSVG(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSVG(ClassPtr, ObjectID) {
       #ifdef __ANDROID__
@@ -154,10 +167,12 @@ struct svgState {
    std::string m_font_size;
    std::string m_font_family;
    std::string m_font_style;  // VectorText FontStyle descriptors from font-stretch, font-style etc; empty if undefined
+   std::string m_xml_space = "default";
    std::unordered_map<uint32_t, std::string> m_text_properties; // Computed values, distinct from XML declarations
    std::string m_display;
    std::string m_visibility;
    double  m_root_font_size = 16;
+   double  m_viewport_width = 0;
    bool    m_has_root_font_size = false;
    double  m_font_size_px;    // Converted from m_font_size
    double  m_stroke_width;    // 0 if undefined
@@ -193,6 +208,7 @@ public:
 private:
    ERR resolve_text_property(uint32_t, std::string_view, const svgState &) noexcept;
    ERR apply_text_properties(objVectorText *) const noexcept;
+   ERR collect_text(XTag &, objVectorText *) noexcept;
    void applyTag(const XTag &) noexcept;
    void applyStateToVector(objVector *) const noexcept;
    const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
@@ -439,6 +455,7 @@ static constexpr auto SVF_image_rendering     = strhash("image-rendering");
 static constexpr auto SVF_in                  = strhash("in");
 static constexpr auto SVF_in2                 = strhash("in2");
 static constexpr auto SVF_inherit             = strhash("inherit");
+static constexpr auto SVF_inline_size         = strhash("inline-size");
 static constexpr auto SVF_auto                = strhash("auto");
 static constexpr auto SVF_intercept           = strhash("intercept");
 static constexpr auto SVF_invert              = strhash("invert");
@@ -526,6 +543,7 @@ static constexpr auto SVF_origin              = strhash("origin");
 static constexpr auto SVF_out                 = strhash("out");
 static constexpr auto SVF_over                = strhash("over");
 static constexpr auto SVF_overflow            = strhash("overflow");
+static constexpr auto SVF_overflow_wrap       = strhash("overflow-wrap");
 static constexpr auto SVF_overlay             = strhash("overlay");
 static constexpr auto SVF_overline            = strhash("overline");
 static constexpr auto SVF_param               = strhash("param");
@@ -621,6 +639,7 @@ static constexpr auto SVF_tableValues      = strhash("tableValues");
 static constexpr auto SVF_targetX          = strhash("targetX");
 static constexpr auto SVF_targetY          = strhash("targetY");
 static constexpr auto SVF_text             = strhash("text");
+static constexpr auto SVF_text_align       = strhash("text-align");
 static constexpr auto SVF_text_anchor      = strhash("text-anchor");
 static constexpr auto SVF_text_decoration  = strhash("text-decoration");
 static constexpr auto SVF_textLength       = strhash("textLength");
@@ -634,6 +653,7 @@ static constexpr auto SVF_transform        = strhash("transform");
 static constexpr auto SVF_transition       = strhash("transition");
 static constexpr auto SVF_tritanomaly      = strhash("tritanomaly");
 static constexpr auto SVF_tritanopia       = strhash("tritanopia");
+static constexpr auto SVF_tspan            = strhash("tspan");
 static constexpr auto SVF_type             = strhash("type");
 static constexpr auto SVF_ultra_condensed  = strhash("ultra_condensed");
 static constexpr auto SVF_ultra_expanded   = strhash("ultra_expanded");
@@ -651,8 +671,10 @@ static constexpr auto SVF_viewY            = strhash("view-y");
 static constexpr auto SVF_viewBox          = strhash("viewBox");
 static constexpr auto SVF_visible          = strhash("visible");
 static constexpr auto SVF_visibility       = strhash("visibility");
+static constexpr auto SVF_white_space      = strhash("white-space");
 static constexpr auto SVF_wider            = strhash("wider");
 static constexpr auto SVF_width            = strhash("width");
+static constexpr auto SVF_word_break       = strhash("word-break");
 static constexpr auto SVF_word_spacing     = strhash("word-spacing");
 static constexpr auto SVF_x                = strhash("x");
 static constexpr auto SVF_x1               = strhash("x1");
