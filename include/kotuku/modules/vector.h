@@ -14,9 +14,6 @@
 
 class objVectorColour;
 class objVectorTransition;
-class objVectorScene;
-class objVectorImage;
-class objVectorPattern;
 class objGradient;
 class objGradientLinear;
 class objGradientRadial;
@@ -28,6 +25,9 @@ class objGradientMesh;
 class objGradientDiffusion;
 class objGradientDistal;
 class objGradientVoronoi;
+class objVectorScene;
+class objVectorImage;
+class objVectorPattern;
 class objFilterEffect;
 class objImageFX;
 class objSourceFX;
@@ -44,8 +44,8 @@ class objOffsetFX;
 class objRemapFX;
 class objTurbulenceFX;
 class objWaveFunctionFX;
-class objVectorClip;
 class objVectorFilter;
+class objVectorClip;
 class objVector;
 class objVectorPath;
 class objVectorText;
@@ -90,23 +90,6 @@ enum class VF : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VF)
-
-// Available modes for the GradientMesh class.
-
-enum class GMT : int {
-   NIL = 0,
-   UNDEFINED = 0,
-   LINEAR = 1,
-   BICUBIC = 2,
-};
-
-// Define the aspect ratio for VectorFilter unit scaling.
-
-enum class VFA : int {
-   NIL = 0,
-   MEET = 0,
-   NONE = 1,
-};
 
 // Light source identifiers.
 
@@ -293,43 +276,6 @@ enum class VTW : int {
    ANYWHERE = 2,
 };
 
-// MorphologyFX options.
-
-enum class MOP : int {
-   NIL = 0,
-   ERODE = 0,
-   DILATE = 1,
-};
-
-// Operators for CompositionFX.
-
-enum class OP : int {
-   NIL = 0,
-   OVER = 0,
-   IN = 1,
-   OUT = 2,
-   ATOP = 3,
-   XOR = 4,
-   ARITHMETIC = 5,
-   SCREEN = 6,
-   MULTIPLY = 7,
-   LIGHTEN = 8,
-   DARKEN = 9,
-   INVERT_RGB = 10,
-   INVERT = 11,
-   CONTRAST = 12,
-   DODGE = 13,
-   BURN = 14,
-   HARD_LIGHT = 15,
-   SOFT_LIGHT = 16,
-   DIFFERENCE = 17,
-   EXCLUSION = 18,
-   PLUS = 19,
-   MINUS = 20,
-   SUBTRACT = 20,
-   OVERLAY = 21,
-};
-
 // VectorText flags.
 
 enum class VTXF : uint32_t {
@@ -378,22 +324,6 @@ enum class VCS : int {
    LINEAR_RGB = 2,
 };
 
-// Filter source types - these are used internally
-
-enum class VSF : int {
-   NIL = 0,
-   IGNORE = 0,
-   NONE = 0,
-   GRAPHIC = 1,
-   ALPHA = 2,
-   BKGD = 3,
-   BKGD_ALPHA = 4,
-   FILL = 5,
-   STROKE = 6,
-   REFERENCE = 7,
-   PREVIOUS = 8,
-};
-
 // Wave options.
 
 enum class WVC : int {
@@ -422,51 +352,6 @@ enum class WVE : int {
    EXPONENTIAL = 4,
 };
 
-// Gradient fall-off options.
-
-enum class GFALL : int {
-   NIL = 0,
-   OPAQUE = 1,
-   LINEAR = 2,
-   QUADRATIC = 3,
-   CUBIC = 4,
-   SMOOTHSTEP = 5,
-   CLEAR = 6,
-};
-
-// Gradient easing functions.
-
-enum class GEZ : int {
-   NIL = 0,
-   LINEAR = 0,
-   IN = 1,
-   OUT = 2,
-   IN_OUT = 3,
-   CUBIC_IN = 4,
-   CUBIC_OUT = 5,
-   CUBIC_IN_OUT = 6,
-};
-
-// Worley field modes.
-
-enum class WLF : int {
-   NIL = 0,
-   F1 = 0,
-   F2_F1 = 1,
-   F2 = 2,
-   WEIGHTED = 3,
-   PEAKS = 4,
-};
-
-// Worley distance metrics.
-
-enum class WLM : int {
-   NIL = 0,
-   EUCLIDEAN = 0,
-   MANHATTAN = 1,
-   CHEBYSHEV = 2,
-};
-
 // Colour modes for ColourFX.
 
 enum class CM : int {
@@ -482,34 +367,6 @@ enum class CM : int {
    DESATURATE = 8,
    COLOURISE = 9,
 };
-
-// Gradient flags
-
-enum class VGF : uint32_t {
-   NIL = 0,
-   SCALED_X1 = 0x00000001,
-   SCALED_Y1 = 0x00000002,
-   SCALED_X2 = 0x00000004,
-   SCALED_Y2 = 0x00000008,
-   SCALED_CX = 0x00000010,
-   SCALED_CY = 0x00000020,
-   SCALED_FX = 0x00000040,
-   SCALED_FY = 0x00000080,
-   SCALED_RADIUS = 0x00000100,
-   SCALED_FOCAL_RADIUS = 0x00000200,
-   FIXED_X1 = 0x00000400,
-   FIXED_Y1 = 0x00000800,
-   FIXED_X2 = 0x00001000,
-   FIXED_Y2 = 0x00002000,
-   FIXED_CX = 0x00004000,
-   FIXED_CY = 0x00008000,
-   FIXED_FX = 0x00010000,
-   FIXED_FY = 0x00020000,
-   FIXED_RADIUS = 0x00040000,
-   FIXED_FOCAL_RADIUS = 0x00080000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(VGF)
 
 // Optional flags for the VectorScene object.
 
@@ -617,48 +474,150 @@ enum class FM : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(FM)
 
+// Available modes for the GradientMesh class.
+
+enum class GMT : int {
+   NIL = 0,
+   UNDEFINED = 0,
+   LINEAR = 1,
+   BICUBIC = 2,
+};
+
+// Gradient fall-off options.
+
+enum class GFALL : int {
+   NIL = 0,
+   OPAQUE = 1,
+   LINEAR = 2,
+   QUADRATIC = 3,
+   CUBIC = 4,
+   SMOOTHSTEP = 5,
+   CLEAR = 6,
+};
+
+// Gradient easing functions.
+
+enum class GEZ : int {
+   NIL = 0,
+   LINEAR = 0,
+   IN = 1,
+   OUT = 2,
+   IN_OUT = 3,
+   CUBIC_IN = 4,
+   CUBIC_OUT = 5,
+   CUBIC_IN_OUT = 6,
+};
+
+// Worley field modes.
+
+enum class WLF : int {
+   NIL = 0,
+   F1 = 0,
+   F2_F1 = 1,
+   F2 = 2,
+   WEIGHTED = 3,
+   PEAKS = 4,
+};
+
+// Worley distance metrics.
+
+enum class WLM : int {
+   NIL = 0,
+   EUCLIDEAN = 0,
+   MANHATTAN = 1,
+   CHEBYSHEV = 2,
+};
+
+// Gradient flags
+
+enum class VGF : uint32_t {
+   NIL = 0,
+   SCALED_X1 = 0x00000001,
+   SCALED_Y1 = 0x00000002,
+   SCALED_X2 = 0x00000004,
+   SCALED_Y2 = 0x00000008,
+   SCALED_CX = 0x00000010,
+   SCALED_CY = 0x00000020,
+   SCALED_FX = 0x00000040,
+   SCALED_FY = 0x00000080,
+   SCALED_RADIUS = 0x00000100,
+   SCALED_FOCAL_RADIUS = 0x00000200,
+   FIXED_X1 = 0x00000400,
+   FIXED_Y1 = 0x00000800,
+   FIXED_X2 = 0x00001000,
+   FIXED_Y2 = 0x00002000,
+   FIXED_CX = 0x00004000,
+   FIXED_CY = 0x00008000,
+   FIXED_FX = 0x00010000,
+   FIXED_FY = 0x00020000,
+   FIXED_RADIUS = 0x00040000,
+   FIXED_FOCAL_RADIUS = 0x00080000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(VGF)
+
+// Define the aspect ratio for VectorFilter unit scaling.
+
+enum class VFA : int {
+   NIL = 0,
+   MEET = 0,
+   NONE = 1,
+};
+
+// Filter source types - these are used internally
+
+enum class VSF : int {
+   NIL = 0,
+   IGNORE = 0,
+   NONE = 0,
+   GRAPHIC = 1,
+   ALPHA = 2,
+   BKGD = 3,
+   BKGD_ALPHA = 4,
+   FILL = 5,
+   STROKE = 6,
+   REFERENCE = 7,
+   PREVIOUS = 8,
+};
+
+// MorphologyFX options.
+
+enum class MOP : int {
+   NIL = 0,
+   ERODE = 0,
+   DILATE = 1,
+};
+
+// Operators for CompositionFX.
+
+enum class OP : int {
+   NIL = 0,
+   OVER = 0,
+   IN = 1,
+   OUT = 2,
+   ATOP = 3,
+   XOR = 4,
+   ARITHMETIC = 5,
+   SCREEN = 6,
+   MULTIPLY = 7,
+   LIGHTEN = 8,
+   DARKEN = 9,
+   INVERT_RGB = 10,
+   INVERT = 11,
+   CONTRAST = 12,
+   DODGE = 13,
+   BURN = 14,
+   HARD_LIGHT = 15,
+   SOFT_LIGHT = 16,
+   DIFFERENCE = 17,
+   EXCLUSION = 18,
+   PLUS = 19,
+   MINUS = 20,
+   SUBTRACT = 20,
+   OVERLAY = 21,
+};
+
 struct KeyValue;
-
-struct GradientStop {
-   double Offset;    // An offset in the range of 0 - 1.0
-   struct FRGB RGB;  // A floating point RGB value.
-};
-
-struct GouraudVertex {
-   double X;              // The X coordinate of the vertex.
-   double Y;              // The Y coordinate of the vertex.
-   struct FRGB Colour;    // The floating point RGB colour assigned to this vertex.
-};
-
-struct MeshControl {
-   double StartX;    // Starting X coordinate.
-   double StartY;    // Starting Y coordinate.
-   double EndX;      // Ending X coordinate.
-   double EndY;      // Ending Y coordinate.
-   double X1;        // First control point X coordinate.
-   double Y1;        // First control point Y coordinate.
-   double X2;        // Second control point X coordinate.
-   double Y2;        // Second control point Y coordinate.
-};
-
-struct MeshPatchRecord {
-   struct MeshControl Top;       // Top edge
-   struct MeshControl Right;     // Right edge
-   struct MeshControl Bottom;    // Bottom edge
-   struct MeshControl Left;      // Left edge
-   struct FRGB TopLeft;          // Colour assigned to the top-left patch corner.
-   struct FRGB TopRight;         // Colour assigned to the top-right patch corner.
-   struct FRGB BottomRight;      // Colour assigned to the bottom-right patch corner.
-   struct FRGB BottomLeft;       // Colour assigned to the bottom-left patch corner.
-};
-
-struct DiffusionCurveRecord {
-   struct MeshControl Curve;    // Cubic Bezier geometry for this curve segment.
-   struct FRGB LeftStart;       // Colour on the left side at the start of the curve.
-   struct FRGB LeftEnd;         // Colour on the left side at the end of the curve.
-   struct FRGB RightStart;      // Colour on the right side at the start of the curve.
-   struct FRGB RightEnd;        // Colour on the right side at the end of the curve.
-};
 
 struct Transition {
    double Offset;            // An offset from 0.0 to 1.0 at which to apply the transform.
@@ -855,487 +814,45 @@ class objVectorTransition : public Object {
 
 };
 
-// VectorScene class definition
-
-#define VER_VECTORSCENE (1.000000)
-
-// VectorScene methods
-
-namespace sc {
-struct AddDef { std::string_view Name; OBJECTPTR Def; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct FindDef { std::string_view Name; OBJECTPTR Def; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Debug { static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-
-} // namespace
-
-class objVectorScene : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::VECTORSCENE;
-   static constexpr CSTRING CLASS_NAME = "VectorScene";
-
-   using create = kt::Create<objVectorScene>;
-   objVectorScene(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   int64_t  RenderTime;           // Returns the rendering time of the last scene.
-   double   Gamma;                // Private. Not currently implemented.
-   objVectorScene * HostScene;    // Refers to a top-level VectorScene object, if applicable.
-   objVectorViewport * Viewport;  // References the first object in the scene, which must be a VectorViewport object.
-   objBitmap * Bitmap;            // Target bitmap for drawing vectors.
-   OBJECTID SurfaceID;            // May refer to a Surface object for enabling automatic rendering.
-   VPF      Flags;                // Optional flags.
-   int      PageWidth;            // The width of the page that contains the vector.
-   int      PageHeight;           // The height of the page that contains the vector.
-   VSM      SampleMethod;         // The sampling method to use when interpolating images and patterns.
-   VSC      Compliance;           // Selects the standard that the scene complies with, where it differs from the default behaviour.
-
-   // Action stubs
-
-   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
-   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
-      struct acDraw args = { X, Y, Width, Height };
-      return Action(AC::Draw, this, &args);
-   }
-   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
-   inline ERR init() noexcept { return InitObject(this); }
-   inline ERR next() noexcept { return Action(AC::Next, this, nullptr); }
-   inline ERR prev() noexcept { return Action(AC::Prev, this, nullptr); }
-   inline ERR redimension(double X, double Y, double Z, double Width, double Height, double Depth) noexcept {
-      struct acRedimension args = { X, Y, Z, Width, Height, Depth };
-      return Action(AC::Redimension, this, &args);
-   }
-   inline ERR redimension(double X, double Y, double Width, double Height) noexcept {
-      struct acRedimension args = { X, Y, 0, Width, Height, 0 };
-      return Action(AC::Redimension, this, &args);
-   }
-   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
-   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
-      struct acResize args = { Width, Height, Depth };
-      return Action(AC::Resize, this, &args);
-   }
-   inline ERR addDef(const std::string_view &Name, OBJECTPTR Def) noexcept {
-      struct sc::AddDef args = { Name, Def };
-      return Action(AC(-1), this, &args);
-   }
-   inline ERR findDef(const std::string_view &Name, OBJECTPTR * Def) noexcept {
-      struct sc::FindDef args = { Name, (OBJECTPTR)0 };
-      ERR error = Action(AC(-2), this, &args);
-      if (Def) *Def = args.Def;
-      return error;
-   }
-   inline ERR debug() noexcept {
-      return Action(AC(-3), this, nullptr);
-   }
-
-   // Customised field getting
-
-   inline ERR getRenderTime(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getHostScene(objVectorScene * &Value) noexcept {
-      Value = this->HostScene;
-      return ERR::Okay;
-   }
-
-   inline ERR getViewport(objVectorViewport * &Value) noexcept {
-      Value = this->Viewport;
-      return ERR::Okay;
-   }
-
-   inline ERR getBitmap(objBitmap * &Value) noexcept {
-      Value = this->Bitmap;
-      return ERR::Okay;
-   }
-
-   inline ERR getSurface(OBJECTID &Value) noexcept {
-      Value = this->SurfaceID;
-      return ERR::Okay;
-   }
-
-   inline ERR getFlags(VPF &Value) noexcept {
-      Value = this->Flags;
-      return ERR::Okay;
-   }
-
-   inline ERR getPageWidth(int &Value) noexcept {
-      Value = this->PageWidth;
-      return ERR::Okay;
-   }
-
-   inline ERR getPageHeight(int &Value) noexcept {
-      Value = this->PageHeight;
-      return ERR::Okay;
-   }
-
-   inline ERR getSampleMethod(VSM &Value) noexcept {
-      Value = this->SampleMethod;
-      return ERR::Okay;
-   }
-
-   inline ERR getCompliance(VSC &Value) noexcept {
-      Value = this->Compliance;
-      return ERR::Okay;
-   }
-
-   inline ERR getRootScene(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getDropTarget(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getDropX(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getDropY(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->GetValue(this, &Value);
-   }
-
-
-   // Customised field setting
-
-   inline ERR setHostScene(objVectorScene * Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->HostScene = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setBitmap(objBitmap * Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x08000301, Value);
-   }
-
-   inline ERR setSurface(OBJECTID Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->SurfaceID = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setFlags(const VPF Value) noexcept {
-      this->Flags = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setPageWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setPageHeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setSampleMethod(const VSM Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setCompliance(const VSC Value) noexcept {
-      this->Compliance = Value;
-      return ERR::Okay;
-   }
-
+struct GradientStop {
+   double Offset;    // An offset in the range of 0 - 1.0
+   struct FRGB RGB;  // A floating point RGB value.
 };
 
-// VectorImage class definition
-
-#define VER_VECTORIMAGE (1.000000)
-
-class objVectorImage : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::VECTORIMAGE;
-   static constexpr CSTRING CLASS_NAME = "VectorImage";
-
-   using create = kt::Create<objVectorImage>;
-
-   Unit    X;               // Apply a horizontal offset to the image, the origin of which is determined by the Units value.
-   Unit    Y;               // Apply a vertical offset to the image, the origin of which is determined by the Units value.
-   objImage * Image;        // Refers to a Image from which the source Bitmap is acquired.
-   objBitmap * Bitmap;      // Reference to a source bitmap for the rendering algorithm.
-   VUNIT   Units;           // Declares the coordinate system to use for the X and Y values.
-   VSPREAD SpreadMethod;    // Defines image tiling behaviour, if desired.
-   ARF     AspectRatio;     // Flags that affect the aspect ratio of the image within its target vector.
-
-#ifdef PRV_VECTORIMAGE
-   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      X            = Unit(0);
-      Y            = Unit(0);
-      Units        = VUNIT::BOUNDING_BOX;
-      SpreadMethod = VSPREAD::CLIP;
-      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
-   }
-#endif
-
-   // Action stubs
-
-   inline ERR init() noexcept { return InitObject(this); }
-
-   // Customised field getting
-
-   inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
-      return ERR::Okay;
-   }
-
-   inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
-      return ERR::Okay;
-   }
-
-   inline ERR getImage(objImage * &Value) noexcept {
-      Value = this->Image;
-      return ERR::Okay;
-   }
-
-   inline ERR getBitmap(objBitmap * &Value) noexcept {
-      Value = this->Bitmap;
-      return ERR::Okay;
-   }
-
-   inline ERR getUnits(VUNIT &Value) noexcept {
-      Value = this->Units;
-      return ERR::Okay;
-   }
-
-   inline ERR getSpreadMethod(VSPREAD &Value) noexcept {
-      Value = this->SpreadMethod;
-      return ERR::Okay;
-   }
-
-   inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = this->AspectRatio;
-      return ERR::Okay;
-   }
-
-
-   // Customised field setting
-
-   inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setImage(objImage * Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(this, field, 0x08000301, Value);
-   }
-
-   inline ERR setBitmap(objBitmap * Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(this, field, 0x08000301, Value);
-   }
-
-   inline ERR setUnits(const VUNIT Value) noexcept {
-      this->Units = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
+struct GouraudVertex {
+   double X;              // The X coordinate of the vertex.
+   double Y;              // The Y coordinate of the vertex.
+   struct FRGB Colour;    // The floating point RGB colour assigned to this vertex.
 };
 
-// VectorPattern class definition
+struct MeshControl {
+   double StartX;    // Starting X coordinate.
+   double StartY;    // Starting Y coordinate.
+   double EndX;      // Ending X coordinate.
+   double EndY;      // Ending Y coordinate.
+   double X1;        // First control point X coordinate.
+   double Y1;        // First control point Y coordinate.
+   double X2;        // Second control point X coordinate.
+   double Y2;        // Second control point Y coordinate.
+};
 
-#define VER_VECTORPATTERN (1.000000)
+struct MeshPatchRecord {
+   struct MeshControl Top;       // Top edge
+   struct MeshControl Right;     // Right edge
+   struct MeshControl Bottom;    // Bottom edge
+   struct MeshControl Left;      // Left edge
+   struct FRGB TopLeft;          // Colour assigned to the top-left patch corner.
+   struct FRGB TopRight;         // Colour assigned to the top-right patch corner.
+   struct FRGB BottomRight;      // Colour assigned to the bottom-right patch corner.
+   struct FRGB BottomLeft;       // Colour assigned to the bottom-left patch corner.
+};
 
-class objVectorPattern : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::VECTORPATTERN;
-   static constexpr CSTRING CLASS_NAME = "VectorPattern";
-
-   using create = kt::Create<objVectorPattern>;
-
-   Unit    X;                            // X coordinate for the pattern.
-   Unit    Y;                            // Y coordinate for the pattern.
-   Unit    Width;                        // Width of the pattern tile.
-   Unit    Height;                       // Height of the pattern tile.
-   kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a pattern.
-   double  Opacity;                      // The opacity of the pattern.
-   objVectorScene * Scene;               // Refers to the internal VectorScene that will contain the rendered pattern.
-   objVectorViewport * Viewport;         // Refers to the viewport that contains the pattern.
-   objVectorPattern * Inherit;           // Inherit attributes from a VectorPattern referenced here.
-   VSPREAD SpreadMethod;                 // The behaviour to use when the pattern bounds do not match the vector path.
-   VUNIT   Units;                        // Defines the coordinate system for fields X, Y, Width and Height.
-   VUNIT   ContentUnits;                 // Defines the coordinate system for the content of the pattern.
-
-#ifdef PRV_VECTORPATTERN
-   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      SpreadMethod = VSPREAD::REPEAT;
-      Units        = VUNIT::BOUNDING_BOX;
-      ContentUnits = VUNIT::USERSPACE;
-      Opacity      = 1.0;
-      X            = Unit(0);
-      Y            = Unit(0);
-   }
-#endif
-
-   // Action stubs
-
-   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
-   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
-      struct acDraw args = { X, Y, Width, Height };
-      return Action(AC::Draw, this, &args);
-   }
-   inline ERR init() noexcept { return InitObject(this); }
-
-   // Customised field getting
-
-   inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
-      return ERR::Okay;
-   }
-
-   inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
-      return ERR::Okay;
-   }
-
-   inline ERR getWidth(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 32));
-      return ERR::Okay;
-   }
-
-   inline ERR getHeight(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 48));
-      return ERR::Okay;
-   }
-
-   inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
-      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + CLASS_OFFSET + 64);
-      Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
-      return ERR::Okay;
-   }
-
-   inline ERR getOpacity(double &Value) noexcept {
-      Value = this->Opacity;
-      return ERR::Okay;
-   }
-
-   inline ERR getScene(objVectorScene * &Value) noexcept {
-      Value = this->Scene;
-      return ERR::Okay;
-   }
-
-   inline ERR getViewport(objVectorViewport * &Value) noexcept {
-      Value = this->Viewport;
-      return ERR::Okay;
-   }
-
-   inline ERR getInherit(objVectorPattern * &Value) noexcept {
-      Value = this->Inherit;
-      return ERR::Okay;
-   }
-
-   inline ERR getSpreadMethod(VSPREAD &Value) noexcept {
-      Value = this->SpreadMethod;
-      return ERR::Okay;
-   }
-
-   inline ERR getUnits(VUNIT &Value) noexcept {
-      Value = this->Units;
-      return ERR::Okay;
-   }
-
-   inline ERR getContentUnits(VUNIT &Value) noexcept {
-      Value = this->ContentUnits;
-      return ERR::Okay;
-   }
-
-   inline ERR getAspectRatio(ARF &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-
-   // Customised field setting
-
-   inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00001310, &Value);
-   }
-
-   inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setInherit(objVectorPattern * Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x08000301, Value);
-   }
-
-   inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setUnits(const VUNIT Value) noexcept {
-      this->Units = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setContentUnits(const VUNIT Value) noexcept {
-      this->ContentUnits = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, 0x00804208, &Value);
-   }
-
+struct DiffusionCurveRecord {
+   struct MeshControl Curve;    // Cubic Bezier geometry for this curve segment.
+   struct FRGB LeftStart;       // Colour on the left side at the start of the curve.
+   struct FRGB LeftEnd;         // Colour on the left side at the end of the curve.
+   struct FRGB RightStart;      // Colour on the right side at the start of the curve.
+   struct FRGB RightEnd;        // Colour on the right side at the end of the curve.
 };
 
 struct VoronoiPoint {
@@ -2223,6 +1740,489 @@ class objGradientVoronoi : public objGradient {
    inline ERR setPointCount(const int Value) noexcept {
       auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+};
+
+// VectorScene class definition
+
+#define VER_VECTORSCENE (1.000000)
+
+// VectorScene methods
+
+namespace sc {
+struct AddDef { std::string_view Name; OBJECTPTR Def; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FindDef { std::string_view Name; OBJECTPTR Def; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Debug { static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
+class objVectorScene : public Object {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::VECTORSCENE;
+   static constexpr CSTRING CLASS_NAME = "VectorScene";
+
+   using create = kt::Create<objVectorScene>;
+   objVectorScene(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
+
+   int64_t  RenderTime;           // Returns the rendering time of the last scene.
+   double   Gamma;                // Private. Not currently implemented.
+   objVectorScene * HostScene;    // Refers to a top-level VectorScene object, if applicable.
+   objVectorViewport * Viewport;  // References the first object in the scene, which must be a VectorViewport object.
+   objBitmap * Bitmap;            // Target bitmap for drawing vectors.
+   OBJECTID SurfaceID;            // May refer to a Surface object for enabling automatic rendering.
+   VPF      Flags;                // Optional flags.
+   int      PageWidth;            // The width of the page that contains the vector.
+   int      PageHeight;           // The height of the page that contains the vector.
+   VSM      SampleMethod;         // The sampling method to use when interpolating images and patterns.
+   VSC      Compliance;           // Selects the standard that the scene complies with, where it differs from the default behaviour.
+
+   // Action stubs
+
+   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
+   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
+      struct acDraw args = { X, Y, Width, Height };
+      return Action(AC::Draw, this, &args);
+   }
+   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
+   inline ERR init() noexcept { return InitObject(this); }
+   inline ERR next() noexcept { return Action(AC::Next, this, nullptr); }
+   inline ERR prev() noexcept { return Action(AC::Prev, this, nullptr); }
+   inline ERR redimension(double X, double Y, double Z, double Width, double Height, double Depth) noexcept {
+      struct acRedimension args = { X, Y, Z, Width, Height, Depth };
+      return Action(AC::Redimension, this, &args);
+   }
+   inline ERR redimension(double X, double Y, double Width, double Height) noexcept {
+      struct acRedimension args = { X, Y, 0, Width, Height, 0 };
+      return Action(AC::Redimension, this, &args);
+   }
+   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }
+   inline ERR addDef(const std::string_view &Name, OBJECTPTR Def) noexcept {
+      struct sc::AddDef args = { Name, Def };
+      return Action(AC(-1), this, &args);
+   }
+   inline ERR findDef(const std::string_view &Name, OBJECTPTR * Def) noexcept {
+      struct sc::FindDef args = { Name, (OBJECTPTR)0 };
+      ERR error = Action(AC(-2), this, &args);
+      if (Def) *Def = args.Def;
+      return error;
+   }
+   inline ERR debug() noexcept {
+      return Action(AC(-3), this, nullptr);
+   }
+
+   // Customised field getting
+
+   inline ERR getRenderTime(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getHostScene(objVectorScene * &Value) noexcept {
+      Value = this->HostScene;
+      return ERR::Okay;
+   }
+
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
+   }
+
+   inline ERR getSurface(OBJECTID &Value) noexcept {
+      Value = this->SurfaceID;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(VPF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getPageWidth(int &Value) noexcept {
+      Value = this->PageWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getPageHeight(int &Value) noexcept {
+      Value = this->PageHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getSampleMethod(VSM &Value) noexcept {
+      Value = this->SampleMethod;
+      return ERR::Okay;
+   }
+
+   inline ERR getCompliance(VSC &Value) noexcept {
+      Value = this->Compliance;
+      return ERR::Okay;
+   }
+
+   inline ERR getRootScene(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getDropTarget(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getDropX(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getDropY(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->GetValue(this, &Value);
+   }
+
+
+   // Customised field setting
+
+   inline ERR setHostScene(objVectorScene * Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->HostScene = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setBitmap(objBitmap * Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setSurface(OBJECTID Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->SurfaceID = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setFlags(const VPF Value) noexcept {
+      this->Flags = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setPageWidth(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPageHeight(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setSampleMethod(const VSM Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setCompliance(const VSC Value) noexcept {
+      this->Compliance = Value;
+      return ERR::Okay;
+   }
+
+};
+
+// VectorImage class definition
+
+#define VER_VECTORIMAGE (1.000000)
+
+class objVectorImage : public Object {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::VECTORIMAGE;
+   static constexpr CSTRING CLASS_NAME = "VectorImage";
+
+   using create = kt::Create<objVectorImage>;
+
+   Unit    X;               // Apply a horizontal offset to the image, the origin of which is determined by the Units value.
+   Unit    Y;               // Apply a vertical offset to the image, the origin of which is determined by the Units value.
+   objImage * Image;        // Refers to a Image from which the source Bitmap is acquired.
+   objBitmap * Bitmap;      // Reference to a source bitmap for the rendering algorithm.
+   VUNIT   Units;           // Declares the coordinate system to use for the X and Y values.
+   VSPREAD SpreadMethod;    // Defines image tiling behaviour, if desired.
+   ARF     AspectRatio;     // Flags that affect the aspect ratio of the image within its target vector.
+
+#ifdef PRV_VECTORIMAGE
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      X            = Unit(0);
+      Y            = Unit(0);
+      Units        = VUNIT::BOUNDING_BOX;
+      SpreadMethod = VSPREAD::CLIP;
+      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
+   }
+#endif
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
+      return ERR::Okay;
+   }
+
+   inline ERR getY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
+      return ERR::Okay;
+   }
+
+   inline ERR getImage(objImage * &Value) noexcept {
+      Value = this->Image;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
+   }
+
+   inline ERR getUnits(VUNIT &Value) noexcept {
+      Value = this->Units;
+      return ERR::Okay;
+   }
+
+   inline ERR getSpreadMethod(VSPREAD &Value) noexcept {
+      Value = this->SpreadMethod;
+      return ERR::Okay;
+   }
+
+   inline ERR getAspectRatio(ARF &Value) noexcept {
+      Value = this->AspectRatio;
+      return ERR::Okay;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setImage(objImage * Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setBitmap(objBitmap * Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setUnits(const VUNIT Value) noexcept {
+      this->Units = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setAspectRatio(const ARF Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+};
+
+// VectorPattern class definition
+
+#define VER_VECTORPATTERN (1.000000)
+
+class objVectorPattern : public Object {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::VECTORPATTERN;
+   static constexpr CSTRING CLASS_NAME = "VectorPattern";
+
+   using create = kt::Create<objVectorPattern>;
+
+   Unit    X;                            // X coordinate for the pattern.
+   Unit    Y;                            // Y coordinate for the pattern.
+   Unit    Width;                        // Width of the pattern tile.
+   Unit    Height;                       // Height of the pattern tile.
+   kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a pattern.
+   double  Opacity;                      // The opacity of the pattern.
+   objVectorScene * Scene;               // Refers to the internal VectorScene that will contain the rendered pattern.
+   objVectorViewport * Viewport;         // Refers to the viewport that contains the pattern.
+   objVectorPattern * Inherit;           // Inherit attributes from a VectorPattern referenced here.
+   VSPREAD SpreadMethod;                 // The behaviour to use when the pattern bounds do not match the vector path.
+   VUNIT   Units;                        // Defines the coordinate system for fields X, Y, Width and Height.
+   VUNIT   ContentUnits;                 // Defines the coordinate system for the content of the pattern.
+
+#ifdef PRV_VECTORPATTERN
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      SpreadMethod = VSPREAD::REPEAT;
+      Units        = VUNIT::BOUNDING_BOX;
+      ContentUnits = VUNIT::USERSPACE;
+      Opacity      = 1.0;
+      X            = Unit(0);
+      Y            = Unit(0);
+   }
+#endif
+
+   // Action stubs
+
+   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
+   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
+      struct acDraw args = { X, Y, Width, Height };
+      return Action(AC::Draw, this, &args);
+   }
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
+      return ERR::Okay;
+   }
+
+   inline ERR getY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
+      return ERR::Okay;
+   }
+
+   inline ERR getWidth(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 32));
+      return ERR::Okay;
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 48));
+      return ERR::Okay;
+   }
+
+   inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
+      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + CLASS_OFFSET + 64);
+      Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      Value = this->Opacity;
+      return ERR::Okay;
+   }
+
+   inline ERR getScene(objVectorScene * &Value) noexcept {
+      Value = this->Scene;
+      return ERR::Okay;
+   }
+
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getInherit(objVectorPattern * &Value) noexcept {
+      Value = this->Inherit;
+      return ERR::Okay;
+   }
+
+   inline ERR getSpreadMethod(VSPREAD &Value) noexcept {
+      Value = this->SpreadMethod;
+      return ERR::Okay;
+   }
+
+   inline ERR getUnits(VUNIT &Value) noexcept {
+      Value = this->Units;
+      return ERR::Okay;
+   }
+
+   inline ERR getContentUnits(VUNIT &Value) noexcept {
+      Value = this->ContentUnits;
+      return ERR::Okay;
+   }
+
+   inline ERR getAspectRatio(ARF &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, 0x00001310, &Value);
+   }
+
+   inline ERR setOpacity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setInherit(objVectorPattern * Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setUnits(const VUNIT Value) noexcept {
+      this->Units = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setContentUnits(const VUNIT Value) noexcept {
+      this->ContentUnits = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setAspectRatio(const ARF Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setTransform(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
 };
@@ -3554,69 +3554,6 @@ class objWaveFunctionFX : public objFilterEffect {
 
 };
 
-// VectorClip class definition
-
-#define VER_VECTORCLIP (1.000000)
-
-class objVectorClip : public Object {
-   public:
-   static constexpr CLASSID CLASS_ID = CLASSID::VECTORCLIP;
-   static constexpr CSTRING CLASS_NAME = "VectorClip";
-
-   using create = kt::Create<objVectorClip>;
-   objVectorClip(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
-
-   objVectorViewport * Viewport;    // This viewport hosts the Vector objects that will contribute to the clip path.
-   std::string SID;                 // String identifier for a vector.
-   VUNIT Units;                     // Defines the coordinate system for fields X, Y, Width and Height.
-   VCLF  Flags;                     // Optional flags.
-
-   // Action stubs
-
-   inline ERR init() noexcept { return InitObject(this); }
-
-   // Customised field getting
-
-   inline ERR getViewport(objVectorViewport * &Value) noexcept {
-      Value = this->Viewport;
-      return ERR::Okay;
-   }
-
-   inline ERR getSID(std::string_view &Value) noexcept {
-      Value = this->SID;
-      return ERR::Okay;
-   }
-
-   inline ERR getUnits(VUNIT &Value) noexcept {
-      Value = this->Units;
-      return ERR::Okay;
-   }
-
-   inline ERR getFlags(VCLF &Value) noexcept {
-      Value = this->Flags;
-      return ERR::Okay;
-   }
-
-
-   // Customised field setting
-
-   inline ERR setSID(const std::string_view &Value) noexcept {
-      this->SID = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setUnits(const VUNIT Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setFlags(const VCLF Value) noexcept {
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-};
-
 // VectorFilter class definition
 
 #define VER_VECTORFILTER (1.000000)
@@ -3777,6 +3714,69 @@ class objVectorFilter : public Object {
    inline ERR setAspectRatio(const VFA Value) noexcept {
       this->AspectRatio = Value;
       return ERR::Okay;
+   }
+
+};
+
+// VectorClip class definition
+
+#define VER_VECTORCLIP (1.000000)
+
+class objVectorClip : public Object {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::VECTORCLIP;
+   static constexpr CSTRING CLASS_NAME = "VectorClip";
+
+   using create = kt::Create<objVectorClip>;
+   objVectorClip(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
+
+   objVectorViewport * Viewport;    // This viewport hosts the Vector objects that will contribute to the clip path.
+   std::string SID;                 // String identifier for a vector.
+   VUNIT Units;                     // Defines the coordinate system for fields X, Y, Width and Height.
+   VCLF  Flags;                     // Optional flags.
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getSID(std::string_view &Value) noexcept {
+      Value = this->SID;
+      return ERR::Okay;
+   }
+
+   inline ERR getUnits(VUNIT &Value) noexcept {
+      Value = this->Units;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(VCLF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setSID(const std::string_view &Value) noexcept {
+      this->SID = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setUnits(const VUNIT Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setFlags(const VCLF Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -4473,7 +4473,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getWeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[78];
+      auto field = &this->Class->Dictionary[79];
       return field->GetValue(this, &Value);
    }
 
@@ -4506,7 +4506,15 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextStyle(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[86];
+      auto field = &this->Class->Dictionary[87];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getCaretFill(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[88];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4522,7 +4530,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDisplayHeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[80];
+      auto field = &this->Class->Dictionary[81];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4538,7 +4546,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDX(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[79];
+      auto field = &this->Class->Dictionary[80];
       return field->GetValue(this, &Value);
    }
 
@@ -4562,6 +4570,11 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getLineWeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[75];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getWordSpacing(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[55];
       return field->GetValue(this, &Value);
@@ -4573,7 +4586,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getParagraphSpacing(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[81];
+      auto field = &this->Class->Dictionary[82];
       return field->GetValue(this, &Value);
    }
 
@@ -4606,12 +4619,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextLength(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[87];
+      auto field = &this->Class->Dictionary[89];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTextWidth(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[83];
+      auto field = &this->Class->Dictionary[84];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4624,7 +4637,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getOnCursorMove(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[77];
+      auto field = &this->Class->Dictionary[78];
       return field->GetValue(this, &Value);
    }
 
@@ -4634,7 +4647,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getCursorColumn(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[84];
+      auto field = &this->Class->Dictionary[85];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4650,12 +4663,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTotalLines(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[82];
+      auto field = &this->Class->Dictionary[83];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWrappedLines(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[88];
+      auto field = &this->Class->Dictionary[90];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4668,7 +4681,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getSelectColumn(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[76];
+      auto field = &this->Class->Dictionary[77];
       return field->GetValue(this, &Value);
    }
 
@@ -4691,7 +4704,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getSelectFill(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[75];
+      auto field = &this->Class->Dictionary[76];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4722,7 +4735,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setWeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[78];
+      auto field = &this->Class->Dictionary[79];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4752,12 +4765,17 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextStyle(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[86];
+      auto field = &this->Class->Dictionary[87];
+      return field->WriteValue(this, field, 0x00804308, &Value);
+   }
+
+   inline ERR setCaretFill(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[88];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
    inline ERR setDX(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[79];
+      auto field = &this->Class->Dictionary[80];
       return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
@@ -4781,6 +4799,11 @@ class objVectorText : public objVector {
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
+   inline ERR setLineWeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[75];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
    inline ERR setWordSpacing(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[55];
       return field->WriteValue(this, field, FD_UNIT, &Value);
@@ -4792,7 +4815,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setParagraphSpacing(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[81];
+      auto field = &this->Class->Dictionary[82];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4812,7 +4835,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextLength(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[87];
+      auto field = &this->Class->Dictionary[89];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4827,7 +4850,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setOnCursorMove(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[77];
+      auto field = &this->Class->Dictionary[78];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -4837,7 +4860,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setCursorColumn(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[84];
+      auto field = &this->Class->Dictionary[85];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4857,7 +4880,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setSelectFill(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[75];
+      auto field = &this->Class->Dictionary[76];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 

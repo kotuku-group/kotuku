@@ -2,6 +2,7 @@
 #include "agg_trans_single_path.h"
 
 extern void morph_text_carets(extVectorText *, const agg::trans_single_path &, double);
+extern double text_morph_y_offset(extVectorText *, VMF);
 static const int * text_fill_gamma(extVector *Vector);
 
 // A mild coverage boost compensates for the light appearance of small text under linear-light blending.
@@ -287,8 +288,13 @@ void gen_vector_path(extVector *Vector)
                   double caret_y_offset = 0;
 
                   if ((Vector->GuideFlags & VMF::Y_MID) != VMF::NIL) {
-                     bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
-                     caret_y_offset = -by1 - ((by2 - by1) * 0.5);
+                     if (Vector->classID() IS CLASSID::VECTORTEXT) {
+                        caret_y_offset = text_morph_y_offset((extVectorText *)Vector, VMF::Y_MID);
+                     }
+                     else {
+                        bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
+                        caret_y_offset = -by1 - ((by2 - by1) * 0.5);
+                     }
                      Vector->BasePath.translate(0, caret_y_offset);
                   }
                   else if ((Vector->GuideFlags & VMF::Y_MIN) != VMF::NIL) {
@@ -299,8 +305,7 @@ void gen_vector_path(extVector *Vector)
                   }
                   else { // VMF::Y_MAX
                      if (Vector->classID() IS CLASSID::VECTORTEXT) { // Only VectorText needs to be reset for yMax
-                        bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
-                        caret_y_offset = -by1;
+                        caret_y_offset = text_morph_y_offset((extVectorText *)Vector, VMF::Y_MAX);
                         Vector->BasePath.translate(0, caret_y_offset);
                      }
                   }

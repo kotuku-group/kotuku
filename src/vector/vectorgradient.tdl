@@ -1,0 +1,167 @@
+--$TIRI:Include
+
+  enums("GMT", { type="int", start=0, comment="Available modes for the GradientMesh class." },
+    "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
+    "LINEAR: Use linear interpolation for the patch colours.",
+    "BICUBIC: Use bicubic interpolation for the patch colours.")
+
+  enums("GFALL", { type="int", start=1, comment="Gradient fall-off options." },
+    "OPAQUE:     No fall-off.",
+    "LINEAR:     Linear fall-off (even taper).",
+    "QUADRATIC:  Quadratic fall-off - fast drop, thin tail — natural glow.",
+    "CUBIC:      Cubic fall-off - very tight glow hugging the outline.",
+    "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
+    "CLEAR:      Disables the gradient.")
+
+  enums("GEZ", { type="int", start=0, comment="Gradient easing functions." },
+    "LINEAR:       Linear interpolation (no easing) - the default.",
+    "IN:           Ease-in (slow start).",
+    "OUT:          Ease-out (slow end).",
+    "IN_OUT:       Smoothstep-style ease-in and ease-out.",
+    "CUBIC_IN:     Cubic ease-in.",
+    "CUBIC_OUT:    Cubic ease-out.",
+    "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
+
+  enums("WLF", { type="int", start=0, comment="Worley field modes." },
+    "F1: Distance to nearest point.",
+    "F2_F1: Distance between the nearest and second-nearest points.",
+    "F2: Distance to second-nearest point.",
+    "WEIGHTED: Additively-weighted Voronoi using per-point heights.",
+    "PEAKS: Additive peaks or terrain using per-point heights.")
+
+  enums("WLM", { type="int", start=0, comment="Worley distance metrics." },
+    "EUCLIDEAN",
+    "MANHATTAN",
+    "CHEBYSHEV")
+
+  flags('VGF', { comment='Gradient flags' },
+    'SCALED_X1: X1 is scaled',
+    'SCALED_Y1: Y1 is scaled',
+    'SCALED_X2: X2 is scaled',
+    'SCALED_Y2: Y2 is scaled',
+    'SCALED_CX: CX is scaled',
+    'SCALED_CY: CY is scaled',
+    'SCALED_FX: FX is scaled',
+    'SCALED_FY: FY is scaled',
+    'SCALED_RADIUS: Radius is scaled',
+    'SCALED_FOCAL_RADIUS: Focal radius is scaled',
+    'FIXED_X1: X1 is fixed',
+    'FIXED_Y1: Y1 is fixed',
+    'FIXED_X2: X2 is fixed',
+    'FIXED_Y2: Y2 is fixed',
+    'FIXED_CX: CX is fixed',
+    'FIXED_CY: CY is fixed',
+    'FIXED_FX: FX is fixed',
+    'FIXED_FY: FY is fixed',
+    'FIXED_RADIUS: Radius is fixed',
+    'FIXED_FOCAL_RADIUS: Focal radius is fixed')
+
+  structdef('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
+    double Offset     # An offset in the range of 0 - 1.0
+    struct(FRGB) RGB  # A floating point RGB value.
+  ]])
+
+  structdef('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
+    double X             # The X coordinate of the vertex.
+    double Y             # The Y coordinate of the vertex.
+    struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
+  ]])
+
+  structdef('MeshControl', { comment='Describes one control point for the GradientMesh.' }, [[
+    double StartX   # Starting X coordinate.
+    double StartY   # Starting Y coordinate.
+    double EndX     # Ending X coordinate.
+    double EndY     # Ending Y coordinate.
+    double X1       # First control point X coordinate.
+    double Y1       # First control point Y coordinate.
+    double X2       # Second control point X coordinate.
+    double Y2       # Second control point Y coordinate.
+  ]])
+
+  structdef('MeshPatchRecord', { comment='Describes one bilinear Coons patch for the GradientMesh Patches field.' }, [[
+    struct(MeshControl) Top    # Top edge
+    struct(MeshControl) Right  # Right edge
+    struct(MeshControl) Bottom # Bottom edge
+    struct(MeshControl) Left   # Left edge
+    struct(FRGB) TopLeft       # Colour assigned to the top-left patch corner.
+    struct(FRGB) TopRight      # Colour assigned to the top-right patch corner.
+    struct(FRGB) BottomRight   # Colour assigned to the bottom-right patch corner.
+    struct(FRGB) BottomLeft    # Colour assigned to the bottom-left patch corner.
+  ]])
+
+  structdef('DiffusionCurveRecord', { comment='Describes one curve for the GradientDiffusion Curves field.' }, [[
+    struct(MeshControl) Curve  # Cubic Bezier geometry for this curve segment.
+    struct(FRGB) LeftStart     # Colour on the left side at the start of the curve.
+    struct(FRGB) LeftEnd       # Colour on the left side at the end of the curve.
+    struct(FRGB) RightStart    # Colour on the right side at the start of the curve.
+    struct(FRGB) RightEnd      # Colour on the right side at the end of the curve.
+  ]])
+
+  structdef('VoronoiPoint', {
+   comment='Describes a feature point for the GradientVoronoi Points field.'
+  }, [[
+    double X       # The X coordinate of the feature point.
+    double Y       # The Y coordinate of the feature point.
+    double Height  # The per-point height used by WEIGHTED and PEAKS modes.
+  ]])
+
+  klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
+    vector(struct(VectorMatrix)) Matrices
+    vector(struct(GradientStop)) Stops
+    string SID
+    string ColourMap             # Name of a gradient colour map.
+    struct(FRGB) Colour
+    double Resolution            # Alters the rate of change for gradient colours.
+    double Gamma                 # Applies a gamma curve to the gradient ramp.
+    int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
+    int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
+    int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
+    int(GEZ) Easing              # Easing function applied between gradient stops.
+    int   NumericID
+  ]],
+  [[
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+  ]],
+  [[
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+   }
+  ]])
+
+  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })
+
+  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', extended=true })
+
+  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', extended=true })
+
+  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', extended=true })
+
+  klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
+
+  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true }, [[
+    ~vector(struct(GouraudVertex)) Vertices
+  ]])
+
+  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', references={ 'GMT' }, extended=true }, [[
+    ~int Rows
+    ~int Columns
+    ~int(GMT) Mode
+    ~vector(struct(MeshPatchRecord)) Patches
+  ]])
+
+  klass('GradientDiffusion', { base='Gradient', src='painters/gradient_diffusion.cpp', output='painters/gradient_diffusion_def.cpp', extended=true }, [[
+    ~vector(struct(DiffusionCurveRecord)) Curves
+  ]])
+
+  klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
+
+  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
+    ~vector(struct(VoronoiPoint)) Points # Optional list of Voronoi feature points provided by the client
+    ~int(WLF) WorleyMode
+    ~int(WLM) WorleyMetric
+  ]])

@@ -146,6 +146,16 @@
     </field>
 
     <field>
+      <name>CaretFill</name>
+      <comment>Defines a custom painter for the caret in editing mode.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Setting the CaretFill overrides the default painter used for the caret.</p>
+      </description>
+    </field>
+
+    <field>
       <name>CharLimit</name>
       <comment>Limits the characters allowed on each logical line during editing.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -375,6 +385,20 @@ font size in points.  <code>none</code> uses the value of the named style or fon
     </field>
 
     <field>
+      <name>LineWeight</name>
+      <comment>Overrides the thickness of text decoration lines.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>A number is a thickness in pixels and a scaled value is relative to <fl>FontSize</fl>.  The field corresponds to the <code>lineWeight</code> key of <fl>TextStyle</fl>, where a scaled value uses the <code>em</code> unit.  Zero restores the font's own thickness and removes the key from <fl>TextStyle</fl>.  Negative values are rejected with <code>ERR::OutOfRange</code>.</p>
+<p>Decorations are rendered for scalable text, including guide paths and transitions, and for straight bitmap text. Scalable text uses an explicit thickness without rounding; bitmap fonts round the thickness to whole pixels. Bitmap thickness and the default scalable thickness are at least one pixel.  Underlines grow downward from their top edge, overlines grow upward from their bottom edge, and strikeout lines retain their centre to the nearest pixel for bitmap fonts.</p>
+<p>Lines cover internal spaces but exclude trailing whitespace and whitespace-only rows.  They follow row alignment and, for scalable text, justification.  Their geometry extends the text's bounds without changing its layout width or caret positions.</p>
+<p>Guide paths and transitions apply each character's transform to its decoration.  Small gaps and overlaps can occur on tight curves.  Stretch guides bend subdivided row contours along the guide.</p>
+<p>The lines share the text's fill and transforms.  Use the default <code>NON_ZERO</code> <class name="Vector" field="FillRule">Vector.FillRule</class> to avoid holes where lines overlap glyphs; <code>EVEN_ODD</code> cancels those overlaps.  A stroke outlines each contour separately, so its edges cross the glyphs. Default line metrics do not follow variable-font MVAR adjustments; use LineWeight to override the thickness.</p>
+      </description>
+    </field>
+
+    <field>
       <name>OnChange</name>
       <comment>Receive notifications for changes to the text string.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -516,6 +540,7 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <access read="G" write="S">Get/Set</access>
       <type lookup="VTXF">VTXF</type>
       <description>
+<p>Combine <code>UNDERLINE</code>, <code>OVERLINE</code> and <code>LINE_THROUGH</code> to draw text decorations.  <fl>LineWeight</fl> controls their thickness; the <code>decoration</code> key of <fl>TextStyle</fl> reads and writes the same bits.</p>
 <p>Text can be justified with <code>VTXF::JUSTIFY</code>, which requires <fl>InlineSize</fl>.  Bitmap fonts and guide paths ignore the flag.</p>
 <types lookup="VTXF"/>
       </description>
@@ -539,6 +564,7 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <description>
 <p>TextStyle reads and writes the whole font selection as a single string, for instance <code>face=Noto Sans; size=15px; weight=650; fill=#1d2433; shadow=3px 4px 0 rgba(0,0,0,0.4)</code>.  The keys are listed in the Font Definitions manual, and <function module="Vector">NormaliseTextStyle</function> can be used to validate them.  The field can be set before or after initialisation.</p>
 <p>Assignment overwrites the declared keys only, and an empty string has no effect.  Style keys update individually, so <code>italic=yes</code> retains an earlier <code>weight=650</code>.  An absent <code>fill</code> or <code>stroke</code> leaves the existing value unchanged and <code>stroke=none</code> clears the stroke.  A <code>strokeWidth</code> in <code>em</code> units follows later changes to <fl>FontSize</fl>, until <fl>StrokeWidth</fl> is set directly.  If the string contains a malformed value then <code>ERR::Syntax</code> is returned and the settings are unchanged.</p>
+<p>The <code>decoration</code> key accepts a space-separated list of <code>underline</code>, <code>overline</code> and <code>line-through</code>, or <code>none</code> on its own.  A list is returned in that order and replaces only the three decoration bits in <fl>TextFlags</fl>.  An absent key leaves those bits unchanged; direct changes to <fl>TextFlags</fl> are reflected when reading <fl>TextStyle</fl>. The <code>lineWeight</code> key sets <fl>LineWeight</fl> using a non-negative length in <code>px</code>, <code>pt</code> or <code>em</code>; a unitless number is in pixels.  An <code>em</code> weight follows <fl>FontSize</fl>.  Zero restores the font's thickness and removes <code>lineWeight</code> from readback.</p>
 <p>The <code>shadow</code>, <code>glow</code> and <code>blend</code> keys are rendered through a <class name="VectorFilter">VectorFilter</class> that belongs to the text, which replaces the value of #Filter while any of them is active.  <code>blend</code> requires a backdrop, which is provided by setting the <code>ISOLATED</code> flag on an enclosing viewport.  A <code>kerning</code> value of <code>optical</code>, and any <code>strokeAlign</code> other than <code>centre</code>, are stored and returned but are not rendered at present.</p>
 <p>For scalable fonts, <code>features=smcp 1, onum 1</code> requests small capitals and old-style figures when the face supports them.  Single, multiple, alternate, ligature and contextual substitutions are supported for Latin, Greek and Cyrillic script runs.  Other scripts retain their direct character mapping.  The features <code>ccmp</code>, <code>rvrn</code>, <code>locl</code>, <code>liga</code>, <code>clig</code>, <code>calt</code> and <code>mark</code> are enabled by default; other features require an explicit request.  A value of zero disables a feature, e.g. <code>features=liga 0, calt 0</code>, and <code>features=none</code> disables every substitution and mark positioning.  The defaults are not part of the definition, so reading <fl>TextStyle</fl> returns only the features that were stated.  <function module="Vector">GetFontFeatures</function> lists the features that a face provides.  For an alternate substitution, a value of N selects alternate N, starting at one; an unavailable alternate leaves the glyph unchanged.  <code>features=kern 0</code> disables pair kerning, while <code>features=none</code> leaves kerning controlled by <fl>TextFlags</fl> and the <code>kerning</code> key.  Bitmap fonts ignore substitution. <function module="Vector">DrawText</function>, <function module="Vector">StringWidth</function> and <function module="Vector">CharWidth</function> retain direct character mapping, so their advances can differ from a VectorText with substitutions enabled.</p>
 <p>Use <code>features=ccmp 0</code> to disable composition/decomposition, or <code>features=mark 0</code> to disable mark positioning. Attached marks share their base's cluster, so letter spacing and wrapping cannot separate them.  Source columns are retained, with the cluster's advance divided equally between its codepoints.  Mark attachment changes glyph placement without changing advances, and remains enabled when pair kerning is disabled.  Mark-to-mark stacking, attachment to ligatures and contextual positioning are not supported.</p>
@@ -667,16 +693,16 @@ font size in points.  <code>none</code> uses the value of the named style or fon
       <const name="EDIT">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="EDITABLE">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="JUSTIFY">Stretch the gaps between words so that each soft-wrapped line fills <fl>InlineSize</fl>.  The last line of each paragraph follows <fl>Align</fl>.  Requires <fl>InlineSize</fl> and has no effect on bitmap fonts or guide paths.</const>
-      <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
+      <const name="LINE_THROUGH">Draw a line through the text, with its thickness controlled by <class name="VectorText" field="LineWeight">VectorText.LineWeight</class>.</const>
       <const name="NO_AUTO_OFFSET">Leave text scrolling to its container; disables automatic cursor offsets.</const>
       <const name="NO_KERNING">Disable the pair kerning defined by the font.  Equivalent to setting the CSS font-kerning property to <code>none</code>.</const>
       <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
-      <const name="OVERLINE">Enable overlining of the text.</const>
+      <const name="OVERLINE">Draw a line above each visible text row, with its thickness controlled by <class name="VectorText" field="LineWeight">VectorText.LineWeight</class>.</const>
       <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>
       <const name="RASTER">Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</const>
       <const name="SECRET">Hide all characters from the UI by using generic symbols in place of glyphs.</const>
       <const name="SELECTABLE">Allow mouse and keyboard selection and copying without user editing or a visible caret.</const>
-      <const name="UNDERLINE">Enable underlining of the text.</const>
+      <const name="UNDERLINE">Draw a line below each visible text row, with its thickness controlled by <class name="VectorText" field="LineWeight">VectorText.LineWeight</class>.</const>
     </constants>
 
   </types>

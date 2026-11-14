@@ -82,6 +82,9 @@ class freetype_font {
             double descent; // Number of pixels allocated below the baseline for glyphs, not including vertical whitespace
             double line_spacing; // The vertical advance for a newline, if not predefined then is set to height * 1.15
             double em_scale = 0; // Pixels per font unit, matching the scale of the glyph outlines
+            double underline_position = 0, underline_thickness = 0; // Centre and thickness in pixel coordinates
+            double strikeout_position = 0, strikeout_thickness = 0; // Top and thickness in pixel coordinates
+            FT_Orientation outline_orientation = FT_ORIENTATION_NONE;
             METRIC_GROUP axis;
             gpos_kerning::instance kern_instance; // GPOS kerning state for this style instance
             std::vector<int> normalised_axes; // F2Dot14 coordinates shared by GSUB and GPOS
@@ -157,6 +160,21 @@ class freetype_font {
                   // Kerning is computed from font units and scaled without rounding.
 
                   if (font->face->units_per_EM) em_scale = double(Size) / double(font->face->units_per_EM);
+
+                  // FreeType face metrics do not include variable-font MVAR adjustments.  LineWeight can override
+                  // their thickness; zero or missing font metrics use em-based fallbacks.
+
+                  underline_position = font->face->underline_position ?
+                     -double(font->face->underline_position) * em_scale : Size * 0.1;
+                  underline_thickness = font->face->underline_thickness > 0 ?
+                     double(font->face->underline_thickness) * em_scale : Size * 0.05;
+                  strikeout_position = -Size * 0.3;
+                  strikeout_thickness = Size * 0.05;
+                  if (auto os2 = (TT_OS2 *)FT_Get_Sfnt_Table(font->face, FT_SFNT_OS2);
+                      os2 and (os2->version != 0xffff)) {
+                     if (os2->yStrikeoutPosition) strikeout_position = -double(os2->yStrikeoutPosition) * em_scale;
+                     if (os2->yStrikeoutSize > 0) strikeout_thickness = double(os2->yStrikeoutSize) * em_scale;
+                  }
 
                   size = Size;
                   double embolden[2] = { 0, 0 };

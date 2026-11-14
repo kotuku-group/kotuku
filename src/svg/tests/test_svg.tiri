@@ -366,7 +366,7 @@ end
 @Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0xe1d40c77) end
 @Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0xf4b0397e) end
 @Test global function W3Convolve1()        hashTestSVG('filters/w3-filters-conv-01-f.svg', -1) end
-@Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0xba0ff782) end
+@Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0x95b0b6c9) end
 @Test; @Disabled global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x3e4d8a13) end
 @Test; @Disabled global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0xda23deb4) end
 @Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x0e100e52) end
@@ -515,7 +515,7 @@ end
 @Test; @Disabled global function W3TextB2()  hashTestSVG('text/w3-text-path-02-b.svg', -1) end
 @Test; @Disabled global function W3TextB3()  hashTestSVG('text/w3-text-spacing-01-b.svg', -1) end
 @Test; @Disabled global function W3TextB4()  hashTestSVG('text/w3-text-text-01-b.svg', -1) end
-@Test; @Disabled global function W3TextB5()  hashTestSVG('text/w3-text-text-03-b.svg', -1) end
+@Test global function W3TextB5() hashTestSVG('text/w3-text-text-03-b.svg', 0xd58c73c8) end
 @Test; @Disabled global function W3TextB6()  hashTestSVG('text/w3-text-text-04-t.svg', -1) end
 @Test; @Disabled global function W3TextB7()  hashTestSVG('text/w3-text-text-05-t.svg', -1) end
 @Test; @Disabled global function W3TextB8()  hashTestSVG('text/w3-text-text-06-t.svg', -1) end
