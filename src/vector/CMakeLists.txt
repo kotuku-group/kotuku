@@ -3,10 +3,16 @@
 set (MOD vector)
 set (INC_MOD_VECTOR TRUE PARENT_SCOPE)
 
-idl_gen ("${MOD}.tdl" NAME ${MOD}_defs OUTPUT "${INCLUDE_OUTPUT}/modules/vector.h"
-   ARGS "output-defs=module_def.c" DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/vector_functions.cpp")
+set (vector_tdl_dependencies
+   "${CMAKE_CURRENT_SOURCE_DIR}/vectorgradient.tdl"
+   "${CMAKE_CURRENT_SOURCE_DIR}/vectorfilter.tdl")
 
-idl_compile ("${MOD}.tdl" NAME ${MOD}_idl OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/idl.h")
+idl_gen ("${MOD}.tdl" NAME ${MOD}_defs OUTPUT "${INCLUDE_OUTPUT}/modules/vector.h"
+   ARGS "output-defs=module_def.c"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/vector_functions.cpp" ${vector_tdl_dependencies})
+
+idl_compile ("${MOD}.tdl" NAME ${MOD}_idl OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+   DEPENDS ${vector_tdl_dependencies})
 
 add_library (${MOD})
 

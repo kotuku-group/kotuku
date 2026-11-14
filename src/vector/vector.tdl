@@ -32,15 +32,6 @@ struct KeyValue;
      "ISOLATED: Enables isolation mode, which results in a bitmap buffer being allocated for the vector and its children while drawing.",
      "STICK_TO_BACK: Keeps the vector at the back of the Z-order.")
 
-  enums("GMT", { type="int", start=0, comment="Available modes for the GradientMesh class." },
-    "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
-    "LINEAR: Use linear interpolation for the patch colours.",
-    "BICUBIC: Use bicubic interpolation for the patch colours.")
-
-  enums("VFA", { type="int", comment="Define the aspect ratio for VectorFilter unit scaling." },
-     "MEET: Scale X/Y values independently and in relation to the width/height of the bounding box.",
-     "NONE: Scale X/Y values on a `1:1` basis, in relation to the normalised diagonal of the bounding box.")
-
   enums("LS", { type="int", comment="Light source identifiers." },
     "DISTANT: Distant light source.",
     "SPOT: Spot light source.",
@@ -151,34 +142,6 @@ struct KeyValue;
     "SYMBOL: As for `WORD`, and lines may also break after the symbols listed in the WrapMode documentation, such as the / in a file path.",
     "ANYWHERE: As for `SYMBOL`, and a segment that is too wide for a line of its own is broken between characters.")
 
-  enums('MOP', { type='int', start=0, comment='MorphologyFX options.' },
-    'ERODE: Erode (thin) the input source.',
-    'DILATE: Dilate (fatten) the input source.')
-
-   enums('OP', { type='int', start=0, comment='Operators for CompositionFX.' },
-    "OVER: The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.",
-    "IN: The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.",
-    "OUT: The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.",
-    "ATOP: The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.",
-    "XOR: The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.",
-    "ARITHMETIC: The SVG 'arithmetic' blending algorithm.",
-    "SCREEN: Produces a result brighter than the input.",
-    "MULTIPLY: Multiplies the input and mix colour components, producing a darker result unless one source is white.",
-    "LIGHTEN: Use the lighter colour components of the mix and input values.",
-    "DARKEN: Use the darker colour components of the mix and input values.",
-    "INVERT_RGB: Invert the mix colour components using the input colour channels as the per-channel strength.",
-    "INVERT: Invert the mix colour components using the input alpha channel as the strength.",
-    "CONTRAST: Adjust the mix contrast using the input colour values as the contrast strength.",
-    "DODGE: Gives a brighter result than `SCREEN` by decreasing the contrast between the input and mix colours.",
-    "BURN: Gives a darker result than `MULTIPLY` by increasing the contrast between the input and mix colours.",
-    "HARD_LIGHT: Apply `MULTIPLY` or `SCREEN` according to the input colour, producing a high-contrast result.",
-    "SOFT_LIGHT: Apply a softer variant of `HARD_LIGHT`, subtly darkening or lightening the mix from the input colour.",
-    "DIFFERENCE: Output the difference between the input and mix colours.",
-    "EXCLUSION: Produce the difference between the mix and input values around a reference point of mid-grey.",
-    "PLUS: Add the input and mix colour values together.",
-    "MINUS|SUBTRACT: The input colour value is subtracted from the mix.",
-    "OVERLAY: Combines the multiply and screen blend modes, with the mix determining tonal strength.")
-
   flags("VTXF", { comment="VectorText flags." },
     "UNDERLINE: Draw a line below each visible text row, with its thickness controlled by @VectorText.LineWeight.",
     "OVERLINE: Draw a line above each visible text row, with its thickness controlled by @VectorText.LineWeight.",
@@ -210,17 +173,6 @@ struct KeyValue;
     "SRGB: Operate on sRGB-encoded values directly.  This is the fastest option, and is the SVG default for `color-interpolation`.",
     "LINEAR_RGB: Operate in linear light.  This produces higher quality results, and is the SVG default for `color-interpolation-filters`.")
 
-  enums("VSF", { type="int", start=0, comment="Filter source types - these are used internally", restrict="c" },
-    "IGNORE|NONE: The filter does not require an input source.",
-    "GRAPHIC: Represents the graphics elements that were the original input into the filter element.",
-    "ALPHA: As for `GRAPHIC` except that only the alpha channel is used.",
-    "BKGD: An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.",
-    "BKGD_ALPHA: As for `BKGD` but only the alpha channel is used.",
-    "FILL: The value of the fill property on the target element for the filter effect.",
-    "STROKE: The value of the stroke property on the target element for the filter effect.",
-    "REFERENCE: This value is an assigned name for the filter primitive in the form of a custom-ident. If supplied, then graphics that result from processing this filter primitive can be referenced by an in attribute on a subsequent filter primitive within the same filter element. If no value is provided, the output will only be available for re-use as the implicit input into the next filter primitive if that filter primitive provides no value for its in attribute.",
-    "PREVIOUS: Use the previous effect as input, or source graphic if no previous effect.")
-
   enums("WVC", { type="int", start=1, comment="Wave options." },
     "TOP: Close the path across the top of its area.",
     "BOTTOM: Close the path across the bottom of its area.")
@@ -237,35 +189,6 @@ struct KeyValue;
     "SMOOTHSTEP: Smoothstep decay with ease-in and ease-out.",
     "EXPONENTIAL: Exponential decay, weighted strongly towards the start of the wave.")
 
-  enums("GFALL", { type="int", start=1, comment="Gradient fall-off options." },
-    "OPAQUE:     No fall-off.",
-    "LINEAR:     Linear fall-off (even taper).",
-    "QUADRATIC:  Quadratic fall-off - fast drop, thin tail — natural glow.",
-    "CUBIC:      Cubic fall-off - very tight glow hugging the outline.",
-    "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
-    "CLEAR:      Disables the gradient.")
-
-  enums("GEZ", { type="int", start=0, comment="Gradient easing functions." },
-    "LINEAR:       Linear interpolation (no easing) - the default.",
-    "IN:           Ease-in (slow start).",
-    "OUT:          Ease-out (slow end).",
-    "IN_OUT:       Smoothstep-style ease-in and ease-out.",
-    "CUBIC_IN:     Cubic ease-in.",
-    "CUBIC_OUT:    Cubic ease-out.",
-    "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
-
-  enums("WLF", { type="int", start=0, comment="Worley field modes." },
-    "F1: Distance to nearest point.",
-    "F2_F1: Distance between the nearest and second-nearest points.",
-    "F2: Distance to second-nearest point.",
-    "WEIGHTED: Additively-weighted Voronoi using per-point heights.",
-    "PEAKS: Additive peaks or terrain using per-point heights.")
-
-  enums("WLM", { type="int", start=0, comment="Worley distance metrics." },
-    "EUCLIDEAN",
-    "MANHATTAN",
-    "CHEBYSHEV")
-
   enums("CM", { type="int", start=0, comment="Colour modes for ColourFX." },
     "NONE: Do nothing.",
     "MATRIX: Process the supplied 5x4 matrix values.",
@@ -277,28 +200,6 @@ struct KeyValue;
     "HUE: Adjust the hue by 0 - 360 degrees using the first parameter.",
     "DESATURATE: Desaturate the input completely so that it is rendered in greyscale.",
     "COLOURISE: Colourise the input with the first 3 parameters used as RGB multipliers and the fourth parameter controlling intensity from 0 - 1.0.")
-
-  flags('VGF', { comment='Gradient flags' },
-    'SCALED_X1: X1 is scaled',
-    'SCALED_Y1: Y1 is scaled',
-    'SCALED_X2: X2 is scaled',
-    'SCALED_Y2: Y2 is scaled',
-    'SCALED_CX: CX is scaled',
-    'SCALED_CY: CY is scaled',
-    'SCALED_FX: FX is scaled',
-    'SCALED_FY: FY is scaled',
-    'SCALED_RADIUS: Radius is scaled',
-    'SCALED_FOCAL_RADIUS: Focal radius is scaled',
-    'FIXED_X1: X1 is fixed',
-    'FIXED_Y1: Y1 is fixed',
-    'FIXED_X2: X2 is fixed',
-    'FIXED_Y2: Y2 is fixed',
-    'FIXED_CX: CX is fixed',
-    'FIXED_CY: CY is fixed',
-    'FIXED_FX: FX is fixed',
-    'FIXED_FY: FY is fixed',
-    'FIXED_RADIUS: Radius is fixed',
-    'FIXED_FOCAL_RADIUS: Focal radius is fixed')
 
   flags("VPF", { comment="Optional flags for the VectorScene object." },
     "BITMAP_SIZED: Automatically adjust the @VectorScene.PageWidth and @VectorScene.PageHeight to match the target @Bitmap.Width and @Bitmap.Height.",
@@ -369,47 +270,6 @@ struct KeyValue;
      "CHILD_HAS_FOCUS: A child of the vector has gained the user focus.",
      "LOST_FOCUS: The vector has lost the user focus.",
      "TAB_FOCUS: The user focus was moved to this vector or one of its children by tab cycling.")
-
-  structdef('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
-    double Offset     # An offset in the range of 0 - 1.0
-    struct(FRGB) RGB  # A floating point RGB value.
-  ]])
-
-  structdef('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
-    double X             # The X coordinate of the vertex.
-    double Y             # The Y coordinate of the vertex.
-    struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
-  ]])
-
-  structdef('MeshControl', { comment='Describes one control point for the GradientMesh.' }, [[
-    double StartX   # Starting X coordinate.
-    double StartY   # Starting Y coordinate.
-    double EndX     # Ending X coordinate.
-    double EndY     # Ending Y coordinate.
-    double X1       # First control point X coordinate.
-    double Y1       # First control point Y coordinate.
-    double X2       # Second control point X coordinate.
-    double Y2       # Second control point Y coordinate.
-  ]])
-
-  structdef('MeshPatchRecord', { comment='Describes one bilinear Coons patch for the GradientMesh Patches field.' }, [[
-    struct(MeshControl) Top    # Top edge
-    struct(MeshControl) Right  # Right edge
-    struct(MeshControl) Bottom # Bottom edge
-    struct(MeshControl) Left   # Left edge
-    struct(FRGB) TopLeft       # Colour assigned to the top-left patch corner.
-    struct(FRGB) TopRight      # Colour assigned to the top-right patch corner.
-    struct(FRGB) BottomRight   # Colour assigned to the bottom-right patch corner.
-    struct(FRGB) BottomLeft    # Colour assigned to the bottom-left patch corner.
-  ]])
-
-  structdef('DiffusionCurveRecord', { comment='Describes one curve for the GradientDiffusion Curves field.' }, [[
-    struct(MeshControl) Curve  # Cubic Bezier geometry for this curve segment.
-    struct(FRGB) LeftStart     # Colour on the left side at the start of the curve.
-    struct(FRGB) LeftEnd       # Colour on the left side at the end of the curve.
-    struct(FRGB) RightStart    # Colour on the right side at the start of the curve.
-    struct(FRGB) RightEnd      # Colour on the right side at the end of the curve.
-  ]])
 
   structdef('Transition', { comment='For VectorTransition definitions' }, [[
     double Offset     # An offset from 0.0 to 1.0 at which to apply the transform.
@@ -533,6 +393,8 @@ struct KeyValue;
     ~string XMLDef
   ]])
 
+  loadFile('./vectorgradient.tdl')
+
   methods('vectorscene', 'Sc', {
     { id=1, name='AddDef' },
     { id=2, name='FindDef' },
@@ -598,193 +460,13 @@ struct KeyValue;
    }
   ]])
 
-  structdef('VoronoiPoint', {
-   comment='Describes a feature point for the GradientVoronoi Points field.'
-  }, [[
-    double X       # The X coordinate of the feature point.
-    double Y       # The Y coordinate of the feature point.
-    double Height  # The per-point height used by WEIGHTED and PEAKS modes.
-  ]])
-
-  klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
-    vector(struct(VectorMatrix)) Matrices
-    vector(struct(GradientStop)) Stops
-    string SID
-    string ColourMap             # Name of a gradient colour map.
-    struct(FRGB) Colour
-    double Resolution            # Alters the rate of change for gradient colours.
-    double Gamma                 # Applies a gamma curve to the gradient ramp.
-    int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
-    int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
-    int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
-    int(GEZ) Easing              # Easing function applied between gradient stops.
-    int   NumericID
-  ]],
-  [[
-   class GradientColours *Colours;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
-  ]],
-  [[
-   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      Gamma        = 1.0;
-      Easing       = GEZ::LINEAR;
-      SpreadMethod = VSPREAD::PAD;
-      Units        = VUNIT::BOUNDING_BOX;
-      Resolution   = 1;
-   }
-  ]])
-
-  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })
-
-  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', extended=true })
-
-  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', extended=true })
-
-  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', extended=true })
-
-  klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
-
-  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true }, [[
-    ~vector(struct(GouraudVertex)) Vertices
-  ]])
-
-  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', references={ 'GMT' }, extended=true }, [[
-    ~int Rows
-    ~int Columns
-    ~int(GMT) Mode
-    ~vector(struct(MeshPatchRecord)) Patches
-  ]])
-
-  klass('GradientDiffusion', { base='Gradient', src='painters/gradient_diffusion.cpp', output='painters/gradient_diffusion_def.cpp', extended=true }, [[
-    ~vector(struct(DiffusionCurveRecord)) Curves
-  ]])
-
-  klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
-
-  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
-    ~vector(struct(VoronoiPoint)) Points # Optional list of Voronoi feature points provided by the client
-    ~int(WLF) WorleyMode
-    ~int(WLM) WorleyMetric
-  ]])
-
-  klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
-    obj(FilterEffect) Next  # Next filter in the chain.
-    obj(FilterEffect) Prev  # Previous filter in the chain.
-    obj(Bitmap) Target      # Target bitmap for rendering the effect.
-    obj(FilterEffect) Input # The effect uses another effect as an input.
-    obj(FilterEffect) Mix   # Reference to an additional effect for mixing, e.g. compositing
-    unit X                  # Primitive x coordinate.
-    unit Y                  # Primitive y coordinate.
-    unit Width              # Primitive width.
-    unit Height             # Primitive height.
-    int(VSF) SourceType     # Desired source input.
-    int(VSF) MixType        # Optional input for mixing.
-  ]])
-
-  structdef('MergeSource', { comment='Input source declaration for MergeFX' }, [[
-   int(VSF) SourceType        # The type of the required source.
-   obj(FilterEffect) Effect   # Effect pointer if the `SourceType` is `REFERENCE`.
-  ]],
-  [[
-  MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
-  ]])
-
-  methods('RemapFX', 'RF', {
-    { id=20, name='SelectGamma' },
-    { id=21, name='SelectTable' },
-    { id=22, name='SelectLinear' },
-    { id=23, name='SelectIdentity' },
-    { id=24, name='SelectDiscrete' },
-    { id=25, name='SelectInvert' },
-    { id=26, name='SelectMask' }
-  })
-
-  methods('LightingFX', 'LT', {
-    { id=20, name='SetDistantLight' },
-    { id=22, name='SetPointLight' },
-    { id=21, name='SetSpotLight' }
-  })
-
-  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[
-    ~int(VSM) ResampleMethod
-    ~int(ARF) AspectRatio
-  ]])
-
-  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true }, [[
-    ~int(ARF) AspectRatio
-  ]])
-
-  klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
-
-  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true, references={ 'CM' } }, [[
-    ~int(CM) Mode
-  ]])
-
-  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true, references={ 'OP'  } }, [[
-    ~int(OP) Operator
-  ]])
-
-  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true, references={ 'EM' } }, [[
-    ~int(EM) EdgeMode
-  ]])
-
-  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM' } }, [[
-    ~int(VSM) ResampleMethod
-    ~int(CMP) XChannel
-    ~int(CMP) YChannel
-  ]])
-
-  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[
-    ~struct(FRGB) Colour
-  ]])
-
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX' } }, [[
-    ~struct(FRGB) Colour
-    ~int(LT) Type
-    ~int(LFX) Features
-  ]])
-
-  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[
-    ~array(struct(MergeSource)) SourceList
-  ]])
-
-  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
-    ~int(MOP) Operator
-  ]])
-
-  klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
-
-  klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
-
-  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB' }, extended=true }, [[
-    ~int(TB) Type
-  ]])
-
-  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
-    ~vector(struct(GradientStop)) Stops
-    ~int(ARF) AspectRatio
-  ]])
+  loadFile('./vectorfilter.tdl')
 
   klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp', extended=true }, [[
     obj(VectorViewport) Viewport # Hosts the Vector objects that will contribute to the clip path.
     string SID
     int(VUNIT) Units             # Defines the coordinate system for fields X, Y, Width and Height.
     int(VCLF) Flags              # Optional flags.
-  ]])
-
-  klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[
-    unit X                    # Left-most position of filter area
-    unit Y                    # Top-most position of filter area
-    unit Width                # Width of filter area
-    unit Height               # Height of filter area
-    double Opacity            # Level of opacity from 0 - 1.0
-    obj(VectorFilter) Inherit # Reference to another pattern from which to inherit attributes
-    int ResX                  # Width of the intermediate images in pixels
-    int ResY                  # Height of the intermediate images in pixels
-    int(VUNIT) Units          # VUNIT constant
-    int(VUNIT) PrimitiveUnits # VUNIT constant
-    int(VCS) ColourSpace      # Operating colour space for RGB values
-    int(VFA) AspectRatio      # Aspect ratio to use when scaling X/Y values
   ]])
 
   methods('vector', 'Vec', {

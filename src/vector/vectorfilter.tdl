@@ -1,0 +1,156 @@
+
+  enums("VFA", { type="int", comment="Define the aspect ratio for VectorFilter unit scaling." },
+     "MEET: Scale X/Y values independently and in relation to the width/height of the bounding box.",
+     "NONE: Scale X/Y values on a `1:1` basis, in relation to the normalised diagonal of the bounding box.")
+
+  enums("VSF", { type="int", start=0, comment="Filter source types - these are used internally", restrict="c" },
+    "IGNORE|NONE: The filter does not require an input source.",
+    "GRAPHIC: Represents the graphics elements that were the original input into the filter element.",
+    "ALPHA: As for `GRAPHIC` except that only the alpha channel is used.",
+    "BKGD: An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.",
+    "BKGD_ALPHA: As for `BKGD` but only the alpha channel is used.",
+    "FILL: The value of the fill property on the target element for the filter effect.",
+    "STROKE: The value of the stroke property on the target element for the filter effect.",
+    "REFERENCE: This value is an assigned name for the filter primitive in the form of a custom-ident. If supplied, then graphics that result from processing this filter primitive can be referenced by an in attribute on a subsequent filter primitive within the same filter element. If no value is provided, the output will only be available for re-use as the implicit input into the next filter primitive if that filter primitive provides no value for its in attribute.",
+    "PREVIOUS: Use the previous effect as input, or source graphic if no previous effect.")
+
+  enums('MOP', { type='int', start=0, comment='MorphologyFX options.' },
+    'ERODE: Erode (thin) the input source.',
+    'DILATE: Dilate (fatten) the input source.')
+
+   enums('OP', { type='int', start=0, comment='Operators for CompositionFX.' },
+    "OVER: The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.",
+    "IN: The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.",
+    "OUT: The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.",
+    "ATOP: The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.",
+    "XOR: The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.",
+    "ARITHMETIC: The SVG 'arithmetic' blending algorithm.",
+    "SCREEN: Produces a result brighter than the input.",
+    "MULTIPLY: Multiplies the input and mix colour components, producing a darker result unless one source is white.",
+    "LIGHTEN: Use the lighter colour components of the mix and input values.",
+    "DARKEN: Use the darker colour components of the mix and input values.",
+    "INVERT_RGB: Invert the mix colour components using the input colour channels as the per-channel strength.",
+    "INVERT: Invert the mix colour components using the input alpha channel as the strength.",
+    "CONTRAST: Adjust the mix contrast using the input colour values as the contrast strength.",
+    "DODGE: Gives a brighter result than `SCREEN` by decreasing the contrast between the input and mix colours.",
+    "BURN: Gives a darker result than `MULTIPLY` by increasing the contrast between the input and mix colours.",
+    "HARD_LIGHT: Apply `MULTIPLY` or `SCREEN` according to the input colour, producing a high-contrast result.",
+    "SOFT_LIGHT: Apply a softer variant of `HARD_LIGHT`, subtly darkening or lightening the mix from the input colour.",
+    "DIFFERENCE: Output the difference between the input and mix colours.",
+    "EXCLUSION: Produce the difference between the mix and input values around a reference point of mid-grey.",
+    "PLUS: Add the input and mix colour values together.",
+    "MINUS|SUBTRACT: The input colour value is subtracted from the mix.",
+    "OVERLAY: Combines the multiply and screen blend modes, with the mix determining tonal strength.")
+
+  klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
+    obj(FilterEffect) Next  # Next filter in the chain.
+    obj(FilterEffect) Prev  # Previous filter in the chain.
+    obj(Bitmap) Target      # Target bitmap for rendering the effect.
+    obj(FilterEffect) Input # The effect uses another effect as an input.
+    obj(FilterEffect) Mix   # Reference to an additional effect for mixing, e.g. compositing
+    unit X                  # Primitive x coordinate.
+    unit Y                  # Primitive y coordinate.
+    unit Width              # Primitive width.
+    unit Height             # Primitive height.
+    int(VSF) SourceType     # Desired source input.
+    int(VSF) MixType        # Optional input for mixing.
+  ]])
+
+  structdef('MergeSource', { comment='Input source declaration for MergeFX' }, [[
+   int(VSF) SourceType        # The type of the required source.
+   obj(FilterEffect) Effect   # Effect pointer if the `SourceType` is `REFERENCE`.
+  ]],
+  [[
+  MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
+  ]])
+
+  methods('RemapFX', 'RF', {
+    { id=20, name='SelectGamma' },
+    { id=21, name='SelectTable' },
+    { id=22, name='SelectLinear' },
+    { id=23, name='SelectIdentity' },
+    { id=24, name='SelectDiscrete' },
+    { id=25, name='SelectInvert' },
+    { id=26, name='SelectMask' }
+  })
+
+  methods('LightingFX', 'LT', {
+    { id=20, name='SetDistantLight' },
+    { id=22, name='SetPointLight' },
+    { id=21, name='SetSpotLight' }
+  })
+
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+    ~int(ARF) AspectRatio
+  ]])
+
+  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true }, [[
+    ~int(ARF) AspectRatio
+  ]])
+
+  klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
+
+  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true, references={ 'CM' } }, [[
+    ~int(CM) Mode
+  ]])
+
+  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true, references={ 'OP'  } }, [[
+    ~int(OP) Operator
+  ]])
+
+  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true, references={ 'EM' } }, [[
+    ~int(EM) EdgeMode
+  ]])
+
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+    ~int(CMP) XChannel
+    ~int(CMP) YChannel
+  ]])
+
+  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[
+    ~struct(FRGB) Colour
+  ]])
+
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX' } }, [[
+    ~struct(FRGB) Colour
+    ~int(LT) Type
+    ~int(LFX) Features
+  ]])
+
+  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[
+    ~array(struct(MergeSource)) SourceList
+  ]])
+
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
+    ~int(MOP) Operator
+  ]])
+
+  klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
+
+  klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
+
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB' }, extended=true }, [[
+    ~int(TB) Type
+  ]])
+
+  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
+    ~vector(struct(GradientStop)) Stops
+    ~int(ARF) AspectRatio
+  ]])
+
+  klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[
+    unit X                    # Left-most position of filter area
+    unit Y                    # Top-most position of filter area
+    unit Width                # Width of filter area
+    unit Height               # Height of filter area
+    double Opacity            # Level of opacity from 0 - 1.0
+    obj(VectorFilter) Inherit # Reference to another pattern from which to inherit attributes
+    int ResX                  # Width of the intermediate images in pixels
+    int ResY                  # Height of the intermediate images in pixels
+    int(VUNIT) Units          # VUNIT constant
+    int(VUNIT) PrimitiveUnits # VUNIT constant
+    int(VCS) ColourSpace      # Operating colour space for RGB values
+    int(VFA) AspectRatio      # Aspect ratio to use when scaling X/Y values
+  ]])
