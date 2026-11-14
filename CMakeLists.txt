@@ -514,7 +514,7 @@ endfunction ()
 # Always provide a full path for OUTPUT
 
 function (idl_compile)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS;DEPENDS")
 
    if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
@@ -532,7 +532,7 @@ function (idl_compile)
          COMMAND "${ORIGO_CMD}" "${IDL_COMPILE_SCRIPT}" "--log-warning" "src=${ARGV0}" "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" ${IDLC_ARGS}
          COMMAND ${CMAKE_COMMAND} -E touch "${IDLC_STAMP}"
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-         DEPENDS ${ARGV0}
+         DEPENDS ${ARGV0} ${IDLC_DEPENDS}
          COMMENT "Producing definition file ${IDLC_OUTPUT} from ${ARGV0}"
          VERBATIM)
 
