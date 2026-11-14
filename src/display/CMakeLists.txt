@@ -471,19 +471,20 @@ else ()
          target_compile_definitions (test_display_x11_driver PRIVATE X11_DRIVER_TESTS)
          target_link_libraries (test_display_x11_driver PRIVATE display-x11 X11 Xext)
          set_target_properties (test_display_x11_driver PROPERTIES CXX_STANDARD 20)
-         # The clipboard tests take ownership of CLIPBOARD and CLIPBOARD_MANAGER, so run them on a private X server
-         # when one is available rather than disturbing the developer's desktop session.
+         # Clipboard ownership and synthetic pointer input require a private X server for the standard test suite.
+         # Without one, these tests use the desktop preset, which requires the user's consent.
          find_program (XVFB_RUN_PROGRAM xvfb-run)
          if (XVFB_RUN_PROGRAM)
             add_test (NAME display_x11_driver
                COMMAND "${XVFB_RUN_PROGRAM}" -a -s "-screen 0 1024x768x24 -nolisten tcp"
                   $<TARGET_FILE:test_display_x11_driver>)
             set_tests_properties (display_x11_driver PROPERTIES
+               LABELS display
                ENVIRONMENT_MODIFICATION "KOTUKU_XDISPLAY=unset:")
          else ()
             add_test (NAME display_x11_driver COMMAND test_display_x11_driver)
+            set_tests_properties (display_x11_driver PROPERTIES LABELS "display;desktop")
          endif ()
-         set_tests_properties (display_x11_driver PROPERTIES LABELS display)
       endif ()
    endif ()
 endif ()

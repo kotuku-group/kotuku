@@ -47,6 +47,8 @@ struct X11WindowRecord {
    bool Root = false;
    bool Visible = false;
    bool Adopted = false; // True if the window was created inside a host window supplied by the client
+   bool Managed = false; // True for top-level windows that the window manager controls (not override-redirect)
+   bool Maximised = false; // The maximised state requested by the client or last reported in _NET_WM_STATE
    bool Maximisable = true; // False while an aspect ratio is enforced, because window managers ignore it when maximised
 };
 
@@ -106,6 +108,36 @@ struct X11DropTransfer {
    NativeDrop Drop;
 };
 
+// The XDND recipient found under the pointer.  Messages go to Proxy, which is Target unless it has an XdndProxy.
+
+struct X11DropWindow {
+   Window Target = 0;
+   Window Proxy = 0;
+   int Version = 0;
+   bool Own = false;          // The pointer is over one of our windows
+};
+
+// An outbound XDND session, started by startDragExport().  Only one exists at a time: a new export is refused while
+// an earlier drop is waiting for XdndFinished, because both would need XdndSelection.
+
+struct X11DragExport {
+   X11DropWindow Over;        // Recipient of the current enter/position messages
+   Window Exclude = 0;        // Our preview window, which hit-testing looks through
+   int RootX = 0, RootY = 0;  // Latest pointer position
+   Time Timestamp = CurrentTime; // XdndSelection ownership time
+   std::string Uris, Text;
+   std::vector<Atom> Types;
+   std::chrono::steady_clock::time_point Deadline = {};
+   Cursor Shown = None;       // Grab cursor currently applied
+   bool Active = false;       // Following the pointer
+   bool WaitingStatus = false; // An XdndPosition has not been answered yet
+   bool PositionPending = false; // The pointer moved while waiting for the status
+   bool Accepted = false;     // The latest XdndStatus accepted a copy
+   bool Released = false;     // Released while waiting for a status; the drop is decided when it arrives
+   bool Dropped = false;      // XdndDrop sent, waiting for XdndFinished
+   bool Served = false;       // The recipient has read XdndSelection
+};
+
 struct X11Driver::State {
    Display *Connection = nullptr;
    const DriverCallbacks *Callbacks = nullptr;
@@ -125,6 +157,10 @@ struct X11Driver::State {
    Atom TakeFocusAtom = 0;
    Atom SyncRequestAtom = 0;
    Atom SyncCounterAtom = 0;
+   Atom WMStateAtom = 0;           // _NET_WM_STATE and the states that the driver sets
+   Atom SkipTaskbarAtom = 0;
+   Atom MaxVertAtom = 0;
+   Atom MaxHorzAtom = 0;
    Atom ClipboardAtom = 0;
    Atom TargetsAtom = 0;
    Atom UTF8StringAtom = 0;
@@ -177,7 +213,18 @@ struct X11Driver::State {
    std::chrono::milliseconds DropTimeout = std::chrono::seconds(10);
    struct {
       Atom Aware, Enter, Position, StatusReply, Leave, Drop, Finished, Selection, TypeList, ActionCopy, Property;
+      Atom Proxy;
    } Xdnd = {};
+   X11DragExport Export;
+   Window ExportWindow = 0;   // Source window and XdndSelection owner of outbound drags
+   TIMER ExportTimer = nullptr;
+   Cursor RefusedCursor = None;
+   struct {
+      int X = -1, Y = -1;
+      Window Exclude = 0;
+      X11DropWindow Result;
+      bool Valid = false;
+   } LocateCache;             // Hit-test result for the current pass of the event loop
    uint64_t TransferGeneration = 0;
    std::chrono::steady_clock::time_point TransferStarted = {};
    GC GraphicsContext = 0;
@@ -217,6 +264,7 @@ int x11_read_dpi(X11Driver::State *State);
 void x11_process_events(X11Driver::State *State);
 void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window);
 void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window);
+void x11_wm_state_changed(X11Driver::State *State, const XPropertyEvent &Event);
 void x11_install_bitmap_routines(extBitmap *Bitmap);
 void x11_request_clipboard(X11Driver::State *State, Time Timestamp, Window Owner);
 void x11_save_clipboard(X11Driver::State *State, Time Timestamp);
@@ -232,6 +280,14 @@ bool x11_xdnd_client_message(X11Driver::State *State, const XClientMessageEvent 
 bool x11_xdnd_selection_notify(X11Driver::State *State, const XSelectionEvent &Event);
 bool x11_xdnd_property_notify(X11Driver::State *State, const XPropertyEvent &Event);
 bool x11_xdnd_foreign_event(X11Driver::State *State, const XEvent &Event);
+X11DropWindow x11_xdnd_locate(X11Driver::State *State, int X, int Y, Window Exclude);
+ERR x11_xdnd_start_export(X11Driver::State *State, const std::vector<std::string> &Files, const std::string *Text,
+   Window Exclude);
+ERR x11_xdnd_drop_export(X11Driver::State *State);
+void x11_xdnd_cancel_export(X11Driver::State *State);
+void x11_xdnd_export_motion(X11Driver::State *State, int X, int Y);
+bool x11_xdnd_export_payload(X11Driver::State *State, Atom Target, std::string &Data, Atom &Type);
+const std::vector<Atom> & x11_xdnd_export_types(X11Driver::State *State);
 
 void handle_button_press(XEvent *Event);
 void handle_button_release(XEvent *Event);

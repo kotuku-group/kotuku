@@ -1,4 +1,4 @@
-// Inbound XDND support for the X11 driver.
+// XDND support for the X11 driver, as a drop target and as the source of exported drags.
 //
 // Kotuku acts as an XDND target for versions 3 to 5 of the protocol (https://freedesktop.org/wiki/Specifications/XDND).
 // Files are accepted as text/uri-list and text as UTF8_STRING, text/plain;charset=utf-8, text/plain or STRING.  The
@@ -9,8 +9,15 @@
 // Hover feedback, destination snapshots, modality and receipt delivery are delegated to the common DragOver,
 // DragStart, DragData and DragLeave callbacks.  Selection data is read through a private requestor window per drop,
 // so the CLIPBOARD and PRIMARY transfers and their published data are unaffected.
+//
+// As a source, the driver exports an internal drag that the Display module hands over with startDragExport() once
+// the pointer leaves our windows.  Only XdndActionCopy is offered, and a recipient that answers with any other action
+// is treated as refusing.  The internal session keeps following the pointer, so the source is silent while the
+// pointer is over one of our own windows.  XdndSelection is owned by a private window and served from an immutable
+// copy of the payload, which is retained until XdndFinished or a timeout.
 
 #include "x11_native.h"
+#include "../../driver/clipboard_utils.h"
 
 #include <X11/Xatom.h>
 
@@ -33,7 +40,7 @@ ERR x11_xdnd_open(X11Driver::State *State)
    char *names[] = {
       (char *)"XdndAware", (char *)"XdndEnter", (char *)"XdndPosition", (char *)"XdndStatus", (char *)"XdndLeave",
       (char *)"XdndDrop", (char *)"XdndFinished", (char *)"XdndSelection", (char *)"XdndTypeList",
-      (char *)"XdndActionCopy", (char *)"KOTUKU_XDND"
+      (char *)"XdndActionCopy", (char *)"KOTUKU_XDND", (char *)"XdndProxy"
    };
    Atom atoms[std::size(names)] = {};
    if (not XInternAtoms(State->Connection, names, int(std::size(names)), False, atoms)) return ERR::SystemCall;
@@ -49,6 +56,8 @@ ERR x11_xdnd_open(X11Driver::State *State)
    xdnd.TypeList = atoms[8];
    xdnd.ActionCopy = atoms[9];
    xdnd.Property = atoms[10];
+   xdnd.Proxy = atoms[11];
+   State->RefusedCursor = XCreateFontCursor(State->Connection, XC_circle);
    return ERR::Okay;
 }
 
@@ -426,10 +435,22 @@ static void handle_drop(X11Driver::State *State, const XClientMessageEvent &Even
 
 //********************************************************************************************************************
 
+static void handle_export_status(X11Driver::State *State, const XClientMessageEvent &Event);
+static void handle_export_finished(X11Driver::State *State, const XClientMessageEvent &Event);
+
 bool x11_xdnd_client_message(X11Driver::State *State, const XClientMessageEvent &Event)
 {
    const auto &xdnd = State->Xdnd;
    const auto type = Event.message_type;
+
+   if ((type) and ((type IS xdnd.StatusReply) or (type IS xdnd.Finished))) {
+      if ((not State->ExportWindow) or (Event.window != State->ExportWindow)) return false;
+      if (Event.format != 32) return true;
+      if (type IS xdnd.StatusReply) handle_export_status(State, Event);
+      else handle_export_finished(State, Event);
+      return true;
+   }
+
    if ((not type) or ((type != xdnd.Enter) and (type != xdnd.Position) and (type != xdnd.Leave) and
          (type != xdnd.Drop))) return false;
    if (Event.format != 32) return true;
@@ -614,8 +635,13 @@ void x11_xdnd_forget_window(X11Driver::State *State, Window Native)
 // The protocol has no transfer timeout, so a source that stops answering would otherwise retain the transfer and its
 // snapshot indefinitely.  The timeout is measured from the latest progress.
 
+static void expire_export(X11Driver::State *State);
+
 void x11_xdnd_expire(X11Driver::State *State)
 {
+   State->LocateCache.Valid = false; // Windows may have changed since the previous pass of the event loop
+   expire_export(State);
+
    std::vector<X11DropTransfer> expired;
    const std::lock_guard lock(State->NativeLock);
 
@@ -656,8 +682,510 @@ void x11_xdnd_close(X11Driver::State *State)
       State->DropTransfers.clear();
       State->DropSession = {};
       while (not State->DropWatches.empty()) unwatch_source(State, State->DropWatches.begin()->first);
+
+      // An export is abandoned without a DragExportEnded notification.  A recipient that is still hovering is told
+      // to leave; one that has the drop will fail to read the selection.
+
+      if (State->Connection) {
+         if (State->Export.Active and State->Export.Over.Target) {
+            send_message(State, State->Export.Over.Proxy, State->Xdnd.Leave, { long(State->ExportWindow), 0, 0, 0,
+               0 });
+         }
+         if (State->ExportWindow) XDestroyWindow(State->Connection, State->ExportWindow);
+         if (State->RefusedCursor) XFreeCursor(State->Connection, State->RefusedCursor);
+      }
+      if (State->ExportTimer) UpdateTimer(State->ExportTimer, 0);
+      State->ExportTimer = nullptr;
+      State->ExportWindow = 0;
+      State->RefusedCursor = None;
+      State->Export = {};
+      State->LocateCache = {};
       State->Xdnd = {};
    }
+}
+
+//********************************************************************************************************************
+// Outbound XDND.  Hit-testing descends from the top-level window under the pointer until it finds one of our windows
+// or a window that is XdndAware, directly or through an XdndProxy.  The caller holds the native lock.
+
+static bool read_aware_version(X11Driver::State *State, Window Window, int &Version)
+{
+   Atom type = None;
+   int format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *value = nullptr;
+   const bool aware = (XGetWindowProperty(State->Connection, Window, State->Xdnd.Aware, 0, 1, False, XA_ATOM, &type,
+      &format, &count, &remaining, &value) IS Success) and (type IS XA_ATOM) and (format IS 32) and (count IS 1) and
+      value;
+   if (aware) Version = int(*(const Atom *)value);
+   if (value) XFree(value);
+   return aware;
+}
+
+// The proxy is valid only if its own XdndProxy property refers to itself.
+
+static Window read_proxy(X11Driver::State *State, Window Window)
+{
+   auto read = [State](::Window Holder) -> ::Window {
+      Atom type = None;
+      int format = 0;
+      unsigned long count = 0, remaining = 0;
+      unsigned char *value = nullptr;
+      ::Window result = 0;
+      if ((XGetWindowProperty(State->Connection, Holder, State->Xdnd.Proxy, 0, 1, False, XA_WINDOW, &type, &format,
+            &count, &remaining, &value) IS Success) and (type IS XA_WINDOW) and (format IS 32) and (count IS 1) and
+            value) result = ::Window(*(const unsigned long *)value);
+      if (value) XFree(value);
+      return result;
+   };
+
+   auto proxy = read(Window);
+   if (proxy and (read(proxy) IS proxy)) return proxy;
+   return 0;
+}
+
+// Returns true if Window is the recipient of drops at its position.  A recipient with an unsupported version ends the
+// search without a target.
+
+static bool read_recipient(X11Driver::State *State, Window Window, X11DropWindow &Result)
+{
+   auto proxy = read_proxy(State, Window);
+   auto holder = proxy ? proxy : Window;
+   int version = 0;
+   if (not read_aware_version(State, holder, version)) return false;
+   if (version >= XDND_MIN_VERSION) {
+      Result.Target = Window;
+      Result.Proxy = holder;
+      Result.Version = std::min(version, XDND_VERSION);
+   }
+   return true;
+}
+
+// Returns the topmost viewable child of the root window at the position.  Skip is passed over, which requires the
+// stacking order to be read; otherwise the server resolves the window directly.
+
+static Window top_level_at(X11Driver::State *State, int X, int Y, Window Skip)
+{
+   auto root = DefaultRootWindow(State->Connection);
+   if (not Skip) {
+      Window child = 0;
+      int x, y;
+      if (not XTranslateCoordinates(State->Connection, root, root, X, Y, &x, &y, &child)) return 0;
+      return child;
+   }
+
+   Window root_return, parent, *children = nullptr;
+   unsigned count = 0;
+   if (not XQueryTree(State->Connection, root, &root_return, &parent, &children, &count)) return 0;
+   Window found = 0;
+   for (unsigned i=count; (i > 0) and (not found); i--) {
+      auto window = children[i - 1];
+      if (window IS Skip) continue;
+      XWindowAttributes attributes = {};
+      if ((not XGetWindowAttributes(State->Connection, window, &attributes)) or
+          (attributes.map_state != IsViewable)) continue;
+      const int border = attributes.border_width * 2;
+      if ((X >= attributes.x) and (Y >= attributes.y) and (X < attributes.x + attributes.width + border) and
+          (Y < attributes.y + attributes.height + border)) found = window;
+   }
+   if (children) XFree(children);
+   return found;
+}
+
+X11DropWindow x11_xdnd_locate(X11Driver::State *State, int X, int Y, Window Exclude)
+{
+   const std::lock_guard lock(State->NativeLock);
+   auto &cache = State->LocateCache;
+   if (cache.Valid and (cache.X IS X) and (cache.Y IS Y) and (cache.Exclude IS Exclude)) return cache.Result;
+
+   X11DropWindow result;
+   if ((not State->Connection) or (not State->Xdnd.Aware)) return result;
+
+   auto root = DefaultRootWindow(State->Connection);
+   Window top = 0, skip = 0;
+   for (int attempt=0; attempt < 2; attempt++) {
+      top = top_level_at(State, X, Y, skip);
+      bool excluded = false;
+      result = {};
+      for (auto window = top; window; ) {
+         if (Exclude and (window IS Exclude)) { excluded = true; break; }
+         if (State->Windows.contains(window)) { result.Own = true; break; }
+         if (read_recipient(State, window, result)) break;
+         Window child = 0;
+         int x, y;
+         if (not XTranslateCoordinates(State->Connection, root, window, X, Y, &x, &y, &child)) break;
+         window = child;
+      }
+      if ((not excluded) or (not top)) break;
+      skip = top;
+      result = {};
+   }
+
+   // The desktop can be served through a proxy on the root window when no top-level window covers the position.
+   if ((not top) and (not result.Own)) read_recipient(State, root, result);
+
+   cache = { .X = X, .Y = Y, .Exclude = Exclude, .Result = result, .Valid = true };
+   return result;
+}
+
+//********************************************************************************************************************
+// Source messages carry the window under the pointer, but are delivered to its proxy.  The caller holds the native
+// lock.
+
+static void send_to_recipient(X11Driver::State *State, Atom Type, std::array<long, 5> Data)
+{
+   auto &over = State->Export.Over;
+   if (not over.Proxy) return;
+   XEvent event = {};
+   event.xclient.type = ClientMessage;
+   event.xclient.display = State->Connection;
+   event.xclient.window = over.Target;
+   event.xclient.message_type = Type;
+   event.xclient.format = 32;
+   for (size_t i=0; i < Data.size(); i++) event.xclient.data.l[i] = Data[i];
+   XSendEvent(State->Connection, over.Proxy, False, NoEventMask, &event);
+}
+
+static Time event_time(X11Driver::State *State)
+{
+   return State->LastServerTimestamp ? State->LastServerTimestamp : CurrentTime;
+}
+
+static void send_enter(X11Driver::State *State)
+{
+   auto &types = State->Export.Types;
+   std::array<long, 5> data = { long(State->ExportWindow), long(State->Export.Over.Version) << 24, 0, 0, 0 };
+   if (types.size() > 3) data[1] |= 1;
+   else for (size_t i=0; i < types.size(); i++) data[2 + i] = long(types[i]);
+   send_to_recipient(State, State->Xdnd.Enter, data);
+}
+
+static void send_position(X11Driver::State *State)
+{
+   auto &e = State->Export;
+   send_to_recipient(State, State->Xdnd.Position, { long(State->ExportWindow), 0,
+      (long(e.RootX & 0xffff) << 16) | long(e.RootY & 0xffff), long(event_time(State)),
+      long(State->Xdnd.ActionCopy) });
+   e.WaitingStatus = true;
+   e.PositionPending = false;
+}
+
+static void send_leave(X11Driver::State *State)
+{
+   send_to_recipient(State, State->Xdnd.Leave, { long(State->ExportWindow), 0, 0, 0, 0 });
+}
+
+static void send_drop(X11Driver::State *State)
+{
+   send_to_recipient(State, State->Xdnd.Drop, { long(State->ExportWindow), 0, long(event_time(State)), 0, 0 });
+}
+
+// The grab cursor shows whether a recipient in another application accepts the drop.  Over our own windows, the
+// grab window's cursor is restored so that widget feedback remains visible.  Changing the cursor of the implicit
+// button grab keeps its pointer event selection.
+
+static void update_cursor(X11Driver::State *State)
+{
+   auto &e = State->Export;
+   Cursor cursor = None;
+   if (e.Active and (not e.Over.Own)) cursor = e.Accepted ? State->Cursors[0] : State->RefusedCursor;
+   if (cursor IS e.Shown) return;
+   e.Shown = cursor;
+   XChangeActivePointerGrab(State->Connection, ButtonPressMask|ButtonReleaseMask|PointerMotionMask|
+      EnterWindowMask|LeaveWindowMask, cursor, CurrentTime);
+}
+
+// Ends the export and releases XdndSelection.  The caller holds the native lock and reports any result afterwards.
+
+static void reset_export(X11Driver::State *State)
+{
+   auto &e = State->Export;
+   e.Active = false;
+   update_cursor(State);
+   if (State->ExportWindow) {
+      if (XGetSelectionOwner(State->Connection, State->Xdnd.Selection) IS State->ExportWindow) {
+         XSetSelectionOwner(State->Connection, State->Xdnd.Selection, None, event_time(State));
+      }
+      XDeleteProperty(State->Connection, State->ExportWindow, State->Xdnd.TypeList);
+   }
+   if (State->ExportTimer) {
+      UpdateTimer(State->ExportTimer, 0);
+      State->ExportTimer = nullptr;
+   }
+   e = {};
+   XFlush(State->Connection);
+}
+
+static void report_export(X11Driver::State *State, bool Accepted)
+{
+   kt::Log("X11Mgr").trace("XDND export ended: %s", Accepted ? "accepted" : "refused");
+   auto callbacks = State->Callbacks;
+   if (callbacks and callbacks->DragExportEnded) callbacks->DragExportEnded(Accepted);
+}
+
+//********************************************************************************************************************
+// A task-owned timer bounds the wait for a status after release and for XdndFinished after the drop.
+
+static ERR export_timer(OBJECTPTR, int64_t, int64_t, APTR Meta)
+{
+   auto state = (X11Driver::State *)Meta;
+   expire_export(state);
+
+   const std::lock_guard lock(state->NativeLock);
+   auto &e = state->Export;
+   if ((not e.Released) and (not e.Dropped)) {
+      state->ExportTimer = nullptr;
+      return ERR::Terminate;
+   }
+   const auto delay = std::chrono::duration<double>(e.Deadline - std::chrono::steady_clock::now()).count();
+   return UpdateTimer(state->ExportTimer, std::max(0.001, delay));
+}
+
+// The caller holds the native lock.
+
+static void arm_export_deadline(X11Driver::State *State)
+{
+   State->Export.Deadline = std::chrono::steady_clock::now() + State->DropTimeout;
+   if (State->ExportTimer) return;
+   kt::SwitchContext context(CurrentTask());
+   const auto delay = std::max(0.001, std::chrono::duration<double>(State->DropTimeout).count());
+   if (SubscribeTimer(delay, C_FUNCTION(export_timer, State), &State->ExportTimer) != ERR::Okay) {
+      State->ExportTimer = nullptr; // The event loop still checks the deadline whenever it runs
+   }
+}
+
+// A recipient that does not answer after release is refused.  One that has the drop but sends no XdndFinished is
+// reported as accepted only if it read the selection.
+
+static void expire_export(X11Driver::State *State)
+{
+   bool accepted;
+   {
+      const std::lock_guard lock(State->NativeLock);
+      auto &e = State->Export;
+      if (((not e.Released) and (not e.Dropped)) or (std::chrono::steady_clock::now() < e.Deadline)) return;
+      kt::Log("X11Mgr").msg("The XDND recipient %lu did not respond in time.", e.Over.Target);
+      if (e.Released) send_leave(State);
+      accepted = e.Dropped and e.Served;
+      reset_export(State);
+   }
+   report_export(State, accepted);
+}
+
+// Called with the native lock held, after the status for the final position has arrived.  Returns false if the
+// recipient refused, in which case the export has ended and the caller reports it.
+
+static bool complete_release(X11Driver::State *State)
+{
+   auto &e = State->Export;
+   e.Released = false;
+   if (not e.Accepted) {
+      send_leave(State);
+      reset_export(State);
+      return false;
+   }
+   send_drop(State);
+   e.Dropped = true;
+   arm_export_deadline(State);
+   return true;
+}
+
+//********************************************************************************************************************
+
+ERR x11_xdnd_start_export(X11Driver::State *State, const std::vector<std::string> &Files, const std::string *Text,
+   Window Exclude)
+{
+   const std::lock_guard lock(State->NativeLock);
+   auto &e = State->Export;
+   if (e.Active or e.Released or e.Dropped) return ERR::InUse;
+   if ((not State->Connection) or (not State->Xdnd.Selection)) return ERR::NotInitialised;
+
+   // Paths are native already.  Folders are offered without a trailing separator, as file managers offer them.
+
+   X11DragExport offer;
+   for (auto &file : Files) {
+      std::string_view path(file);
+      while ((path.size() > 1) and (path.back() IS '/')) path.remove_suffix(1);
+      if (path.empty() or (path[0] != '/')) continue;
+      offer.Uris.append(encode_file_uri(path)).append("\r\n");
+   }
+   if (not offer.Uris.empty()) offer.Types.push_back(State->URIListAtom);
+   if (Text) {
+      offer.Text = *Text;
+      offer.Types.insert(offer.Types.end(), { State->UTF8StringAtom, State->TextUTF8Atom, State->TextPlainAtom,
+         Atom(XA_STRING) });
+   }
+   if (offer.Types.empty()) return ERR::NoData;
+
+   if (not State->ExportWindow) {
+      XSetWindowAttributes attributes = {};
+      State->ExportWindow = XCreateWindow(State->Connection, DefaultRootWindow(State->Connection), -10, -10, 1, 1, 0,
+         0, InputOnly, CopyFromParent, 0, &attributes);
+      if (not State->ExportWindow) return ERR::SystemCall;
+   }
+
+   XChangeProperty(State->Connection, State->ExportWindow, State->Xdnd.TypeList, XA_ATOM, 32, PropModeReplace,
+      (const unsigned char *)offer.Types.data(), int(offer.Types.size()));
+   offer.Timestamp = event_time(State);
+   XSetSelectionOwner(State->Connection, State->Xdnd.Selection, State->ExportWindow, offer.Timestamp);
+   if (XGetSelectionOwner(State->Connection, State->Xdnd.Selection) != State->ExportWindow) {
+      XDeleteProperty(State->Connection, State->ExportWindow, State->Xdnd.TypeList);
+      return ERR::LockFailed;
+   }
+
+   offer.Exclude = Exclude;
+   offer.Active = true;
+   e = std::move(offer);
+   XFlush(State->Connection);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Called for pointer movement after the framework has processed it.  Each XdndPosition waits for its status; later
+// movement is coalesced into a single pending position.
+
+void x11_xdnd_export_motion(X11Driver::State *State, int X, int Y)
+{
+   const std::lock_guard lock(State->NativeLock);
+   auto &e = State->Export;
+   if (not e.Active) return;
+
+   e.RootX = X;
+   e.RootY = Y;
+   const auto found = x11_xdnd_locate(State, X, Y, e.Exclude);
+   if ((found.Target != e.Over.Target) or (found.Proxy != e.Over.Proxy) or (found.Own != e.Over.Own)) {
+      if (e.Over.Target) send_leave(State);
+      e.Over = found;
+      e.WaitingStatus = false;
+      e.PositionPending = false;
+      e.Accepted = false;
+      if (e.Over.Target) send_enter(State);
+   }
+
+   if (e.Over.Target) {
+      if (e.WaitingStatus) e.PositionPending = true;
+      else send_position(State);
+   }
+
+   update_cursor(State);
+   XFlush(State->Connection);
+}
+
+//********************************************************************************************************************
+
+static void handle_export_status(X11Driver::State *State, const XClientMessageEvent &Event)
+{
+   bool refused = false;
+   {
+      const std::lock_guard lock(State->NativeLock);
+      auto &e = State->Export;
+      if (((not e.Active) and (not e.Released)) or (not e.Over.Target) or
+          (Window(Event.data.l[0]) != e.Over.Target)) return;
+
+      const auto action = Atom(Event.data.l[4]);
+      e.WaitingStatus = false;
+      e.Accepted = (Event.data.l[1] & 1) and ((action IS State->Xdnd.ActionCopy) or (action IS None));
+
+      if (e.PositionPending) send_position(State);
+      else if (e.Released) refused = not complete_release(State);
+
+      update_cursor(State);
+      XFlush(State->Connection);
+   }
+   if (refused) report_export(State, false);
+}
+
+// Versions before 5 do not report a result, so their XdndFinished signals success.
+
+static void handle_export_finished(X11Driver::State *State, const XClientMessageEvent &Event)
+{
+   bool accepted;
+   {
+      const std::lock_guard lock(State->NativeLock);
+      auto &e = State->Export;
+      if ((not e.Dropped) or (Window(Event.data.l[0]) != e.Over.Target)) return;
+      const auto action = Atom(Event.data.l[2]);
+      accepted = (e.Over.Version < 5) or
+         ((Event.data.l[1] & 1) and ((action IS State->Xdnd.ActionCopy) or (action IS None)));
+      reset_export(State);
+   }
+   report_export(State, accepted);
+}
+
+//********************************************************************************************************************
+
+ERR x11_xdnd_drop_export(X11Driver::State *State)
+{
+   const std::lock_guard lock(State->NativeLock);
+   auto &e = State->Export;
+   if (not e.Active) return ERR::NoSupport;
+
+   // Windows can move, appear or disappear under a stationary pointer.  Refresh the recipient before release, and
+   // negotiate with a new recipient if necessary instead of using the last motion's status.
+
+   State->LocateCache.Valid = false;
+   const auto found = x11_xdnd_locate(State, e.RootX, e.RootY, e.Exclude);
+   if ((found.Target != e.Over.Target) or (found.Proxy != e.Over.Proxy) or (found.Own != e.Over.Own)) {
+      x11_xdnd_export_motion(State, e.RootX, e.RootY);
+   }
+
+   e.Active = false;
+   update_cursor(State);
+
+   if (e.Over.Own) {
+      reset_export(State);
+      return DisplayDriver::DROP_INTERNAL;
+   }
+
+   if (not e.Over.Target) {
+      reset_export(State);
+      return ERR::NoAction;
+   }
+
+   if (e.WaitingStatus or e.PositionPending) {
+      // The decision follows the status for the final position.
+      e.Released = true;
+      arm_export_deadline(State);
+      XFlush(State->Connection);
+      return ERR::Okay;
+   }
+
+   if (complete_release(State)) {
+      XFlush(State->Connection);
+      return ERR::Okay;
+   }
+   return ERR::Cancelled;
+}
+
+void x11_xdnd_cancel_export(X11Driver::State *State)
+{
+   const std::lock_guard lock(State->NativeLock);
+   auto &e = State->Export;
+   if (not e.Active) return;
+   if (e.Over.Target) send_leave(State);
+   reset_export(State);
+}
+
+//********************************************************************************************************************
+// Selection data for XdndSelection.  STRING is converted from the UTF-8 text by the caller.  The caller holds the
+// native lock.
+
+bool x11_xdnd_export_payload(X11Driver::State *State, Atom Target, std::string &Data, Atom &Type)
+{
+   auto &e = State->Export;
+   if ((not e.Active) and (not e.Released) and (not e.Dropped)) return false;
+   if (std::find(e.Types.begin(), e.Types.end(), Target) IS e.Types.end()) return false;
+
+   Type = Target;
+   Data = Target IS State->URIListAtom ? e.Uris : e.Text;
+   e.Served = true;
+   if (e.Dropped) e.Deadline = std::chrono::steady_clock::now() + State->DropTimeout; // Progress extends the wait
+   return true;
+}
+
+const std::vector<Atom> & x11_xdnd_export_types(X11Driver::State *State)
+{
+   return State->Export.Types;
 }
 
 } // namespace display

@@ -77,11 +77,18 @@ public:
    ERR clipboardClear() override;
    ERR setPrimarySelection(std::string_view Text) override;
    ERR readPrimarySelection(OBJECTID Recipient, int Item) override;
+   bool foreignPoint(double X, double Y, HOSTWINDOW Exclude) override;
+   ERR startDragExport(const std::vector<std::string> &Files, const std::string *Text, HOSTWINDOW Exclude) override;
+   ERR dropDragExport() override;
+   void cancelDragExport() override;
 
 #ifdef X11_DRIVER_TESTS
    void processEvents();
    unsigned long clipboardWindow() const;
    unsigned long testWindow(int X, int Y, int Width, int Height, OBJECTID SurfaceID);
+   void selectTestInput(unsigned long Native);
+   unsigned long testManagedWindow(int Width, int Height);
+   int windowMaximised(unsigned long Native);
    void setDropTimeout(int Milliseconds);
 #endif
 
@@ -96,7 +103,12 @@ extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size();
 extern "C" DISPLAY_DRIVER_EXPORT int x11_driver_bitmap_shmid(extBitmap *Bitmap);
 extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_window(DisplayDriver *Driver, int X, int Y, int Width,
    int Height, OBJECTID SurfaceID);
+extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_input_window(DisplayDriver *Driver, int X, int Y,
+   int Width, int Height, OBJECTID SurfaceID);
 extern "C" DISPLAY_DRIVER_EXPORT void x11_driver_set_drop_timeout(DisplayDriver *Driver, int Milliseconds);
+extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_managed_window(DisplayDriver *Driver, int Width,
+   int Height);
+extern "C" DISPLAY_DRIVER_EXPORT int x11_driver_window_maximised(DisplayDriver *Driver, unsigned long Native);
 #endif
 
 }

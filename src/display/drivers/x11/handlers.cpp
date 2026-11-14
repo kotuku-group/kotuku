@@ -180,20 +180,42 @@ static void expire_clipboard_transfer()
 
 //********************************************************************************************************************
 
-static bool selection_payload(Atom Target, std::string &Data, Atom &Type, bool Primary)
+// The selections served by the driver.  XdndSelection is owned only while a drag is exported.
+
+enum class SEL { CLIPBOARD, PRIMARY, DRAG };
+
+static SEL selection_source(Atom Selection)
+{
+   if (Selection IS XA_PRIMARY) return SEL::PRIMARY;
+   if ((Selection) and (Selection IS glEventState->Xdnd.Selection)) return SEL::DRAG;
+   return SEL::CLIPBOARD;
+}
+
+static bool selection_payload(Atom Target, std::string &Data, Atom &Type, SEL Source)
 {
    Type = Target;
-   if ((not Primary) and glEventState->ClipboardIsFiles) {
+   if (Source IS SEL::DRAG) {
+      if (Target IS XA_STRING) {
+         Atom utf8;
+         if (not x11_xdnd_export_payload(glEventState, glEventState->UTF8StringAtom, Data, utf8)) return false;
+         Data = utf8_to_latin1(Data);
+         return true;
+      }
+      return x11_xdnd_export_payload(glEventState, Target, Data, Type);
+   }
+
+   const bool primary = Source IS SEL::PRIMARY;
+   if ((not primary) and glEventState->ClipboardIsFiles) {
       if (Target IS glEventState->URIListAtom) Data = glEventState->ClipboardUris;
       else if (Target IS glEventState->GnomeFilesAtom) Data = glEventState->ClipboardGnomeFiles;
       else return false;
    }
    else if ((Target IS glEventState->UTF8StringAtom) or (Target IS glEventState->TextUTF8Atom) or
             (Target IS glEventState->TextPlainAtom) or (Target IS glEventState->TextAtom)) {
-      Data = Primary ? glEventState->PrimaryText : glEventState->ClipboardText;
+      Data = primary ? glEventState->PrimaryText : glEventState->ClipboardText;
       if (Target IS glEventState->TextAtom) Type = glEventState->UTF8StringAtom;
    }
-   else if (Target IS XA_STRING) Data = utf8_to_latin1(Primary ?
+   else if (Target IS XA_STRING) Data = utf8_to_latin1(primary ?
       glEventState->PrimaryText : glEventState->ClipboardText);
    else return false;
    return true;
@@ -201,14 +223,26 @@ static bool selection_payload(Atom Target, std::string &Data, Atom &Type, bool P
 
 //********************************************************************************************************************
 
-static bool write_selection_property(Atom Target, Window Requestor, Atom Property, bool Primary = false)
+static bool write_selection_property(Atom Target, Window Requestor, Atom Property, SEL Source = SEL::CLIPBOARD)
 {
    if ((not Property) or (Target IS glEventState->MultipleAtom)) return false;
+
+   const bool primary = Source IS SEL::PRIMARY;
+
+   if ((Target IS glEventState->TargetsAtom) and (Source IS SEL::DRAG)) {
+      std::vector<Atom> targets = { glEventState->TargetsAtom, glEventState->MultipleAtom,
+         glEventState->TimestampAtom };
+      auto &offered = x11_xdnd_export_types(glEventState);
+      targets.insert(targets.end(), offered.begin(), offered.end());
+      XChangeProperty(XDisplay, Requestor, Property, XA_ATOM, 32, PropModeReplace,
+         (const unsigned char *)targets.data(), int(targets.size()));
+      return true;
+   }
 
    if (Target IS glEventState->TargetsAtom) {
       std::vector<Atom> targets = { glEventState->TargetsAtom, glEventState->MultipleAtom,
          glEventState->TimestampAtom, glEventState->SaveTargetsAtom };
-      if ((not Primary) and glEventState->ClipboardIsFiles) {
+      if ((not primary) and glEventState->ClipboardIsFiles) {
          targets.push_back(glEventState->URIListAtom);
          targets.push_back(glEventState->GnomeFilesAtom);
       }
@@ -222,20 +256,21 @@ static bool write_selection_property(Atom Target, Window Requestor, Atom Propert
    }
 
    if (Target IS glEventState->TimestampAtom) {
-      unsigned long timestamp = Primary ? glEventState->PrimaryTimestamp : glEventState->ClipboardTimestamp;
+      unsigned long timestamp = primary ? glEventState->PrimaryTimestamp :
+         (Source IS SEL::DRAG) ? glEventState->Export.Timestamp : glEventState->ClipboardTimestamp;
       XChangeProperty(XDisplay, Requestor, Property, XA_INTEGER, 32, PropModeReplace,
          (const unsigned char *)&timestamp, 1);
       return true;
    }
 
-   if (Target IS glEventState->SaveTargetsAtom) {
+   if ((Target IS glEventState->SaveTargetsAtom) and (Source != SEL::DRAG)) {
       XChangeProperty(XDisplay, Requestor, Property, Target, 8, PropModeReplace, nullptr, 0);
       return true;
    }
 
    std::string data;
    Atom type = None;
-   if (not selection_payload(Target, data, type, Primary)) return false;
+   if (not selection_payload(Target, data, type, Source)) return false;
 
    if (data.size() > maximum_property_bytes()) {
       unsigned long size = data.size();
@@ -281,8 +316,9 @@ static bool write_multiple_selection(const XSelectionRequestEvent &Request)
    }
 
    auto pairs = (Atom *)property;
+   const auto source = selection_source(Request.selection);
    for (unsigned long i = 0; i < count; i += 2) {
-      if (not write_selection_property(pairs[i], Request.requestor, pairs[i + 1], Request.selection IS XA_PRIMARY))
+      if (not write_selection_property(pairs[i], Request.requestor, pairs[i + 1], source))
          pairs[i] = None;
    }
    XChangeProperty(XDisplay, Request.requestor, Request.property, glEventState->AtomPairAtom, 32, PropModeReplace,
@@ -305,16 +341,18 @@ static void handle_selection_request(const XSelectionRequestEvent &Request)
    reply.property = None;
 
    const std::lock_guard lock(glEventState->NativeLock);
-   if ((Request.owner IS glEventState->ClipboardWindow) and
-       ((Request.selection IS glEventState->ClipboardAtom) or (Request.selection IS XA_PRIMARY)) and
-       (XGetSelectionOwner(XDisplay, Request.selection) IS glEventState->ClipboardWindow)) {
+   const bool clipboard = (Request.owner IS glEventState->ClipboardWindow) and
+      ((Request.selection IS glEventState->ClipboardAtom) or (Request.selection IS XA_PRIMARY));
+   const bool drag = (Request.owner) and (Request.owner IS glEventState->ExportWindow) and
+      (Request.selection IS glEventState->Xdnd.Selection);
+   if ((clipboard or drag) and (XGetSelectionOwner(XDisplay, Request.selection) IS Request.owner)) {
       if (Request.target IS glEventState->MultipleAtom) {
          if (write_multiple_selection(Request)) reply.property = Request.property;
       }
       else {
          auto property = Request.property IS None ? Request.target : Request.property;
-         if (write_selection_property(Request.target, Request.requestor, property, Request.selection IS XA_PRIMARY))
-            reply.property = property;
+         if (write_selection_property(Request.target, Request.requestor, property,
+               selection_source(Request.selection))) reply.property = property;
       }
    }
 
@@ -838,6 +876,7 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
             receive_incremental_chunk(xevent.xproperty);
             if ((xevent.xproperty.window IS DefaultRootWindow(XDisplay)) and
                 (xevent.xproperty.atom IS XA_RESOURCE_MANAGER)) handle_resource_change();
+            else x11_wm_state_changed(glEventState, xevent.xproperty);
             break;
 
          case MotionNotify:
@@ -1497,6 +1536,9 @@ void handle_crossing_notify(XCrossingEvent *xevent)
 void process_movement(Window Window, int X, int Y)
 {
    glDriverCallbacks.Movement(resolve_surface(Window), X, Y, false);
+
+   // The framework may have started an export while processing the movement.
+   x11_xdnd_export_motion(glEventState, X, Y);
 }
 
 } // namespace display

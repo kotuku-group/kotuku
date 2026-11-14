@@ -9,6 +9,9 @@
       x11_driver_bitmap_shmid;
       x11_driver_test_window;
       x11_driver_set_drop_timeout;
+      x11_driver_test_input_window;
+      x11_driver_test_managed_window;
+      x11_driver_window_maximised;
    local:
       *;
 };

@@ -281,12 +281,88 @@ static void send_size_hints(X11Driver::State *State, X11WindowRecord *Window)
 
 //********************************************************************************************************************
 
-static void hide_window_from_taskbar(X11Driver::State *State, Window WindowID)
+// The initial _NET_WM_STATE of a window that is not mapped.  EWMH requires clients to set the property directly before
+// mapping; the window manager owns it while the window is mapped, so changes must then be requested with
+// request_wm_maximise().
+
+static void write_wm_state(X11Driver::State *State, X11WindowRecord *Record)
 {
-   auto property = XInternAtom(State->Connection, "_NET_WM_STATE", False);
-   Atom states[] = { XInternAtom(State->Connection, "_NET_WM_STATE_SKIP_TASKBAR", False) };
-   XChangeProperty(State->Connection, WindowID, property, XA_ATOM, 32, PropModeReplace,
-      (const unsigned char *)states, std::ssize(states));
+   Atom states[3];
+   int total = 0;
+   if (not State->TaskBar) states[total++] = State->SkipTaskbarAtom;
+   if (Record->Maximised) {
+      states[total++] = State->MaxVertAtom;
+      states[total++] = State->MaxHorzAtom;
+   }
+
+   if (total > 0) {
+      XChangeProperty(State->Connection, Record->Native, State->WMStateAtom, XA_ATOM, 32, PropModeReplace,
+         (const unsigned char *)states, total);
+   }
+   else XDeleteProperty(State->Connection, Record->Native, State->WMStateAtom);
+}
+
+// Ask the window manager to maximise or restore a mapped window.
+
+static void request_wm_maximise(X11Driver::State *State, X11WindowRecord *Record, bool Maximise)
+{
+   static constexpr long net_wm_state_remove = 0;
+   static constexpr long net_wm_state_add = 1;
+   static constexpr long source_application = 1;
+
+   XEvent event = {};
+   event.xclient.type = ClientMessage;
+   event.xclient.window = Record->Native;
+   event.xclient.message_type = State->WMStateAtom;
+   event.xclient.format = 32;
+   event.xclient.data.l[0] = Maximise ? net_wm_state_add : net_wm_state_remove;
+   event.xclient.data.l[1] = long(State->MaxVertAtom);
+   event.xclient.data.l[2] = long(State->MaxHorzAtom);
+   event.xclient.data.l[3] = source_application;
+   XSendEvent(State->Connection, DefaultRootWindow(State->Connection), False,
+      SubstructureRedirectMask|SubstructureNotifyMask, &event);
+}
+
+//********************************************************************************************************************
+// Called for PropertyNotify events.  Maximise and restore operations initiated by the window manager (e.g. a title
+// bar button) are recorded in the Display's MAXIMISE flag, as the Wayland driver does.
+
+void x11_wm_state_changed(X11Driver::State *State, const XPropertyEvent &Event)
+{
+   if ((Event.atom != State->WMStateAtom) or (not State->WMStateAtom)) return;
+
+   const std::lock_guard lock(State->NativeLock);
+   auto it = State->Windows.find(Event.window);
+   if ((it IS State->Windows.end()) or (not it->second->Managed)) return;
+   auto record = it->second;
+
+   // EWMH: the window manager removes the property when a window is withdrawn.  The client's requested state is kept
+   // in that case, so that it is applied when the window is next mapped.
+
+   if ((Event.state IS PropertyDelete) or (not record->Visible)) return;
+
+   bool vert = false, horz = false;
+   Atom type = None;
+   int format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *data = nullptr;
+   if ((XGetWindowProperty(State->Connection, record->Native, State->WMStateAtom, 0, 64, False, XA_ATOM, &type,
+         &format, &count, &remaining, &data) IS Success) and data) {
+      if ((type IS XA_ATOM) and (format IS 32)) {
+         auto atoms = (const Atom *)data;
+         for (unsigned long i=0; i < count; i++) {
+            if (atoms[i] IS State->MaxVertAtom) vert = true;
+            else if (atoms[i] IS State->MaxHorzAtom) horz = true;
+         }
+      }
+      XFree(data);
+   }
+
+   record->Maximised = vert and horz;
+   if (record->Display) {
+      if (record->Maximised) record->Display->Flags |= SCR::MAXIMISE;
+      else record->Display->Flags &= ~SCR::MAXIMISE;
+   }
 }
 
 //********************************************************************************************************************
@@ -425,12 +501,77 @@ unsigned long X11Driver::testWindow(int X, int Y, int Width, int Height, OBJECTI
    return native;
 }
 
+// As x11_driver_test_window(), but the window also receives pointer input, so that a button press inside it starts
+// the implicit grab that an exported drag relies on.
+
+extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_input_window(DisplayDriver *Driver, int X, int Y,
+   int Width, int Height, OBJECTID SurfaceID)
+{
+   if (not Driver) return 0;
+   auto driver = (X11Driver *)Driver;
+   auto native = driver->testWindow(X, Y, Width, Height, SurfaceID);
+   if (native) driver->selectTestInput(native);
+   return native;
+}
+
+void X11Driver::selectTestInput(unsigned long Native)
+{
+   XSelectInput(Data->Connection, Window(Native), ButtonPressMask|ButtonReleaseMask|PointerMotionMask|
+      EnterWindowMask|LeaveWindowMask);
+   XSync(Data->Connection, False);
+}
+
 extern "C" DISPLAY_DRIVER_EXPORT void x11_driver_set_drop_timeout(DisplayDriver *Driver, int Milliseconds)
 {
    if (Driver) ((X11Driver *)Driver)->setDropTimeout(Milliseconds);
 }
 
 void X11Driver::setDropTimeout(int Milliseconds) { Data->DropTimeout = std::chrono::milliseconds(Milliseconds); }
+
+// Creates an unmapped top-level window that a window manager controls, as create_window_record() does for a Display,
+// but without a Display.  Show it with showWindow() and release it with destroyWindow().
+
+extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_managed_window(DisplayDriver *Driver, int Width,
+   int Height)
+{
+   return Driver ? ((X11Driver *)Driver)->testManagedWindow(Width, Height) : 0;
+}
+
+unsigned long X11Driver::testManagedWindow(int Width, int Height)
+{
+   if (not Data->Open) return 0;
+   XSetWindowAttributes attributes = { .event_mask = StructureNotifyMask|PropertyChangeMask };
+   auto native = XCreateWindow(Data->Connection, DefaultRootWindow(Data->Connection), 0, 0, Width, Height, 0,
+      CopyFromParent, InputOutput, CopyFromParent, CWEventMask, &attributes);
+   if (not native) return 0;
+   auto record = new(std::nothrow) X11WindowRecord;
+   if (not record) { XDestroyWindow(Data->Connection, native); return 0; }
+   record->Native = native;
+   record->Owned = true;
+   record->Managed = true;
+   {
+      const std::lock_guard lock(Data->NativeLock);
+      Data->Windows[native] = record;
+   }
+   write_wm_state(Data, record);
+   XSync(Data->Connection, False);
+   return native;
+}
+
+// Returns the maximised state recorded for a window, or -1 if the window is unknown.
+
+extern "C" DISPLAY_DRIVER_EXPORT int x11_driver_window_maximised(DisplayDriver *Driver, unsigned long Native)
+{
+   return Driver ? ((X11Driver *)Driver)->windowMaximised(Native) : -1;
+}
+
+int X11Driver::windowMaximised(unsigned long Native)
+{
+   const std::lock_guard lock(Data->NativeLock);
+   auto it = Data->Windows.find(Window(Native));
+   if (it IS Data->Windows.end()) return -1;
+   return it->second->Maximised ? 1 : 0;
+}
 
 // Tests cannot see the extBitmap definition, so they reserve this much space for the bitmaps that they construct.
 
@@ -532,6 +673,10 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
    Data->DeleteAtom = XInternAtom(Data->Connection, "WM_DELETE_WINDOW", 0);
    Data->TakeFocusAtom = XInternAtom(Data->Connection, "WM_TAKE_FOCUS", 0);
    Data->SurfaceAtom = XInternAtom(Data->Connection, "KOTUKU_SCREENID", 0);
+   Data->WMStateAtom = XInternAtom(Data->Connection, "_NET_WM_STATE", False);
+   Data->SkipTaskbarAtom = XInternAtom(Data->Connection, "_NET_WM_STATE_SKIP_TASKBAR", False);
+   Data->MaxVertAtom = XInternAtom(Data->Connection, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+   Data->MaxHorzAtom = XInternAtom(Data->Connection, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
    Data->ClipboardAtom = XInternAtom(Data->Connection, "CLIPBOARD", False);
    Data->TargetsAtom = XInternAtom(Data->Connection, "TARGETS", False);
    Data->UTF8StringAtom = XInternAtom(Data->Connection, "UTF8_STRING", False);
@@ -832,6 +977,12 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    attributes.event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
       KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
    int flags = CWEventMask|CWOverrideRedirect|CWCursor|CWBitGravity;
+
+   // Top-level windows report property changes so that _NET_WM_STATE changes by the window manager are seen.
+
+   const bool root_parent = Parent IS DefaultRootWindow(State->Connection);
+   const bool managed = root_parent and (not attributes.override_redirect);
+   if (managed) attributes.event_mask |= PropertyChangeMask;
    int depth = CopyFromParent;
    Visual *visual = CopyFromParent;
    Colormap colormap = 0;
@@ -849,7 +1000,6 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
       DisplayObject->Bitmap->BytesPerPixel = 4;
    }
 
-   const bool root_parent = Parent IS DefaultRootWindow(State->Connection);
    auto native = XCreateWindow(State->Connection, Parent, root_parent ? DisplayObject->X : 0,
       root_parent ? DisplayObject->Y : 0, DisplayObject->Width, DisplayObject->Height, 0, depth, InputOutput, visual,
       flags, &attributes);
@@ -876,6 +1026,8 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    record->GraphicsContext = graphics_context;
    record->Display = DisplayObject;
    record->Owned = true;
+   record->Managed = managed;
+   record->Maximised = (DisplayObject->Flags & SCR::MAXIMISE) != SCR::NIL;
 
    {
       const std::lock_guard lock(State->NativeLock);
@@ -914,7 +1066,7 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    XSetWMHints(State->Connection, native, &wm_hints);
 
    set_motif_hints(State, record);
-   if (not State->TaskBar) hide_window_from_taskbar(State, native);
+   if (managed) write_wm_state(State, record);
    if (root_parent) x11_xdnd_advertise(State, native);
    Record = record;
    return ERR::Okay;
@@ -1061,12 +1213,36 @@ ERR X11Driver::destroyWindow(HOSTWINDOW WindowHandle)
 
 //********************************************************************************************************************
 
-ERR X11Driver::showWindow(HOSTWINDOW WindowHandle, bool)
+// Maximise applies to windows controlled by a window manager.  A window that was already shown keeps its geometry,
+// because Display X/Y refer to the client area and moving it again would shift it by the size of its frame.
+
+ERR X11Driver::showWindow(HOSTWINDOW WindowHandle, bool Maximise)
 {
    auto window = x11_window(Data, WindowHandle);
    if (not window) return ERR::NoSupport;
+
+   const bool managed = window->Managed and (not Data->Manager);
+
+   if (managed and window->Visible) {
+      if (window->Maximised != Maximise) {
+         window->Maximised = Maximise;
+         request_wm_maximise(Data, window, Maximise);
+      }
+
+      // The window manager may have minimised it since it was shown.  Mapping an already mapped window is harmless.
+      XMapWindow(Data->Connection, window->Native);
+      XSync(Data->Connection, 0);
+      return ERR::Okay;
+   }
+
+   if (managed) {
+      window->Maximised = Maximise;
+      write_wm_state(Data, window);
+   }
+
    XMapWindow(Data->Connection, window->Native);
-   if (window->Display and ((window->Display->Flags & SCR::BORDERLESS) IS SCR::NIL)) {
+   if (window->Display and ((window->Display->Flags & SCR::BORDERLESS) IS SCR::NIL) and
+       not (managed and Maximise)) {
       XMoveWindow(Data->Connection, window->Native, window->Display->X, window->Display->Y);
    }
    window->Visible = true;
@@ -2199,6 +2375,42 @@ ERR X11Driver::pointerPosition(double &X, double &Y)
    if (not XQueryPointer(Data->Connection, DefaultRootWindow(Data->Connection), &root, &child, &root_x, &root_y,
          &child_x, &child_y, &mask)) return ERR::SystemCall;
    X = root_x; Y = root_y; return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+//********************************************************************************************************************
+// Outbound XDND; see xdnd.cpp.  In desktop-manager mode there are no other applications to export to.
+
+static Window excluded_window(X11Driver::State *State, HOSTWINDOW Exclude)
+{
+   if (not Exclude) return 0;
+   auto window = x11_window(State, Exclude);
+   return window ? window->Native : 0;
+}
+
+bool X11Driver::foreignPoint(double X, double Y, HOSTWINDOW Exclude)
+{
+   if ((not Data->Open) or Data->Manager) return false;
+   const auto found = x11_xdnd_locate(Data, int(std::floor(X)), int(std::floor(Y)), excluded_window(Data, Exclude));
+   return not found.Own;
+}
+
+ERR X11Driver::startDragExport(const std::vector<std::string> &Files, const std::string *Text, HOSTWINDOW Exclude)
+{
+   if ((not Data->Open) or Data->Manager) return ERR::NoSupport;
+   return x11_xdnd_start_export(Data, Files, Text, excluded_window(Data, Exclude));
+}
+
+ERR X11Driver::dropDragExport()
+{
+   if (not Data->Open) return ERR::NoSupport;
+   return x11_xdnd_drop_export(Data);
+}
+
+void X11Driver::cancelDragExport()
+{
+   if (Data->Open) x11_xdnd_cancel_export(Data);
 }
 
 //********************************************************************************************************************
