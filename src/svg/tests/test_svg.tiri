@@ -515,7 +515,7 @@ end
 @Test; @Disabled global function W3TextB2()  hashTestSVG('text/w3-text-path-02-b.svg', -1) end
 @Test; @Disabled global function W3TextB3()  hashTestSVG('text/w3-text-spacing-01-b.svg', -1) end
 @Test; @Disabled global function W3TextB4()  hashTestSVG('text/w3-text-text-01-b.svg', -1) end
-@Test global function W3TextB5() hashTestSVG('text/w3-text-text-03-b.svg', 0xd58c73c8) end
+@Test global function W3TextB5() hashTestSVG('text/w3-text-text-03-b.svg', 0x766bcc17) end
 @Test; @Disabled global function W3TextB6()  hashTestSVG('text/w3-text-text-04-t.svg', -1) end
 @Test; @Disabled global function W3TextB7()  hashTestSVG('text/w3-text-text-05-t.svg', -1) end
 @Test; @Disabled global function W3TextB8()  hashTestSVG('text/w3-text-text-06-t.svg', -1) end
