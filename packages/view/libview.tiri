@@ -665,6 +665,22 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       end
    end
 
+   -- Returns the scroll delta needed to reveal the span [Start, Start+Size) within [Low, High).  A span larger than the
+   -- visible area is left alone if any part of it is visible, otherwise the alternating edge corrections would cause
+   -- the view to flip between its extremes.
+
+   local function revealDelta(Start:num, Size:num, Low:num, High:num):num
+      if Size > High - Low then
+         if (Start < High) and (Start + Size > Low) then return 0 end
+         return Low - Start
+      elseif Start < Low then
+         return Low - Start
+      elseif Start + Size > High then
+         return High - (Start + Size)
+      end
+      return 0
+   end
+
    -------------------------------------------------------------------------------------------------------------------
    -- In-place editing.  One session per view is held in vw._edit:
    --
@@ -679,6 +695,11 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    --     calls vw._updateEdit() after a layout, so that the editor follows changes to the geometry.
    --   vw._editTextVector(Item, Attrib) returns the vector that the editor covers.  It is hidden during the edit.
    --   vw._editCommitted(Item, Attrib) redraws a cell after an accepted value has been written to the item.
+   --   vw._editOrder() (optional) returns the editable attributes in display order, for Tab navigation and as the
+   --     default attribute of F2 and editItem().  The order of the editable option is used if it is not defined.
+   --
+   -- The geometry can include span = { x, width }, the horizontal extent of the cell in page coordinates.  The page
+   -- is scrolled horizontally to reveal it when an edit starts.
 
    -- The editor draws only its text and cursor over the row, so the input box is stripped of its fill and stroke in
    -- every state.
@@ -699,6 +720,11 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       local value = Item[Attrib]
       if value is <table> then value = value.value end
       return value is nil ? '' : tostring(value)
+   end
+
+   function editOrder():array<any>
+      if vw._editOrder then return vw._editOrder() end
+      return vw.editable ?? array<str>
    end
 
    function editTextVector(Item:table!, Attrib:str!):obj
@@ -735,7 +761,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       end
 
       local text = editTextVector(Session.item, Session.attrib)
-      text?.visibility = VIS_VISIBLE
+      text?.visibility = Session.item.hidden ? VIS_HIDDEN : VIS_VISIBLE
       vw.viewport?.acDraw()
    end
 
@@ -836,18 +862,25 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       return true
    end
 
-   -- Finds the next or previous editable cell.  Tab steps through the editable attributes of a row before moving to
-   -- the next row, while Up and Down keep the attribute.  Hidden and insensitive rows are skipped.
+   -- Finds the next or previous editable cell.  Tab steps through the editable attributes of a row, in display order,
+   -- before moving to the next row, while Up and Down keep the attribute.  Hidden and insensitive rows, and cells
+   -- without geometry, are skipped.
+
+   function editableCell(Item:table!, Attrib:str!):bool
+      return editableItem(Item, Attrib) and vw._editGeometry(Item, Attrib) != nil
+   end
 
    function adjacentEditCell(Item:table!, Attrib:str!, Step:num!, AcrossAttribs:bool):<table, str>
-      local attribs = vw.editable
+      local attribs = editOrder()
+      if #attribs is 0 then return nil, nil end
 
       if AcrossAttribs then
          local index = attribs.indexOf(Attrib)
          if index != nil then
-            local next_index = index + Step
-            if next_index >= 0 and next_index < #attribs and editableItem(Item, attribs[next_index]) then
-               return Item, attribs[next_index]
+            index += Step
+            while index >= 0 and index < #attribs do
+               if editableCell(Item, attribs[index]) then return Item, attribs[index] end
+               index += Step
             end
          end
       end
@@ -858,12 +891,17 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       end
       if row is nil then return nil, nil end
 
-      local target_attrib = AcrossAttribs ? (Step > 0 ? attribs[0] : attribs[#attribs - 1]) : Attrib
       row += Step
       while row >= 0 and row < #vw.items do
          local item = vw.items[row]
-         if editableItem(item, target_attrib) and vw._editGeometry(item, target_attrib) then
-            return item, target_attrib
+         if AcrossAttribs then
+            local index = Step > 0 ? 0 : #attribs - 1
+            while index >= 0 and index < #attribs do
+               if editableCell(item, attribs[index]) then return item, attribs[index] end
+               index += Step
+            end
+         elseif editableCell(item, Attrib) then
+            return item, Attrib
          end
          row += Step
       end
@@ -902,6 +940,12 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
 
       local geometry = vw._editGeometry(Item, Attrib)
       geometry ?! return refuse()
+
+      if geometry.span and vw.scrollbar then
+         local left  = -vw.page.x
+         local delta = revealDelta(geometry.span.x, geometry.span.width, left, left + vw.frame.width)
+         if delta != 0 then vw.scrollbar.scrollPage(delta, 0) end
+      end
 
       local session = { item = Item, attrib = Attrib, oldValue = rawEditValue(Item, Attrib), ending = false }
 
@@ -968,7 +1012,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
 
    vw.editItem = function(Item:table!, Attrib:str):bool
       assertStructural()
-      return beginEdit(Item, Attrib ?? vw.editable?[0], 'manual')
+      return beginEdit(Item, Attrib ?? editOrder()[0], 'manual')
    end
 
    -- Ends the open edit, committing the value if Commit is true.  A commit that itemEdited() rejects leaves the editor
@@ -980,6 +1024,13 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    end
 
    vw._beginEdit = beginEdit
+
+   -- Commits the open edit for a user action outside the editor, e.g. a click on a column banner.  A rejected value
+   -- is discarded, as for a loss of focus.
+
+   vw._commitEdit = function()
+      endEdit(true, 'user', false)
+   end
 
    vw.addItem = function(Item)
       assert(Item, 'No Item provided')
@@ -1259,22 +1310,6 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       if completed then refreshLayout() end
 
       if failure then rethrow(failure) end
-   end
-
-   -- Returns the scroll delta needed to reveal the span [Start, Start+Size) within [Low, High).  A span larger than the
-   -- visible area is left alone if any part of it is visible, otherwise the alternating edge corrections would cause
-   -- the view to flip between its extremes.
-
-   local function revealDelta(Start:num, Size:num, Low:num, High:num):num
-      if Size > High - Low then
-         if (Start < High) and (Start + Size > Low) then return 0 end
-         return Low - Start
-      elseif Start < Low then
-         return Low - Start
-      elseif Start + Size > High then
-         return High - (Start + Size)
-      end
-      return 0
    end
 
    -- Checks the visibility of an item, scrolling it into view if it is partially or fully hidden.
@@ -1642,7 +1677,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
          if vw._keyEvent and vw._keyEvent(Qualifiers, Code, Unicode) then return end
 
          if (Code is KEY_F2) and vw.editable then
-            if vw.kItem then beginEdit(vw.kItem, vw.editable[0], 'user') end
+            if vw.kItem then beginEdit(vw.kItem, editOrder()[0], 'user') end
          elseif (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) then
             selectHighlighted(true, Qualifiers)
          elseif Code is KEY_A and (Qualifiers has KQ_CTRL) then

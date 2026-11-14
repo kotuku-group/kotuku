@@ -299,8 +299,10 @@ function applyFilters()
       end
    end
 
+   -- A relayout keeps the rows, the scroll position and any open edit, unlike a rebuild.
+
    if redraw then
-      &view.rebuild()
+      &view.relayout()
    end
 end
 

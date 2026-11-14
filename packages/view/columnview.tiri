@@ -163,6 +163,45 @@ function refreshCheckbox(View:table!, Item:table!, Column:table!)
    box.strokeWidth = focused ? 1 : 0
 end
 
+-- True if the cell of Attrib is open in the view's editor.  Its text is hidden for the duration of the edit.
+
+function cellEdited(View:table!, Item:table!, Attrib:str!):bool
+   local edit = View._edit
+   return edit != nil and edit.item is Item and edit.attrib is Attrib
+end
+
+-- The x position of a cell's text within its column viewport.  Right-aligned text is anchored at its right edge.
+
+function cellTextX(Col:table!):num
+   if Col.align is 'right' then return Col.px_width - MARGIN end
+   if Col.showIcons then return (MARGIN * 2) + glIconSize + (MARGIN * 2) end
+   return MARGIN
+end
+
+-- Creates or updates the text vector of a cell from the item's value.
+
+function updateCellText(View:table!, Item:table!, Col:table!)
+   local attrib = Col.attrib
+   local cell = Item._col[attrib]
+   local vis = (Item.hidden or cellEdited(View, Item, attrib)) ? VIS_HIDDEN : VIS_VISIBLE
+
+   if not cell.text then
+      cell.text = Col.vecViewport.new('VectorText', table.merge({
+         name       = f'text_{attrib}',
+         align      = Col.align ?? 'left',
+         y          = Item._y + LINE_OFFSET,
+         visibility = vis
+      }, View.theme.list.text))
+      Item._vectors['_a_' .. attrib] = cell.text -- Referenced for future termination
+   else
+      cell.text.y = Item._y + LINE_OFFSET
+      cell.text.visibility = vis
+   end
+
+   cell.text.x = cellTextX(Col)
+   cell.text.string = columnText(Item[attrib], Col.type)
+end
+
 function highlightItem(View:table!, Item:table, Highlighted:bool)
    for col in values(View.columns) do
       if col.checkBoxes then refreshCheckbox(View, Item, col) end
@@ -307,8 +346,67 @@ function itemIconStyle(View:table!, Item:table!)
    end
 end
 
+-- Creates or updates the icon, checkboxes and text of every cell of an item.  Text is created for cells that have a
+-- value; a cell that already has text keeps it when its value is removed.
+
+function updateCells(View:table!, Item:table!)
+   local vis = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
+   local y = Item._y
+
+   for col in values(View.columns) do
+      local attrib = col.attrib
+      if not Item._col[attrib] then Item._col[attrib] = { } end
+
+      if not col.checkBoxes and col.showIcons then
+         if Item.icon then
+            try
+               itemIconStyle(View, Item)
+               local image = Item._vectors.iconImage
+               if not image then
+                  image = col.vecViewport.new('VectorRectangle', { name = 'item_icon' })
+                  Item._vectors.iconImage = image
+               end
+               image.{
+                  fill       = Item._iconFill,
+                  x          = (MARGIN * 2) - Item._iconMargin,
+                  y          = y + ICON_OFFSET - Item._iconMargin,
+                  width      = glIconSize + (Item._iconMargin * 2),
+                  height     = glIconSize + (Item._iconMargin * 2),
+                  visibility = vis
+               }
+            end
+         elseif Item._vectors.iconImage then
+            Item._vectors.iconImage.free()
+            Item._vectors.iconImage = nil
+         end
+      end
+
+      if col.checkBoxes then
+         local cell = Item._col[attrib]
+         if not cell.checkbox then
+            cell.checkbox = col.vecViewport.new('VectorRectangle', {
+               name=f'checkbox_{attrib}', width=col._checkboxSize, height=col._checkboxSize
+            })
+            Item._vectors['_check_' .. attrib] = cell.checkbox
+         end
+
+         refreshCheckbox(View, Item, col)
+      elseif Item[attrib]?? or Item._col[attrib].text then
+         updateCellText(View, Item, col)
+      end
+   end
+end
+
 function bannerZoneClick(View, Col, X, Y, Value)
    if Value is 1 then return end
+
+   -- The user's edit is committed before the sort, which may depend on its value.  The client's itemEdited() can
+   -- change the view, so the column is checked again afterwards.
+
+   if View._edit then
+      View._commitEdit()
+      if not View.viewport or (View.namedCol?[Col.attrib] != Col) then return end
+   end
 
    if View._sort and View._sort.icon then
       View._sort?.icon?.free()
@@ -353,7 +451,8 @@ function rearrangeItems(View)
          item._vectors.iconImage?.visibility = vis
 
          for col in values(View.columns) do
-            item._col?[col.attrib]?.text?.visibility = vis
+            local text = item._col?[col.attrib]?.text
+            if text then text.visibility = cellEdited(View, item, col.attrib) ? VIS_HIDDEN : vis end
             if col.checkBoxes then refreshCheckbox(View, item, col) end
          end
 
@@ -376,15 +475,33 @@ function rearrangeItems(View)
 
    View._last_y = y
    View.page.height = y + EDGE
+   if View._updateEdit then View._updateEdit() end -- The edited item may have moved
    View.scene.surface.mtScheduleRedraw()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.columnView = function(Options):table
-   assert(Options.editable is nil, 'editable is not yet supported by column views')
+   -- Checkbox columns are toggled rather than edited.  The check is repeated by setColumns().
+
+   function assertEditableColumns(Columns:any, Editable:any)
+      if not (Editable is <array str>) or not Columns then return end
+      for col in values(Columns) do
+         if col.checkBoxes and (Editable.indexOf(col.attrib) != nil) then
+            raise f'editable attribute "{col.attrib}" names a checkbox column'
+         end
+      end
+   end
+
+   assertEditableColumns(Options.columns, Options.editable)
 
    function setColumns(View:table!, Columns)
+      assertEditableColumns(Columns, View.editable)
+
+      -- The column viewports host the editor, and are replaced below.
+
+      if View._cancelEdit then View._cancelEdit() end
+
       sort = View._sort
       View._sort = nil
       c = 0
@@ -543,6 +660,8 @@ gui.columnView = function(Options):table
                   end
                end
 
+               if View._updateEdit then View._updateEdit() end
+
                SizeVP.x = col.x + col.px_width - (MARGIN * 0.5)
                SizeVP.acDraw()
             end
@@ -620,74 +739,7 @@ gui.columnView = function(Options):table
             Item._highlightEvent(View, Item, Item is View.hItem)
          end
 
-         cx = 0
-         for col in values(View.columns) do
-            local attrib = col.attrib
-
-            if not item._col[attrib] then item._col[attrib] = { } end
-
-            if not col.checkBoxes and col.showIcons and item.icon then
-               try
-                  itemIconStyle(View, item)
-
-                  if not item._vectors.iconImage then
-                     item._vectors.iconImage = col.vecViewport.new('VectorRectangle', {
-                        name   = 'item_icon',
-                        fill   = item._iconFill,
-                        x      = (MARGIN * 2) - item._iconMargin,
-                        y      = y + ICON_OFFSET - item._iconMargin,
-                        width  = glIconSize + (item._iconMargin * 2),
-                        height = glIconSize + (item._iconMargin * 2),
-                        visibility = vis
-                     })
-                  else
-                     item._vectors.iconImage.{ y = y + ICON_OFFSET - item._iconMargin, visibility = vis }
-                  end
-               end
-            end
-
-            if col.checkBoxes then
-               cell = item._col[attrib]
-               if not cell.checkbox then
-                  cell.checkbox = col.vecViewport.new('VectorRectangle', {
-                     name=f'checkbox_{attrib}', width=col._checkboxSize, height=col._checkboxSize
-                  })
-                  item._vectors['_check_' .. attrib] = cell.checkbox
-               end
-
-               refreshCheckbox(View, item, col)
-            end
-
-            if not col.checkBoxes and item[attrib]?? then
-               if not item._col[attrib].text then
-                  item._col[attrib].text = col.vecViewport.new('VectorText', table.merge({
-                     name      = f'text_{attrib}',
-                     align     = col.align ?? 'left',
-                     y         = y + LINE_OFFSET,
-                     visibility = vis
-                  }, View.theme.list.text))
-                  item._vectors['_a_' .. attrib] = item._col[attrib].text -- Referenced for future termination
-               else
-                  item._col[attrib].text.y = y + LINE_OFFSET
-                  item._col[attrib].text.visibility = vis
-               end
-
-               if col.align is 'right' then
-                  item._col[attrib].text.x = col.px_width - MARGIN
-               else
-                  if col.showIcons then
-                     item._col[attrib].text.x = (MARGIN * 2) + glIconSize + (MARGIN * 2)
-                  else
-                     item._col[attrib].text.x = MARGIN
-                  end
-               end
-
-               item._col[attrib].text.string = columnText(item[attrib], col.type)
-               item._highlightEvent(View, item, false)
-            end
-
-            cx += col.px_width
-         end
+         updateCells(View, item)
 
          item._highlightEvent(View, item, item is View.hItem)
          if not item.hidden then
@@ -806,6 +858,69 @@ gui.columnView = function(Options):table
       end
    end
 
+   ----------------------------------------------------------------------------------------------------------------
+   -- In-place editing hooks; the session is managed by libview.  The editor is a child of the column viewport, which
+   -- clips it to the column and scrolls it with the page.  Its text starts where a left-aligned cell's text does; an
+   -- editor always holds left-aligned text, including in right-aligned columns.
+
+   vw._editGeometry = function(Item:table!, Attrib:str!):table
+      local col = vw.namedCol?[Attrib]
+      if not col or col.checkBoxes or not col.vecViewport or not Item._vectors?.viewport or (Item._y is nil) then
+         return
+      end
+      return {
+         host     = col.vecViewport,
+         textX    = col.showIcons ? (MARGIN * 2) + glIconSize + (MARGIN * 2) : MARGIN,
+         baseline = Item._y + LINE_OFFSET,
+         y        = Item._y,
+         height   = LINE_HEIGHT,
+         span     = { x = col.x, width = col.px_width },
+         theme    = { text = vw.theme.list.text }
+      }
+   end
+
+   vw._editTextVector = function(Item:table!, Attrib:str!):obj
+      return Item._col?[Attrib]?.text
+   end
+
+   vw._editCommitted = function(Item:table!, Attrib:str!)
+      local col = vw.namedCol?[Attrib]
+      if not col or not Item._col?[Attrib] then return end
+      updateCellText(vw, Item, col) -- Also creates the text of a cell that had no value
+      if Item._highlightEvent then Item._highlightEvent(vw, Item, Item is vw.hItem) end
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Tab walks the editable columns in display order.
+
+   vw._editOrder = function():array<any>
+      local order = array<str>
+      for col in values(vw.columns ?? { }) do
+         if vw._editableSet[col.attrib] and not col.checkBoxes then order.push(col.attrib) end
+      end
+      return order
+   end
+
+   -- A double-click on the text of an editable cell starts an edit and is claimed, so that the item is not activated.
+   -- Returns nil if the click is not on editable text.
+
+   function editClick(Item:table!, Input:table!):bool
+      for col in values(vw.columns) do
+         if (Input.x < col.x) or (Input.x >= col.x + col.px_width) then continue end
+         if col.checkBoxes or not vw._editableSet[col.attrib] then return end
+
+         local text = Item._col?[col.attrib]?.text
+         if not text or (text.visibility != VIS_VISIBLE) then return end
+
+         local _, _, _, width = text.mtGetBoundary(0)
+         local left = col.x + text.x - ((col.align is 'right') ? width : 0)
+         if (Input.x < left) or (Input.x >= left + width) then return end
+         if (Input.y < Item._y) or (Input.y >= Item._y + LINE_HEIGHT) then return end
+
+         return vw._beginEdit(Item, col.attrib, 'user')
+      end
+   end
+
    -- Use row hit testing for all checkbox columns, without per-cell input subscriptions.
 
    vw._itemClick = function(Item:table, Input:table):bool
@@ -841,6 +956,13 @@ gui.columnView = function(Options):table
 
             return true
          end
+      end
+
+      -- Sensitive views activate on the first click, so they are edited with F2 or editItem() only.
+
+      if (Input.value is 0) and (Input.flags has JTYPE_DBL_CLICK) and vw.editable and not vw.sensitive then
+         local result = editClick(Item, Input)
+         if result != nil then return result end
       end
 
       return false
@@ -882,8 +1004,51 @@ gui.columnView = function(Options):table
       return false
    end
 
+   -- Rows are laid out again in place after a structural change, e.g. removeItem(), so that the scroll position and an
+   -- open edit are kept.
+
+   vw._relayout = function()
+      rearrangeItems(vw)
+   end
+
+   -- Lays out the existing rows again after the client has changed the hidden field of items directly, e.g. to filter
+   -- a long list with one layout rather than one per item.  Cell content is not refreshed; see setItem().
+
+   vw.relayout = function()
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
+      vw._refreshLayout()
+   end
+
+   -- Updates the cells of an item in place.  The rows are laid out again only if the item was hidden or shown.
+
+   vw.setItem = function(Item:table!, KV:table!)
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
+      assert(vw.lookup[Item._id] is Item, 'Item does not belong to this view')
+
+      -- An external change to the edited value takes precedence over the user's edit.
+
+      if (vw._edit?.item is Item) and (KV[vw._edit.attrib] != nil) then vw._cancelEdit() end
+
+      local was_hidden = Item.hidden is true
+      for k, v in pairs(KV) do
+         Item[k] = v
+      end
+      vw._checkEdit()
+
+      if not vw.columns or not Item._vectors?.viewport then return end -- The row has not been built yet
+
+      updateCells(vw, Item)
+      Item._highlightEvent(vw, Item, Item is vw.hItem)
+      if (Item.hidden is true) != was_hidden then
+         vw._refreshLayout()
+         return -- Layout schedules the redraw; deselection callbacks may have freed the view.
+      end
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
    vw.setColumns = function(View:table!, Columns:any!)
       assert(View is vw, 'View does not match this columnview')
+      assertEditableColumns(Columns, View.editable)
       Options.columns = Columns
       setColumns(View, Columns)
       View.zones = { }

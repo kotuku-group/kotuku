@@ -552,13 +552,19 @@ end
 
    y = math.max(y, notes.viewport.y + notes.viewport.height) + gui.rpixel('20dp')
 
+   -- The column view shares its row with an editable list view on the right.  Names in the column view can also be
+   -- edited in place: double-click a name or press F2.
+
+   list_width = gui.rpixel('270dp')
+
    glView = gui.columnView({
       target      = viewport,
       textAttrib  = 'name',
       multiSelect = true,
+      editable    = array<str> { 'name' },
       x           = notes.viewport.x,
       y           = y,
-      xOffset     = win.margins.right,
+      xOffset     = win.margins.right + list_width + gui.sizing.widget.gap,
       height      = gui.rpixel('200pt'),
       events = {
          itemSelected = function(View, Reason, Item)
@@ -576,25 +582,63 @@ end
          end,
          itemChecked = function(View, Reason, Item, Column, Checked)
             print(f'{Item.name}: {Column.title} = {Checked} ({Reason})')
+         end,
+         itemEdited = function(View, Reason, Item, Attrib, Value, Old)
+            if Value.trim() is '' then
+               print('An item name cannot be empty.')
+               return false
+            end
+            print(f'Renamed "{Old}" to "{Value}" ({Reason})')
          end
       },
       items = {
-         { id=1, path='kotuku:system/', name='vegetables', included=true, icon='folders/folder' },
-         { id=2, path='kotuku:system/', name='cereals', included=false, icon='folders/folder' },
-         { id=3, path='kotuku:system/', name='apple.txt', included=true, icon='filetypes/text' },
-         { id=4, path='kotuku:system/', name='banana.jpg', included=false, icon='filetypes/text' },
-         { id=5, path='kotuku:system/', name='avocado.mp3', included=true, icon='filetypes/text' },
-         { id=6, path='kotuku:system/', name='cherry.txt', included=false, icon='filetypes/text' },
-         { id=7, path='kotuku:system/', name='fruit salad.dessert', included=false, icon='filetypes/text' },
-         { id=8, path='kotuku:system/', name='Lemon Mint.doc', included=false, icon='filetypes/text' },
-         { id=9, path='kotuku:system/', name='miso-soup.txt', included=false, icon='filetypes/text' }
+         { id=1, path='kotuku:system/', name='the column', included=true, icon='folders/folder' },
+         { id=2, path='kotuku:system/', name='view supports', included=false, icon='folders/folder' },
+         { id=3, path='kotuku:system/', name='checkboxes and', included=true, icon='filetypes/text' },
+         { id=4, path='kotuku:system/', name='built-in editing', included=false, icon='filetypes/text' },
+         { id=5, path='kotuku:system/', name='features.  Click', included=true, icon='filetypes/text' },
+         { id=6, path='kotuku:system/', name='the column headers', included=false, icon='filetypes/text' },
+         { id=7, path='kotuku:system/', name='to sort the', included=false, icon='filetypes/text' },
+         { id=8, path='kotuku:system/', name='columns', included=false, icon='filetypes/text' }
       },
       columns = {
          { attrib='included', title='Check', width=4, checkBoxes=true, align='center' },
-         { attrib='name',     title='Name', width=10, showIcons=true }
+         { attrib='name',     title='Description', width=12, showIcons=true }
       }
    })
 
+   -- Items in the list view can be renamed in place: double-click a name, or press F2 on the selected item.  Enter
+   -- commits the new name, Escape cancels, and Tab or the arrow keys move the editor to the next or previous item.
+
+   glList = gui.listView({
+      target     = viewport,
+      textAttrib = 'name',
+      editable   = array<str> { 'name' },
+      xOffset    = win.margins.right,
+      y          = y,
+      width      = list_width,
+      height     = gui.rpixel('200pt'),
+      events = {
+         editStart = function(View, Item, Attrib)
+            print(f'Editing "{Item.name}"')
+         end,
+         itemEdited = function(View, Reason, Item, Attrib, Value, Old)
+            if Value.trim() is '' then
+               print('An item name cannot be empty.')
+               return false
+            end
+            print(f'Renamed "{Old}" to "{Value}" ({Reason})')
+         end
+      },
+      items = {
+         { id=1, name='Double click', icon='office/tasks' },
+         { id=2, name='text in', icon='folders/folder' },
+         { id=3, name='the view', icon='filetypes/text' },
+         { id=4, name='if you would', icon='folders/folder' },
+         { id=5, name='like to test', icon='filetypes/text' },
+         { id=6, name='text editing', icon='filetypes/text' }
+      }
+   })
 
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
