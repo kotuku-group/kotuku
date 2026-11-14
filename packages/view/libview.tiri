@@ -2,7 +2,7 @@
 
 @Package(name="gui/view", version="1.0")
 
-   import 'gui', 'gui/scrollbar'
+   import 'gui', 'gui/input', 'gui/scrollbar'
 
    namespace gui
 
@@ -524,6 +524,12 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    local scroll_direction = Options.scrollDirection ?? 'all'
    assert(scroll_direction is 'all' or scroll_direction is 'vertical' or scroll_direction is 'horizontal',
       'scrollDirection must be all, vertical or horizontal')
+   assert(Options.editable is nil or Options.editable is <array str>, 'editable must be an array<str>')
+
+   local editable_set = { }
+   if Options.editable then
+      for attrib in values(Options.editable) do editable_set[attrib] = true end
+   end
 
    vw = entity {
       lookup     = { }, -- Lookup items by ID
@@ -551,6 +557,10 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       theme      = nil,
       showIcons  = Options.showIcons != false,
       events          = Options.events ?? {},
+      editable        = Options.editable, -- Attributes that the user can edit in place
+      editing         = nil, -- { item, attrib } while an edit is open.  Read-only.
+      _editableSet    = editable_set,
+      _edit           = nil, -- The open editing session
       top             = { },
       totalTop        = 0,
       scrollDirection = scroll_direction,
@@ -655,6 +665,322 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       end
    end
 
+   -------------------------------------------------------------------------------------------------------------------
+   -- In-place editing.  One session per view is held in vw._edit:
+   --
+   --   { item, attrib, input (gui.input), oldValue, tabKeys (keyboard registration), ending }
+   --
+   -- The implementation supplies the geometry, so that the session is shared by every view:
+   --
+   --   vw._editGeometry(Item, Attrib) returns { host, textX, baseline, y, height, theme }, or nil if the cell cannot
+   --     be edited.  The editor is placed in the host viewport so that its text starts at textX on the given
+   --     baseline (optional), and it reaches the host's right edge.  Theme is merged over the input theme, then
+   --     EDIT_BOX_THEME is applied so that the edit box has no fill or stroke of its own.  The implementation
+   --     calls vw._updateEdit() after a layout, so that the editor follows changes to the geometry.
+   --   vw._editTextVector(Item, Attrib) returns the vector that the editor covers.  It is hidden during the edit.
+   --   vw._editCommitted(Item, Attrib) redraws a cell after an accepted value has been written to the item.
+
+   -- The editor draws only its text and cursor over the row, so the input box is stripped of its fill and stroke in
+   -- every state.
+
+   local EDIT_BOX_THEME <const> = {
+      bkgd  = { fill = 'none', stroke = 'none' },
+      focus = { fill = 'none', stroke = 'none' }
+   }
+
+   function editableItem(Item:table, Attrib:str):bool
+      return Attrib != nil and vw._editableSet[Attrib] is true and selectionEligible(vw, Item) and
+         not Item.insensitive
+   end
+
+   -- The raw value of an attribute as the editor's text.  Table values are edited through their value key.
+
+   function rawEditValue(Item:table!, Attrib:str!):str
+      local value = Item[Attrib]
+      if value is <table> then value = value.value end
+      return value is nil ? '' : tostring(value)
+   end
+
+   function editTextVector(Item:table!, Attrib:str!):obj
+      if vw._editTextVector then return vw._editTextVector(Item, Attrib) end
+   end
+
+   -- Releases a session without client events.  The focus returns to the view if the editor holds it, unless
+   -- KeepFocus is set because another edit is about to start.  Destroying is set while the view's viewport is being
+   -- freed: the editor is then released with its row, and nothing is redrawn.
+
+   function closeEdit(Session:table!, KeepFocus:bool, Destroying:bool)
+      Session.ending = true
+      if vw._edit is Session then
+         vw._edit   = nil
+         vw.editing = nil
+      end
+
+      Session.tabKeys?.unsubscribe()
+      Session.tabKeys = nil
+
+      if Destroying then return end
+
+      local editor = Session.input
+      if editor?.viewport then
+         if editor._focus and not KeepFocus then vw.viewport?.acFocus() end
+         editor.viewport.visibility = VIS_HIDDEN
+
+         -- The editor cannot be freed here, because the session can end inside its own keyboard callback.
+
+         local editor_id = editor.viewport.id
+         processing.delayedCall(function()
+            obj.find(editor_id)?.free()
+         end)
+      end
+
+      local text = editTextVector(Session.item, Session.attrib)
+      text?.visibility = VIS_VISIBLE
+      vw.viewport?.acDraw()
+   end
+
+   -- Abandons the open edit without client events.  Used when the edited item, the view's contents or the view
+   -- itself change in a way that makes the edit obsolete.
+
+   function cancelEdit(Destroying:bool)
+      local session = vw._edit
+      if session then closeEdit(session, false, Destroying) end
+   end
+
+   vw._cancelEdit = cancelEdit
+
+   -- Cancels the open edit if its item can no longer be edited, e.g. because it was hidden or made insensitive.
+
+   vw._checkEdit = function()
+      local session = vw._edit
+      if session and not editableItem(session.item, session.attrib) then cancelEdit() end
+   end
+
+   -- Aligns the editor's text with the cell's text, and fits the editor to the cell's height.
+
+   function placeEditor(Editor:table!, Geometry:table!)
+      Editor.viewport.{
+         x      = Geometry.textX - (Editor._textClip.x + Editor.text.x),
+         y      = Geometry.y,
+         height = Geometry.height
+      }
+      if Geometry.baseline then Editor.text.y = Geometry.baseline - Geometry.y - Editor._textClip.y end
+   end
+
+   -- Called by the implementation after a layout.  The edit is cancelled if its cell can no longer be edited.
+
+   vw._updateEdit = function()
+      local session = vw._edit
+      if not session or session.ending then return end
+      local geometry = editableItem(session.item, session.attrib) and
+         vw._editGeometry(session.item, session.attrib) or nil
+      if geometry then
+         placeEditor(session.input, geometry)
+      else
+         cancelEdit()
+      end
+   end
+
+   -- Ends the open edit.  When committing a changed value, itemEdited() can reject it by returning false.  A
+   -- rejection keeps the editor open if KeepOnReject is set (keyboard and manual commits); otherwise the user's text
+   -- is discarded.  Returns true if the edit ended.
+
+   function endEdit(Commit:bool, Reason:str!, KeepOnReject:bool, KeepFocus:bool):bool
+      local session = vw._edit
+      if not session or session.ending then return false end
+      session.ending = true
+
+      local item     = session.item
+      local attrib   = session.attrib
+      local value    = session.input.getText()
+      local accepted = false
+
+      if Commit and value != session.oldValue then
+         local result:any
+         try
+            result = vw.events?.itemEdited(vw, Reason, item, attrib, value, session.oldValue)
+         except e
+            -- A failed callback is treated as a rejection before the exception is passed on, so that the session
+            -- is not left in its ending state.
+
+            if vw._edit is session then
+               if KeepOnReject then
+                  session.ending = false
+               else
+                  closeEdit(session, KeepFocus)
+               end
+            end
+            raise
+         end
+         if vw._edit != session then return false end -- The callback ended the edit or released the view
+         if result is false then
+            if KeepOnReject then
+               session.ending = false
+               return false
+            end
+         else
+            accepted = true
+         end
+      end
+
+      closeEdit(session, KeepFocus)
+
+      if accepted and vw.lookup[item._id] is item then
+         if item[attrib] is <table> then
+            item[attrib].value = value
+         else
+            item[attrib] = value
+         end
+         if vw._editCommitted then vw._editCommitted(item, attrib) end
+      end
+      return true
+   end
+
+   -- Finds the next or previous editable cell.  Tab steps through the editable attributes of a row before moving to
+   -- the next row, while Up and Down keep the attribute.  Hidden and insensitive rows are skipped.
+
+   function adjacentEditCell(Item:table!, Attrib:str!, Step:num!, AcrossAttribs:bool):<table, str>
+      local attribs = vw.editable
+
+      if AcrossAttribs then
+         local index = attribs.indexOf(Attrib)
+         if index != nil then
+            local next_index = index + Step
+            if next_index >= 0 and next_index < #attribs and editableItem(Item, attribs[next_index]) then
+               return Item, attribs[next_index]
+            end
+         end
+      end
+
+      local row:num
+      for i in {0 to #vw.items} do
+         if vw.items[i] is Item then row = i; break end
+      end
+      if row is nil then return nil, nil end
+
+      local target_attrib = AcrossAttribs ? (Step > 0 ? attribs[0] : attribs[#attribs - 1]) : Attrib
+      row += Step
+      while row >= 0 and row < #vw.items do
+         local item = vw.items[row]
+         if editableItem(item, target_attrib) and vw._editGeometry(item, target_attrib) then
+            return item, target_attrib
+         end
+         row += Step
+      end
+      return nil, nil
+   end
+
+   -- Starts an edit.  Any open edit is committed first.  Returns true if the editor is open on the requested cell.
+
+   function beginEdit(Item:table, Attrib:str, Reason:str!):bool
+      if vw.disabled or vw._dispatching or not vw._editGeometry then return false end
+      if not editableItem(Item, Attrib) or not vw._editGeometry(Item, Attrib) then return false end
+
+      -- An editor that is replaced keeps the focus for its successor, which must be returned to the view if no
+      -- successor opens.
+
+      local replaced = false
+      local function refuse():bool
+         if replaced and not vw._edit then vw.viewport?.acFocus() end
+         return false
+      end
+
+      if vw._edit then
+         if (vw._edit.item is Item) and (vw._edit.attrib is Attrib) then return true end
+         if not endEdit(true, Reason, true, true) then return false end
+         if not vw.viewport then return false end
+         replaced = true
+      end
+
+      if vw.events?.editStart(vw, Item, Attrib) is false then return refuse() end
+
+      -- The client may have changed the view during editStart()
+
+      if not vw.viewport or vw._edit or vw.disabled or not editableItem(Item, Attrib) then return refuse() end
+
+      navigateTo(Item)
+
+      local geometry = vw._editGeometry(Item, Attrib)
+      geometry ?! return refuse()
+
+      local session = { item = Item, attrib = Attrib, oldValue = rawEditValue(Item, Attrib), ending = false }
+
+      session.input = gui.input({
+         target    = geometry.host,
+         x         = 0,
+         y         = geometry.y,
+         xOffset   = 0,
+         height    = geometry.height,
+         text      = session.oldValue,
+         selectAll = true,
+         theme     = table.merge(geometry.theme, EDIT_BOX_THEME, true, true),
+         events    = {
+            keypress = function(Event)
+               if vw._edit != session or session.ending then return end
+               local code = Event.value
+               if (code is KEY_ENTER) or (code is KEY_NP_ENTER) then
+                  endEdit(true, 'user', true)
+                  return KRES_HANDLED
+               elseif code is KEY_ESCAPE then
+                  if not (Event.qualifiers has KQ_REPEAT) then endEdit(false, 'user') end
+                  return KRES_HANDLED
+               elseif (code is KEY_UP) or (code is KEY_DOWN) then
+                  local item, attrib = adjacentEditCell(Item, Attrib, code is KEY_UP ? -1 : 1, false)
+                  if item and endEdit(true, 'user', true, true) then
+                     if not beginEdit(item, attrib, 'user') then vw.viewport?.acFocus() end
+                  end
+                  return KRES_HANDLED
+               end
+            end,
+            lostFocus = function()
+               if (vw._edit is session) and not session.ending then endEdit(true, 'user', false) end
+            end
+         }
+      })
+
+      local editor = session.input
+      placeEditor(editor, geometry)
+
+      -- Tab is used for focus traversal before ordinary keyboard subscribers see it, so it is taken through a
+      -- registration scoped to the editor.  The release is consumed as well, so that it does not reach the view.
+
+      session.tabKeys = input.keyboard(editor._editView, function(Handle, SurfaceID, Qualifiers, Code, Unicode)
+         if Code != KEY_TAB then return end
+         if (Qualifiers has KQ_PRESSED) and (vw._edit is session) and not session.ending then
+            local item, attrib = adjacentEditCell(Item, Attrib, (Qualifiers has KQ_SHIFT) ? -1 : 1, true)
+            if endEdit(true, 'user', true, item != nil) and item then
+               if not beginEdit(item, attrib, 'user') then vw.viewport?.acFocus() end
+            end
+         end
+         return KRES_HANDLED
+      end)
+
+      vw._edit   = session
+      vw.editing = { item = Item, attrib = Attrib }
+      local text = editTextVector(Item, Attrib)
+      text?.visibility = VIS_HIDDEN
+      editor._editView.acFocus()
+      vw.viewport.acDraw()
+      return true
+   end
+
+   -- Opens an editor on an attribute of an item.  Attrib defaults to the first editable attribute.
+
+   vw.editItem = function(Item:table!, Attrib:str):bool
+      assertStructural()
+      return beginEdit(Item, Attrib ?? vw.editable?[0], 'manual')
+   end
+
+   -- Ends the open edit, committing the value if Commit is true.  A commit that itemEdited() rejects leaves the editor
+   -- open and returns false.
+
+   vw.endEdit = function(Commit:bool):bool
+      assertStructural()
+      return endEdit(Commit is true, 'manual', true)
+   end
+
+   vw._beginEdit = beginEdit
+
    vw.addItem = function(Item)
       assert(Item, 'No Item provided')
       vw.addItems({ Item })
@@ -745,6 +1071,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    -- if a selection callback replaced the contents or destroyed the view.
 
    vw._reconcile = function():bool
+      vw._checkEdit()
       if not selectionTransaction(vw, currentSelection(vw), vw.sItem, vw.selectionAnchor,
          'manual', vw.activeItem) then return false end
       if vw.hItem and not selectionEligible(vw, vw.hItem) then highlightItem(vw, nil) end
@@ -778,6 +1105,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    vw._afterLayout = afterLayout
 
    vw.disable = function()
+      cancelEdit()
       vw.disabled = true
       vw?._stateChanged()
    end
@@ -813,6 +1141,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    function clearContents():<bool, any>
       if vw._clearing then return nil, nil end
       vw._clearing = true
+      cancelEdit()
 
       highlightItem(vw, nil)
       setKeyboardTarget(vw, nil)
@@ -897,6 +1226,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       assertStructural()
 
       if vw.lookup[Item._id] != Item then return end
+      if vw._edit?.item is Item then cancelEdit() end
       if Item is vw.hItem then highlightItem(vw, nil) end
       if Item is vw.kItem then setKeyboardTarget(vw, nil) end
 
@@ -1036,6 +1366,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       if vw._freeing then return end
       assertStructural()
       vw._freeing = true
+      cancelEdit()
 
       failure:any
       try
@@ -1060,6 +1391,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
 
    vw.setItem = function(Item:table!, KV:table!)
       assertStructural()
+      if vw._edit?.item is Item and KV[vw._edit.attrib] != nil then cancelEdit() end
       for k, v in pairs(KV) do
          Item[k] = v
       end
@@ -1164,6 +1496,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    -- row heights and column widths are not changed.
 
    function restyle()
+      cancelEdit()
       gui.styleRectangle(vw.bkgd, vw.theme.page.bkgd, bkgd_defaults)
       if vw.border then gui.styleRectangle(vw.border, vw.theme.page.border, border_defaults) end
 
@@ -1275,6 +1608,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    -- while the row viewports remain valid.  The graphics are released by the parent.
 
    vw.viewport.subscribe('free', function()
+      cancelEdit(true)
       clearDropFeedback(vw, true)
       vw._modifierKeyboard?.unsubscribe()
       vw._modifierKeyboard = nil
@@ -1300,10 +1634,16 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    end)
 
    vw.viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
+      -- Keys typed into an open editor are also delivered to the view, which must not act on them.
+
+      if vw._edit then return end
+
       if (Qualifiers has KQ_PRESSED) and not vw.disabled then
          if vw._keyEvent and vw._keyEvent(Qualifiers, Code, Unicode) then return end
 
-         if (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) then
+         if (Code is KEY_F2) and vw.editable then
+            if vw.kItem then beginEdit(vw.kItem, vw.editable[0], 'user') end
+         elseif (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) then
             selectHighlighted(true, Qualifiers)
          elseif Code is KEY_A and (Qualifiers has KQ_CTRL) then
             if vw.multiSelect then

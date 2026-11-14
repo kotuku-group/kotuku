@@ -48,6 +48,16 @@ gui.listView = function(Options:table!):table
    assert(Options.rowSpacing is nil or (isFinite(Options.rowSpacing) and Options.rowSpacing >= 0),
       'rowSpacing must be a finite non-negative number')
 
+   -- A row has one text, so textAttrib is the only attribute that can be edited.  The list does not know where a
+   -- constructItem() callback draws its text, so custom rows cannot be edited.  gui.initView() checks the type.
+
+   if Options.editable is <array str> then
+      assert(lContentHook is nil, 'editable cannot be combined with constructItem')
+      for attrib in values(Options.editable) do
+         assert(attrib is lTextAttrib, f'editable attribute "{attrib}" must be the textAttrib "{lTextAttrib}"')
+      end
+   end
+
    function validateItems(Items)
       if not Items then return end
       for item in values(Items) do validateRowHeight(item.rowHeight) end
@@ -160,18 +170,22 @@ gui.listView = function(Options:table!):table
             Item._vectors.text = vp.new('VectorText', table.merge({ align = 'left' }, View.theme.list.text))
          end
 
+         -- The text stays hidden while it is covered by an editor.
+
          text = Item._vectors.text
          text.{
             x          = m.margin + icon_margin,
             string     = tostring(label),
             fill       = Item.fill ?? View.theme.list.text.fill,
-            visibility = VIS_VISIBLE
+            visibility = (View._edit?.item is Item) ? VIS_HIDDEN : VIS_VISIBLE
          }
 
          err, bx, by, bw, bh = text.mtGetBoundary(0)
          width += bw
-      elseif Item._vectors.text then
-         Item._vectors.text.visibility = VIS_HIDDEN
+         Item._textWidth = bw
+      else
+         Item._textWidth = 0
+         if Item._vectors.text then Item._vectors.text.visibility = VIS_HIDDEN end
       end
 
       Item._contentWidth = width + m.margin
@@ -351,6 +365,7 @@ gui.listView = function(Options:table!):table
       end
 
       notifyRowGeometry(View)
+      if View._updateEdit then View._updateEdit() end -- The editor follows its row's geometry
    end
 
    -------------------------------------------------------------------------------------------------------------------
@@ -536,6 +551,51 @@ gui.listView = function(Options:table!):table
 
    vw._preserveScroll = true
 
+   ----------------------------------------------------------------------------------------------------------------
+   -- In-place editing hooks; the session is managed by libview.  The editor is a child of the row viewport, so it
+   -- moves with the row.  Its text starts where the row's text does, and it reaches the right edge of the row.
+
+   vw._editGeometry = function(Item:table!, Attrib:str!):table
+      if (Attrib != lTextAttrib) or lContentHook or not Item._rowReady then return end
+      local m = vw._metrics
+      local height = Item.rowHeight ?? m.rowHeight
+      return {
+         host     = Item._vectors.viewport,
+         textX    = m.margin + (vw.showIcons ? m.iconSize + m.margin : 0),
+         baseline = math.round((height + m.ascent) * 0.5), -- As positionDefaultContent()
+         y        = 0,
+         height   = height,
+         theme    = { text = vw.theme.list.text }
+      }
+   end
+
+   vw._editTextVector = function(Item:table!, Attrib:str!):obj
+      return Item._vectors?.text
+   end
+
+   vw._editCommitted = function(Item:table!, Attrib:str!)
+      refreshRow(vw, Item)
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- A double-click on the text of an editable item starts an edit and is claimed, so that the item is not
+   -- activated.  A double-click elsewhere in the row activates as normal.  Sensitive views activate on the first
+   -- click, so they are edited with F2 or editItem() only.
+
+   vw._itemClick = function(Item:table, Input:table):bool
+      if (Input.value != 0) or not (Input.flags has JTYPE_DBL_CLICK) then return false end
+      if vw.sensitive or not vw.editable or not Item then return false end
+
+      local text = Item._vectors?.text
+      if not text or (text.visibility != VIS_VISIBLE) then return false end
+
+      local left = Item._x + text.x
+      if (Input.x < left) or (Input.x >= left + (Item._textWidth ?? 0)) then return false end
+      if (Input.y < Item._y) or (Input.y >= Item._y + Item._height) then return false end
+
+      return vw._beginEdit(Item, lTextAttrib, 'user')
+   end
+
    -- Redraws every row for the current theme.  Built-in content is recoloured and its icons rebuilt; custom content
    -- receives 'update'.  Fonts and row metrics are not changed.  The rows are laid out once at the end, because the
    -- width of built-in content can change with the icons.
@@ -568,6 +628,7 @@ gui.listView = function(Options:table!):table
    vw.refreshItem = function(Item:table!)
       assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       assert(vw.lookup[Item._id] is Item, 'Item does not belong to this view')
+      vw._checkEdit() -- The client may have made the edited item ineligible, e.g. insensitive
       refreshRow(vw, Item)
       vw.scene.surface.mtScheduleRedraw()
    end
@@ -580,11 +641,16 @@ gui.listView = function(Options:table!):table
       end
       validateRowHeight(KV.rowHeight is nil ? Item.rowHeight : KV.rowHeight)
 
+      -- An external change to the edited value takes precedence over the user's edit.
+
+      if (vw._edit?.item is Item) and (KV[vw._edit.attrib] != nil) then vw._cancelEdit() end
+
       was_hidden = Item.hidden is true
       old_height = Item.rowHeight
       for k, v in pairs(KV) do
          Item[k] = v
       end
+      vw._checkEdit()
 
       refreshRow(vw, Item)
       if ((Item.hidden is true) != was_hidden) or (Item.rowHeight != old_height) then vw._refreshLayout() end

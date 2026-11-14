@@ -382,6 +382,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.columnView = function(Options):table
+   assert(Options.editable is nil, 'editable is not yet supported by column views')
+
    function setColumns(View:table!, Columns)
       sort = View._sort
       View._sort = nil

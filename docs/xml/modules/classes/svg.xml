@@ -154,9 +154,16 @@ active scope so that values can be forwarded, e.g. <code>&lt;param name=&quot;co
         <param type="CLASSID" name="ClassID">The Image class to use for encoding the image data.</param>
       </input>
       <description>
-<p>This action will render the SVG document to a bitmap and save the resulting image.  The size of the image is determined by the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> of the <fl>Scene</fl>, or if not defined, the default of 1920x1080 is applied.</p>
+<p>This action renders the SVG document at its native size and saves the result.  The native size is the width and height of the root viewport, else its view box, else 1920x1080.  Fractional sizes are rounded up.  Areas that the document does not paint are transparent.  If the SVG has a <fl>Target</fl>, a private copy of the document is rendered, as described for <method>Render</method>.</p>
 <p>The image will be saved in PNG format by default, but can be changed by specifying an alternate <code>ClassID</code>.  PNG is recommended in particular because it supports an alpha channel.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoData">The document has no root viewport.</error>
+        <error code="NoSupport">The SVG has a <fl>Target</fl>, and its document was not supplied through <fl>Path</fl> or <fl>Statement</fl>.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
@@ -222,12 +229,12 @@ active scope so that values can be forwarded, e.g. <code>&lt;param name=&quot;co
         <param type="INT" name="Height">Desired height of the rendered output in pixels.</param>
       </input>
       <description>
-<p>This method executes complete rasterisation of the SVG scene graph, producing a pixel-based representation within the specified target bitmap.  The rendering process handles all vector elements, gradients, filters, and effects with full anti-aliasing and precision.</p>
-<p>The rendered output is positioned at coordinates <code>(X,Y)</code> within the target bitmap and scaled to the specified <code>(Width,Height)</code> dimensions.  The scaling operation maintains aspect ratios and applies appropriate filtering to ensure optimal visual quality.</p>
-<p>The scene's page dimensions are temporarily adjusted to match the specified width and height, ensuring that the entire document content is properly scaled and positioned within the target area.  This approach enables flexible rendering at arbitrary resolutions without affecting the original scene graph.</p>
+<p>This method rasterises the SVG document into the <code>(X, Y, Width, Height)</code> area of the target bitmap.  The rendering process handles all vector elements, gradients, filters, and effects with full anti-aliasing and precision.</p>
+<p>The document is scaled uniformly from its native size to fit the area, preserving its aspect ratio, and is centred within it.  The native size is the width and height of the root viewport, else its view box, else 1920x1080.  Output is clipped to the area and to the bitmap's clip region.  The document is drawn over the existing content of the bitmap, which is not cleared first.</p>
+<p>The SVG object's scene is restored after drawing, so rendering does not affect the scene graph or a later draw.  If the SVG has a <fl>Target</fl>, it shares the client's scene; a private copy of the document is parsed from the <fl>Path</fl> or <fl>Statement</fl> and drawn instead, so the client's content is not included.  The copy uses the same parameters and <fl>Colour</fl> and starts at the beginning of any animation.</p>
 <p><b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may require significant processing time.  Consider using appropriate dimensions that balance quality requirements with performance constraints.</p>
       </description>
-      <tags>blocking, mutates-object, mutates-input</tags>
+      <tags>blocking, mutates-input</tags>
     </method>
 
   </methods>

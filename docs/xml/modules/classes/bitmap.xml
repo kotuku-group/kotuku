@@ -35,7 +35,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="LockFailed">Failed to lock a required resource</error>
+        <error code="NotInitialised">The bitmap has not been initialised.  Use the <code>CLEAR</code> flag to clear a new bitmap.</error>
       </result>
     </action>
 
