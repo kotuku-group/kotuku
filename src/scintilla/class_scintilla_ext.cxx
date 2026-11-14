@@ -1274,7 +1274,7 @@ void ScintillaKTK::panRedraw()
 }
 
 /*********************************************************************************************************************
-** Called on initialisation and whenever the TextStyle or device scale changes.  All styles share the definition
+** Called on initialisation and whenever the FontStyle or device scale changes.  All styles share the definition
 ** and pixel size; weight and italic attributes remain specific to each style.  The definition is passed as the font
 ** name and decoded by PanFont.
 */
@@ -1286,7 +1286,7 @@ void ScintillaKTK::panFontChanged()
 
    const int size = int(std::lround(scintilla->FontSize * scintilla->Scale * 72.0 * SC_FONT_SIZE_MULTIPLIER / 96.0));
    for (size_t style = 0; style < vs.styles.size(); style++) {
-      SendScintilla(SCI_STYLESETFONT, style, scintilla->TextStyle.c_str());
+      SendScintilla(SCI_STYLESETFONT, style, scintilla->FontStyle.c_str());
       SendScintilla(SCI_STYLESETSIZEFRACTIONAL, style, size);
    }
    this->InvalidateStyleRedraw();

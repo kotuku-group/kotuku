@@ -32,7 +32,7 @@ property having a value of `none`.  A font can also be excluded by setting `Kern
 `fonts:options.cfg`.
 
 Single, multiple, alternate, ligature and contextual OpenType substitutions are available through the `features` key
-of #TextStyle for Latin, Greek and Cyrillic text, using the font's default language system.  As in web browsers,
+of #MergeStyle for Latin, Greek and Cyrillic text, using the font's default language system.  As in web browsers,
 glyph composition and decomposition (`ccmp`), required variation alternates (`rvrn`), localised forms (`locl`),
 standard and contextual ligatures (`liga`, `clig`), contextual alternates (`calt`) and mark-to-base positioning
 (`mark`) are enabled by default.  Other features, such as `tnum`, `smcp` and `frac`, are opt-in.  The defaults apply
@@ -276,9 +276,9 @@ class extVectorText : public extVector {
    std::string txAlias;  // The alias that txFamily was resolved through, if any
    std::string txFontStyle;
    std::string txFontSizeString;
-   std::string txTextStyle;  // Storage for reading the TextStyle field
+   std::string txMergeStyle;  // Storage for reading the MergeStyle field
    std::string txCaretFill;
-   font_def txDefinition;    // Keys of the last TextStyle values.  Sole store for line height and spacing
+   font_def txDefinition;    // Current font definition.  Sole store for line height and spacing
    objVectorFilter *txEffects = nullptr; // Built from the shadow, glow and blend keys
    double txEffectMargin = 0; // The reach of the effects beyond the text's bounds
    bool txEffectsPending = false;
@@ -441,7 +441,7 @@ static const int * text_fill_gamma(extVector *Vector)
 //********************************************************************************************************************
 static constexpr auto glTextDecorationFlags = VTXF::UNDERLINE|VTXF::OVERLINE|VTXF::LINE_THROUGH;
 
-// The length fields are shortcuts for the equivalent TextStyle keys.  A scaled Unit is relative to the font size,
+// The length fields are shortcuts for the equivalent MergeStyle keys.  A scaled Unit is relative to the font size,
 // and corresponds to a key in the unit given by ScaledUnit.
 
 static void get_length_unit(extVectorText *Self, const std::optional<font_length> &Length, Unit &Value)
@@ -1418,9 +1418,9 @@ static ERR TEXT_SET_FontSize(extVectorText *Self, const std::string_view &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-TextStyle: A portable font definition that describes the complete appearance of the text.
+MergeStyle: A portable font definition that describes the complete appearance of the text.
 
-TextStyle reads and writes the whole font selection as a single string, for instance
+MergeStyle reads and writes the whole font selection as a single string, for instance
 `face=Noto Sans; size=15px; weight=650; fill=#1d2433; shadow=3px 4px 0 rgba(0,0,0,0.4)`.  The keys are listed in the
 Font Definitions manual, and ~Vector.NormaliseTextStyle() can be used to validate them.  The field can be set before
 or after initialisation.
@@ -1433,7 +1433,7 @@ settings are unchanged.
 
 The `decoration` key accepts a space-separated list of `underline`, `overline` and `line-through`, or `none` on its
 own.  A list is returned in that order and replaces only the three decoration bits in #TextFlags.  An absent key
-leaves those bits unchanged; direct changes to #TextFlags are reflected when reading #TextStyle.
+leaves those bits unchanged; direct changes to #TextFlags are reflected when reading #MergeStyle.
 The `lineWeight` key sets #LineWeight using a non-negative length in `px`, `pt` or `em`; a unitless number is in
 pixels.  An `em` weight follows #FontSize.  Zero restores the font's thickness and removes `lineWeight` from readback.
 
@@ -1447,7 +1447,7 @@ them.  Single, multiple, alternate, ligature and contextual substitutions are su
 Cyrillic script runs.  Other scripts retain their direct character mapping.  The features `ccmp`, `rvrn`, `locl`,
 `liga`, `clig`, `calt` and `mark` are enabled by default; other features require an explicit request.  A value of
 zero disables a feature, e.g. `features=liga 0, calt 0`, and `features=none` disables every substitution and mark
-positioning.  The defaults are not part of the definition, so reading #TextStyle returns only the features that were
+positioning.  The defaults are not part of the definition, so reading #MergeStyle returns only the features that were
 stated.  ~Vector.GetFontFeatures() lists the features that a face provides.  For an alternate
 substitution, a value of N selects alternate N, starting at one; an unavailable alternate leaves the glyph
 unchanged.  `features=kern 0` disables pair kerning, while `features=none` leaves kerning controlled by #TextFlags
@@ -1478,7 +1478,7 @@ fields such as #Face and #FontSize.  The result can be assigned to another Vecto
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_TextStyle(extVectorText *Self, std::string_view &Value)
+static ERR TEXT_GET_MergeStyle(extVectorText *Self, std::string_view &Value)
 {
    font_def def = Self->txDefinition;
    def.style = parse_font_style(kt::font_traits::style_part(Self->txFontStyle));
@@ -1530,26 +1530,27 @@ static ERR TEXT_GET_TextStyle(extVectorText *Self, std::string_view &Value)
       }
    }
 
-   Self->txTextStyle = def.serialise();
-   Value = Self->txTextStyle;
+   Self->txMergeStyle = def.serialise();
+   Value = Self->txMergeStyle;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value)
+static ERR apply_text_style(extVectorText *Self, const std::string_view &Value, bool Merge)
 {
    kt::Log log;
 
    font_def def;
    if (auto error = parse_font_def(log, Value, def); error != ERR::Okay) return log.warning(error);
 
-   auto spec = parse_font_style(kt::font_traits::style_part(Self->txFontStyle));
-
-   font_def merged;
-   merged.style = std::move(spec);
-   merged.style.warnings.clear();
-   merged.merge(def);
-   auto style = merged.style_string();
-   Self->txFontStyle = style.empty() ? "Regular" : style;
+   if (Merge) {
+      font_def merged;
+      merged.style = parse_font_style(kt::font_traits::style_part(Self->txFontStyle));
+      merged.style.warnings.clear();
+      merged.merge(def);
+      auto style = merged.style_string();
+      Self->txFontStyle = style.empty() ? "Regular" : style;
+   }
+   else Self->txFontStyle = Value.empty() ? "Regular" : Value;
 
    if (def.size) {
       Self->change_font_size(std::max(1.0, std::round(def.size->pixels(0))));
@@ -1608,6 +1609,11 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
    return ERR::Okay;
 }
 
+static ERR TEXT_SET_MergeStyle(extVectorText *Self, const std::string_view &Value)
+{
+   return apply_text_style(Self, Value, true);
+}
+
 /*********************************************************************************************************************
 -FIELD-
 FontStyle: Determines font styling.
@@ -1659,25 +1665,28 @@ For fonts that are not variable, the family's file that is the nearest match is 
 order of width, then italic, then weight.  For instance, `weight=SemiBold` on a family that has no semi-bold file
 resolves to `Bold`.  Axis tags are ignored and no synthetic styles are produced.
 
-A complete font definition, as described for #TextStyle, is also accepted.  Only its style keys are used, and the
-face, size and paint keys have no effect.  `style=Semi Bold` is an explicit spelling of a leading style name.
+A complete font definition, as described for #MergeStyle, is also accepted.  Both fields apply the same keys,
+including face, size, paint, spacing, decorations, effects and OpenType features.  `style=Semi Bold` is an explicit
+spelling of a leading style name.  FontStyle can be set before or after initialisation.
 
-Errors are not returned if a style name or descriptor is invalid or unavailable.  Invalid descriptors are reported as
-warnings in the log and otherwise ignored.
+Assignment replaces the font-selection descriptors; use #MergeStyle to retain descriptors omitted from an assignment.
+Other definition keys update only when declared.  An empty string restores the `Regular` style without changing
+other settings.  Reading FontStyle returns the same canonical current-state definition as #MergeStyle, including
+changes made through fields such as #Face, #FontSize and #Fill.
+
+Malformed known values return `ERR::Syntax` without changing the settings.  Unknown descriptors are logged and ignored;
+unavailable style names use the font family's fallback selection.
 
 *********************************************************************************************************************/
 
 static ERR TEXT_GET_FontStyle(extVectorText *Self, std::string_view &Value)
 {
-   Value = Self->txFontStyle;
-   return ERR::Okay;
+   return TEXT_GET_MergeStyle(Self, Value);
 }
 
 static ERR TEXT_SET_FontStyle(extVectorText *Self, const std::string_view &Value)
 {
-   if (Value.empty()) Self->txFontStyle = "Regular";
-   else Self->txFontStyle = Value;
-   return ERR::Okay;
+   return apply_text_style(Self, Value, false);
 }
 
 /*********************************************************************************************************************
@@ -1718,7 +1727,7 @@ value is relative to #FontSize, for example `2%` is 2% of the font size and foll
 bring the characters closer together.  The default of zero adds no spacing.
 
 No space is added after the last character of a line, and combining marks stay attached to their base character.
-#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `letterSpacing` key of #TextStyle,
+#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `letterSpacing` key of #MergeStyle,
 in which a scaled value is expressed with the `em` unit.  It has no effect on bitmap fonts.
 
 *********************************************************************************************************************/
@@ -1740,8 +1749,8 @@ static ERR TEXT_SET_LetterSpacing(extVectorText *Self, Unit &Value)
 LineWeight: Overrides the thickness of text decoration lines.
 
 A number is a thickness in pixels and a scaled value is relative to #FontSize.  The field corresponds to the
-`lineWeight` key of #TextStyle, where a scaled value uses the `em` unit.  Zero restores the font's own thickness and
-removes the key from #TextStyle.  Negative values are rejected with `ERR::OutOfRange`.
+`lineWeight` key of #MergeStyle, where a scaled value uses the `em` unit.  Zero restores the font's own thickness and
+removes the key from #MergeStyle.  Negative values are rejected with `ERR::OutOfRange`.
 
 Decorations are rendered for scalable text, including guide paths and transitions, and for straight bitmap text.
 Scalable text uses an explicit thickness without rounding; bitmap fonts round the thickness to whole pixels.
@@ -1787,7 +1796,7 @@ natural pitch of the font.  Negative values are not permitted.
 The pitch is rounded to a whole number of pixels and has a minimum of 1.  The first baseline remains at #Y, so the
 setting does not move the first line.  #LineSpacing reports the resulting pitch.
 
-The field corresponds to the `lineHeight` key of #TextStyle.  Note that a number with no unit is a multiple of the font
+The field corresponds to the `lineHeight` key of #MergeStyle.  Note that a number with no unit is a multiple of the font
 size in that key, so `lineHeight=1.45` is equivalent to a field value of `145%`.
 
 *********************************************************************************************************************/
@@ -2057,7 +2066,7 @@ static ERR TEXT_SET_StrokeWidth(extVectorText *Self, Unit &Value)
 TextFlags: Controls text presentation, editing and selection.
 
 Combine `UNDERLINE`, `OVERLINE` and `LINE_THROUGH` to draw text decorations.  #LineWeight controls their thickness;
-the `decoration` key of #TextStyle reads and writes the same bits.
+the `decoration` key of #MergeStyle reads and writes the same bits.
 
 Text can be justified with `VTXF::JUSTIFY`, which requires #InlineSize.  Bitmap fonts and guide paths ignore the flag.
 
@@ -2111,7 +2120,7 @@ WordSpacing adds a fixed distance to each space (U+0020) and non-breaking space 
 pixels and a scaled value is relative to #FontSize, for example `25%` is a quarter of the font size and follows any
 change to it.  The value can be negative.  The default of zero adds no spacing.
 
-#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `wordSpacing` key of #TextStyle,
+#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `wordSpacing` key of #MergeStyle,
 in which a scaled value is expressed with the `em` unit.  It has no effect on bitmap fonts.
 
 *********************************************************************************************************************/
@@ -4010,8 +4019,8 @@ static const FieldArray clTextFields[] = {
    { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
    { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Face, TEXT_SET_Face },
    { "FontSize",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
-   { "FontStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
-   { "TextStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_TextStyle, TEXT_SET_TextStyle },
+   { "FontStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
+   { "MergeStyle",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_MergeStyle, TEXT_SET_MergeStyle },
    { "CaretFill",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_CaretFill, TEXT_SET_CaretFill },
    { "Descent",       FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Descent },
    { "DisplayHeight", FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplayHeight },

@@ -139,7 +139,7 @@ inline bool validate_class_def(const reader &R, uint32_t Offset)
    else return false;
 }
 
-// Reads a setting from the canonical TextStyle feature string.  Missing features are deliberately opt-in.
+// Reads a setting from the canonical MergeStyle feature string.  Missing features are deliberately opt-in.
 
 inline std::optional<uint32_t> feature_value(std::string_view Features, uint32_t Tag)
 {

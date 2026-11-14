@@ -26,20 +26,20 @@ Keyboard input and the caret require the user focus, which is monitored through 
 @VectorScene must be linked to a @Surface for keyboard input, and should have the `VPF::IGNORE_TAB` flag if the Tab
 key is to reach the editor.
 
-Text is drawn by the Vector module with the font selected by #TextStyle.  Scalable and bitmap
+Text is drawn by the Vector module with the font selected by #FontStyle.  Scalable and bitmap
 faces are supported, and all styles share the same family and size.  Lexer styles, margins, the caret, the line
 highlight and the selection are coloured from the per-editor palette, which is configured in one operation through
 #ThemeXML.  Applications that use the GUI packages can build the theme from their GUI palette and reassign it when
 the palette changes.  The editor has no dependency on the GUI packages.
 
-Sizes and positions, including #TextStyle sizes, #LeftMargin, #RightMargin, #ScrollToPoint() and the extent of the #Page,
+Sizes and positions, including #FontStyle sizes, #LeftMargin, #RightMargin, #ScrollToPoint() and the extent of the #Page,
 are expressed in the units of the #View.  If the host is scaled, the editor renders at the device resolution: the
 device scale is taken from all transforms and view boxes that apply to the #View, the bitmap is sized in device
 pixels, and fonts, margins and the caret are drawn at that scale.  An editor in a host scaled by 1.5 therefore renders
-the same pixels as an unscaled editor with a #TextStyle size that is 1.5 times larger, and pointer input is mapped to the
+the same pixels as an unscaled editor with a #FontStyle size that is 1.5 times larger, and pointer input is mapped to the
 same positions.  A change of scale, such as zooming the window, reloads the fonts and repaints the editor while
 retaining the top line and horizontal scroll position.  The completion list and call tip are closed by a change of
-scale.  The display density is not applied automatically; applications that use the GUI packages scale the #TextStyle size by
+scale.  The display density is not applied automatically; applications that use the GUI packages scale the #FontStyle size by
 `gui.interface.dpi / 96` as the other widgets do.
 
 Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and
@@ -117,7 +117,6 @@ for one frame before the editor repaints.</li>
 #include <kotuku/modules/config.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/display.h>
-#include <kotuku/modules/font.h>
 #include <kotuku/modules/script.h>
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/module.h>
@@ -218,7 +217,7 @@ static ERR SET_Wordwrap(extScintilla *, int);
 
 //********************************************************************************************************************
 
-static ERR SET_TextStyle(extScintilla *, const std::string_view &);
+static ERR SET_FontStyle(extScintilla *, const std::string_view &);
 static ERR resolve_fonts(extScintilla *, const std::string &, const std::string &, int);
 static ERR create_scintilla(void);
 static ERR create_canvas(extScintilla *);
@@ -603,7 +602,7 @@ static void update_view(extScintilla *Self)
 
       APTR handle;
       const int size = std::max(1, scaled(Self, Self->FontSize));
-      if (vec::GetFontHandle(Self->Face, Self->TextStyle, 0, size, &handle) IS ERR::Okay) {
+      if (vec::GetFontHandle(Self->Face, Self->FontStyle, 0, size, &handle) IS ERR::Okay) {
          Self->FontHandle = handle;
       }
 
@@ -2065,7 +2064,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    Self->ScalableFace = face_scalable(Self->Face);
    if (auto error = create_canvas(Self); error != ERR::Okay) return error;
 
-   if (auto error = resolve_fonts(Self, Self->TextStyle, Self->Face, Self->FontSize); error != ERR::Okay) return error;
+   if (auto error = resolve_fonts(Self, Self->FontStyle, Self->Face, Self->FontSize); error != ERR::Okay) return error;
 
    if (Self->Scene->SurfaceID) { // Make UI subscriptions as long as we're not headless
       // Keyboard input is delivered while the Focus viewport or one of its children has the focus.
@@ -3335,10 +3334,10 @@ static ERR SET_FoldingMarkers(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-TextStyle: A font definition that selects the font used for drawing and measuring document text.
+FontStyle: A font definition that selects the font used for drawing and measuring document text.
 
-TextStyle is the exclusive interface for selecting the editor's font, e.g. `face=Source Code Pro; size=14px;
-weight=500`.  Its syntax is shared with @VectorText.TextStyle, and the default is
+FontStyle is the exclusive interface for selecting the editor's font, e.g. `face=Source Code Pro; size=14px;
+weight=500`.  Its syntax is shared with @VectorText.FontStyle, and the default is
 `face=Source Code Pro; size=14px`.
 
 Assignment overwrites the declared keys only, and reading the field returns the canonical form of the accumulated
@@ -3354,7 +3353,7 @@ malformed definition returns `ERR::Syntax`, and a failed font resolution retains
 
 *********************************************************************************************************************/
 
-static ERR SET_TextStyle(extScintilla *Self, const std::string_view &Value)
+static ERR SET_FontStyle(extScintilla *Self, const std::string_view &Value)
 {
    kt::Log log;
 
@@ -3363,7 +3362,7 @@ static ERR SET_TextStyle(extScintilla *Self, const std::string_view &Value)
    // Later keys override earlier ones, so appending the value merges it into the current definition.
 
    std::string canonical;
-   const auto merged = Self->TextStyle + ";" + std::string(Value);
+   const auto merged = Self->FontStyle + ";" + std::string(Value);
    if (auto error = vec::NormaliseTextStyle(merged, &canonical); error != ERR::Okay) return log.warning(error);
 
    KeyValue *result;
@@ -3377,7 +3376,7 @@ static ERR SET_TextStyle(extScintilla *Self, const std::string_view &Value)
 
    if (Self->initialised()) return resolve_fonts(Self, canonical, face, pixels);
 
-   Self->TextStyle = canonical;
+   Self->FontStyle = canonical;
    Self->Face = face;
    Self->FontSize = pixels;
    return ERR::Okay;
@@ -4286,7 +4285,7 @@ static ERR resolve_fonts(extScintilla *Self, const std::string &Definition, cons
    if (auto error = vec::GetFontHandle(Face, Definition, 0, std::max(1, int(std::lround(Size * scale))), &handle);
          error != ERR::Okay) return error;
 
-   Self->TextStyle = Definition;
+   Self->FontStyle = Definition;
    Self->Face = Face;
    Self->FontSize = Size;
    Self->ScalableFace = scalable;
@@ -5061,7 +5060,7 @@ static ERR GET_SupportedLexers(extScintilla *, std::string_view &Value)
 #include "class_scintilla_def.cxx"
 
 static const FieldArray clFields[] = {
-   { "TextStyle",      FDF_CPPSTRING|FDF_RW, nullptr, SET_TextStyle },
+   { "FontStyle",      FDF_CPPSTRING|FDF_RW, nullptr, SET_FontStyle },
    { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "EventFlags",     FDF_INT|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clScintillaEventFlags },
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScintillaFlags },

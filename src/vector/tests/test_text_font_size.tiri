@@ -36,7 +36,7 @@ end
 -- Tiny's 5pt and 6pt strikes have identical Height metrics, so the em size must come from the strike's point size.
 
 function tinyText(Parent:obj!, Size:str!, Style:str):obj
-   return Parent.new('VectorText', { face='Tiny', fontSize=Size, string='Hgx', textFlags=VTXF_RASTER, textStyle=Style })
+   return Parent.new('VectorText', { face='Tiny', fontSize=Size, string='Hgx', textFlags=VTXF_RASTER, mergeStyle=Style })
 end
 
 @Test function BitmapStrikesCanBeSwitchedInBothDirections()

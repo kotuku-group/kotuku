@@ -5,6 +5,30 @@
 
    include 'display', 'svg', 'vector'
    module display as mGfx
+   module vector as mVec
+
+-- Compare font-selection settings independently of the complete definition returned by FontStyle.
+-- Weight is checked separately through the Weight field in these SVG tests.
+
+function styleMatches(Text:obj!, Expected:str!):bool
+   local _, actual = check mVec.ReadTextStyle(Text.fontStyle)
+   local _, expected = check mVec.ReadTextStyle(Expected)
+   for key in values(array<str> { 'face', 'size', 'weight', 'features', 'lineHeight', 'letterSpacing', 'wordSpacing',
+      'kerning', 'decoration', 'lineWeight', 'fill', 'opacity', 'stroke', 'strokeWidth', 'strokeAlign', 'lineJoin',
+      'shadow', 'glow', 'blend' }) do
+      actual[key] = nil
+      expected[key] = nil
+   end
+   actual.style ?= 'Regular'
+   expected.style ?= 'Regular'
+   for key, value in expected do
+      if actual[key] != value then return false end
+   end
+   for key, value in actual do
+      if expected[key] != value then return false end
+   end
+   return true
+end
 
 glInchUnits = array<str> { '1in', '2.54cm', '25.4mm', '72pt', '6pc', '96px', '96' }
 
@@ -149,15 +173,17 @@ end
       return obj.find(ID).fontStyle
    end
 
-   assert(style('stretch') is 'width=75', f'font-stretch: got {style("stretch")}')
-   assert(style('percent') is 'width=87.5', f'font-width: got {style("percent")}')
-   assert(style('oblique') is 'slant=10', f'font-style oblique: got {style("oblique")}')
-   assert(style('oblique_default') is 'slant=14', f'Default oblique angle: got {style("oblique_default")}')
-   assert(style('italic') is 'italic=yes', f'font-style italic: got {style("italic")}')
-   assert(style('variations') is 'wght=650;GRAD=50', f'font-variation-settings: got {style("variations")}')
-   assert(style('optical') is 'opsz=none', f'font-optical-sizing: got {style("optical")}')
-   assert(style('normal') is 'Regular', f'font-style normal: got {style("normal")}')
-   assert(style('inherited') is 'italic=yes;width=87.5',
+   assert(styleMatches(obj.find('stretch'), 'width=75'), f'font-stretch: got {style("stretch")}')
+   assert(styleMatches(obj.find('percent'), 'width=87.5'), f'font-width: got {style("percent")}')
+   assert(styleMatches(obj.find('oblique'), 'slant=10'), f'font-style oblique: got {style("oblique")}')
+   assert(styleMatches(obj.find('oblique_default'), 'slant=14'),
+      f'Default oblique angle: got {style("oblique_default")}')
+   assert(styleMatches(obj.find('italic'), 'italic=yes'), f'font-style italic: got {style("italic")}')
+   assert(styleMatches(obj.find('variations'), 'wght=650;GRAD=50'),
+      f'font-variation-settings: got {style("variations")}')
+   assert(styleMatches(obj.find('optical'), 'opsz=none'), f'font-optical-sizing: got {style("optical")}')
+   assert(styleMatches(obj.find('normal'), 'Regular'), f'font-style normal: got {style("normal")}')
+   assert(styleMatches(obj.find('inherited'), 'italic=yes;width=87.5'),
       f'A child font-stretch must keep the inherited font-style: got {style("inherited")}')
 
    local italic = obj.find('italic')
@@ -195,15 +221,15 @@ end
       </g>
    ]])
 
-   assert(obj.find('reset_variations').fontStyle is 'opsz=none',
+   assert(styleMatches(obj.find('reset_variations'), 'opsz=none'),
       'Resetting variation-settings must remove the numeric opsz and retain optical-sizing')
-   assert(obj.find('replace_variations').fontStyle is 'opsz=none;wght=500',
+   assert(styleMatches(obj.find('replace_variations'), 'opsz=none;wght=500'),
       'Replacing variation-settings must remove the inherited numeric opsz')
-   assert(obj.find('reset_optical').fontStyle is 'wght=650;opsz=18',
+   assert(styleMatches(obj.find('reset_optical'), 'wght=650;opsz=18'),
       'Resetting optical-sizing must retain explicit variation coordinates')
-   assert(obj.find('reverse_order').fontStyle is 'opsz=none;opsz=18',
+   assert(styleMatches(obj.find('reverse_order'), 'opsz=none;opsz=18'),
       'Explicit coordinates must override optical-sizing in either declaration order')
-   assert(obj.find('reverse_reset').fontStyle is 'opsz=none',
+   assert(styleMatches(obj.find('reverse_reset'), 'opsz=none'),
       'Resetting variation-settings must restore the inherited optical mode in either order')
 end
 
@@ -264,6 +290,6 @@ end
    scene.free()
 
    local reloaded <close> = obj.new('svg', { statement=saved })
-   assert(obj.find('optical_roundtrip').fontStyle is 'opsz=none;opsz=18',
+   assert(styleMatches(obj.find('optical_roundtrip'), 'opsz=none;opsz=18'),
       'Reloading must preserve both the fixed optical coordinate and the optical mode')
 end

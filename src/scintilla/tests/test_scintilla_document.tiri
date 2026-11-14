@@ -97,8 +97,8 @@ end
 
 @Test function DefaultFontInitialises()
    local scene <close>, vp, sci = newEditor()
-   assert(sci.textStyle is 'face=Source Code Pro; size=14px', 'The default definition must initialise')
-   local _, handle = check mVec.GetFontHandle('', sci.textStyle, 0, 0)
+   assert(sci.fontStyle is 'face=Source Code Pro; size=14px', 'The default definition must initialise')
+   local _, handle = check mVec.GetFontHandle('', sci.fontStyle, 0, 0)
    local width = mVec.CharWidth(handle, 105, 0)
    assert(width is mVec.CharWidth(handle, 77, 0) and width is mVec.CharWidth(handle, 87, 0),
       'The default scalable face must be monospaced')
@@ -522,9 +522,9 @@ end
    local first = vp.new('Scintilla', { })
    local second = vp.new('Scintilla', { })
 
-   second.textStyle = 'face=Veranda'
-   assert(first.textStyle is 'face=Source Code Pro; size=14px', f'The first editor must keep its font, got {first.textStyle}')
-   assert(second.textStyle is 'face=Veranda; size=14px', f'The second editor must use its new font, got {second.textStyle}')
+   second.fontStyle = 'face=Veranda'
+   assert(first.fontStyle is 'face=Source Code Pro; size=14px', f'The first editor must keep its font, got {first.fontStyle}')
+   assert(second.fontStyle is 'face=Veranda; size=14px', f'The second editor must use its new font, got {second.fontStyle}')
 
    second.free()
 
@@ -538,27 +538,27 @@ end
 
 @Test function PartialDefinitionsMerge()
    local scene <close>, vp, sci = newEditor()
-   sci.textStyle = 'face=Opti'
-   assert(sci.textStyle is 'face=Opti; size=14px', f'The size must be retained, got {sci.textStyle}')
-   sci.textStyle = 'weight=650; fill=#ff0000'
-   assert(sci.textStyle is 'face=Opti; size=14px; weight=650; fill=#ff0000', f'Keys accumulate, got {sci.textStyle}')
-   check sci.set('textStyle', '')
-   assert(sci.textStyle is 'face=Opti; size=14px; weight=650; fill=#ff0000', 'An empty definition changes nothing')
+   sci.fontStyle = 'face=Opti'
+   assert(sci.fontStyle is 'face=Opti; size=14px', f'The size must be retained, got {sci.fontStyle}')
+   sci.fontStyle = 'weight=650; fill=#ff0000'
+   assert(sci.fontStyle is 'face=Opti; size=14px; weight=650; fill=#ff0000', f'Keys accumulate, got {sci.fontStyle}')
+   check sci.set('fontStyle', '')
+   assert(sci.fontStyle is 'face=Opti; size=14px; weight=650; fill=#ff0000', 'An empty definition changes nothing')
 end
 
-@Test function TextStyleBeforeAndAfterInit()
-   local scene <close>, vp, sci = newEditor({ textStyle='face=Noto Sans; size=18px' })
-   assert(sci.textStyle is 'face=Noto Sans; size=18px', 'A definition must be accepted before Init')
-   sci.textStyle = 'face=Source Code Pro; size=24px'
-   assert(sci.textStyle is 'face=Source Code Pro; size=24px', 'A definition must be writable after Init')
-   assert(sci.set('textStyle', 'size=0px') is ERR_Syntax, 'A zero font size must be rejected')
-   assert(sci.set('textStyle', 'size=-1px') is ERR_Syntax, 'A negative font size must be rejected')
-   assert(sci.textStyle is 'face=Source Code Pro; size=24px', 'Rejected definitions must preserve the settings')
+@Test function FontStyleBeforeAndAfterInit()
+   local scene <close>, vp, sci = newEditor({ fontStyle='face=Noto Sans; size=18px' })
+   assert(sci.fontStyle is 'face=Noto Sans; size=18px', 'A definition must be accepted before Init')
+   sci.fontStyle = 'face=Source Code Pro; size=24px'
+   assert(sci.fontStyle is 'face=Source Code Pro; size=24px', 'A definition must be writable after Init')
+   assert(sci.set('fontStyle', 'size=0px') is ERR_Syntax, 'A zero font size must be rejected')
+   assert(sci.set('fontStyle', 'size=-1px') is ERR_Syntax, 'A negative font size must be rejected')
+   assert(sci.fontStyle is 'face=Source Code Pro; size=24px', 'Rejected definitions must preserve the settings')
 end
 
 @Test function SizeInPoints()
-   local scene <close>, vp, sci = newEditor({ textStyle='face=Noto Sans; size=12pt' })
-   local _, handle = check mVec.GetFontHandle('', sci.textStyle, 0, 0)
+   local scene <close>, vp, sci = newEditor({ fontStyle='face=Noto Sans; size=12pt' })
+   local _, handle = check mVec.GetFontHandle('', sci.fontStyle, 0, 0)
    local _, expected = check mVec.GetFontHandle('Noto Sans', 'Regular', 0, 16)
    assert(rawequal(handle, expected), 'Points must be converted to pixels')
 end

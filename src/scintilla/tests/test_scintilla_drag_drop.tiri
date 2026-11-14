@@ -57,10 +57,10 @@ function fixture(TargetFlags:num, SourceFlags:num):<obj, obj, obj, obj>
    local left = scene.new('VectorViewport', { width=300, height=160 })
    local right = scene.new('VectorViewport', { x=310, width=300, height=160 })
    local source = left.new('Scintilla', {
-      textStyle='face=Clean; size=11px', flags=(SourceFlags is nil ? SCIF_EDIT : SourceFlags)
+      fontStyle='face=Clean; size=11px', flags=(SourceFlags is nil ? SCIF_EDIT : SourceFlags)
    })
    local target = right.new('Scintilla', {
-      textStyle='face=Clean; size=11px', flags=(TargetFlags is nil ? SCIF_EDIT : TargetFlags)
+      fontStyle='face=Clean; size=11px', flags=(TargetFlags is nil ? SCIF_EDIT : TargetFlags)
    })
    surface.acShow()
    surface.acFocus()
@@ -334,7 +334,7 @@ end
          else
             local host = target.viewport
             target.free()
-            replacement = host.new('Scintilla', { textStyle='face=Clean; size=11px', flags=SCIF_EDIT })
+            replacement = host.new('Scintilla', { fontStyle='face=Clean; size=11px', flags=SCIF_EDIT })
             replacement.string = 'replacement'
          end
       end)

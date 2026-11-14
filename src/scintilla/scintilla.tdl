@@ -206,7 +206,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     references={ 'SCGUIDE', 'SCEOL', 'SCPOP' },
     extended=true
   }, [[
-    string TextStyle             # Font definition used for all text styles
+    string FontStyle             # Font definition used for all text styles
     string Path                  # Source text file
     int(SEF) EventFlags          # SEF flags.  Indicates the events that will be reported.
     int(SCIF) Flags              # Optional flags
