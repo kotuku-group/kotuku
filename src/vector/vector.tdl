@@ -180,9 +180,9 @@ struct KeyValue;
     "OVERLAY: Combines the multiply and screen blend modes, with the mix determining tonal strength.")
 
   flags("VTXF", { comment="VectorText flags." },
-    "UNDERLINE: Enable underlining of the text.",
-    "OVERLINE: Enable overlining of the text.",
-    "LINE_THROUGH: Enable a strike-through line in the text.",
+    "UNDERLINE: Draw a line below each visible text row, with its thickness controlled by @VectorText.LineWeight.",
+    "OVERLINE: Draw a line above each visible text row, with its thickness controlled by @VectorText.LineWeight.",
+    "LINE_THROUGH: Draw a line through the text, with its thickness controlled by @VectorText.LineWeight.",
     "BLINK: Enable animated blinking (not supported - exists as SVG dummy option).",
     "EDITABLE|EDIT: Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.",
     "AREA_SELECTED: Automatically set if a region of text has been selected.",

@@ -236,6 +236,42 @@ static std::optional<std::string> one_of(std::string_view Value, std::initialize
    return std::nullopt;
 }
 
+// Decorations form a space-separated set.  Parse each token separately so that unknown lists cannot collapse into
+// a recognised keyword when normalised.
+
+static std::optional<std::string> normalise_decoration(std::string_view Value)
+{
+   bool underline = false, overline = false, line_through = false, none = false;
+   while (not Value.empty()) {
+      auto end = Value.find_first_of(" \t\r\n\f\v");
+      auto token = ft::normalise(Value.substr(0, end));
+      Value = (end IS std::string_view::npos) ? std::string_view() : ft::trim(Value.substr(end + 1));
+      if (token IS "underline") underline = true;
+      else if (token IS "overline") overline = true;
+      else if (token IS "linethrough") line_through = true;
+      else if (token IS "none") none = true;
+      else return std::nullopt;
+   }
+
+   if (none) {
+      if (underline or overline or line_through) return std::nullopt;
+      return "none";
+   }
+
+   std::string result;
+   if (underline) result = "underline";
+   if (overline) {
+      if (not result.empty()) result.push_back(' ');
+      result.append("overline");
+   }
+   if (line_through) {
+      if (not result.empty()) result.push_back(' ');
+      result.append("line-through");
+   }
+   if (result.empty()) return std::nullopt;
+   return result;
+}
+
 //********************************************************************************************************************
 
 ERR parse_font_def(kt::Log &Log, std::string_view String, font_def &Def)
@@ -298,15 +334,21 @@ ERR parse_font_def(kt::Log &Log, std::string_view String, font_def &Def)
          if ((not length) or (length->value <= 0)) reject(Key, Value);
          else def.line_height = length;
       }
-      else if ((key IS "letterspacing") or (key IS "wordspacing") or (key IS "strokewidth")) {
+      else if ((key IS "letterspacing") or (key IS "wordspacing") or (key IS "lineweight") or
+               (key IS "strokewidth")) {
          auto length = parse_length(Value);
-         if ((not length) or ((key IS "strokewidth") and (length->value < 0))) { reject(Key, Value); return; }
+         if ((not length) or (((key IS "strokewidth") or (key IS "lineweight")) and (length->value < 0))) {
+            reject(Key, Value);
+            return;
+         }
          if (length->unit IS font_length::UNIT::NONE) length->unit = font_length::UNIT::PX;
          if (key IS "letterspacing") def.letter_spacing = length;
          else if (key IS "wordspacing") def.word_spacing = length;
+         else if (key IS "lineweight") def.line_weight = length;
          else def.stroke_width = length;
       }
       else if (key IS "kerning") store(def.kerning, one_of(Value, { "metrics", "none", "optical" }), Key, Value);
+      else if (key IS "decoration") store(def.decoration, normalise_decoration(Value), Key, Value);
       else if ((key IS "fill") or (key IS "stroke")) {
          if (not valid_painter(Value)) reject(Key, Value);
          else if (key IS "fill") def.fill = std::string(Value);
@@ -372,6 +414,8 @@ std::vector<std::pair<std::string, std::string>> font_def::entries() const
    length("letterSpacing", letter_spacing);
    length("wordSpacing", word_spacing);
    text("kerning", kerning);
+   text("decoration", decoration);
+   length("lineWeight", line_weight);
    text("fill", fill);
    if (opacity) list.emplace_back("opacity", number_text(*opacity));
    text("stroke", stroke);
@@ -419,6 +463,8 @@ void font_def::merge(const font_def &Other)
    overlay(letter_spacing, Other.letter_spacing);
    overlay(word_spacing, Other.word_spacing);
    overlay(kerning, Other.kerning);
+   overlay(decoration, Other.decoration);
+   overlay(line_weight, Other.line_weight);
    overlay(fill, Other.fill);
    overlay(opacity, Other.opacity);
    overlay(stroke, Other.stroke);

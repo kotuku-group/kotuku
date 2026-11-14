@@ -252,6 +252,7 @@ class extVectorText : public extVector {
    double txTextLength;
    double txFontSize;  // Em size in pixels (CSS px; FreeType runs at 72 DPI so 1pt = 1px).  Always a whole number.
    double txWidth; // Width of the text computed by path generation.  Not for client use as GetBoundary() can be used for that.
+   TClipRectangle<double> txMorphGlyphBounds = { 0, 0, 0, 0 }; // Stretch alignment excludes decoration contours
    double txStartOffset; // TODO
    double txSpacing; // TODO
    double txXOffset, txYOffset; // X,Y adjustment for ensuring that the cursor is visible.
@@ -438,8 +439,10 @@ static const int * text_fill_gamma(extVector *Vector)
 }
 
 //********************************************************************************************************************
-// The LineHeight, LetterSpacing and WordSpacing fields are shortcuts for the equivalent TextStyle keys.  A scaled Unit
-// is relative to the font size, and corresponds to a key in the unit given by ScaledUnit.
+static constexpr auto glTextDecorationFlags = VTXF::UNDERLINE|VTXF::OVERLINE|VTXF::LINE_THROUGH;
+
+// The length fields are shortcuts for the equivalent TextStyle keys.  A scaled Unit is relative to the font size,
+// and corresponds to a key in the unit given by ScaledUnit.
 
 static void get_length_unit(extVectorText *Self, const std::optional<font_length> &Length, Unit &Value)
 {
@@ -1428,6 +1431,12 @@ Assignment overwrites the declared keys only, and an empty string has no effect.
 is set directly.  If the string contains a malformed value then `ERR::Syntax` is returned and the
 settings are unchanged.
 
+The `decoration` key accepts a space-separated list of `underline`, `overline` and `line-through`, or `none` on its
+own.  A list is returned in that order and replaces only the three decoration bits in #TextFlags.  An absent key
+leaves those bits unchanged; direct changes to #TextFlags are reflected when reading #TextStyle.
+The `lineWeight` key sets #LineWeight using a non-negative length in `px`, `pt` or `em`; a unitless number is in
+pixels.  An `em` weight follows #FontSize.  Zero restores the font's thickness and removes `lineWeight` from readback.
+
 The `shadow`, `glow` and `blend` keys are rendered through a @VectorFilter that belongs to the text, which replaces the
 value of #Filter while any of them is active.  `blend` requires a backdrop, which is provided by setting the
 `ISOLATED` flag on an enclosing viewport.  A `kerning` value of `optical`, and any `strokeAlign` other than `centre`,
@@ -1503,6 +1512,16 @@ static ERR TEXT_GET_TextStyle(extVectorText *Self, std::string_view &Value)
    if ((Self->txFlags & VTXF::NO_KERNING) != VTXF::NIL) def.kerning = "none";
    else if (def.kerning and (*def.kerning IS "none")) def.kerning = "metrics";
 
+   std::string decoration;
+   for (auto [ flag, name ] : { std::pair { VTXF::UNDERLINE, "underline" },
+         { VTXF::OVERLINE, "overline" }, { VTXF::LINE_THROUGH, "line-through" } }) {
+      if ((Self->txFlags & flag) IS VTXF::NIL) continue;
+      if (not decoration.empty()) decoration.push_back(' ');
+      decoration.append(name);
+   }
+   if (not decoration.empty()) def.decoration = std::move(decoration);
+   else if (def.decoration and (*def.decoration != "none")) def.decoration.reset();
+
    if ((Self->LineJoin != VLJ::MITER) or def.line_join) {
       switch (Self->LineJoin) {
          case VLJ::ROUND: def.line_join = "round"; break;
@@ -1538,6 +1557,7 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
    }
 
    Self->txDefinition.merge(def);
+   if (def.line_weight and (def.line_weight->value IS 0)) Self->txDefinition.line_weight.reset();
 
    // TEXT_SET_Face() reloads the font, so that the size and style above are applied together with it.
 
@@ -1570,7 +1590,15 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
       else Self->txFlags &= ~VTXF::NO_KERNING;
    }
 
-   if (def.line_height or def.letter_spacing or def.word_spacing or def.kerning or def.features) reset_path(Self);
+   if (def.decoration) {
+      Self->txFlags &= ~glTextDecorationFlags;
+      if (def.decoration->find("underline") != std::string::npos) Self->txFlags |= VTXF::UNDERLINE;
+      if (def.decoration->find("overline") != std::string::npos) Self->txFlags |= VTXF::OVERLINE;
+      if (def.decoration->find("line-through") != std::string::npos) Self->txFlags |= VTXF::LINE_THROUGH;
+   }
+
+   if (def.line_height or def.letter_spacing or def.word_spacing or def.kerning or def.features or
+       def.decoration or def.line_weight) reset_path(Self);
 
    if (def.shadow or def.glow or def.blend) {
       if (Self->initialised()) return update_text_effects(Self);
@@ -1704,6 +1732,47 @@ static ERR TEXT_GET_LetterSpacing(extVectorText *Self, Unit &Value)
 static ERR TEXT_SET_LetterSpacing(extVectorText *Self, Unit &Value)
 {
    set_length_unit(Self, Self->txDefinition.letter_spacing, Value, font_length::UNIT::EM);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+LineWeight: Overrides the thickness of text decoration lines.
+
+A number is a thickness in pixels and a scaled value is relative to #FontSize.  The field corresponds to the
+`lineWeight` key of #TextStyle, where a scaled value uses the `em` unit.  Zero restores the font's own thickness and
+removes the key from #TextStyle.  Negative values are rejected with `ERR::OutOfRange`.
+
+Decorations are rendered for scalable text, including guide paths and transitions, and for straight bitmap text.
+Scalable text uses an explicit thickness without rounding; bitmap fonts round the thickness to whole pixels.
+Bitmap thickness and the default scalable thickness are at least one pixel.  Underlines grow downward from their
+top edge, overlines grow upward from their bottom edge, and strikeout lines retain their centre to the nearest
+pixel for bitmap fonts.
+
+Lines cover internal spaces but exclude trailing whitespace and whitespace-only rows.  They follow row alignment
+and, for scalable text, justification.  Their geometry extends the text's bounds without changing its layout width
+or caret positions.
+
+Guide paths and transitions apply each character's transform to its decoration.  Small gaps and overlaps can occur
+on tight curves.  Stretch guides bend subdivided row contours along the guide.
+
+The lines share the text's fill and transforms.  Use the default `NON_ZERO` @Vector.FillRule to avoid holes where lines
+overlap glyphs; `EVEN_ODD` cancels those overlaps.  A stroke outlines each contour separately, so its edges cross the
+glyphs.
+Default line metrics do not follow variable-font MVAR adjustments; use LineWeight to override the thickness.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_LineWeight(extVectorText *Self, Unit &Value)
+{
+   get_length_unit(Self, Self->txDefinition.line_weight, Value);
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_LineWeight(extVectorText *Self, Unit &Value)
+{
+   if (Value.defined() and (Value.Value < 0)) return ERR::OutOfRange;
+   set_length_unit(Self, Self->txDefinition.line_weight, Value, font_length::UNIT::EM);
    return ERR::Okay;
 }
 
@@ -1987,6 +2056,9 @@ static ERR TEXT_SET_StrokeWidth(extVectorText *Self, Unit &Value)
 -FIELD-
 TextFlags: Controls text presentation, editing and selection.
 
+Combine `UNDERLINE`, `OVERLINE` and `LINE_THROUGH` to draw text decorations.  #LineWeight controls their thickness;
+the `decoration` key of #TextStyle reads and writes the same bits.
+
 Text can be justified with `VTXF::JUSTIFY`, which requires #InlineSize.  Bitmap fonts and guide paths ignore the flag.
 
 -END-
@@ -2006,7 +2078,9 @@ static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
    const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
 
-   if (((previous_flags ^ Value) & (VTXF::NO_KERNING|VTXF::JUSTIFY)) != VTXF::NIL) reset_path(Self);
+   if (((previous_flags ^ Value) & (VTXF::NO_KERNING|VTXF::JUSTIFY|glTextDecorationFlags)) != VTXF::NIL) {
+      reset_path(Self);
+   }
 
    if ((Value & VTXF::NO_AUTO_OFFSET) != VTXF::NIL) {
       Self->txXOffset = 0;
@@ -2485,6 +2559,8 @@ struct TextRow {
    double width;                      // Excludes the trailing whitespace of a soft-wrapped line
    bool soft_wrapped = false;         // True if the row was ended by word-wrapping, not a hard break
    std::vector<TextGap> gaps = {};    // Only recorded for justified text
+   double baseline = 0;
+   double visible_width = 0;          // Advance to the last glyph with an outline, excluding trailing whitespace
 };
 
 //********************************************************************************************************************
@@ -2552,6 +2628,7 @@ static void justify_text_rows(std::vector<TextRow> &Rows, double InlineSize, agg
             row.gaps[g].column, last ? row.end_char : row.gaps[g + 1].column,
             spare * double(g + 1) / double(row.gaps.size()));
       }
+      if (row.visible_width > 0) row.visible_width += spare;
       row.width = InlineSize;
    }
 }
@@ -3546,8 +3623,20 @@ static void rebuild_selection(extVectorText *Self)
 // The generic guide-path morph runs after generate_text().  Keep editing geometry in the same coordinates
 // as the morphed glyphs before rebuilding the child overlay.
 
+double text_morph_y_offset(extVectorText *Self, VMF Flags)
+{
+   const bool decorate = (Self->txFlags & glTextDecorationFlags) != VTXF::NIL;
+   const auto bounds = decorate and not Self->txBitmapFont ? Self->txMorphGlyphBounds : get_bounds(Self->BasePath);
+   return (Flags & VMF::Y_MID) != VMF::NIL ? -bounds.top - bounds.height() * 0.5 : -bounds.top;
+}
+
 void morph_text_carets(extVectorText *Self, const agg::trans_single_path &Transform, double YOffset)
 {
+   if (((Self->txFlags & glTextDecorationFlags) != VTXF::NIL) and Self->BasePath.total_vertices()) {
+      Self->Bounds.expanding(get_bounds(Self->BasePath));
+      update_text_effect_region(Self);
+   }
+
    for (auto &line : Self->txLines) {
       for (auto &caret : line.chars) {
          caret.y1 += YOffset;
@@ -3932,6 +4021,7 @@ static const FieldArray clTextFields[] = {
    { "InlineSize",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_InlineSize, TEXT_SET_InlineSize },
    { "WrapMode",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, TEXT_GET_WrapMode, TEXT_SET_WrapMode, &clVectorTextVTW },
    { "LetterSpacing", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_LetterSpacing, TEXT_SET_LetterSpacing },
+   { "LineWeight",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_LineWeight, TEXT_SET_LineWeight },
    { "WordSpacing",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_WordSpacing, TEXT_SET_WordSpacing },
    { "LineHeight",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_LineHeight, TEXT_SET_LineHeight },
    { "ParagraphSpacing", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_ParagraphSpacing, TEXT_SET_ParagraphSpacing },

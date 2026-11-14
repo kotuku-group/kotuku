@@ -68,6 +68,9 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph_by_index(uint32_t Glyp
    }
 
    const FT_Outline &outline = font->face->glyph->outline;
+   if ((outline_orientation IS FT_ORIENTATION_NONE) and outline.n_points) {
+      outline_orientation = FT_Outline_Get_Orientation(&font->face->glyph->outline);
+   }
 
    int first = 0; // index of first point in contour
    for (int n=0; n < outline.n_contours; n++) {
@@ -263,8 +266,33 @@ gpos_kerning::adjustment freetype_font::ft_point::positioning(int PrevGlyph, int
 }
 
 //********************************************************************************************************************
-// For truetype fonts, this path generator creates text as a single path by concatenating the paths of all individual
-// characters in the string.
+// Match the outer glyph contours in FreeType coordinates, then apply the same Y inversion as get_glyph().  Opposite
+// winding cancels the line where it overlaps a glyph under the default non-zero fill rule.
+
+static void append_decoration_rectangle(agg::path_storage &Path, FT_Orientation Orientation,
+   double Left, double Top, double Right, double Bottom, double Step = 0)
+{
+   const int segments = Step > 0 ? std::max(1, int(std::ceil((Right - Left) / Step))) : 1;
+   auto edge = [&](double Start, double End, double Y) {
+      for (int i=1; i <= segments; i++) Path.line_to(Start + (End - Start) * i / segments, Y);
+   };
+   Path.move_to(Left, Top);
+   if (Orientation IS FT_ORIENTATION_POSTSCRIPT) {
+      Path.line_to(Left, Bottom);
+      edge(Left, Right, Bottom);
+      Path.line_to(Right, Top);
+      edge(Right, Left, Top);
+   }
+   else {
+      edge(Left, Right, Top);
+      Path.line_to(Right, Bottom);
+      edge(Right, Left, Bottom);
+   }
+   Path.close_polygon();
+}
+
+//********************************************************************************************************************
+// Scalable text is a single path containing the glyph outlines and any supported decoration contours.
 
 static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 {
@@ -286,6 +314,9 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
    auto guide = Vector->GuidePath;
    bool positioned_marks = false;
+   const bool decorate = (Vector->txFlags & glTextDecorationFlags) != VTXF::NIL;
+   bool decorated = false;
+   TClipRectangle<double> decoration_bounds = { 0, 0, 0, 0 };
    int wrapped_lines = 0; // Extra lines created by InlineSize word-wrapping
    double start_x, start_y, end_vx, end_vy;
    double advance_scale = 1.0;
@@ -336,6 +367,20 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    const double letter_spacing = Vector->letter_spacing();
    const double word_spacing = Vector->word_spacing();
    const double line_pitch = Vector->line_pitch(pt.line_spacing);
+   const bool align_rows = needs_row_alignment(Vector);
+
+   const bool character_lines = decorate and (guide or Vector->Transition);
+   const double decoration_step = Vector->GuidePath and ((Vector->GuideFlags & VMF::STRETCH) != VMF::NIL) ?
+      std::max(1.0, Vector->txFontSize * 0.25) : 0;
+   struct CharacterLine {
+      agg::trans_affine transform;
+      double width;
+      unsigned vertex;
+      size_t row;
+      double layout_x;
+   };
+   std::vector<CharacterLine> character_decorations;
+   std::vector<TextRow> rows;
 
    FT_Activate_Size(pt.ft_size);
    if (pt.font->face->size->metrics.height != dbl_to_int26p6(Vector->txFontSize)) {
@@ -350,6 +395,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       double angle = 0;
       for (auto &line : lines) {
          const auto &shaped = Vector->shaped_line(line);
+         size_t visible_decorations = character_decorations.size();
          const bool attached_marks = std::ranges::any_of(shaped, [](const auto &Glyph) {
             return Glyph.attachment != shaped_glyph::INVISIBLE;
          });
@@ -379,7 +425,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             agg::trans_affine transform;
 
             if (Vector->Transition) { // Apply any special transitions to transform early.
-               apply_transition(Vector->Transition, double(char_index) / double(total_chars), transform);
+               apply_transition(Vector->Transition, total_chars ? double(char_index) / total_chars : 0, transform);
             }
 
             // Spacing separates this character from the next one, unless the next is a zero-advance glyph that has
@@ -411,6 +457,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             double char_width = std::max(0.0,
                (glyph.adv_x + adjustment.second_advance + spacing) * std::abs(transform.sx) * advance_scale);
+            const double decoration_width = std::abs(transform.sx) > 0 ? char_width / std::abs(transform.sx) : 0;
 
             // Compute end_vx,end_vy (the last vertex to use for angle computation) and store the distance from start_x,start_y to end_vx,end_vy in dist.
             if ((char_width > dist) or (dist <= 0)) {
@@ -472,6 +519,13 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                Path.concat_path(trans_char);
             }
 
+            if (character_lines) {
+               if (decoration_width > 0) character_decorations.push_back({ transform, decoration_width, 0, 0, 0 });
+               if ((unicode > 0x20) and glyph.path.total_vertices()) {
+                  visible_decorations = character_decorations.size();
+               }
+            }
+
             if (Vector->needs_caret_geometry()) {
                transform.tx -= placement * advance_scale * cos(angle);
                transform.ty -= placement * advance_scale * sin(angle);
@@ -497,6 +551,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             if (current.glyph != shaped_glyph::INVISIBLE) prev_glyph_index = glyph.glyph_index;
          }
+         character_decorations.resize(visible_decorations);
       }
       Vector->txWidth = start_x;
    }
@@ -506,10 +561,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       int prev_glyph_index = 0;
       int char_index = 0;
       const auto wrap_mode = Vector->effective_wrap_mode();
-      const bool align_rows = needs_row_alignment(Vector);
       const bool justify = needs_justification(Vector);
       const double paragraph_spacing = Vector->paragraph_spacing();
-      std::vector<TextRow> rows;
 
       for (auto &line : lines) {
          const auto &shaped = Vector->shaped_line(line);
@@ -529,15 +582,19 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
          unsigned previous_start = Path.total_vertices(), previous_end = previous_start;
          double previous_sx = 1, previous_shy = 0;
          double visible_dx = 0; // Position after the last non-whitespace character of the visual line
+         double ink_dx = 0; // Decorations stop at the last character that actually has an outline
          size_t row_first_char = 0;
          unsigned row_first_vertex = previous_start;
          std::vector<TextGap> row_gaps;
+         size_t visible_decorations = character_decorations.size();
+         size_t previous_decoration = character_decorations.size();
 
          auto finish_row = [&](double Width, bool SoftWrapped) {
+            if (character_lines) character_decorations.resize(visible_decorations);
             if (Width > longest_line_width) longest_line_width = Width;
-            if (align_rows) {
+            if (align_rows or decorate) {
                rows.push_back({ &line, row_first_char, line.chars.size(), row_first_vertex,
-                  Path.total_vertices(), Width, SoftWrapped, std::move(row_gaps) });
+                  Path.total_vertices(), Width, SoftWrapped, std::move(row_gaps), dy, ink_dx });
                row_gaps.clear();
             }
             row_first_char = line.chars.size();
@@ -548,6 +605,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             finish_row(visible_dx, true); // Whitespace at a soft wrap hangs past the edge of the block
             dx = 0;
             visible_dx = 0;
+            ink_dx = 0;
             dy += line_pitch;
             wrapped_lines++;
             line_started = false;
@@ -592,7 +650,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             agg::trans_affine transform;
 
             if (Vector->Transition) { // Apply any special transitions to the transform.
-               apply_transition(Vector->Transition, double(char_index) / double(total_chars), transform);
+               apply_transition(Vector->Transition, total_chars ? double(char_index) / total_chars : 0, transform);
             }
 
             // Determine if this is a new segment that would wrap if drawn.
@@ -673,6 +731,12 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             // away from its base.  Base placement still moves both the outline and its saved attachment origin.
             if (adjustment.first_placement and ((not attached_marks) or
                 (shaped[previous_index].attachment IS shaped_glyph::INVISIBLE))) {
+               if (character_lines and (previous_decoration < character_decorations.size())) {
+                  character_decorations[previous_decoration].transform.tx +=
+                     adjustment.first_placement * previous_sx;
+                  character_decorations[previous_decoration].transform.ty +=
+                     adjustment.first_placement * previous_shy;
+               }
                if (attached_marks) {
                   origins[previous_index].tx += adjustment.first_placement * previous_sx;
                   origins[previous_index].ty += adjustment.first_placement * previous_shy;
@@ -705,6 +769,21 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                previous_end = Path.total_vertices();
             }
 
+            if (character_lines) {
+               previous_decoration = character_decorations.size();
+               if (char_width > 0) {
+                  // A space shares the next glyph's vertex index.  Keep it with the preceding word when justifying;
+                  // the distance to the next character will stretch its contour across the enlarged gap.
+                  const auto vertex = glyph.path.total_vertices() ? previous_start :
+                     (Path.total_vertices() ? Path.total_vertices() - 1 : 0);
+                  character_decorations.push_back({ transform, char_width / std::abs(transform.sx),
+                     vertex, rows.size(), dx });
+               }
+               if ((unicode > 0x20) and glyph.path.total_vertices()) {
+                  visible_decorations = character_decorations.size();
+               }
+            }
+
             if (Vector->needs_caret_geometry()) {
                transform.tx -= placement;
                if (cluster_start) {
@@ -729,6 +808,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             dx += char_width;
             dy += glyph.adv_y;
             if (unicode > 0x20) visible_dx = dx;
+            if ((unicode > 0x20) and glyph.path.total_vertices()) ink_dx = dx;
 
             if (current.glyph != shaped_glyph::INVISIBLE) prev_glyph_index = glyph.glyph_index;
          }
@@ -739,13 +819,91 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
          if (&line != &Vector->txLines.back()) dy += paragraph_spacing;
       }
 
+      // Apply the same row and word shifts to the saved character transforms before the row widths are updated.
+      for (auto &decoration : character_decorations) {
+         const auto &row = rows[decoration.row];
+         const double spare = Vector->txInlineSize - row.width;
+         const bool expand = justify and row.soft_wrapped and not row.gaps.empty() and (spare > 0);
+         double shift = 0;
+         if (expand) {
+            const auto gaps = std::ranges::upper_bound(row.gaps, decoration.vertex, {}, &TextGap::vertex) -
+               row.gaps.begin();
+            shift = spare * double(gaps) / row.gaps.size();
+         }
+         if (align_rows) {
+            shift += row_alignment_shift(Vector,
+               justify and wrapped_lines ? std::max(longest_line_width, Vector->txInlineSize) : longest_line_width,
+               expand ? Vector->txInlineSize : row.width);
+         }
+         decoration.transform.tx += shift;
+         decoration.layout_x += shift;
+      }
+      for (size_t i=0; i + 1 < character_decorations.size(); i++) {
+         auto &current = character_decorations[i];
+         const auto &next = character_decorations[i + 1];
+         if (current.row IS next.row) {
+            current.width = std::max(0.0, (next.layout_x - current.layout_x) / std::abs(current.transform.sx));
+         }
+      }
+
       if (justify and wrapped_lines) { // Text that doesn't wrap has nothing to justify and keeps its natural width
          justify_text_rows(rows, Vector->txInlineSize, Path);
          longest_line_width = std::max(longest_line_width, Vector->txInlineSize);
       }
 
-      align_text_rows(Vector, rows, longest_line_width, &Path);
+      if (align_rows) align_text_rows(Vector, rows, longest_line_width, &Path);
       Vector->txWidth = longest_line_width;
+   }
+
+   // Stretch alignment uses glyph ink, so adding a thick line cannot move the glyphs or the caret overlay.
+   if (decorate and (decoration_step > 0)) Vector->txMorphGlyphBounds = get_bounds(Path);
+
+   if (decorate) {
+      const double underline_weight = std::max(1.0, pt.underline_thickness);
+      const double strikeout_weight = std::max(1.0, pt.strikeout_thickness);
+      const auto &weight = Vector->txDefinition.line_weight;
+      const double underline_height = weight ? weight->pixels(Vector->txFontSize) : underline_weight;
+      const double strikeout_height = weight ? underline_height : strikeout_weight;
+      // Snap the natural top edges once.  Explicit weights retain the same underline top, strikeout centre and
+      // overline bottom, including when the natural thickness is fractional.
+      const double underline_top = std::round(pt.underline_position - underline_weight * 0.5);
+      const double strikeout_top = std::round(pt.strikeout_position) +
+         (strikeout_weight - strikeout_height) * 0.5;
+      const double overline_top = std::round(-pt.ascent - underline_weight) +
+         underline_weight - underline_height;
+
+      auto append = [&](const agg::trans_affine &Transform, double Width) {
+         auto line = [&](double Top, double Height) {
+            agg::path_storage rectangle;
+            append_decoration_rectangle(rectangle, pt.outline_orientation, 0, Top, Width, Top + Height,
+               decoration_step);
+            agg::conv_transform<agg::path_storage> transformed(rectangle, Transform);
+            const auto bounds = get_bounds(transformed);
+            Path.concat_path(transformed);
+            if (not decorated) {
+               decoration_bounds = bounds;
+               decorated = true;
+            }
+            else decoration_bounds.expanding(bounds);
+         };
+         if ((Vector->txFlags & VTXF::UNDERLINE) != VTXF::NIL) line(underline_top, underline_height);
+         if ((Vector->txFlags & VTXF::OVERLINE) != VTXF::NIL) line(overline_top, underline_height);
+         if ((Vector->txFlags & VTXF::LINE_THROUGH) != VTXF::NIL) line(strikeout_top, strikeout_height);
+      };
+      if (character_lines) {
+         for (const auto &decoration : character_decorations) {
+            if (decoration.width > 0) append(decoration.transform, decoration.width);
+         }
+      }
+      else {
+         // Row geometry is emitted after alignment and justification, so its advance is final.
+         for (const auto &row : rows) {
+            if (row.visible_width <= 0) continue;
+            agg::trans_affine transform;
+            transform.translate(align_rows ? row_alignment_shift(Vector, Vector->txWidth, row.width) : 0, row.baseline);
+            append(transform, row.visible_width);
+         }
+      }
    }
 
    if (Vector->needs_caret_geometry()) Vector->txCursor.reset_vector(Vector);
@@ -758,6 +916,13 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    auto total_lines = std::ssize(Vector->txLines) + wrapped_lines;
    if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * line_pitch;
    if (not guide) Vector->Bounds.bottom += (std::ssize(Vector->txLines) - 1) * Vector->paragraph_spacing();
+
+   if (decorated) {
+      Vector->Bounds.left = std::min(Vector->Bounds.left, decoration_bounds.left);
+      Vector->Bounds.top = std::min(Vector->Bounds.top, decoration_bounds.top);
+      Vector->Bounds.right = std::max(Vector->Bounds.right, decoration_bounds.right);
+      Vector->Bounds.bottom = std::max(Vector->Bounds.bottom, decoration_bounds.bottom);
+   }
 
    if (positioned_marks and Path.total_vertices()) {
       const auto ink = get_bounds(Path);

@@ -39,7 +39,8 @@ struct font_shadow_layer {
 struct font_def {
    font_style_spec style;
    std::optional<std::string> face, features, kerning, fill, stroke, stroke_align, line_join, shadow, glow, blend;
-   std::optional<font_length> size, line_height, letter_spacing, word_spacing, stroke_width;
+   std::optional<std::string> decoration;
+   std::optional<font_length> size, line_height, letter_spacing, word_spacing, line_weight, stroke_width;
    std::optional<double> opacity;
 
    // Declared keys and their normalised values, in canonical order.

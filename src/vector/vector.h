@@ -1561,6 +1561,52 @@ inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTrans
 
 namespace agg {
 
+// A replacement for agg::render_scanlines_aa() that clips each span to the clip box of the renderer before the span
+// generator is called.  AGG generates colours for the full length of each span and leaves clipping to
+// blend_color_hspan(), which is expensive for interpolated image fills: a path that extends far beyond the visible
+// area (e.g. a zoomed image) would otherwise be sampled in full.
+
+template <class Scanline, class SpanAllocator, class SpanGenerator>
+static void render_scanlines_clipped(agg::rasterizer_scanline_aa<> &Raster, Scanline &Input,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, SpanAllocator &Allocator, SpanGenerator &Generator)
+{
+   if (not Raster.rewind_scanlines()) return;
+
+   const auto &clip = RenderBase.clip_box();
+   if ((clip.x2 < clip.x1) or (clip.y2 < clip.y1)) return;
+
+   Input.reset(Raster.min_x(), Raster.max_x());
+   Generator.prepare();
+
+   while (Raster.sweep_scanline(Input)) {
+      const int y = Input.y();
+      if ((y < clip.y1) or (y > clip.y2)) continue;
+
+      auto span = Input.begin();
+      for (unsigned num_spans = Input.num_spans(); num_spans > 0; num_spans--, ++span) {
+         const bool solid = span->len < 0; // A solid span has a single cover value
+         int x = span->x;
+         int len = solid ? -span->len : span->len;
+         auto covers = span->covers;
+
+         if (x < clip.x1) {
+            const int skip = clip.x1 - x;
+            if (skip >= len) continue;
+            x = clip.x1;
+            len -= skip;
+            if (not solid) covers += skip;
+         }
+
+         if (x + len - 1 > clip.x2) len = clip.x2 - x + 1;
+         if (len <= 0) continue;
+
+         auto colours = Allocator.allocate(len);
+         Generator.generate(colours, x, y, len);
+         RenderBase.blend_color_hspan(x, y, len, colours, solid ? nullptr : covers, *covers);
+      }
+   }
+}
+
 // This template function is a customised caller into AGG's drawing process.
 //
 // U: Must be a scanline class or derivative; e.g. agg::scanline_u8
@@ -1597,9 +1643,9 @@ template <class T, class U> static void drawBitmapRender(U &Input,
    if (Opacity < 1.0) {
       spanconv_image sci(Opacity);
       agg::span_converter<T, spanconv_image> sc(spangen, sci);
-      agg::render_scanlines_aa(Raster, Input, RenderBase, spanalloc, sc);
+      render_scanlines_clipped(Raster, Input, RenderBase, spanalloc, sc);
    }
-   else agg::render_scanlines_aa(Raster, Input, RenderBase, spanalloc, spangen);
+   else render_scanlines_clipped(Raster, Input, RenderBase, spanalloc, spangen);
 };
 
 //********************************************************************************************************************

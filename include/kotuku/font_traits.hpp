@@ -192,8 +192,9 @@ template <class T> void for_each_descriptor(std::string_view Style, T &&Function
 
 [[nodiscard]] inline bool is_definition_key(std::string_view Key)
 {
-   static constexpr std::array<std::string_view, 16> KEYS = {
-      "face", "size", "features", "lineheight", "letterspacing", "wordspacing", "kerning", "fill", "opacity", "stroke",
+   static constexpr std::array<std::string_view, 18> KEYS = {
+      "face", "size", "features", "lineheight", "letterspacing", "wordspacing", "kerning", "decoration", "lineweight",
+      "fill", "opacity", "stroke",
       "strokewidth", "strokealign", "linejoin", "shadow", "glow", "blend"
    };
 
