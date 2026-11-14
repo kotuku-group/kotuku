@@ -276,6 +276,7 @@ class extVectorText : public extVector {
    std::string txFontStyle;
    std::string txFontSizeString;
    std::string txTextStyle;  // Storage for reading the TextStyle field
+   std::string txCaretFill;
    font_def txDefinition;    // Keys of the last TextStyle values.  Sole store for line height and spacing
    objVectorFilter *txEffects = nullptr; // Built from the shadow, glow and blend keys
    double txEffectMargin = 0; // The reach of the effects beyond the text's bounds
@@ -922,13 +923,16 @@ static ERR VECTORTEXT_Init(extVectorText *Self)
 
       if ((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) {
          Self->txCursor.vector = extVectorPolygon::create::global(
-            fl::Name("VTCursor"),
+            fl::Name("VTCaret"),
             fl::X1(0), fl::Y1(0), fl::X2(1), fl::Y2(1),
             fl::Closed(false),
-            fl::Stroke("rgb(255,0,0,255)"),
+            fl::Stroke(Self->txCaretFill.empty() ? Self->FillString : Self->txCaretFill),
             fl::StrokeWidth(1.25),
             fl::Visibility(VIS::HIDDEN));
          if (not Self->txCursor.vector) return ERR::CreateObject;
+         if (Self->txCaretFill.empty() and Self->FillString.empty()) {
+            Self->txCursor.vector->setStrokeColour(Self->Fill.Colour);
+         }
       }
 
       Self->txSelection = extVectorPath::create::global(
@@ -975,6 +979,29 @@ static ERR TEXT_SET_Align(extVectorText *Self, ALIGN Value)
 {
    Self->txAlignFlags = Value;
    reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+CaretFill: Defines a custom painter for the caret in editing mode.
+
+Setting the CaretFill overrides the default painter used for the caret.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_CaretFill(extVectorText *Self, std::string_view &Value)
+{
+   Value = Self->txCaretFill;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_CaretFill(extVectorText *Self, const std::string_view &Value)
+{
+   if (Value.empty()) Self->txCaretFill.clear();
+   else Self->txCaretFill = Value;
+
+   if (Self->txCursor.vector) Self->txCursor.vector->setStroke(Value);
    return ERR::Okay;
 }
 
@@ -3896,6 +3923,7 @@ static const FieldArray clTextFields[] = {
    { "FontSize",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
    { "FontStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
    { "TextStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_TextStyle, TEXT_SET_TextStyle },
+   { "CaretFill",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_CaretFill, TEXT_SET_CaretFill },
    { "Descent",       FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Descent },
    { "DisplayHeight", FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplayHeight },
    { "DisplaySize",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplaySize },
