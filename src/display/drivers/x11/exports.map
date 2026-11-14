@@ -7,6 +7,8 @@
       x11_driver_clipboard_window;
       x11_driver_bitmap_size;
       x11_driver_bitmap_shmid;
+      x11_driver_test_window;
+      x11_driver_set_drop_timeout;
    local:
       *;
 };

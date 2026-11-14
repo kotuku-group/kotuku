@@ -90,7 +90,7 @@ static std::string utf8_to_latin1(std::string_view Text)
 
 //********************************************************************************************************************
 
-static std::string latin1_to_utf8(const unsigned char *Data, size_t Length)
+std::string latin1_to_utf8(const unsigned char *Data, size_t Length)
 {
    std::string result;
    result.reserve(Length * 2);
@@ -783,6 +783,8 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
    if (not XDisplay) return;
 
+   x11_xdnd_expire(glEventState);
+
    while (true) {
       {
          const std::lock_guard lock(glEventState->NativeLock);
@@ -810,6 +812,8 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
       }
 #endif
 
+      if (x11_xdnd_foreign_event(glEventState, xevent)) continue;
+
       switch (xevent.type) {
          case ButtonPress:      handle_button_press(&xevent); break;
          case ButtonRelease:    handle_button_release(&xevent); break;
@@ -822,9 +826,14 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          case CirculateNotify:  handle_stack_change(&xevent.xcirculate); break;
          case SelectionRequest: handle_selection_request(xevent.xselectionrequest); break;
          case SelectionClear:   handle_selection_clear(xevent.xselectionclear); break;
-         case SelectionNotify:  handle_selection_notify(xevent.xselection); break;
+         case SelectionNotify:
+            if (not x11_xdnd_selection_notify(glEventState, xevent.xselection)) {
+               handle_selection_notify(xevent.xselection);
+            }
+            break;
 
          case PropertyNotify:
+            if (x11_xdnd_property_notify(glEventState, xevent.xproperty)) break;
             send_incremental_chunk(xevent.xproperty);
             receive_incremental_chunk(xevent.xproperty);
             if ((xevent.xproperty.window IS DefaultRootWindow(XDisplay)) and
@@ -867,6 +876,7 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
             // Only WM_PROTOCOLS messages carry a protocol atom in l[0].  Other messages, such as the compositor's
             // _NET_WM_FRAME_DRAWN, carry arbitrary values there that can coincide with a protocol atom.
 
+            if (x11_xdnd_client_message(glEventState, xevent.xclient)) break;
             if (xevent.xclient.message_type != glEventState->ProtocolsAtom) break;
 
             if (Atom(xevent.xclient.data.l[0]) IS XWADeleteWindow) {

@@ -393,6 +393,45 @@ extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_clipboard_window(Displ
 
 unsigned long X11Driver::clipboardWindow() const { return Data->ClipboardWindow; }
 
+// Creates an override-redirect top-level window that is registered and advertised for XDND in the same way as the
+// windows of a Display, which the tests cannot construct.  Release it with destroyWindow().
+
+extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_window(DisplayDriver *Driver, int X, int Y, int Width,
+   int Height, OBJECTID SurfaceID)
+{
+   return Driver ? ((X11Driver *)Driver)->testWindow(X, Y, Width, Height, SurfaceID) : 0;
+}
+
+unsigned long X11Driver::testWindow(int X, int Y, int Width, int Height, OBJECTID SurfaceID)
+{
+   if (not Data->Open) return 0;
+   XSetWindowAttributes attributes = {};
+   attributes.override_redirect = True;
+   auto native = XCreateWindow(Data->Connection, DefaultRootWindow(Data->Connection), X, Y, Width, Height, 0,
+      CopyFromParent, InputOutput, CopyFromParent, CWOverrideRedirect, &attributes);
+   if (not native) return 0;
+   auto record = new(std::nothrow) X11WindowRecord;
+   if (not record) { XDestroyWindow(Data->Connection, native); return 0; }
+   record->Native = native;
+   record->SurfaceID = SurfaceID;
+   record->Owned = true;
+   {
+      const std::lock_guard lock(Data->NativeLock);
+      Data->Windows[native] = record;
+   }
+   x11_xdnd_advertise(Data, native);
+   XMapWindow(Data->Connection, native);
+   XSync(Data->Connection, False);
+   return native;
+}
+
+extern "C" DISPLAY_DRIVER_EXPORT void x11_driver_set_drop_timeout(DisplayDriver *Driver, int Milliseconds)
+{
+   if (Driver) ((X11Driver *)Driver)->setDropTimeout(Milliseconds);
+}
+
+void X11Driver::setDropTimeout(int Milliseconds) { Data->DropTimeout = std::chrono::milliseconds(Milliseconds); }
+
 // Tests cannot see the extBitmap definition, so they reserve this much space for the bitmaps that they construct.
 
 extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size() { return sizeof(extBitmap); }
@@ -413,7 +452,9 @@ DCAP X11Driver::capabilities() const
       DCAP::CLIPBOARD;
    if (Data->Composite) result |= DCAP::COMPOSITING;
    if (Data->RandR and Data->Manager and (not Data->WSLg)) result |= DCAP::MODE_SWITCH;
+   // Inbound XDND is advertised on top-level windows, which do not exist while the driver manages the desktop.
    if (Data->Manager) result |= DCAP::DESKTOP_MANAGER;
+   else result |= DCAP::DRAG_DROP;
    return result;
 }
 
@@ -507,6 +548,7 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
    Data->SaveTargetsAtom = XInternAtom(Data->Connection, "SAVE_TARGETS", False);
    Data->SaveTargetsPropertyAtom = XInternAtom(Data->Connection, "KOTUKU_SAVE_TARGETS", False);
    Data->TimestampPropertyAtom = XInternAtom(Data->Connection, "KOTUKU_TIME", False);
+   if (x11_xdnd_open(Data) != ERR::Okay) goto fail;
 
    clipboard_attributes.event_mask = PropertyChangeMask;
    Data->ClipboardWindow = XCreateWindow(Data->Connection, root, -10, -10, 1, 1, 0, 0, InputOnly,
@@ -587,6 +629,7 @@ ERR X11Driver::close()
    Data->Closing = true;
    if (Data->ConnectionFD != -1) { DeregisterFD(Data->ConnectionFD); Data->ConnectionFD = -1; }
    Data->Callbacks = nullptr;
+   x11_xdnd_close(Data);
    if (Data->Connection) {
       while (not Data->Bitmaps.empty()) freeBitmap(*Data->Bitmaps.begin());
       for (auto &[native, window] : Data->Windows) {
@@ -872,6 +915,7 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
 
    set_motif_hints(State, record);
    if (not State->TaskBar) hide_window_from_taskbar(State, native);
+   if (root_parent) x11_xdnd_advertise(State, native);
    Record = record;
    return ERR::Okay;
 }
@@ -989,6 +1033,9 @@ ERR X11Driver::nativeWindowHandle(HOSTWINDOW WindowHandle, APTR &NativeHandle)
 
 ERR X11Driver::destroyWindow(HOSTWINDOW WindowHandle)
 {
+   // Hover feedback is ended before the lock is taken, because it notifies the framework.
+   if (auto window = x11_window(Data, WindowHandle)) x11_xdnd_forget_window(Data, window->Native);
+
    const std::lock_guard lock(Data->NativeLock);
    auto window = x11_window(Data, WindowHandle);
    if (not window) return WindowHandle ? ERR::NoSupport : ERR::Okay;
