@@ -81,6 +81,8 @@ public:
 #ifdef X11_DRIVER_TESTS
    void processEvents();
    unsigned long clipboardWindow() const;
+   unsigned long testWindow(int X, int Y, int Width, int Height, OBJECTID SurfaceID);
+   void setDropTimeout(int Milliseconds);
 #endif
 
 private:
@@ -92,6 +94,9 @@ extern "C" DISPLAY_DRIVER_EXPORT void x11_process_driver_events(DisplayDriver *D
 extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_clipboard_window(DisplayDriver *Driver);
 extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size();
 extern "C" DISPLAY_DRIVER_EXPORT int x11_driver_bitmap_shmid(extBitmap *Bitmap);
+extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_test_window(DisplayDriver *Driver, int X, int Y, int Width,
+   int Height, OBJECTID SurfaceID);
+extern "C" DISPLAY_DRIVER_EXPORT void x11_driver_set_drop_timeout(DisplayDriver *Driver, int Milliseconds);
 #endif
 
 }

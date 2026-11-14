@@ -435,7 +435,8 @@ else ()
          "drivers/x11/module.cpp"
          "drivers/x11/x11_driver.cpp"
          "drivers/x11/handlers.cpp"
-         "drivers/x11/lib_pixels.cpp")
+         "drivers/x11/lib_pixels.cpp"
+         "drivers/x11/xdnd.cpp")
       target_link_libraries (display-x11 PRIVATE unicode Xrender Xext X11)
       set (X11_DRIVER_DEFINITIONS)
 

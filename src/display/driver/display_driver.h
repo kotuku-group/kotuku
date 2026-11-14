@@ -43,6 +43,10 @@ extern "C" DISPLAY_DRIVER_EXPORT DisplayDriver * create_display_driver(uint32_t 
 extern "C" DISPLAY_DRIVER_EXPORT void destroy_display_driver(DisplayDriver *Driver);
 #endif
 
+// DRAG_DROP indicates that native drops from other applications are delivered through the DragOver, DragStart,
+// DragData and DragLeave callbacks.  It does not imply that internal drags can be exported to other applications,
+// which is backend-specific.
+
 enum class DCAP : uint64_t {
    NIL             = 0,
    WINDOW_POSITION = 0x00000001,

@@ -14,7 +14,9 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <fcntl.h>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <source_location>
@@ -62,6 +64,50 @@ static ERR register_fd(HOSTHANDLE, RFD, void (*)(HOSTHANDLE, APTR), APTR)
 {
    return ERR::Okay;
 }
+
+struct TestTimer {
+   uintptr_t ID;
+   FUNCTION Callback;
+   std::chrono::steady_clock::time_point Due;
+};
+
+static std::optional<TestTimer> glTimer;
+static uintptr_t glNextTimerID = 0;
+static bool glRefuseTimer = false;
+
+static ERR subscribe_timer(double Interval, FUNCTION *Callback, APTR *Subscription)
+{
+   if (glRefuseTimer) return ERR::SystemLocked;
+   auto delay = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(Interval));
+   glTimer = TestTimer { ++glNextTimerID, *Callback, std::chrono::steady_clock::now() + delay };
+   *Subscription = (APTR)glTimer->ID;
+   return ERR::Okay;
+}
+
+static ERR update_timer(APTR Subscription, double Interval)
+{
+   if (not glTimer or (glTimer->ID != uintptr_t(Subscription))) return ERR::Search;
+   if (not Interval) glTimer.reset();
+   else {
+      auto delay = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+         std::chrono::duration<double>(Interval));
+      glTimer->Due = std::chrono::steady_clock::now() + delay;
+   }
+   return ERR::Okay;
+}
+
+static void dispatch_timer()
+{
+   if (not glTimer or (std::chrono::steady_clock::now() < glTimer->Due)) return;
+   auto timer = *glTimer;
+   auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer.Callback.Routine;
+   if ((routine(nullptr, 0, 0, timer.Callback.Meta) IS ERR::Terminate) and glTimer and (glTimer->ID IS timer.ID))
+      glTimer.reset();
+}
+
+static objTask * current_task() { return nullptr; }
+static OBJECTPTR current_context() { return nullptr; }
 
 // The driver logs through Core, e.g. when it abandons a stalled clipboard transfer.
 
@@ -125,7 +171,7 @@ static bool create_file(CSTRING Path)
 }
 
 static bool request_selection(DisplayDriver *Driver, Display *Connection, Window WindowID, Atom Selection,
-   Atom Target, std::string &Data, bool &Incremental)
+   Atom Target, std::string &Data, bool &Incremental, const std::function<void()> &OnIncremental = {})
 {
    auto property = XInternAtom(Connection, "KOTUKU_TEST_SELECTION", False);
    auto incr = XInternAtom(Connection, "INCR", False);
@@ -165,6 +211,7 @@ static bool request_selection(DisplayDriver *Driver, Display *Connection, Window
          if (actual_type IS incr) {
             Incremental = true;
             if (value) XFree(value);
+            if (OnIncremental) OnIncremental();
             continue;
          }
          if (actual_format != 8) {
@@ -875,6 +922,10 @@ static void test_pointer_position(DisplayDriver *Driver, const std::optional<std
    DisplayInfo info = {};
    Failures += check(Driver->displayInfo(info) IS ERR::Okay);
 
+   // XDND is only advertised on top-level windows, which do not exist while the driver manages the desktop.
+   const auto caps = Driver->capabilities();
+   Failures += check(((caps & DCAP::DESKTOP_MANAGER) IS DCAP::NIL) IS ((caps & DCAP::DRAG_DROP) != DCAP::NIL));
+
    for (auto [warp_x, warp_y] : { std::pair { 37, 23 }, std::pair { 211, 145 } }) {
       XWarpPointer(peer, None, DefaultRootWindow(peer), 0, 0, 0, 0, warp_x, warp_y);
       XSync(peer, False);
@@ -889,6 +940,642 @@ static void test_pointer_position(DisplayDriver *Driver, const std::optional<std
 }
 
 //********************************************************************************************************************
+// Inbound XDND.  The peer connection plays the part of a drag source, and the framework callbacks record what the
+// driver reports to them.  Every snapshot created by DragStart counts its release, which must happen exactly once.
+
+static struct {
+   int overs = 0, leaves = 0, starts = 0, datas = 0, entered = 0, exited = 0, released = 0;
+   OBJECTID over_surface = 0, start_surface = 0;
+   double over_x = -1, over_y = -1, start_x = -1, start_y = -1;
+   char over_type = 0;
+   bool accept_over = true, accept_start = true, accept_data = true, data_snapshot = false;
+   std::string mime, data;
+   std::function<void()> on_over;
+} glDrop;
+
+static bool drag_over(OBJECTID SurfaceID, double X, double Y, CSTRING Types, size_t Length)
+{
+   glDrop.overs++;
+   glDrop.over_surface = SurfaceID;
+   glDrop.over_x = X;
+   glDrop.over_y = Y;
+   glDrop.over_type = Length ? Types[0] : 0;
+   if (glDrop.on_over) glDrop.on_over();
+   return glDrop.accept_over;
+}
+
+static bool drag_start(NativeDrop &Drop)
+{
+   glDrop.starts++;
+   glDrop.start_surface = Drop.SurfaceID;
+   glDrop.start_x = Drop.X;
+   glDrop.start_y = Drop.Y;
+   if (not glDrop.accept_start) return false;
+   Drop.Snapshot = std::shared_ptr<NativeDropSnapshot>(new NativeDropSnapshot, [](NativeDropSnapshot *Snapshot) {
+      glDrop.released++;
+      delete Snapshot;
+   });
+   return true;
+}
+
+static bool drag_data(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length)
+{
+   glDrop.datas++;
+   glDrop.data_snapshot = Drop.Snapshot != nullptr;
+   glDrop.mime = Mime ? Mime : "";
+   glDrop.data.assign(Data, Length);
+   return glDrop.accept_data;
+}
+
+static void drag_leave() { glDrop.leaves++; }
+
+static void drop_crossing(OBJECTID, bool Entered, double, double)
+{
+   if (Entered) glDrop.entered++;
+   else glDrop.exited++;
+}
+
+static int glPeerErrors = 0;
+static int peer_error(Display *, XErrorEvent *) { glPeerErrors++; return 0; }
+
+enum class SOURCE { ANSWER, REFUSE, IGNORE, DELAY, INCR, FORMAT32 };
+
+struct XdndPeer {
+   Display *Connection = nullptr;
+   Window Source = 0;
+   Atom Aware, Enter, Position, StatusReply, Leave, Drop, Finished, Selection, TypeList;
+   Atom Copy, Move, Link, URIList, UTF8, TextPlain, Incr;
+   std::vector<XClientMessageEvent> Replies;
+   SOURCE Mode = SOURCE::ANSWER;
+   std::string Payload;
+   int Requests = 0;
+   Atom RequestedTarget = None;
+   Window Requestor = 0;
+   std::optional<XSelectionRequestEvent> Delayed;
+   std::chrono::steady_clock::time_point Due;
+   Window IncrWindow = 0;
+   Atom IncrProperty = None, IncrType = None;
+   size_t IncrOffset = 0;
+   bool IncrDone = true;
+
+   explicit XdndPeer(Display *Peer) : Connection(Peer) {
+      auto atom = [Peer](CSTRING Name) { return XInternAtom(Peer, Name, False); };
+      Aware = atom("XdndAware"); Enter = atom("XdndEnter"); Position = atom("XdndPosition");
+      StatusReply = atom("XdndStatus"); Leave = atom("XdndLeave"); Drop = atom("XdndDrop");
+      Finished = atom("XdndFinished"); Selection = atom("XdndSelection"); TypeList = atom("XdndTypeList");
+      Copy = atom("XdndActionCopy"); Move = atom("XdndActionMove"); Link = atom("XdndActionLink");
+      URIList = atom("text/uri-list"); UTF8 = atom("UTF8_STRING"); TextPlain = atom("text/plain");
+      Incr = atom("INCR");
+      newSource();
+   }
+
+   void newSource() {
+      Source = XCreateSimpleWindow(Connection, DefaultRootWindow(Connection), 0, 0, 1, 1, 0, 0, 0);
+      XSetSelectionOwner(Connection, Selection, Source, CurrentTime);
+      XSync(Connection, False);
+   }
+
+   void send(Window Target, Atom Type, std::array<long, 5> Data) {
+      XEvent event = {};
+      event.xclient.type = ClientMessage;
+      event.xclient.window = Target;
+      event.xclient.message_type = Type;
+      event.xclient.format = 32;
+      for (size_t i=0; i < Data.size(); i++) event.xclient.data.l[i] = Data[i];
+      XSendEvent(Connection, Target, False, NoEventMask, &event);
+      XFlush(Connection);
+   }
+
+   void enter(Window Target, const std::vector<Atom> &Types, int Version = 5) {
+      std::array<long, 5> data = { long(Source), long(Version) << 24, 0, 0, 0 };
+      if (Types.size() > 3) {
+         XChangeProperty(Connection, Source, TypeList, XA_ATOM, 32, PropModeReplace,
+            (const unsigned char *)Types.data(), int(Types.size()));
+         data[1] |= 1;
+      }
+      else for (size_t i=0; i < Types.size(); i++) data[2 + i] = long(Types[i]);
+      send(Target, Enter, data);
+   }
+
+   void position(Window Target, int X, int Y, Atom Action) {
+      send(Target, Position, { long(Source), 0, (long(X) << 16) | long(Y), long(CurrentTime), long(Action) });
+   }
+
+   void leave(Window Target) { send(Target, Leave, { long(Source), 0, 0, 0, 0 }); }
+   void drop(Window Target) { send(Target, Drop, { long(Source), 0, long(CurrentTime), 0, 0 }); }
+
+   void notify(const XSelectionRequestEvent &Request, Atom Property) {
+      XSelectionEvent reply = {};
+      reply.type = SelectionNotify;
+      reply.requestor = Request.requestor;
+      reply.selection = Request.selection;
+      reply.target = Request.target;
+      reply.property = Property;
+      reply.time = Request.time;
+      XSendEvent(Connection, Request.requestor, False, NoEventMask, (XEvent *)&reply);
+      XFlush(Connection);
+   }
+
+   void answer(const XSelectionRequestEvent &Request) {
+      if (Mode IS SOURCE::REFUSE) { notify(Request, None); return; }
+      if (Mode IS SOURCE::FORMAT32) {
+         long values[] = { 1, 2 };
+         XChangeProperty(Connection, Request.requestor, Request.property, XA_INTEGER, 32, PropModeReplace,
+            (const unsigned char *)values, 2);
+      }
+      else if (Mode IS SOURCE::INCR) {
+         XSelectInput(Connection, Request.requestor, PropertyChangeMask);
+         long size = long(Payload.size());
+         XChangeProperty(Connection, Request.requestor, Request.property, Incr, 32, PropModeReplace,
+            (const unsigned char *)&size, 1);
+         IncrWindow = Request.requestor;
+         IncrProperty = Request.property;
+         IncrType = Request.target;
+         IncrOffset = 0;
+         IncrDone = false;
+      }
+      else XChangeProperty(Connection, Request.requestor, Request.property, Request.target, 8, PropModeReplace,
+         (const unsigned char *)Payload.data(), int(Payload.size()));
+      notify(Request, Request.property);
+   }
+
+   // Processes driver and peer events until Condition is satisfied or the time limit expires.
+
+   bool pump(DisplayDriver *Driver, const std::function<bool()> &Condition, int Milliseconds = 2000) {
+      auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(Milliseconds);
+      while (true) {
+         display::x11_process_driver_events(Driver);
+         while (XPending(Connection)) {
+            XEvent event = {};
+            XNextEvent(Connection, &event);
+            if (event.type IS ClientMessage) Replies.push_back(event.xclient);
+            else if ((event.type IS SelectionRequest) and (event.xselectionrequest.selection IS Selection)) {
+               Requests++;
+               RequestedTarget = event.xselectionrequest.target;
+               Requestor = event.xselectionrequest.requestor;
+               if (Mode IS SOURCE::IGNORE) continue;
+               if (Mode IS SOURCE::DELAY) {
+                  Delayed = event.xselectionrequest;
+                  Due = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+               }
+               else answer(event.xselectionrequest);
+            }
+            else if ((event.type IS PropertyNotify) and (event.xproperty.window IS IncrWindow) and
+                  (event.xproperty.atom IS IncrProperty) and (event.xproperty.state IS PropertyDelete) and
+                  (not IncrDone)) {
+               auto length = std::min<size_t>(65536, Payload.size() - IncrOffset);
+               XChangeProperty(Connection, IncrWindow, IncrProperty, IncrType, 8, PropModeReplace,
+                  (const unsigned char *)Payload.data() + IncrOffset, int(length));
+               XFlush(Connection);
+               IncrOffset += length;
+               if (not length) IncrDone = true;
+            }
+         }
+         if (Delayed and (std::chrono::steady_clock::now() >= Due)) {
+            auto request = *Delayed;
+            Delayed.reset();
+            auto mode = Mode;
+            Mode = SOURCE::ANSWER;
+            answer(request);
+            Mode = mode;
+         }
+         if (Condition()) return true;
+         if (std::chrono::steady_clock::now() >= deadline) return false;
+         usleep(1000);
+      }
+   }
+
+   std::optional<XClientMessageEvent> reply(DisplayDriver *Driver, Atom Type, int Milliseconds = 2000) {
+      auto found = [this, Type]() {
+         return std::any_of(Replies.begin(), Replies.end(),
+            [Type](const XClientMessageEvent &Event) { return Event.message_type IS Type; });
+      };
+      if (not pump(Driver, found, Milliseconds)) return std::nullopt;
+      auto it = std::find_if(Replies.begin(), Replies.end(),
+         [Type](const XClientMessageEvent &Event) { return Event.message_type IS Type; });
+      auto result = *it;
+      Replies.erase(it);
+      return result;
+   }
+};
+
+static bool status_accepted(const std::optional<XClientMessageEvent> &Reply, Window Target, Atom Copy)
+{
+   return Reply and (Window(Reply->data.l[0]) IS Target) and ((Reply->data.l[1] & 3) IS 3) and
+      (Atom(Reply->data.l[4]) IS Copy);
+}
+
+static bool status_refused(const std::optional<XClientMessageEvent> &Reply, Window Target)
+{
+   return Reply and (Window(Reply->data.l[0]) IS Target) and ((Reply->data.l[1] & 1) IS 0) and
+      (Atom(Reply->data.l[4]) IS None);
+}
+
+static bool finished_with(const std::optional<XClientMessageEvent> &Finished, Window Target, bool Accepted,
+   Atom Copy)
+{
+   return Finished and (Window(Finished->data.l[0]) IS Target) and
+      ((Finished->data.l[1] & 1) IS (Accepted ? 1 : 0)) and (Atom(Finished->data.l[2]) IS (Accepted ? Copy : None));
+}
+
+using FakeKeyEvent = int (*)(Display *, unsigned int, Bool, unsigned long);
+
+static void test_xdnd(DisplayDriver *Driver, const std::optional<std::string> &KotukuDisplay,
+   const std::optional<std::string> &DisplayName, int &Failures)
+{
+   auto display_name = KotukuDisplay ? *KotukuDisplay : (DisplayName ? *DisplayName : std::string());
+   if (display_name.empty()) return;
+
+   auto connection = XOpenDisplay(display_name.c_str());
+   if (not connection) { Failures++; return; }
+   auto previous_handler = XSetErrorHandler(peer_error);
+
+   // A stand-in window manager stops the driver from managing a bare server's desktop itself.  The selection fails
+   // harmlessly if a real window manager is running.
+
+   XSelectInput(connection, DefaultRootWindow(connection), SubstructureRedirectMask);
+   XSync(connection, False);
+
+   DriverCallbacks callbacks = {
+      .Version = DISPLAY_DRIVER_INTERFACE_VERSION,
+      .Crossing = drop_crossing,
+      .ClipboardData = clipboard_data,
+      .DragOver = drag_over,
+      .DragStart = drag_start,
+      .DragData = drag_data,
+      .DragLeave = drag_leave
+   };
+   Failures += check(Driver->open(callbacks) IS ERR::Okay);
+   const auto caps = Driver->capabilities();
+   Failures += check((caps & DCAP::DRAG_DROP) != DCAP::NIL);
+   Failures += check((caps & DCAP::DESKTOP_MANAGER) IS DCAP::NIL);
+
+   XdndPeer peer(connection);
+   constexpr OBJECTID surface = 4321;
+   auto target = Window(display::x11_driver_test_window(Driver, 100, 50, 200, 120, surface));
+   Failures += check(target != 0);
+
+   {  // XdndAware advertises protocol version 5
+      Atom type = None;
+      int format = 0;
+      unsigned long count = 0, remaining = 0;
+      unsigned char *value = nullptr;
+      XGetWindowProperty(connection, target, peer.Aware, 0, 1, False, XA_ATOM, &type, &format, &count, &remaining,
+         &value);
+      Failures += check((type IS XA_ATOM) and (format IS 32) and (count IS 1) and value and
+         (*(const Atom *)value IS 5));
+      if (value) XFree(value);
+   }
+
+   const auto clipboard_before = glClipboardData;
+   const auto none = [] { return false; };
+
+   // Hover: positions are translated to the window, files are offered as DATA::FILE, and every movement is reported.
+
+   const std::string uris = "file:///tmp/K%C5%8Dtuku%20%E2%9C%93.txt\r\nfile:///tmp/a%3Cb%3E%26.txt\r\n";
+   peer.Mode = SOURCE::ANSWER;
+   peer.Payload = uris;
+   peer.enter(target, { peer.URIList, peer.UTF8 });
+   peer.position(target, 130, 70, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   Failures += check((glDrop.overs IS 1) and (glDrop.over_surface IS surface));
+   Failures += check((glDrop.over_x IS 30) and (glDrop.over_y IS 20));
+   Failures += check(glDrop.over_type IS char(DATA::FILE));
+   Failures += check(glDrop.entered IS 1);
+   peer.position(target, 131, 71, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   Failures += check((glDrop.overs IS 2) and (glDrop.over_x IS 31) and (glDrop.entered IS 1));
+
+   // The drop is read through a private requestor and delivered unchanged to the destination saved at release.
+
+   auto leaves = glDrop.leaves;
+   peer.drop(target);
+   auto finished = peer.reply(Driver, peer.Finished);
+   Failures += check(finished_with(finished, target, true, peer.Copy));
+   Failures += check((glDrop.starts IS 1) and (glDrop.start_surface IS surface));
+   Failures += check((glDrop.start_x IS 31) and (glDrop.start_y IS 71 - 50));
+   Failures += check((glDrop.datas IS 1) and glDrop.data_snapshot);
+   Failures += check((glDrop.mime IS "text/uri-list") and (glDrop.data IS uris));
+   Failures += check(peer.RequestedTarget IS peer.URIList);
+   Failures += check(peer.Requestor != Window(display::x11_driver_clipboard_window(Driver)));
+   Failures += check(glDrop.released IS 1);
+   Failures += check(glDrop.leaves > leaves);
+
+   // Positions after the drop belong to no session and are refused.
+
+   peer.position(target, 130, 70, peer.Copy);
+   Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+
+   // Text offered through XdndTypeList prefers UTF8_STRING over less specific types.
+
+   auto text_plain = peer.TextPlain;
+   auto html = XInternAtom(connection, "text/html", False);
+   auto custom = XInternAtom(connection, "application/x-kotuku-test", False);
+   peer.Payload = "Kōtuku ✓ <dropped> & text";
+   peer.enter(target, { custom, html, text_plain, peer.UTF8 });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   Failures += check(glDrop.over_type IS char(DATA::TEXT));
+   peer.drop(target);
+   Failures += check(finished_with(peer.reply(Driver, peer.Finished), target, true, peer.Copy));
+   Failures += check(peer.RequestedTarget IS peer.UTF8);
+   Failures += check((glDrop.mime IS "text/plain;charset=utf-8") and (glDrop.data IS peer.Payload));
+   Failures += check(glDrop.released IS 2);
+
+   // Large clipboard transfers can share the source window with a drag.  Starting and ending either subscription
+   // must preserve the other one's property or destruction notifications.
+
+   auto maximum = XExtendedMaxRequestSize(connection);
+   if (not maximum) maximum = XMaxRequestSize(connection);
+   std::string clipboard(size_t(maximum) * 4 + 1024, 'c');
+   Failures += check(Driver->clipboardAddText(clipboard.c_str()) IS ERR::Okay);
+   auto selection = XInternAtom(connection, "CLIPBOARD", False);
+   XSelectInput(connection, peer.Source, PropertyChangeMask);
+   auto read_clipboard = [&](const std::function<void()> &OnIncremental = {}) {
+      std::string data;
+      bool incremental = false;
+      return request_selection(Driver, connection, peer.Source, selection, peer.UTF8, data, incremental,
+         OnIncremental) and incremental and (data IS clipboard);
+   };
+   peer.enter(target, { peer.UTF8 });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   Failures += check(read_clipboard());
+
+   // End the hover while its requestor is reading an INCR reply.
+
+   auto exited_before = glDrop.exited;
+   Failures += check(read_clipboard([&] { peer.leave(target); }));
+   Failures += check(glDrop.exited IS exited_before + 1);
+
+   // A clipboard transfer that predates the drag must retain its destruction watch when the transfer finishes.
+
+   exited_before = glDrop.exited;
+   Failures += check(read_clipboard([&] {
+      peer.enter(target, { peer.UTF8 });
+      peer.position(target, 150, 90, peer.Copy);
+   }));
+   XDestroyWindow(connection, peer.Source);
+   XSync(connection, False);
+   Failures += check(peer.pump(Driver, [&] { return glDrop.exited > exited_before; }));
+   peer.newSource();
+   XSelectInput(connection, peer.Source, PropertyChangeMask);
+
+   // The reverse order also preserves the clipboard mask when the drag begins and ends mid-transfer.
+
+   exited_before = glDrop.exited;
+   Failures += check(read_clipboard([&] {
+      peer.enter(target, { peer.UTF8 });
+      peer.position(target, 150, 90, peer.Copy);
+      peer.leave(target);
+   }));
+   Failures += check(glDrop.exited IS exited_before + 1);
+
+   // Unsupported types are refused without consulting the framework.
+
+   auto overs = glDrop.overs;
+   peer.enter(target, { custom });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+   Failures += check(glDrop.overs IS overs);
+   peer.leave(target);
+
+   // Move and link requests are answered with a copy, the only operation supported.
+
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Move);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   peer.position(target, 151, 90, peer.Link);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+
+   // Leaving ends hover feedback; later positions from the source are refused.
+
+   leaves = glDrop.leaves;
+   auto exited = glDrop.exited;
+   peer.leave(target);
+   peer.pump(Driver, [&] { return glDrop.exited > exited; });
+   Failures += check((glDrop.leaves > leaves) and (glDrop.exited IS exited + 1));
+   overs = glDrop.overs;
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+   Failures += check(glDrop.overs IS overs);
+
+   // Refusal by the destination is reported in the status, and a subsequent drop is refused without starting.
+
+   glDrop.accept_over = false;
+   leaves = glDrop.leaves;
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+   Failures += check(glDrop.leaves > leaves);
+   auto starts = glDrop.starts;
+   peer.drop(target);
+   Failures += check(finished_with(peer.reply(Driver, peer.Finished), target, false, peer.Copy));
+   Failures += check(glDrop.starts IS starts);
+   glDrop.accept_over = true;
+
+   // Unsupported versions are ignored, and unknown sources are refused rather than left waiting.
+
+   for (int version : { 2, 6 }) {
+      overs = glDrop.overs;
+      peer.enter(target, { peer.URIList }, version);
+      peer.position(target, 150, 90, peer.Copy);
+      Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+      Failures += check(glDrop.overs IS overs);
+   }
+   starts = glDrop.starts;
+   peer.drop(target);
+   Failures += check(finished_with(peer.reply(Driver, peer.Finished), target, false, peer.Copy));
+   Failures += check(glDrop.starts IS starts);
+
+   // Performs a complete hover and drop, returning the XdndFinished reply.
+
+   auto drop_with = [&](SOURCE Mode, const std::vector<Atom> &Types, const std::string &Payload, int Timeout = 2000) {
+      peer.Mode = Mode;
+      peer.Payload = Payload;
+      peer.enter(target, Types);
+      peer.position(target, 150, 90, peer.Copy);
+      auto status = peer.reply(Driver, peer.StatusReply);
+      Failures += check(status_accepted(status, target, peer.Copy));
+      peer.drop(target);
+      return peer.reply(Driver, peer.Finished, Timeout);
+   };
+
+   // A refused start does not request the data.
+
+   glDrop.accept_start = false;
+   auto requests = peer.Requests;
+   auto released = glDrop.released;
+   Failures += check(finished_with(drop_with(SOURCE::ANSWER, { peer.URIList }, uris), target, false, peer.Copy));
+   Failures += check((peer.Requests IS requests) and (glDrop.released IS released));
+   glDrop.accept_start = true;
+
+   // Rejected delivery is reported to the source and releases the snapshot.
+
+   glDrop.accept_data = false;
+   auto datas = glDrop.datas;
+   Failures += check(finished_with(drop_with(SOURCE::ANSWER, { peer.URIList }, uris), target, false, peer.Copy));
+   Failures += check((glDrop.datas IS datas + 1) and (glDrop.released IS released + 1));
+   glDrop.accept_data = true;
+
+   // Incremental, delayed and Latin-1 transfers.
+
+   std::string large(256 * 1024, 'x');
+   for (size_t i=0; i < large.size(); i += 1000) large[i] = char('a' + (i / 1000) % 26);
+   Failures += check(finished_with(drop_with(SOURCE::INCR, { peer.UTF8 }, large), target, true, peer.Copy));
+   Failures += check(glDrop.data IS large);
+   Failures += check(finished_with(drop_with(SOURCE::DELAY, { peer.URIList }, uris), target, true, peer.Copy));
+   Failures += check(glDrop.data IS uris);
+   Failures += check(finished_with(drop_with(SOURCE::ANSWER, { XA_STRING }, "caf\xe9"), target, true, peer.Copy));
+   Failures += check(glDrop.data IS "café");
+
+   // Refused conversions, malformed data and unanswered requests reject the drop without delivery.
+
+   datas = glDrop.datas;
+   released = glDrop.released;
+   Failures += check(finished_with(drop_with(SOURCE::REFUSE, { peer.URIList }, uris), target, false, peer.Copy));
+   Failures += check(finished_with(drop_with(SOURCE::FORMAT32, { peer.URIList }, uris), target, false, peer.Copy));
+   display::x11_driver_set_drop_timeout(Driver, 200);
+   Failures += check(finished_with(drop_with(SOURCE::IGNORE, { peer.URIList }, uris), target, false, peer.Copy));
+   display::x11_driver_set_drop_timeout(Driver, 10000);
+   Failures += check((glDrop.datas IS datas) and (glDrop.released IS released + 3));
+
+   // A silent source expires from its timer without polling the X11 event loop.
+
+   peer.Mode = SOURCE::IGNORE;
+   display::x11_driver_set_drop_timeout(Driver, 100);
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   requests = peer.Requests;
+   released = glDrop.released;
+   peer.drop(target);
+   Failures += check(peer.pump(Driver, [&] { return peer.Requests > requests; }));
+   Failures += check(glTimer.has_value());
+   if (glTimer) {
+      std::this_thread::sleep_until(glTimer->Due + std::chrono::milliseconds(10));
+      dispatch_timer();
+   }
+   Failures += check((glDrop.released IS released + 1) and not glTimer);
+   Failures += check(finished_with(peer.reply(Driver, peer.Finished), target, false, peer.Copy));
+   display::x11_driver_set_drop_timeout(Driver, 10000);
+
+   // A failed timer subscription refuses the drop and releases its snapshot without requesting data.
+
+   requests = peer.Requests;
+   released = glDrop.released;
+   glRefuseTimer = true;
+   Failures += check(finished_with(drop_with(SOURCE::ANSWER, { peer.URIList }, uris), target, false, peer.Copy));
+   glRefuseTimer = false;
+   Failures += check((peer.Requests IS requests) and (glDrop.released IS released + 1) and not glTimer);
+
+   // A source that disappears while hovering ends the feedback.
+
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   leaves = glDrop.leaves;
+   exited = glDrop.exited;
+   XDestroyWindow(connection, peer.Source);
+   XSync(connection, False);
+   Failures += check(peer.pump(Driver, [&] { return glDrop.exited > exited; }));
+   Failures += check(glDrop.leaves > leaves);
+
+   // A source that disappears during a transfer releases it without delivery.
+
+   peer.newSource();
+   peer.Mode = SOURCE::IGNORE;
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   requests = peer.Requests;
+   released = glDrop.released;
+   datas = glDrop.datas;
+   peer.drop(target);
+   Failures += check(peer.pump(Driver, [&] { return peer.Requests > requests; }));
+   XDestroyWindow(connection, peer.Source);
+   XSync(connection, False);
+   Failures += check(peer.pump(Driver, [&] { return glDrop.released > released; }));
+   Failures += check(glDrop.datas IS datas);
+
+   // Destroying the target while hovering ends the feedback; its later messages are refused by nobody.
+
+   peer.newSource();
+   peer.Mode = SOURCE::ANSWER;
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   leaves = glDrop.leaves;
+   Failures += check(Driver->destroyWindow((HOSTWINDOW)(uintptr_t)target) IS ERR::Okay);
+   Failures += check(glDrop.leaves > leaves);
+   peer.pump(Driver, none, 50);
+
+   // A callback that destroys its own window during hover receives no further session state.
+
+   target = Window(display::x11_driver_test_window(Driver, 100, 50, 200, 120, surface));
+   Failures += check(target != 0);
+   glDrop.on_over = [&] {
+      glDrop.on_over = nullptr;
+      Driver->destroyWindow((HOSTWINDOW)(uintptr_t)target);
+   };
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+   starts = glDrop.starts;
+   peer.drop(target);
+   peer.pump(Driver, none, 50);
+   Failures += check(glDrop.starts IS starts);
+
+   // Shift requests a move, which is refused.  XTest is optional, so the case is skipped without it.  The library
+   // stays loaded because it registers a hook that runs when the peer connection is closed.
+
+   target = Window(display::x11_driver_test_window(Driver, 100, 50, 200, 120, surface));
+   if (auto xtest = dlopen("libXtst.so.6", RTLD_NOW)) {
+      if (auto fake_key = (FakeKeyEvent)dlsym(xtest, "XTestFakeKeyEvent")) {
+         auto shift = XKeysymToKeycode(connection, XStringToKeysym("Shift_L"));
+         fake_key(connection, shift, True, 0);
+         XSync(connection, False);
+         peer.enter(target, { peer.URIList });
+         peer.position(target, 150, 90, peer.Copy);
+         Failures += check(status_refused(peer.reply(Driver, peer.StatusReply), target));
+         fake_key(connection, shift, False, 0);
+         XSync(connection, False);
+         peer.position(target, 150, 90, peer.Copy);
+         Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+         peer.leave(target);
+      }
+   }
+   else std::fprintf(stderr, "XTest is unavailable; skipping the XDND modifier check.\n");
+
+   // A pending transfer is refused when the driver closes, and no drop data reaches the clipboard.
+
+   peer.Mode = SOURCE::IGNORE;
+   peer.enter(target, { peer.URIList });
+   peer.position(target, 150, 90, peer.Copy);
+   Failures += check(status_accepted(peer.reply(Driver, peer.StatusReply), target, peer.Copy));
+   requests = peer.Requests;
+   released = glDrop.released;
+   peer.drop(target);
+   Failures += check(peer.pump(Driver, [&] { return peer.Requests > requests; }));
+   Failures += check(glClipboardData IS clipboard_before);
+   Driver->close();
+   Failures += check(glDrop.released IS released + 1);
+   Failures += check(not glTimer);
+   Failures += check(peer.pump(Driver, [&] {
+      return std::any_of(peer.Replies.begin(), peer.Replies.end(), [&](const XClientMessageEvent &Event) {
+         return Event.message_type IS peer.Finished;
+      });
+   }));
+   Failures += check(finished_with(peer.reply(Driver, peer.Finished), target, false, peer.Copy));
+
+   XDestroyWindow(connection, peer.Source);
+   XSelectInput(connection, DefaultRootWindow(connection), NoEventMask);
+   XSync(connection, False);
+   XSetErrorHandler(previous_handler);
+   XCloseDisplay(connection);
+}
+
+//********************************************************************************************************************
 
 int main()
 {
@@ -900,6 +1587,10 @@ int main()
    core_table._VLogF = vlogf;
    core_table._LogReturn = log_return;
    core_table._AdjustLogLevel = adjust_log_level;
+   core_table._SubscribeTimer = subscribe_timer;
+   core_table._UpdateTimer = update_timer;
+   core_table._CurrentTask = current_task;
+   core_table._CurrentContext = current_context;
    auto core = &core_table;
 #ifdef KOTUKU_STATIC
    auto driver = display::create_x11_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION, core);
@@ -935,6 +1626,7 @@ int main()
 
    restore_environment("KOTUKU_XDISPLAY", original_kotuku_display);
    restore_environment("DISPLAY", original_display);
+   test_xdnd(driver, original_kotuku_display, original_display, failures);
    test_clipboard(driver, original_kotuku_display, original_display, failures);
    test_capture(driver, original_kotuku_display, original_display, failures);
    test_shared_images(driver, original_kotuku_display, original_display, failures);

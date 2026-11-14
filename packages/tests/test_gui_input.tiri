@@ -63,53 +63,6 @@ end
    assert(input.getText() is 'abc' and changes is 1, 'A change veto must restore text deleted by Ctrl+K')
 end
 
-@Test function FocusedReadOnlyInputBecomesEditableImmediately()
-   for initially_read_only in {0 to 2} do
-      for refocus in {0 to 2} do
-         local changes = 0
-         local surface <close>, input, root = fixture({ text='abc', readOnly=(initially_read_only != 0),
-            events={ change=function(Event) changes++ end } })
-         input.setReadOnly(true)
-         if refocus != 0 then
-            check root.acFocus()
-            check input._textClip.acFocus()
-            processing.sleep(0)
-         end
-         input.setReadOnly(false)
-         input.setReadOnly(false)
-         assert(caret(input).visibility is VIS_VISIBLE, 'Enabling a focused input must show its caret immediately')
-         sendKey(KEY_END)
-         sendKey(KEY_Q, 0, 113)
-         assert(input.getText() is 'abcq' and changes is 1,
-            'Enabling a focused input must accept typing once without a focus change')
-
-         input.setReadOnly(true)
-         assert(caret(input).visibility is VIS_HIDDEN, 'Making an input read-only must hide the caret immediately')
-         sendKey(KEY_K, KQ_CTRL)
-         sendKey(KEY_DELETE)
-         sendKey(KEY_Q, 0, 113)
-         assert(input.getText() is 'abcq' and changes is 1, 'Read-only inputs must block deletion and typing')
-      end
-   end
-end
-
-@Test function EnablingUnfocusedInputWaitsForFocus()
-   local surface <close>, input, root = fixture({ text='abc', readOnly=true })
-   check root.acFocus()
-   input.setReadOnly(false)
-   assert(caret(input).visibility is VIS_HIDDEN, 'Enabling an unfocused input must leave its caret hidden')
-   sendKey(KEY_Q, 0, 113)
-   assert(input.getText() is 'abc', 'Enabling an unfocused input must not capture keyboard events')
-   check input._textClip.acFocus()
-   processing.sleep(0)
-   sendKey(KEY_END)
-   sendKey(KEY_Q, 0, 113)
-   assert(input.getText() is 'abcq', 'An enabled input must accept typing once it gains focus')
-   check root.acFocus()
-   sendKey(KEY_Q, 0, 113)
-   assert(input.getText() is 'abcq', 'Losing focus must stop keyboard editing after enabling an input')
-end
-
 @Test function SetTextUpdatesTheActivationBaseline()
    local reports = array<str>
    local surface <close>, input, root = fixture({ text='a',

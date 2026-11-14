@@ -20,6 +20,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -72,6 +73,37 @@ struct X11ClipboardWrite {
    size_t Offset = 0;
    long PreviousEventMask = 0;
    std::chrono::steady_clock::time_point Updated = {};
+};
+
+// The pointer hover state of an inbound XDND session.  Only one session exists at a time because the X server has a
+// single core pointer.
+
+struct X11DropSession {
+   Window Source = 0;
+   Window Target = 0;
+   OBJECTID SurfaceID = 0;
+   Atom Type = None;          // The preferred type offered by the source, or None if no type is supported
+   int Version = 0;
+   double X = 0, Y = 0;       // Window-relative position of the latest XdndPosition
+   int RootX = 0, RootY = 0;  // Root position of the latest XdndPosition
+   uint64_t Generation = 0;   // Identifies the session across callbacks that may end it
+   bool Entered = false;      // True once a Crossing notification has been sent for the target
+   bool Accepted = false;     // The acceptance sent in the latest XdndStatus
+};
+
+// An accepted drop whose data is being read from XdndSelection.  A private requestor window isolates each transfer
+// from the clipboard and from late replies to other transfers.
+
+struct X11DropTransfer {
+   Window Requestor = 0;
+   Window Source = 0;
+   Window Target = 0;
+   Atom Type = None;
+   int Version = 0;
+   bool Incremental = false;
+   std::string Data;
+   std::chrono::steady_clock::time_point Updated = {};
+   NativeDrop Drop;
 };
 
 struct X11Driver::State {
@@ -137,6 +169,15 @@ struct X11Driver::State {
    std::string ClipboardGnomeFiles;
    std::string TransferData;
    std::vector<X11ClipboardWrite> ClipboardWrites;
+   X11DropSession DropSession;
+   std::vector<X11DropTransfer> DropTransfers;
+   std::unordered_map<Window, long> DropWatches; // Original event masks of monitored foreign sources
+   TIMER DropTimer = nullptr;
+   uint64_t DropGeneration = 0;
+   std::chrono::milliseconds DropTimeout = std::chrono::seconds(10);
+   struct {
+      Atom Aware, Enter, Position, StatusReply, Leave, Drop, Finished, Selection, TypeList, ActionCopy, Property;
+   } Xdnd = {};
    uint64_t TransferGeneration = 0;
    std::chrono::steady_clock::time_point TransferStarted = {};
    GC GraphicsContext = 0;
@@ -179,6 +220,18 @@ void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window);
 void x11_install_bitmap_routines(extBitmap *Bitmap);
 void x11_request_clipboard(X11Driver::State *State, Time Timestamp, Window Owner);
 void x11_save_clipboard(X11Driver::State *State, Time Timestamp);
+
+std::string latin1_to_utf8(const unsigned char *Data, size_t Length);
+
+ERR x11_xdnd_open(X11Driver::State *State);
+void x11_xdnd_close(X11Driver::State *State);
+void x11_xdnd_advertise(X11Driver::State *State, Window Native);
+void x11_xdnd_forget_window(X11Driver::State *State, Window Native);
+void x11_xdnd_expire(X11Driver::State *State);
+bool x11_xdnd_client_message(X11Driver::State *State, const XClientMessageEvent &Event);
+bool x11_xdnd_selection_notify(X11Driver::State *State, const XSelectionEvent &Event);
+bool x11_xdnd_property_notify(X11Driver::State *State, const XPropertyEvent &Event);
+bool x11_xdnd_foreign_event(X11Driver::State *State, const XEvent &Event);
 
 void handle_button_press(XEvent *Event);
 void handle_button_release(XEvent *Event);
