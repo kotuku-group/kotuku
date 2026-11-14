@@ -68,6 +68,8 @@ end
 @Test function DetachedVectorScopeIsRejected()
    local sc = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
    local vp = sc.new('VectorViewport', { width=100, height=100 })
+   local freed = false
+   vp.subscribe('Free', function() freed = true end)
    try
       registrations.push(input.keyboard(vp, function() end))
    except e
@@ -78,6 +80,21 @@ end
    if err is ERR_Okay then mGfx.UnsubscribeKeyboard(handle) end
    assert(err is ERR_Args, 'The broker must reject an object scope without a surface, got ' .. mSys.GetErrorMsg(err))
    sc.free()
+   assert(freed, 'Rejecting a detached keyboard scope must release its lock so the scene can free its viewport')
+end
+
+@Test function InvalidKeyboardScopeReleasesItsLock()
+   local target = obj.new('Time')
+   local freed, rejected = false, false
+   target.subscribe('Free', function() freed = true end)
+   try
+      registrations.push(input.keyboard(target, function() end))
+   except e
+      rejected = true
+   end
+   assert(rejected, 'An object without a vector scene must be rejected as a keyboard scope')
+   target.free()
+   assert(freed, 'Rejecting an invalid keyboard scope must release its object lock')
 end
 
 @Test function ConsumptionFollowsFocusInsteadOfTabOrder()

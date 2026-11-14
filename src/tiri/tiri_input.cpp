@@ -173,10 +173,17 @@ static int input_reserve(lua_State *Lua)
    OBJECTID surface_id = object_id, scope_id = 0;
    if (object_id and GetClassID(object_id) != CLASSID::SURFACE) {
       // Resolve vector scopes through their Scene field without loading or linking the Vector module.
-      kt::ScopedObjectLock target(object_id);
-      OBJECTPTR scene = nullptr;
-      if (not target.granted() or target->get(strhash("scene"), scene) != ERR::Okay or not scene or
-          scene->get(strhash("surface"), surface_id) != ERR::Okay) {
+      bool resolved = false;
+      {
+         kt::ScopedObjectLock target(object_id);
+         OBJECTPTR scene = nullptr;
+         resolved = target.granted() and target->get(strhash("scene"), scene) IS ERR::Okay and scene and
+            scene->get(strhash("surface"), surface_id) IS ERR::Okay;
+      }
+
+      // Tiri error unwinding can bypass C++ destructors, so release the lock before reporting either error.
+
+      if (not resolved) {
          luaL_argerror(Lua, 1, "Surface or vector object required.");
       }
       if (not surface_id) luaL_argerror(Lua, 1, "Vector scene is not attached to a surface.");
