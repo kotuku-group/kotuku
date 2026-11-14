@@ -1758,8 +1758,6 @@ static void build_subroutines(BuildCtx *ctx)
   |.endmacro
   |
   |ffstring_op reverse
-  |ffstring_op lower
-  |ffstring_op upper
   |
   |//-- Bit library --------------------------------------------------------
   |

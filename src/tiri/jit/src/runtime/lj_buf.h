@@ -203,6 +203,8 @@ static LJ_AINLINE void lj_buf_putb(SBuf* sb, int c)
 LJ_FUNCA SBuf* lj_buf_putstr_reverse(SBuf* sb, GCstr* s);
 LJ_FUNCA SBuf* lj_buf_putstr_lower(SBuf* sb, GCstr* s);
 LJ_FUNCA SBuf* lj_buf_putstr_upper(SBuf* sb, GCstr* s);
+LJ_FUNCA SBuf* lj_buf_putstr_upper_utf8(SBuf* sb, GCstr* s);
+LJ_FUNCA SBuf* lj_buf_putstr_lower_utf8(SBuf* sb, GCstr* s);
 LJ_FUNC SBuf* lj_buf_putstr_rep(SBuf* sb, GCstr* s, int32_t rep);
 LJ_FUNC SBuf* lj_buf_puttab(SBuf* sb, GCtab* t, GCstr* sep,
    int32_t i, int32_t e);
