@@ -684,8 +684,35 @@ LJLIB_ASM(string_reverse)  LJLIB_REC(string_op IRCALL_lj_buf_putstr_reverse)
    lj_lib_checkstr(L, 1);
    return FFH_RETRY;
 }
-LJLIB_ASM_(string_lower)  LJLIB_REC(string_op IRCALL_lj_buf_putstr_lower)
-LJLIB_ASM_(string_upper)  LJLIB_REC(string_op IRCALL_lj_buf_putstr_upper)
+
+//********************************************************************************************************************
+// string.lower(Unicode) and string.upper(Unicode): If Unicode is true, accented and non-Latin letters in UTF-8 text are
+// also converted, else only the ASCII letters are converted.  These are C functions rather than assembly fast paths, so
+// that the optional argument is honoured by the interpreter.  Traces call the conversion directly (see
+// recff_string_case()).
+
+static int string_case(lua_State *L, SBuf * (*Ascii)(SBuf *, GCstr *), SBuf * (*Unicode)(SBuf *, GCstr *))
+{
+   GCstr *s = lj_lib_checkstr(L, 1);
+   bool unicode = (L->base + 1 < L->top) and tvistruecond(L->base + 1);
+   SBuf *sb = lj_buf_tmp_(L);
+   lj_buf_reset(sb);
+   if (unicode) Unicode(sb, s);
+   else Ascii(sb, s);
+   setstrV(L, L->top - 1, lj_buf_str(L, sb));
+   lj_gc_check(L);
+   return 1;
+}
+
+LJLIB_CF(string_lower)  LJLIB_REC(string_case 0)
+{
+   return string_case(L, lj_buf_putstr_lower, lj_buf_putstr_lower_utf8);
+}
+
+LJLIB_CF(string_upper)  LJLIB_REC(string_case 1)
+{
+   return string_case(L, lj_buf_putstr_upper, lj_buf_putstr_upper_utf8);
+}
 
 //********************************************************************************************************************
 
@@ -888,7 +915,7 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "hash", TiriType::Str, builtin_callable_id(FastFunc::string_hash),
       { TiriType::Num }, { TiriType::Str, TiriType::Bool }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "string", "lower", TiriType::Str, builtin_callable_id(FastFunc::string_lower),
-      { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
+      { TiriType::Str }, { TiriType::Str, TiriType::Bool }, FProtoFlags::ContextIndependent, FProtoArity::required(1));
    reg_iface_method(L, "string", "pop", TiriType::Str, builtin_callable_id(FastFunc::string_pop),
       { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::ContextIndependent,
       FProtoArity::required(1));
@@ -919,7 +946,7 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "unescapeXML", TiriType::Str,
       builtin_callable_id(FastFunc::string_unescapeXML), { TiriType::Str }, { TiriType::Str });
    reg_iface_method(L, "string", "upper", TiriType::Str, builtin_callable_id(FastFunc::string_upper),
-      { TiriType::Str }, { TiriType::Str }, FProtoFlags::NoNil | FProtoFlags::ContextIndependent);
+      { TiriType::Str }, { TiriType::Str, TiriType::Bool }, FProtoFlags::ContextIndependent, FProtoArity::required(1));
 
    return 1;
 }

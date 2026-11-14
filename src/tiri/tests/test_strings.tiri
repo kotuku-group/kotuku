@@ -745,6 +745,112 @@ end
    assert(numbersUpper is "123!@#", "Expected '123!@#', got '" .. numbersUpper .. "'")
 end
 
+-- string.upper(true) also converts accented and non-Latin letters in UTF-8 text.
+
+@Test function UpperUnicode()
+   local text = 'Kōtuku élan ÿ µ ı ſ Ĺĺ αβγ ς άέ мир ёж ỳ Ĳĳ abc'
+   local upper = text.upper(true)
+   assert(upper is 'KŌTUKU ÉLAN Ÿ Μ I S ĹĹ ΑΒΓ Σ ΆΈ МИР ЁЖ Ỳ ĲĲ ABC', f'Unexpected result \'{upper}\'')
+   assert(string.upper(text, true) is upper, 'The function form must accept the Unicode argument')
+
+   -- Without the argument, or if it is false, only ASCII letters are converted
+
+   local ascii = 'KōTUKU éLAN ÿ µ ı ſ Ĺĺ αβγ ς άέ мир ёж ỳ Ĳĳ ABC'
+   assert(text.upper() is ascii, 'Default conversion must only affect ASCII letters')
+   assert(text.upper(false) is ascii, 'A false argument must only affect ASCII letters')
+   assert(text.upper(nil) is ascii, 'A nil argument must only affect ASCII letters')
+
+   -- Letters without a single-letter capital, characters outside of the supported blocks and four byte sequences are
+   -- unchanged
+
+   assert(('ß ǆ 🙂').upper(true) is 'ß ǆ 🙂', 'Unsupported characters must be copied unchanged')
+   assert(('').upper(true) is '', 'An empty string must remain empty')
+end
+
+-- string.lower(true) is the counterpart of string.upper(true).  Capital sigma always becomes the medial form.
+
+@Test function LowerUnicode()
+   local text = 'KŌTUKU ÉLAN Ÿ İ ẞ Σ ΆΈΊΌΎΏ ΑΒΓ МИР ЁЖ Ӏ Ӂ Ỳ Ĳ Ĺ Ź ABC'
+   local lower = text.lower(true)
+   assert(lower is 'kōtuku élan ÿ i ß σ άέίόύώ αβγ мир ёж ӏ ӂ ỳ ĳ ĺ ź abc', f'Unexpected result \'{lower}\'')
+   assert(string.lower(text, true) is lower, 'The function form must accept the Unicode argument')
+
+   local ascii = 'kŌtuku Élan Ÿ İ ẞ Σ ΆΈΊΌΎΏ ΑΒΓ МИР ЁЖ Ӏ Ӂ Ỳ Ĳ Ĺ Ź abc'
+   assert(text.lower() is ascii, 'Default conversion must only affect ASCII letters')
+   assert(text.lower(false) is ascii, 'A false argument must only affect ASCII letters')
+
+   assert(('Ǆ × 🙂').lower(true) is 'Ǆ × 🙂', 'Unsupported characters must be copied unchanged')
+   assert(('').lower(true) is '', 'An empty string must remain empty')
+
+   -- Every letter in the supported blocks survives a round trip, except for the one-way mappings tested above
+
+   local letters = 'ÀÉÎÕÜÝĀĂĘĞĪŁŃŒŠŽΆΑΩΪЀЏАЯѠҊӐԮḀẸỸ'
+   assert(letters.lower(true).upper(true) is letters, 'Lower then upper must restore the capitals')
+end
+
+@Test function CaseUnicodeAdditionalLetters()
+   local small = 'ͱͳͷͻͼͽϐϑϕϖϗϙϛϝϟϡϣϥϧϩϫϭϯϰϱϲϳϵϸϻẛ'
+   local upper = 'ͰͲͶϽϾϿΒΘΦΠϏϘϚϜϞϠϢϤϦϨϪϬϮΚΡϹͿΕϷϺṠ'
+   local capital = 'ͰͲͶͿϏϘϚϜϞϠϢϤϦϨϪϬϮϴϷϹϺϽϾϿ'
+   local lower = 'ͱͳͷϳϗϙϛϝϟϡϣϥϧϩϫϭϯθϸϲϻͻͼͽ'
+   local words = array<str> { small, capital }
+   local upper_words = array<str> { upper, capital }
+   local lower_words = array<str> { small, lower }
+
+   for index in {0 to 500} do
+      local word = words[index % 2]
+      assert(word.upper(true) is upper_words[index % 2], 'Supported letters must convert to uppercase')
+      assert(word.lower(true) is lower_words[index % 2], 'Supported letters must convert to lowercase')
+      assert(word.upper() is word and word.lower() is word, 'ASCII conversion must preserve non-ASCII letters')
+      assert(('ϙϑẛ').upper(true) is 'ϘΘṠ', 'Constant uppercase conversion must include additional letters')
+      assert(('Ϙϴ').lower(true) is 'ϙθ', 'Constant lowercase conversion must include additional letters')
+   end
+end
+
+@Test function CaseUnicodeMalformed()
+   local truncated = string.char(0x61, 0xc3, 0xa9, 0xc3)
+   assert(truncated.upper(true) is string.char(0x41, 0xc3, 0x89, 0xc3), 'A truncated sequence must be copied')
+   assert(string.char(0x41, 0xc3, 0x89, 0xc3).lower(true) is truncated, 'A truncated sequence must be copied')
+
+   local overlong = string.char(0xc1, 0xa1, 0x78)
+   assert(overlong.upper(true) is string.char(0xc1, 0xa1, 0x58), 'An overlong sequence must not be decoded')
+   assert(string.char(0xc1, 0x81, 0x58).lower(true) is string.char(0xc1, 0x81, 0x78),
+      'An overlong sequence must not be decoded')
+
+   local stray = string.char(0xa9, 0x62)
+   assert(stray.upper(true) is string.char(0xa9, 0x42), 'A stray continuation byte must be copied')
+   assert(string.char(0xa9, 0x42).lower(true) is stray, 'A stray continuation byte must be copied')
+end
+
+-- Traces specialise to the argument's type, so a change of argument must side-exit with the correct conversion.
+
+@Test function CaseUnicodeTraces()
+   jit.flush()
+   local words = array<str> { 'élan', 'мир', 'ỳes' }
+   local unicode = array<str> { 'ÉLAN', 'МИР', 'ỲES' }
+   local ascii = array<str> { 'éLAN', 'мир', 'ỳES' }
+   local flags = array<any> { true, false, nil, 1, 'yes' }
+   for index in {0 to 500} do
+      local word = words[index % 3]
+      assert(word.upper(true) is unicode[index % 3], f'{index}: unexpected upper(true) result')
+      assert(word.upper() is ascii[index % 3], f'{index}: unexpected upper() result')
+      assert(('ñandú').upper(true) is 'ÑANDÚ', f'{index}: unexpected constant upper(true) result')
+
+      assert(unicode[index % 3].lower(true) is words[index % 3], f'{index}: unexpected lower(true) result')
+      assert(('ÑANDÚ').lower(true) is 'ñandú', f'{index}: unexpected constant lower(true) result')
+      assert(('ÑANDÚ').lower() is 'ÑandÚ', f'{index}: unexpected constant lower() result')
+
+      local flag = flags[index % 5]
+      local result = word.upper(flag)
+      local expected = flag ? unicode[index % 3] : ascii[index % 3]
+      assert(result is expected, f'{index}: upper({flag}) returned \'{result}\'')
+
+      result = unicode[index % 3].lower(flag)
+      expected = flag ? words[index % 3] : unicode[index % 3].lower()
+      assert(result is expected, f'{index}: lower({flag}) returned \'{result}\'')
+   end
+end
+
 @Test function Find()
    -- Basic find (zero-indexed positions)
    s = "hello world"

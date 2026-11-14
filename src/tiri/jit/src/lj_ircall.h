@@ -284,6 +284,9 @@ typedef struct CCallInfo {
   _(ANY,        lj_func_closeuv,            2, S, NIL, CCI_L) \
   _(ANY,        lj_func_newL_local,         4, A, FUNC, CCI_L|CCI_T) \
   _(ANY,        lj_context_leave_tail_jit,  2, S, NIL, CCI_L) \
+  /* Unicode-aware string.upper() and string.lower() */ \
+  _(ANY,        lj_buf_putstr_upper_utf8,   2, FL, PGC, CCI_T) \
+  _(ANY,        lj_buf_putstr_lower_utf8,   2, FL, PGC, CCI_T) \
   \
   // End of list.
 

@@ -1700,6 +1700,18 @@ static void recff_string_op(jit_State* J, RecordFFData* rd)
 }
 
 //********************************************************************************************************************
+// string.lower(Unicode) and string.upper(Unicode), selected by rd->data (0 for lower, 1 for upper).  The trace is
+// specialised to the type of the Unicode argument, so its truthiness is known.
+
+static void recff_string_case(jit_State* J, RecordFFData* rd)
+{
+   bool unicode = J->base[1] and tref_istruecond(J->base[1]);
+   if (rd->data) rd->data = unicode ? IRCALL_lj_buf_putstr_upper_utf8 : IRCALL_lj_buf_putstr_upper;
+   else rd->data = unicode ? IRCALL_lj_buf_putstr_lower_utf8 : IRCALL_lj_buf_putstr_lower;
+   recff_string_op(J, rd);
+}
+
+//********************************************************************************************************************
 
 static void recff_string_find(jit_State* J, RecordFFData* rd)
 {
