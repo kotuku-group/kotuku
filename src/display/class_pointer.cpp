@@ -299,8 +299,15 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
       SubscribeTimer(0.02, C_FUNCTION(repeat_timer), &glRepeatTimer); // Use a timer subscription so that repeat button clicks can be supported (the interval indicates the rate of the repeat)
    }
 
-   if ((Self->DragSourceID) and (bi IS 0) and (userinput.Value <= 0) and
-       (not Self->DragDelivering) and (not Self->NativeDrag)) {
+   const bool drag_release = (Self->DragSourceID) and (bi IS 0) and (userinput.Value <= 0) and
+      (not Self->DragDelivering) and (not Self->NativeDrag);
+
+#ifndef _WIN32
+   // A release over another application ends an exported drag in the driver.
+   if ((drag_release) and (drop_host_export(Self))) return;
+#endif
+
+   if (drag_release) {
       // Drag and drop has been released with the primary button.  The session is copied so that it remains intact if
       // the destination cancels it, frees the source or attempts to start a new drag during delivery.
 
@@ -343,6 +350,10 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
 
 void end_cursor_drag(extPointer *Self, bool Unsubscribe)
 {
+#ifndef _WIN32
+   cancel_host_export(Self);
+#endif
+
    if (Self->DragSurface) {
       kt::ScopedObjectLock surface(Self->DragSurface);
       if (surface.granted()) acHide(*surface);

@@ -162,6 +162,7 @@ bool DriverDragOver(OBJECTID SurfaceID, double X, double Y, CSTRING Datatypes, s
 bool DriverDragStart(NativeDrop &Drop);
 bool DriverDragData(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length);
 void DriverDragLeave();
+void DriverDragExportEnded(bool Accepted);
 }
 
 const DriverCallbacks glDriverCallbacks = {
@@ -198,7 +199,8 @@ const DriverCallbacks glDriverCallbacks = {
    .DragOver = display::DriverDragOver,
    .DragStart = display::DriverDragStart,
    .DragData = display::DriverDragData,
-   .DragLeave = display::DriverDragLeave
+   .DragLeave = display::DriverDragLeave,
+   .DragExportEnded = display::DriverDragExportEnded
 };
 
 thread_local int16_t tlNoDrawing = 0, tlNoExpose = 0, tlVolatileIndex = 0;

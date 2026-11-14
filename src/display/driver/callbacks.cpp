@@ -56,6 +56,8 @@ void DriverKeyRelease(KQ Flags, KEY Value)
 void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient)
 {
    if (auto pointer = gfx::AccessPointer(); pointer) {
+      [[maybe_unused]] const bool dragging = ((extPointer *)pointer)->DragSourceID != 0;
+
       pointer->setSurface(SurfaceID);  // Alter the surface of the pointer so that it refers to the correct root window
 
       // Record the host cursor position, which the Pointer class reports through its HostX and HostY fields.
@@ -77,6 +79,9 @@ void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient
          // A captured internal drag that leaves all of our windows is handed to OLE.  This runs from the window
          // procedure with the pointer released, as DoDragDrop() requires.
          if (not SurfaceID) check_native_export(SurfaceID);
+      #else
+         // Hosts without a modal drag loop follow the drag in the driver once it leaves our windows.
+         if (dragging) check_host_export(AbsX, AbsY);
       #endif
    }
 }

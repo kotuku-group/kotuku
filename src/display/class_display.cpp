@@ -141,6 +141,13 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 
    if (not Args) return log.warning(ERR::NullArgs);
 
+   if (Args->Datatype IS DATA::RECEIPT) {
+      // Receipts are accepted only from the source of an outbound native drag, while its payload is being collected.
+      if (receive_export_receipt(Args->Object,
+            std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()))) return ERR::Okay;
+      return ERR::NoSupport;
+   }
+
 #ifdef __linux__
    if (Args->Datatype IS DATA::REQUEST) {
       if ((not Args->Object) or (Args->Buffer.size() < sizeof(struct dcRequest))) return ERR::NullArgs;
@@ -151,13 +158,6 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 #endif
 
 #ifdef _WIN32
-   if (Args->Datatype IS DATA::RECEIPT) {
-      // Receipts are accepted only from the source of an outbound native drag, while its payload is being collected.
-      if (receive_export_receipt(Args->Object,
-            std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()))) return ERR::Okay;
-      return ERR::NoSupport;
-   }
-
    if (Args->Datatype IS DATA::REQUEST) {
       // Supported for handling the windows clipboard
 
@@ -1729,7 +1729,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
 
             if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
-               glDriver->showWindow(Self->WindowHandle, true);
+               glDriver->showWindow(Self->WindowHandle, (Self->Flags & SCR::MAXIMISE) != SCR::NIL);
                QueueAction(AC::Focus, Self->UID);
             }
          }

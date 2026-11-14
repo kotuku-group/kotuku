@@ -549,9 +549,13 @@ extern bool receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dro
 extern void lose_host_clipboard();
 extern void clear_host_drop();
 extern ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference);
+extern bool receive_export_receipt(OBJECTPTR Source, std::string_view Receipt);
 #ifdef _WIN32
 extern void check_native_export(OBJECTID SurfaceID);
-extern bool receive_export_receipt(OBJECTPTR Source, std::string_view Receipt);
+#else
+extern void check_host_export(double AbsX, double AbsY);
+extern bool drop_host_export(extPointer *Pointer);
+extern void cancel_host_export(extPointer *Pointer);
 #endif
 namespace display {
    void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);

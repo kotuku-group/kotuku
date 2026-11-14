@@ -27,7 +27,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 17;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 18;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -45,7 +45,7 @@ extern "C" DISPLAY_DRIVER_EXPORT void destroy_display_driver(DisplayDriver *Driv
 
 // DRAG_DROP indicates that native drops from other applications are delivered through the DragOver, DragStart,
 // DragData and DragLeave callbacks.  It does not imply that internal drags can be exported to other applications,
-// which is backend-specific.
+// which is backend-specific.  Backends without a modal drag loop export through startDragExport().
 
 enum class DCAP : uint64_t {
    NIL             = 0,
@@ -150,6 +150,9 @@ struct DriverCallbacks {
    bool (*DragStart)(NativeDrop &Drop);
    bool (*DragData)(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length);
    void (*DragLeave)();
+   // Reports the outcome of an export for which dropDragExport() returned ERR::Okay.  It is called at most once, and
+   // never from within dropDragExport().  Accepted is true if the native recipient completed a copy.
+   void (*DragExportEnded)(bool Accepted);
 };
 
 class DisplayDriver {
@@ -266,6 +269,30 @@ public:
    virtual ERR clipboardRead() { return ERR::NoSupport; }
    virtual ERR setPrimarySelection(std::string_view Text) { return ERR::NoSupport; }
    virtual ERR readPrimarySelection(OBJECTID Recipient, int Item) { return ERR::NoSupport; }
+
+   // Outbound native dragging for hosts without a modal drag loop.  The Windows backend uses OLE directly and does
+   // not implement these.  Positions are in desktop coordinates.  Exclude is a top-level window to look through, such
+   // as one holding the drag preview, or null.
+   //
+   // foreignPoint() returns true if the point is not over a window of this driver, so another application or the
+   // desktop would receive a drop there.  startDragExport() takes an immutable copy of absolute native paths and UTF-8
+   // text (null if none) and follows the pointer until the export ends.  It returns ERR::InUse while an earlier
+   // export is still waiting for its recipient.  dropDragExport() is called when the primary button is released
+   // during an export, and ends the driver's hover state.  It returns DROP_INTERNAL if the pointer is over one of our
+   // windows, so the drop is delivered internally; ERR::Okay if the result will be reported by DragExportEnded; or
+   // another error if nothing can receive the drop.  cancelDragExport() abandons hover without a drop, and is ignored
+   // once the drop has been sent.  A driver that closes with a drop outstanding abandons it without DragExportEnded.
+
+   // dropDragExport() result for a release over one of our windows.  Named because Xlib defines False as a macro.
+
+   static constexpr ERR DROP_INTERNAL = ERR::False;
+
+   virtual bool foreignPoint(double X, double Y, HOSTWINDOW Exclude) { return false; }
+   virtual ERR startDragExport(const std::vector<std::string> &Files, const std::string *Text, HOSTWINDOW Exclude) {
+      return ERR::NoSupport;
+   }
+   virtual ERR dropDragExport() { return ERR::NoSupport; }
+   virtual void cancelDragExport() { }
 };
 
 class HeadlessDriver : public DisplayDriver {

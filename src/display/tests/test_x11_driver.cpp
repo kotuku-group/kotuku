@@ -7,6 +7,7 @@
 #include <X11/extensions/XShm.h>
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
@@ -1577,6 +1578,729 @@ static void test_xdnd(DisplayDriver *Driver, const std::optional<std::string> &K
 
 //********************************************************************************************************************
 
+//********************************************************************************************************************
+// Outbound XDND.  The driver is the source; the peer connection plays a recipient in another application, and XTest
+// supplies a real button press and pointer movement so that the driver follows the implicit grab.  The framework's
+// part is played by the callbacks: an export starts when the pointer first leaves our windows, and the release asks
+// the driver to drop.
+
+using FakeMotionEvent = int (*)(Display *, int, int, int, unsigned long);
+using FakeButtonEvent = int (*)(Display *, unsigned int, Bool, unsigned long);
+
+static struct {
+   DisplayDriver *driver = nullptr;
+   bool start = false, started = false, has_text = true;
+   ERR start_error = ERR::NoData, drop_error = ERR::NoData;
+   int drops = 0, ended = 0, releases = 0;
+   bool accepted = false;
+   std::vector<std::string> files;
+   std::string text;
+   HOSTWINDOW exclude = nullptr;
+} glExport;
+
+static void export_movement(OBJECTID, double X, double Y, bool)
+{
+   if ((not glExport.start) or glExport.started) return;
+   if (not glExport.driver->foreignPoint(X, Y, glExport.exclude)) return;
+   glExport.started = true;
+   glExport.start_error = glExport.driver->startDragExport(glExport.files,
+      glExport.has_text ? &glExport.text : nullptr, glExport.exclude);
+}
+
+static void export_button(int Buttons, bool Pressed)
+{
+   if ((Buttons != 1) or Pressed) return;
+   glExport.releases++;
+   if (glExport.started and (glExport.start_error IS ERR::Okay)) {
+      glExport.drops++;
+      glExport.drop_error = glExport.driver->dropDragExport();
+   }
+}
+
+static void export_ended(bool Accepted)
+{
+   glExport.ended++;
+   glExport.accepted = Accepted;
+}
+
+enum class RECIPIENT { ACCEPT, REFUSE, MOVE, SILENT };
+
+struct XdndRecipient {
+   Display *Connection = nullptr;
+   Window Target = 0, Proxy = 0, Source = 0;
+   Atom Aware, ProxyAtom, Enter, Position, StatusReply, Leave, Drop, Finished, Selection, TypeList, Copy, Move;
+   Atom URIList, UTF8, Targets, Property;
+   RECIPIENT Mode = RECIPIENT::ACCEPT;
+   bool Read = true, Finish = true;
+   Atom Want = None;
+   std::vector<XClientMessageEvent> Messages;
+   std::string Received;
+   Atom ReceivedType = None;
+   int Conversions = 0;
+
+   XdndRecipient(Display *Peer, int X, int Y, int Width, int Height, int Version, bool WithProxy) :
+      Connection(Peer) {
+      auto atom = [Peer](CSTRING Name) { return XInternAtom(Peer, Name, False); };
+      Aware = atom("XdndAware"); ProxyAtom = atom("XdndProxy"); Enter = atom("XdndEnter");
+      Position = atom("XdndPosition"); StatusReply = atom("XdndStatus"); Leave = atom("XdndLeave");
+      Drop = atom("XdndDrop"); Finished = atom("XdndFinished"); Selection = atom("XdndSelection");
+      TypeList = atom("XdndTypeList"); Copy = atom("XdndActionCopy"); Move = atom("XdndActionMove");
+      URIList = atom("text/uri-list"); UTF8 = atom("UTF8_STRING"); Targets = atom("TARGETS");
+      Property = atom("KOTUKU_TEST_DROP");
+      Want = URIList;
+
+      XSetWindowAttributes attributes = {};
+      attributes.override_redirect = True;
+      attributes.event_mask = PropertyChangeMask;
+      Target = XCreateWindow(Peer, DefaultRootWindow(Peer), X, Y, Width, Height, 0, CopyFromParent, InputOutput,
+         CopyFromParent, CWOverrideRedirect|CWEventMask, &attributes);
+      const Atom version = Version;
+      auto holder = Target;
+      if (WithProxy) {
+         Proxy = XCreateSimpleWindow(Peer, DefaultRootWindow(Peer), 0, 0, 1, 1, 0, 0, 0);
+         XChangeProperty(Peer, Target, ProxyAtom, XA_WINDOW, 32, PropModeReplace, (const unsigned char *)&Proxy, 1);
+         XChangeProperty(Peer, Proxy, ProxyAtom, XA_WINDOW, 32, PropModeReplace, (const unsigned char *)&Proxy, 1);
+         holder = Proxy;
+      }
+      XChangeProperty(Peer, holder, Aware, XA_ATOM, 32, PropModeReplace, (const unsigned char *)&version, 1);
+      XMapRaised(Peer, Target);
+      XSync(Peer, False);
+   }
+
+   ~XdndRecipient() {
+      if (Proxy) XDestroyWindow(Connection, Proxy);
+      XDestroyWindow(Connection, Target);
+      XSync(Connection, False);
+   }
+
+   void send(Atom Type, std::array<long, 5> Data) {
+      XEvent event = {};
+      event.xclient.type = ClientMessage;
+      event.xclient.window = Source;
+      event.xclient.message_type = Type;
+      event.xclient.format = 32;
+      for (size_t i=0; i < Data.size(); i++) event.xclient.data.l[i] = Data[i];
+      XSendEvent(Connection, Source, False, NoEventMask, &event);
+      XFlush(Connection);
+   }
+
+   void status(bool Accept, Atom Action) { send(StatusReply, { long(Target), Accept ? 3L : 2L, 0, 0, long(Action) }); }
+   void finished(bool Accept) { send(Finished, { long(Target), Accept ? 1L : 0L, Accept ? long(Copy) : 0, 0, 0 }); }
+
+   int count(Atom Type) const {
+      return int(std::count_if(Messages.begin(), Messages.end(),
+         [Type](const XClientMessageEvent &Event) { return Event.message_type IS Type; }));
+   }
+
+   const XClientMessageEvent * last(Atom Type) const {
+      for (auto it = Messages.rbegin(); it != Messages.rend(); it++) if (it->message_type IS Type) return &*it;
+      return nullptr;
+   }
+
+   void handle(const XEvent &Event) {
+      if (Event.type IS ClientMessage) {
+         auto &message = Event.xclient;
+         Messages.push_back(message);
+         Source = Window(message.data.l[0]);
+         if (message.message_type IS Position) {
+            if (Mode IS RECIPIENT::ACCEPT) status(true, Copy);
+            else if (Mode IS RECIPIENT::REFUSE) status(false, None);
+            else if (Mode IS RECIPIENT::MOVE) status(true, Move);
+         }
+         else if ((message.message_type IS Drop) and Read) {
+            XConvertSelection(Connection, Selection, Want, Property, Target, Time(message.data.l[2]));
+            XFlush(Connection);
+         }
+      }
+      else if ((Event.type IS SelectionNotify) and (Event.xselection.selection IS Selection)) {
+         Conversions++;
+         if (Event.xselection.property != None) {
+            Atom type = None;
+            int format = 0;
+            unsigned long count = 0, remaining = 0;
+            unsigned char *value = nullptr;
+            XGetWindowProperty(Connection, Target, Property, 0, 1 << 20, True, AnyPropertyType, &type, &format,
+               &count, &remaining, &value);
+            ReceivedType = type;
+            Received.assign((const char *)value, format IS 32 ? count * sizeof(long) : count);
+            if (value) XFree(value);
+         }
+         if (Finish) finished(Event.xselection.property != None);
+      }
+   }
+};
+
+static void test_xdnd_export(DisplayDriver *Driver, const std::optional<std::string> &KotukuDisplay,
+   const std::optional<std::string> &DisplayName, int &Failures)
+{
+   auto display_name = KotukuDisplay ? *KotukuDisplay : (DisplayName ? *DisplayName : std::string());
+   if (display_name.empty()) return;
+
+   auto xtest = dlopen("libXtst.so.6", RTLD_NOW);
+   auto fake_motion = xtest ? (FakeMotionEvent)dlsym(xtest, "XTestFakeMotionEvent") : nullptr;
+   auto fake_button = xtest ? (FakeButtonEvent)dlsym(xtest, "XTestFakeButtonEvent") : nullptr;
+   if ((not fake_motion) or (not fake_button)) {
+      std::fprintf(stderr, "XTest is unavailable; skipping the XDND export tests.\n");
+      return;
+   }
+
+   auto connection = XOpenDisplay(display_name.c_str());
+   if (not connection) { Failures++; return; }
+   auto previous_handler = XSetErrorHandler(peer_error);
+   XSelectInput(connection, DefaultRootWindow(connection), SubstructureRedirectMask); // Stand-in window manager
+   XSync(connection, False);
+
+   DriverCallbacks callbacks = {
+      .Version = DISPLAY_DRIVER_INTERFACE_VERSION,
+      .Movement = export_movement,
+      .ButtonInput = export_button,
+      .Crossing = drop_crossing,
+      .ClipboardData = clipboard_data,
+      .AcceptsFocus = [](OBJECTID) { return true; },
+      .DragOver = drag_over,
+      .DragStart = drag_start,
+      .DragData = drag_data,
+      .DragLeave = drag_leave,
+      .DragExportEnded = export_ended
+   };
+   Failures += check(Driver->open(callbacks) IS ERR::Okay);
+   display::x11_driver_set_drop_timeout(Driver, 400);
+
+   // Files must exist because paths are resolved before they are encoded.
+
+   char folder_template[] = "/tmp/kotuku_xdnd_export_XXXXXX";
+   std::string folder = mkdtemp(folder_template) ? folder_template : "";
+   Failures += check(not folder.empty());
+   const auto file_a = folder + "/K\xC5\x8Dtuku \xE2\x9C\x93 drop.txt";
+   const auto file_b = folder + "/a<b>&'q\".txt";
+   Failures += check(create_file(file_a.c_str()) and create_file(file_b.c_str()));
+   auto encode = [](const std::string &Path) {
+      constexpr char hex[] = "0123456789ABCDEF";
+      std::string uri("file://");
+      for (unsigned char ch : Path) {
+         if (std::isalnum(ch) or (ch IS '/') or (ch IS '-') or (ch IS '_') or (ch IS '.') or (ch IS '~')) {
+            uri.push_back(char(ch));
+         }
+         else { uri.push_back('%'); uri.push_back(hex[ch >> 4]); uri.push_back(hex[ch & 15]); }
+      }
+      return uri + "\r\n";
+   };
+   const auto uris = encode(file_a) + encode(file_b) + encode(folder); // Folders lose their trailing separator
+
+   glExport = {};
+   glExport.driver = Driver;
+   glExport.files = { file_a, file_b, folder + "/" };
+   glExport.text = "caf\xC3\xA9 \xE2\x9C\x93";
+
+   constexpr OBJECTID home_surface = 5101;
+   auto home = Window(display::x11_driver_test_input_window(Driver, 100, 50, 200, 120, home_surface));
+   Failures += check(home != 0);
+   auto recipient = std::make_unique<XdndRecipient>(connection, 400, 50, 200, 120, 5, false);
+   const auto clipboard_owner = XGetSelectionOwner(connection, XInternAtom(connection, "CLIPBOARD", False));
+
+   auto pump = [&](const std::function<bool()> &Condition, int Milliseconds = 1000) {
+      auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(Milliseconds);
+      while (true) {
+         display::x11_process_driver_events(Driver);
+         dispatch_timer();
+         while (XPending(connection)) {
+            XEvent event = {};
+            XNextEvent(connection, &event);
+            recipient->handle(event);
+         }
+         if (Condition()) return true;
+         if (std::chrono::steady_clock::now() >= deadline) return false;
+         usleep(1000);
+      }
+   };
+   const auto settle = [] { return false; };
+
+   auto move = [&](int X, int Y) {
+      fake_motion(connection, -1, X, Y, 0);
+      XSync(connection, False);
+      pump(settle, 40);
+   };
+   auto press = [&](int X, int Y) {
+      glExport.started = false;
+      glExport.start_error = ERR::NoData;
+      glExport.drop_error = ERR::NoData;
+      glExport.start = true;
+      move(X, Y);
+      fake_button(connection, 1, True, 0);
+      XSync(connection, False);
+      pump(settle, 40);
+   };
+   auto release = [&]() {
+      auto releases = glExport.releases;
+      fake_button(connection, 1, False, 0);
+      XSync(connection, False);
+      pump([&] { return glExport.releases > releases; });
+      glExport.start = false;
+   };
+
+   // Hit-testing: our windows are not foreign, other windows and the bare desktop are.
+
+   Failures += check(not Driver->foreignPoint(150, 100, nullptr));
+   Failures += check(Driver->foreignPoint(450, 100, nullptr));
+   Failures += check(Driver->foreignPoint(800, 600, nullptr));
+
+   // A drag that leaves our window offers files and text to the recipient, with every type in XdndTypeList.
+
+   recipient->Mode = RECIPIENT::ACCEPT;
+   press(150, 100);
+   move(160, 105);
+   Failures += check(not glExport.started);
+   move(450, 100);
+   Failures += check(glExport.started and (glExport.start_error IS ERR::Okay));
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   if (auto enter = recipient->last(recipient->Enter)) {
+      Failures += check(((enter->data.l[1] >> 24) & 0xff) IS 5);
+      Failures += check((enter->data.l[1] & 1) IS 1);
+      Atom type = None;
+      int format = 0;
+      unsigned long count = 0, remaining = 0;
+      unsigned char *value = nullptr;
+      XGetWindowProperty(connection, recipient->Source, recipient->TypeList, 0, 16, False, XA_ATOM, &type, &format,
+         &count, &remaining, &value);
+      Failures += check((count IS 5) and value and (((const Atom *)value)[0] IS recipient->URIList) and
+         (((const Atom *)value)[1] IS recipient->UTF8));
+      if (value) XFree(value);
+   }
+   else Failures += check(false);
+   if (auto position = recipient->last(recipient->Position)) {
+      Failures += check(Window(position->window) IS recipient->Target);
+      Failures += check(position->data.l[2] IS ((450L << 16) | 100L));
+      Failures += check(Atom(position->data.l[4]) IS recipient->Copy);
+   }
+   else Failures += check(false);
+   Failures += check(XGetSelectionOwner(connection, recipient->Selection) IS recipient->Source);
+
+   move(460, 110);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 2; }));
+
+   // The release drops; the recipient reads text/uri-list and finishes, which is reported once.
+
+   release();
+   Failures += check(glExport.drop_error IS ERR::Okay);
+   Failures += check(glExport.ended IS 0); // Never reported from within dropDragExport()
+   Failures += check(pump([&] { return glExport.ended > 0; }));
+   Failures += check((glExport.ended IS 1) and glExport.accepted);
+   Failures += check((recipient->ReceivedType IS recipient->URIList) and (recipient->Received IS uris));
+   Failures += check(recipient->count(recipient->Drop) IS 1);
+   Failures += check(recipient->count(recipient->Leave) IS 0);
+   pump(settle, 50);
+   Failures += check(glExport.ended IS 1);
+   Failures += check(XGetSelectionOwner(connection, recipient->Selection) IS None);
+   Failures += check(XGetSelectionOwner(connection, XInternAtom(connection, "CLIPBOARD", False)) IS
+      clipboard_owner);
+
+   // A window appearing beneath a stationary pointer changes the release destination without a MotionNotify.
+
+   recipient->Messages.clear();
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   auto cover = display::x11_driver_test_input_window(Driver, 430, 70, 60, 60, 5103);
+   Failures += check(cover != 0);
+   pump(settle, 50);
+   release();
+   Failures += check(glExport.drop_error IS DisplayDriver::DROP_INTERNAL);
+   Failures += check(pump([&] { return recipient->count(recipient->Leave) >= 1; }));
+   Failures += check((recipient->count(recipient->Drop) IS 0) and (glExport.ended IS 0));
+   Driver->destroyWindow((HOSTWINDOW)(uintptr_t)cover);
+
+   // Removing our covering window at release negotiates a new position with the external recipient.
+
+   recipient->Messages.clear();
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   cover = display::x11_driver_test_input_window(Driver, 430, 70, 60, 60, 5103);
+   Failures += check(cover != 0);
+   move(455, 105);
+   Failures += check(pump([&] { return recipient->count(recipient->Leave) >= 1; }));
+   Driver->destroyWindow((HOSTWINDOW)(uintptr_t)cover);
+   release();
+   Failures += check(glExport.drop_error IS ERR::Okay);
+   Failures += check(pump([&] { return glExport.ended > 0; }));
+   Failures += check((recipient->count(recipient->Enter) IS 2) and (recipient->count(recipient->Drop) IS 1));
+   Failures += check((glExport.ended IS 1) and glExport.accepted);
+
+   // Moving the recipient away from a stationary pointer must not drop on its previous position.
+
+   recipient->Messages.clear();
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   XMoveWindow(connection, recipient->Target, 650, 50);
+   XSync(connection, False);
+   release();
+   Failures += check(glExport.drop_error IS ERR::NoAction);
+   Failures += check(pump([&] { return recipient->count(recipient->Leave) >= 1; }));
+   Failures += check((recipient->count(recipient->Drop) IS 0) and (glExport.ended IS 0));
+   XMoveWindow(connection, recipient->Target, 400, 50);
+   XSync(connection, False);
+
+   // Leaving to the recipient and returning sends XdndLeave; the release is delivered internally.
+
+   recipient->Messages.clear();
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   move(160, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Leave) >= 1; }));
+   release();
+   Failures += check(glExport.drop_error IS DisplayDriver::DROP_INTERNAL);
+   pump(settle, 50);
+   Failures += check((recipient->count(recipient->Drop) IS 0) and (glExport.ended IS 0));
+
+   // A refusing recipient is left, not dropped on, and the result is immediate.
+
+   recipient->Messages.clear();
+   recipient->Mode = RECIPIENT::REFUSE;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   pump(settle, 50);
+   release();
+   Failures += check(glExport.drop_error IS ERR::Cancelled);
+   Failures += check(pump([&] { return recipient->count(recipient->Leave) >= 1; }));
+   Failures += check(recipient->count(recipient->Drop) IS 0);
+   Failures += check(glExport.ended IS 0);
+
+   // A recipient that accepts only a move is refused, because only a copy is offered.
+
+   recipient->Messages.clear();
+   recipient->Mode = RECIPIENT::MOVE;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   pump(settle, 50);
+   release();
+   Failures += check(glExport.drop_error IS ERR::Cancelled);
+   pump(settle, 50);
+   Failures += check(recipient->count(recipient->Drop) IS 0);
+
+   // Releasing over the bare desktop has no recipient.
+
+   recipient->Mode = RECIPIENT::ACCEPT;
+   press(150, 100);
+   move(800, 600);
+   Failures += check(glExport.started and (glExport.start_error IS ERR::Okay));
+   release();
+   Failures += check(glExport.drop_error IS ERR::NoAction);
+
+   // Cancellation (e.g. Escape in the framework) leaves the recipient; the later release has nothing to drop.
+
+   recipient->Messages.clear();
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   Driver->cancelDragExport();
+   Failures += check(pump([&] { return recipient->count(recipient->Leave) >= 1; }));
+   release();
+   Failures += check(glExport.drop_error IS ERR::NoSupport);
+   pump(settle, 50);
+   Failures += check(recipient->count(recipient->Drop) IS 0);
+   Failures += check(XGetSelectionOwner(connection, recipient->Selection) IS None);
+
+   // Released while a status is outstanding: the drop waits for it.  While the drop is outstanding, a second export
+   // is refused because XdndSelection is still needed.
+
+   recipient->Messages.clear();
+   recipient->Mode = RECIPIENT::SILENT;
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(glExport.drop_error IS ERR::Okay);
+   pump(settle, 50);
+   Failures += check(recipient->count(recipient->Drop) IS 0);
+   Failures += check(Driver->startDragExport(glExport.files, nullptr, nullptr) IS ERR::InUse);
+   recipient->status(true, recipient->Copy);
+   Failures += check(pump([&] { return glExport.ended > 0; }));
+   Failures += check((recipient->count(recipient->Drop) IS 1) and (glExport.ended IS 1) and glExport.accepted);
+
+   // An unanswered status after release is a refusal once the timeout expires.
+
+   recipient->Messages.clear();
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(glExport.drop_error IS ERR::Okay);
+   Failures += check(pump([&] { return glExport.ended > 0; }, 2000));
+   Failures += check((glExport.ended IS 1) and (not glExport.accepted));
+   Failures += check((recipient->count(recipient->Leave) IS 1) and (recipient->count(recipient->Drop) IS 0));
+
+   // A recipient that reads the data but never finishes is reported as accepted after the timeout; one that does
+   // neither is reported as refused.  Text is served as UTF-8 and STRING.
+
+   recipient->Mode = RECIPIENT::ACCEPT;
+   recipient->Finish = false;
+   recipient->Want = recipient->UTF8;
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(pump([&] { return glExport.ended > 0; }, 2000));
+   Failures += check(glExport.accepted and (recipient->Received IS glExport.text));
+
+   recipient->Want = XA_STRING;
+   recipient->Received.clear();
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(pump([&] { return glExport.ended > 0; }, 2000));
+   Failures += check(recipient->Received IS std::string("caf\xE9 ?"));
+
+   recipient->Read = false;
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(pump([&] { return glExport.ended > 0; }, 2000));
+   Failures += check((glExport.ended IS 1) and (not glExport.accepted));
+
+   // TARGETS lists the offered types; files are omitted when the source offered only text.
+
+   recipient->Read = true;
+   recipient->Finish = true;
+   recipient->Want = recipient->Targets;
+   glExport.files.clear();
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(pump([&] { return glExport.ended > 0; }));
+   {
+      auto atoms = (const Atom *)recipient->Received.data();
+      auto total = recipient->Received.size() / sizeof(long);
+      Failures += check((recipient->ReceivedType IS XA_ATOM) and
+         (std::find(atoms, atoms + total, recipient->UTF8) != atoms + total) and
+         (std::find(atoms, atoms + total, recipient->URIList) IS atoms + total));
+   }
+   glExport.files = { file_a, file_b, folder + "/" };
+
+   // Version 4 recipients behind an XdndProxy: messages go to the proxy and name the window under the pointer, and
+   // XdndFinished carries no result.
+
+   recipient.reset();
+   recipient = std::make_unique<XdndRecipient>(connection, 400, 50, 200, 120, 4, true);
+   recipient->Finish = false;
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   if (auto enter = recipient->last(recipient->Enter)) {
+      Failures += check((((enter->data.l[1] >> 24) & 0xff) IS 4) and (Window(enter->window) IS recipient->Target));
+   }
+   else Failures += check(false);
+   release();
+   Failures += check(pump([&] { return recipient->Conversions > 0; }));
+   recipient->send(recipient->Finished, { long(recipient->Target), 0, 0, 0, 0 });
+   Failures += check(pump([&] { return glExport.ended > 0; }));
+   Failures += check(glExport.accepted and (recipient->Received IS uris));
+
+   // A preview window of ours above the recipient is looked through when it is excluded.
+
+   recipient.reset();
+   recipient = std::make_unique<XdndRecipient>(connection, 400, 50, 200, 120, 5, false);
+   auto preview = Window(display::x11_driver_test_window(Driver, 430, 70, 60, 60, 5102));
+   Failures += check(not Driver->foreignPoint(450, 90, nullptr));
+   Failures += check(Driver->foreignPoint(450, 90, (HOSTWINDOW)(uintptr_t)preview));
+   glExport.exclude = (HOSTWINDOW)(uintptr_t)preview;
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 90);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(pump([&] { return glExport.ended > 0; }));
+   Failures += check(glExport.accepted);
+   glExport.exclude = nullptr;
+   Driver->destroyWindow((HOSTWINDOW)(uintptr_t)preview);
+
+   // Closing the driver while a drop is outstanding abandons it without a notification.
+
+   recipient->Finish = false;
+   recipient->Read = false;
+   glExport.ended = 0;
+   press(150, 100);
+   move(450, 100);
+   Failures += check(pump([&] { return recipient->count(recipient->Position) >= 1; }));
+   release();
+   Failures += check(glExport.drop_error IS ERR::Okay);
+   Driver->destroyWindow((HOSTWINDOW)(uintptr_t)home);
+   Driver->close();
+   Failures += check(glExport.ended IS 0);
+   Failures += check(not glTimer);
+
+   recipient.reset();
+   unlink(file_a.c_str());
+   unlink(file_b.c_str());
+   rmdir(folder.c_str());
+   XSelectInput(connection, DefaultRootWindow(connection), NoEventMask);
+   XSync(connection, False);
+   XSetErrorHandler(previous_handler);
+   XCloseDisplay(connection);
+}
+
+//********************************************************************************************************************
+// Maximising a window that a window manager controls.  The peer connection plays the window manager: it redirects
+// map requests and receives the _NET_WM_STATE client messages that the driver sends to the root window.
+
+static bool wait_for_event(DisplayDriver *Driver, Display *Connection, int Type, XEvent &Event, int Milliseconds)
+{
+   auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(Milliseconds);
+   while (std::chrono::steady_clock::now() < until) {
+      display::x11_process_driver_events(Driver);
+      if (XCheckTypedEvent(Connection, Type, &Event)) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+   }
+   return false;
+}
+
+static bool wait_for_maximised(DisplayDriver *Driver, unsigned long Window, int Expected)
+{
+   auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+   while (std::chrono::steady_clock::now() < until) {
+      display::x11_process_driver_events(Driver);
+      if (display::x11_driver_window_maximised(Driver, Window) IS Expected) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+   }
+   return false;
+}
+
+static bool maximise_request(const XEvent &Event, Window Target, Atom State, long Action, Atom Vert, Atom Horz)
+{
+   const auto &msg = Event.xclient;
+   return (msg.window IS Target) and (msg.message_type IS State) and (msg.format IS 32) and
+      (msg.data.l[0] IS Action) and (Atom(msg.data.l[1]) IS Vert) and (Atom(msg.data.l[2]) IS Horz);
+}
+
+static std::vector<Atom> window_states(Display *Connection, Window Target, Atom State)
+{
+   std::vector<Atom> result;
+   Atom type = None;
+   int format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *data = nullptr;
+   if ((XGetWindowProperty(Connection, Target, State, 0, 64, False, XA_ATOM, &type, &format, &count, &remaining,
+         &data) IS Success) and data) {
+      if ((type IS XA_ATOM) and (format IS 32)) result.assign((const Atom *)data, (const Atom *)data + count);
+      XFree(data);
+   }
+   return result;
+}
+
+static void test_maximise(DisplayDriver *Driver, const std::optional<std::string> &KotukuDisplay,
+   const std::optional<std::string> &DisplayName, int &Failures)
+{
+   auto display_name = KotukuDisplay ? *KotukuDisplay : (DisplayName ? *DisplayName : std::string());
+   if (display_name.empty()) return;
+
+   auto connection = XOpenDisplay(display_name.c_str());
+   if (not connection) { Failures++; return; }
+   auto previous_handler = XSetErrorHandler(peer_error);
+
+   // Only one client can redirect the root window, so the test is skipped if a real window manager is running.
+
+   glPeerErrors = 0;
+   XSelectInput(connection, DefaultRootWindow(connection), SubstructureRedirectMask);
+   XSync(connection, False);
+   if (glPeerErrors) {
+      std::printf("Skipping the maximise test: a window manager is running.\n");
+      XSetErrorHandler(previous_handler);
+      XCloseDisplay(connection);
+      return;
+   }
+
+   DriverCallbacks callbacks = { .Version = DISPLAY_DRIVER_INTERFACE_VERSION };
+   Failures += check(Driver->open(callbacks) IS ERR::Okay);
+
+   auto state = XInternAtom(connection, "_NET_WM_STATE", False);
+   auto vert = XInternAtom(connection, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+   auto horz = XInternAtom(connection, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
+
+   auto window = display::x11_driver_test_managed_window(Driver, 200, 100);
+   Failures += check(window != 0);
+   auto handle = (HOSTWINDOW)(uintptr_t)window;
+   Failures += check(display::x11_driver_window_maximised(Driver, window) IS 0);
+
+   // Shown maximised: EWMH requires the state to be set on the window before it is mapped.
+
+   XEvent event;
+   Failures += check(Driver->showWindow(handle, true) IS ERR::Okay);
+   Failures += check(wait_for_event(Driver, connection, MapRequest, event, 2000) and
+      (event.xmaprequest.window IS Window(window)));
+   auto states = window_states(connection, window, state);
+   Failures += check((std::find(states.begin(), states.end(), vert) != states.end()) and
+      (std::find(states.begin(), states.end(), horz) != states.end()));
+   Failures += check(display::x11_driver_window_maximised(Driver, window) IS 1);
+   XMapWindow(connection, window); // Granted by the window manager
+   XSync(connection, False);
+
+   // Restoring a mapped window is a request to the window manager.  It must not map or move the window again.
+
+   Failures += check(Driver->showWindow(handle, false) IS ERR::Okay);
+   Failures += check(wait_for_event(Driver, connection, ClientMessage, event, 2000) and
+      maximise_request(event, window, state, 0, vert, horz));
+   Failures += check(not wait_for_event(Driver, connection, ConfigureRequest, event, 100));
+
+   // An unchanged state sends nothing.
+
+   Failures += check(Driver->showWindow(handle, false) IS ERR::Okay);
+   Failures += check(not wait_for_event(Driver, connection, ClientMessage, event, 100));
+
+   Failures += check(Driver->showWindow(handle, true) IS ERR::Okay);
+   Failures += check(wait_for_event(Driver, connection, ClientMessage, event, 2000) and
+      maximise_request(event, window, state, 1, vert, horz));
+
+   // Changes made by the window manager (e.g. its title bar buttons) are reported through _NET_WM_STATE.
+
+   XChangeProperty(connection, window, state, XA_ATOM, 32, PropModeReplace, nullptr, 0);
+   XSync(connection, False);
+   Failures += check(wait_for_maximised(Driver, window, 0));
+
+   Atom maximised[] = { vert, horz };
+   XChangeProperty(connection, window, state, XA_ATOM, 32, PropModeReplace, (const unsigned char *)maximised, 2);
+   XSync(connection, False);
+   Failures += check(wait_for_maximised(Driver, window, 1));
+
+   // The window manager can minimise a visible window without a hideWindow() call.  Show must map it again.
+
+   XUnmapWindow(connection, window);
+   XSync(connection, False);
+   display::x11_process_driver_events(Driver);
+   Failures += check(Driver->showWindow(handle, true) IS ERR::Okay);
+   Failures += check(wait_for_event(Driver, connection, MapRequest, event, 2000) and
+      (event.xmaprequest.window IS Window(window)));
+   Failures += check(not wait_for_event(Driver, connection, ConfigureRequest, event, 100));
+   XMapWindow(connection, window);
+   XSync(connection, False);
+
+   // Only one axis is not a maximised window.
+
+   XChangeProperty(connection, window, state, XA_ATOM, 32, PropModeReplace, (const unsigned char *)maximised, 1);
+   XSync(connection, False);
+   Failures += check(wait_for_maximised(Driver, window, 0));
+
+   Failures += check(Driver->destroyWindow(handle) IS ERR::Okay);
+   Driver->close();
+   XSetErrorHandler(previous_handler);
+   XCloseDisplay(connection);
+}
+
 int main()
 {
    const auto original_kotuku_display = environment_value("KOTUKU_XDISPLAY");
@@ -1626,7 +2350,12 @@ int main()
 
    restore_environment("KOTUKU_XDISPLAY", original_kotuku_display);
    restore_environment("DISPLAY", original_display);
+   // The maximise test runs first because it must redirect the root window.  close() keeps an opened X connection
+   // alive, so a test that let the driver manage the desktop would still hold the redirect.
+
+   test_maximise(driver, original_kotuku_display, original_display, failures);
    test_xdnd(driver, original_kotuku_display, original_display, failures);
+   test_xdnd_export(driver, original_kotuku_display, original_display, failures);
    test_clipboard(driver, original_kotuku_display, original_display, failures);
    test_capture(driver, original_kotuku_display, original_display, failures);
    test_shared_images(driver, original_kotuku_display, original_display, failures);
