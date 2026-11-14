@@ -207,6 +207,11 @@ static RQ shape_rendering_to_render_quality(const std::string_view Value)
 static const char * text_property_initial(uint32_t Hash)
 {
    switch (Hash) {
+      case SVF_inline_size: return "auto";
+      case SVF_text_align: return "start";
+      case SVF_white_space:
+      case SVF_overflow_wrap:
+      case SVF_word_break:
       case SVF_letter_spacing:
       case SVF_word_spacing:
       case SVF_line_height:
@@ -606,7 +611,7 @@ ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const
    if (not initial) return ERR::NoSupport;
 
    Value = ft::trim(Value);
-   const bool inherited = Hash != SVF_text_decoration;
+   const bool inherited = (Hash != SVF_text_decoration) and (Hash != SVF_inline_size);
    const bool inherit_value = iequals(Value, "inherit") or (inherited and iequals(Value, "unset"));
 
    if (inherit_value) {
@@ -619,6 +624,36 @@ ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const
 
    std::string computed(Value);
    switch (Hash) {
+      case SVF_white_space:
+         if ((not iequals(Value, "normal")) and (not iequals(Value, "pre")) and
+             (not iequals(Value, "pre-wrap")) and (not iequals(Value, "pre-line"))) return ERR::NoSupport;
+         break;
+      case SVF_inline_size: {
+         if (iequals(Value, "auto")) break;
+
+         double length;
+         if (Value.ends_with('%')) {
+            auto number = ft::parse_number(Value.substr(0, Value.size() - 1));
+            if ((not number) or (*number < 0)) return ERR::InvalidValue;
+            length = *number * (m_viewport_width > 0 ? m_viewport_width : Scene->PageWidth) * 0.01;
+            if (not std::isfinite(length)) return ERR::InvalidValue;
+         }
+         else if ((not text_length(Value, m_font_size_px, m_root_font_size, false, length)) or (length < 0)) {
+            return ERR::InvalidValue;
+         }
+
+         computed = text_number(length) + "px";
+         break;
+      }
+      case SVF_text_align:
+         // Start and justification are verified with start anchoring; other row/block combinations need layout work.
+         if ((not iequals(Value, "start")) and (not iequals(Value, "justify"))) return ERR::NoSupport;
+         break;
+      case SVF_overflow_wrap:
+      case SVF_word_break:
+         // VTW::ANYWHERE also introduces punctuation breaks; it is not CSS emergency wrapping.
+         if (not iequals(Value, "normal")) return ERR::NoSupport;
+         break;
       case SVF_font_weight: {
          int weight;
          const int parent_weight = Parent.m_font_weight ? Parent.m_font_weight : 400;
@@ -733,6 +768,176 @@ ERR svgState::resolve_text_property(uint32_t Hash, std::string_view Value, const
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Collect supported text containers without letting metadata or animation children contribute characters.
+// This is deliberately a content model, not a styled-run layout implementation.
+
+ERR svgState::collect_text(XTag &Tag, objVectorText *Text) noexcept
+{
+   kt::Log log(__FUNCTION__);
+   svgTextContent content;
+   bool trailing_collapsible = false;
+   bool tab_warning = false;
+   XTag *single_path = nullptr;
+
+   auto discard_tail = [&]() {
+      if (trailing_collapsible and (not content.Text.empty())) {
+         const auto offset = content.Text.size() - 1;
+         content.Text.pop_back();
+
+         for (auto it = content.Sources.rbegin(); it != content.Sources.rend(); ++it) {
+            if ((it->Output != std::string::npos) and (it->Output < offset)) break;
+            if (it->Output IS offset) it->Output = std::string::npos;
+         }
+
+         for (auto it = content.Paths.rbegin(); it != content.Paths.rend(); ++it) {
+            if (it->End < offset) break;
+            it->Begin = std::min(it->Begin, offset);
+            it->End   = std::min(it->End, offset);
+         }
+      }
+      trailing_collapsible = false;
+   };
+
+   auto visit = [&](auto &Visit, XTag &Element, const svgState &State) -> void {
+      const auto css        = State.m_text_properties.find(SVF_white_space);
+      const bool legacy     = css IS State.m_text_properties.end();
+      const bool preserve   = legacy ? iequals(State.m_xml_space, "preserve") :
+         (iequals(css->second, "pre") or iequals(css->second, "pre-wrap"));
+      const bool hard_lines = (not legacy) and (preserve or iequals(css->second, "pre-line"));
+
+      kt::vector<XTag> replacement_nodes;
+      auto *children = &Element.Children;
+      if (auto replacement = Element.attrib("content-value")) {
+         XTag node(Element.ID, Element.LineNo);
+         node.Attribs.emplace_back("", *replacement);
+         replacement_nodes.push_back(std::move(node));
+         children = &replacement_nodes;
+      }
+
+      for (auto &child : *children) {
+         if ((child.Flags & XTF::COMMENT) != XTF::NIL) continue;
+
+         if (not child.isTag()) {
+            const auto &value = child.Attribs[0].Value;
+            for (size_t i = 0; i < value.size();) {
+               const auto start = i++;
+               while ((i < value.size()) and ((uint8_t(value[i]) & 0xc0) IS 0x80)) ++i;
+
+               const char c = value[start];
+               const bool newline    = (c IS '\n') or (c IS '\r');
+               const bool whitespace = newline or (c IS '\t') or (c IS ' ');
+
+               // SVG 1.1 removes segment breaks.  XML normally normalises CRLF; if a CR survives, it must not
+               // manufacture a second hard break.
+
+               const bool discard = (newline and legacy and (not preserve)) or
+                  ((c IS '\r') and (i < value.size()) and (value[i] IS '\n'));
+
+               size_t output = std::string::npos;
+               if (discard) {
+                  // The character has no output offset
+               }
+               else if (newline and hard_lines) {
+                  if (not preserve) discard_tail();
+                  output = content.Text.size();
+                  content.Text += '\n';
+                  trailing_collapsible = false;
+               }
+               else if (whitespace and (not preserve)) {
+                  if ((not content.Text.empty()) and (content.Text.back() != '\n') and (not trailing_collapsible)) {
+                     output = content.Text.size();
+                     content.Text += ' ';
+                     trailing_collapsible = true;
+                  }
+                  else if (trailing_collapsible) output = content.Text.size() - 1;
+               }
+               else {
+                  output = content.Text.size();
+                  if (whitespace) {
+                     content.Text += ' ';
+                     if ((c IS '\t') and (not legacy) and (not tab_warning)) {
+                        log.warning("Preserved CSS tab stops are unsupported; using one space.");
+                        tab_warning = true;
+                     }
+                  }
+                  else content.Text.append(value, start, i - start);
+                  trailing_collapsible = false;
+               }
+
+               content.Sources.push_back({ Element.ID, child.ID, start, output });
+            }
+         }
+         else {
+            const auto hash = svg_tag_hash(child);
+            if ((hash != SVF_textPath) and (hash != SVF_tspan) and (hash != SVF_a)) continue;
+
+            auto state = State;
+            state.applyTag(child);
+            const auto begin = content.Text.size();
+            Visit(Visit, child, state);
+
+            if (hash IS SVF_textPath) {
+               content.Paths.push_back({ child.ID, begin, content.Text.size() });
+               single_path = &child;
+            }
+
+            // Styles and positioning are retained in the XML but need a shared run layout interface.
+
+            for (size_t a = 1; a < child.Attribs.size(); ++a) {
+               auto name = std::string_view(child.Attribs[a].Name);
+               if ((name IS "id") or (name IS "class") or (name IS "xml:space") or
+                   (name IS "white-space") or (name IS "content-value")) continue;
+               if ((hash IS SVF_textPath) and ((name IS "href") or (name IS "xlink:href") or
+                   (name IS "method") or (name IS "spacing") or (name IS "startOffset") or
+                   (name IS "transition") or (name IS "align") or (name IS "path"))) continue;
+               log.warning("Text child '%s' requires styled-run layout; collecting content only.", child.name());
+               break;
+            }
+         }
+      }
+   };
+
+   if (auto replacement = Tag.attrib("content-value")) content.Text = *replacement;
+   else {
+      visit(visit, Tag, *this);
+      discard_tail();
+   }
+
+   // The string attribute supplies a prefix independently of the element's collected content.
+
+   std::string prefix;
+   if (auto error = Text->getString(prefix); error != ERR::Okay) return error;
+
+   if (not prefix.empty()) {
+      for (auto &source : content.Sources) {
+         if (source.Output != std::string::npos) source.Output += prefix.size();
+      }
+
+      for (auto &path : content.Paths) {
+         path.Begin += prefix.size();
+         path.End   += prefix.size();
+      }
+
+      content.Text.insert(0, prefix);
+   }
+
+   if (auto error = Text->setString(content.Text); error != ERR::Okay) return error;
+
+   if ((content.Paths.size() IS 1) and (content.Paths.front().Begin IS 0) and
+       (content.Paths.front().End IS content.Text.size())) {
+      proc_guide_path(*single_path, Text);
+   }
+   else if (not content.Paths.empty()) {
+      log.warning("Mixed text-path ranges require shared run layout; retaining ordered text and path ranges.");
+   }
+
+   Self->TextContent[Text->UID] = std::move(content);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 ERR svgState::apply_text_properties(objVectorText *Text) const noexcept
 {
    if (auto error = Text->setFace(m_font_family); error != ERR::Okay) return error;
@@ -780,6 +985,27 @@ ERR svgState::apply_text_properties(objVectorText *Text) const noexcept
 
    if (m_font_kerning IS 0) flags |= VTXF::NO_KERNING;
    else flags &= ~VTXF::NO_KERNING;
+
+   double inline_size   = 0;
+   auto width           = m_text_properties.find(SVF_inline_size);
+   auto whitespace      = m_text_properties.find(SVF_white_space);
+   const bool no_wrap   = (whitespace != m_text_properties.end()) and iequals(whitespace->second, "pre");
+   if ((not no_wrap) and (width != m_text_properties.end()) and (not iequals(width->second, "auto"))) {
+      if (not text_length(width->second, m_font_size_px, m_root_font_size, false, inline_size)) {
+         return ERR::InvalidValue;
+      }
+   }
+
+   if (auto alignment = m_text_properties.find(SVF_text_align); alignment != m_text_properties.end()) {
+      if ((inline_size > 0) and (align != ALIGN::LEFT)) {
+         kt::Log log(__FUNCTION__);
+         log.warning("Independent rectangular text-align with middle/end text-anchor requires row layout support.");
+      }
+      else if (iequals(alignment->second, "justify")) flags |= VTXF::JUSTIFY;
+   }
+
+   if (auto error = Text->setInlineSize(inline_size); error != ERR::Okay) return error;
+   if (auto error = Text->setWrapMode(int(VTW::WORD)); error != ERR::Okay) return error;
    return Text->setTextFlags(flags);
 }
 
@@ -837,6 +1063,13 @@ void svgState::applyTag(const XTag &Tag) noexcept
 
    const auto parent = *this;
    m_text_properties.erase(SVF_text_decoration); // Decoration propagation needs a future styled-run model.
+   m_text_properties.erase(SVF_inline_size); // Not inherited
+
+   if (auto space = Tag.attrib("xml:space")) {
+      if (iequals(*space, "preserve") or iequals(*space, "default")) m_xml_space = *space;
+      else log.warning("Unsupported xml:space value: %s", space->c_str());
+   }
+
    std::vector<XMLAttrib> declarations;
    for (size_t a = 1; a < Tag.Attribs.size(); ++a) {
       const auto &attr = Tag.Attribs[a];
@@ -985,21 +1218,15 @@ void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
          case SVF_set:              proc_set(child, Tag, Vector); break;
          case SVF_kotuku_guidePath: proc_guide_path(child, Vector); break;
          case SVF_param:            break; // Consumed by proc_image()
+         case SVF_title:
+         case SVF_desc:             break; // Metadata is not rendered text.
 
          case SVF_textPath:
-            if (Vector->classID() IS CLASSID::VECTORTEXT) {
-               if (!child.Children.empty()) {
-                  auto buffer = child.getContent();
-                  if (!buffer.empty()) {
-                     kt::ltrim(buffer);
-                     ((objVectorText *)Vector)->setString(buffer);
-                  }
-                  else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);
-               }
-
-               proc_guide_path(child, Vector);
-            }
-            break;
+         case SVF_tspan:
+         case SVF_a:
+            // Text is collected once, in document order, before initialisation.
+            if (Vector->classID() IS CLASSID::VECTORTEXT) break;
+            [[fallthrough]];
 
          default:
             log.warning("Failed to interpret vector child element <%s/> @ line %d", child.name(), child.LineNo);
@@ -2607,6 +2834,12 @@ ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVecto
          }
       }
       state.process_attrib(Tag, vector);
+      if (VectorID IS CLASSID::VECTORTEXT) {
+         if (auto error = state.collect_text(Tag, (objVectorText *)vector); error != ERR::Okay) {
+            FreeResource(vector);
+            return error;
+         }
+      }
 
       if (!vector->init()) {
          state.process_shape_children(Tag, vector);
@@ -2615,6 +2848,7 @@ ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVecto
          return error;
       }
       else {
+         if (VectorID IS CLASSID::VECTORTEXT) Self->TextContent.erase(vector->UID);
          FreeResource(vector);
          return ERR::Init;
       }
@@ -2693,29 +2927,8 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
          }
          else return error;
 
-      case SVF_text: {
-         if (auto error = proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector); error != ERR::Okay) return error;
-         else {
-            // SVG Parameters: a resolved content-value replaces the element's text, which otherwise serves as the
-            // fallback.
-
-            auto content_value = Tag.attrib("content-value");
-
-            if ((content_value) or (!Tag.Children.empty())) {
-               std::string existing_str;
-               if (auto error = ((objVectorText *)Vector)->getString(existing_str); error != ERR::Okay) return error;
-
-               auto buffer = content_value ? *content_value : Tag.getContent();
-               if ((content_value) or (not buffer.empty())) {
-                  if (not content_value) kt::ltrim(buffer);
-                  if (not existing_str.empty()) buffer.insert(0, existing_str.data(), existing_str.size());
-                  if (auto error = ((objVectorText *)Vector)->setString(buffer); error != ERR::Okay) return error;
-               }
-               else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);
-            }
-         }
-         break;
-      }
+      case SVF_text:
+         return proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector);
 
       case SVF_desc: break; // Ignore descriptions
       case SVF_param: break; // Parameters are only meaningful as children of <use>; see proc_use()
@@ -3706,6 +3919,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
    for (a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
+      if (text_property_initial(strhash(Tag.Attribs[a].Name))) continue;
 
       switch(strhash(Tag.Attribs[a].Name)) {
          // The viewbox determines what area of the vector definition is to be displayed (in a sense, zooming into the document).
@@ -3798,16 +4012,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
             break;
          }
 
-         // default - The browser will remove all newline characters. Then it will convert all tab characters into
-         // space characters. Then, it will strip off all leading and trailing space characters. Then, all contiguous
-         // space characters will be consolidated.
-         //
-         // preserve - The browser will will convert all newline and tab characters into space characters. Then, it
-         // will draw all space characters, including leading, trailing and multiple contiguous space characters. Thus,
-         // when drawn with xml:space="preserve", the string "a   b" (three spaces between "a" and "b") will produce a
-         // larger separation between "a" and "b" than "a b" (one space between "a" and "b").
-
-         case SVF_xml_space: Self->PreserveWS = iequals("preserve", val); break;
+         case SVF_xml_space: break; // Element-scoped state is resolved by applyTag().
 
          default: {
             // Print a warning unless this was a reference to some other namespace.
@@ -3815,6 +4020,23 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
                log.warning("Failed to parse attrib '%s' in <svg/> tag @ line %d", Tag.Attribs[a].Name.c_str(), Tag.LineNo);
             }
          }
+      }
+   }
+
+   // Percentages use the nearest viewport's user coordinate width, including a nested viewBox.
+
+   double view_width = 0;
+   Unit width;
+   viewport->getViewWidth(view_width);
+   viewport->getWidth(width);
+
+   const double parent_width = (m_viewport_width > 0) ? m_viewport_width : Scene->PageWidth;
+   state.m_viewport_width = (view_width > 0) ? view_width :
+      (width.scaled() ? double(width) * parent_width : double(width));
+
+   for (size_t a = 1; a < Tag.Attribs.size(); ++a) {
+      if (strhash(Tag.Attribs[a].Name) IS SVF_inline_size) {
+         state.resolve_text_property(SVF_inline_size, Tag.Attribs[a].Value, *this);
       }
    }
 

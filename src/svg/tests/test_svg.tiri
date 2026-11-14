@@ -224,14 +224,14 @@ end
 @Test(name='NamespaceAware') global function BasicsNamespaceAware() hashTestSVG('basics/namespace-aware.svg', 0xcf55497a) end
 @Test(name='CaseSensitiveNames') global function BasicsCaseSensitiveNames() hashTestSVG('basics/case-sensitive.svg', 0x6e881879) end
 
-@Test global function Circles()         hashTestSVG('paths/circles.svg', 0xd3d0a4f6) end
-@Test global function GuidePath()       hashTestSVG('paths/guidepath.svg', 0x43272a76) end
+@Test global function Circles()         hashTestSVG('paths/circles.svg', 0x1f05f326) end
+@Test global function GuidePath()       hashTestSVG('paths/guidepath.svg', 0x6a21e05b) end
 @Test global function EllipseVertices() hashTestSVG('paths/ellipse_vertices.svg', 0x00d2264b) end
 @Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0x44793bb7) end
 @Test global function Rough()           hashTestSVG('paths/rough_js.svg', 0x3b80407f) end
-@Test global function Shapes()          hashTestSVG('paths/shapes.svg', 0x8d55d0fa) end
+@Test global function Shapes()          hashTestSVG('paths/shapes.svg', 0xa5340775) end
 @Test global function Spirals()         hashTestSVG('paths/spirals.svg', 0x4a7b4afd) end
-@Test global function Strokes()         hashTestSVG('paths/strokes.svg', 0xa6bb1c33) end
+@Test global function Strokes()         hashTestSVG('paths/strokes.svg', 0x91b30ee3) end
 @Test global function SuperShapes()     hashTestSVG('paths/supershapes.svg', 0x41480d5f) end
 @Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0x377f8df0) end
 @Test global function Transitions()     hashTestSVG('paths/transitions.svg', 0x2b26a2c5) end
@@ -279,7 +279,7 @@ end
 @Test global function W3Coords05() hashTestSVG('coords/w3-coords-units-03-b.svg', 0x0ebd9b16) end
 @Test global function W3Coords06() hashTestSVG('coords/w3-coords-viewattr-01-b.svg', -1) end
 @Test global function W3Coords07() hashTestSVG('coords/w3-coords-viewattr-02-b.svg', -1) end
-@Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xe5ab7d51) end
+@Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0x5d7c6cdd) end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xeaa3fc40) end
 @Test global function ContourGradient() pHashTestSVG('gradients/contour-gradient.svg', array<byte> { 114,159,176,141,201,163,124,2 }, 6, true) end
@@ -351,7 +351,7 @@ end
 @Test global function W3Struct04() hashTestSVG('struct/w3-struct-frag-01-t.svg', 0xaeecf75a) end
 @Test global function W3Struct05() hashTestSVG('struct/w3-struct-frag-02-t.svg', 0x55c4d582) end
 @Test global function W3Struct06() hashTestSVG('struct/w3-struct-frag-03-t.svg', 0xb9aab5d3) end
-@Test global function W3Struct07() hashTestSVG('struct/w3-struct-frag-06-t.svg', 0xca1f6200) end
+@Test global function W3Struct07() hashTestSVG('struct/w3-struct-frag-06-t.svg', 0xb422e89d) end
 @Test global function W3Struct08() hashTestSVG('struct/w3-struct-group-01-t.svg', 0xb87251f5) end
 @Test global function W3Struct09() hashTestSVG('struct/w3-struct-group-02-b.svg', 0x38b67cdb) end
 
@@ -393,7 +393,7 @@ end
 @Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2422ae17) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0x9dbdcd62) end
 
-@Test global function Transformations()   hashTestSVG('transforms/transformations.svg', 0x310b69c3) end
+@Test global function Transformations()   hashTestSVG('transforms/transformations.svg', 0xe9dfef80) end
 @Test global function W3AspectRatio()     hashTestSVG('transforms/w3-aspectratio.svg', 0xa81f7400) end
 @Test global function W3SkewText()        hashTestSVG('transforms/w3-skew-text.svg', 0x44d04887) end
 @Test global function W3Viewbox()         hashTestSVG('transforms/w3-viewbox.svg', 0x4920f26a) end
@@ -440,7 +440,7 @@ end
 
 @Test global function W3ParamYearChart()
    hashTestSVG('params/w3-param-year-chart.svg?jan=10&feb=30&mar=30&apr=100&may=80&jun=20&jul=55&aug=71&sep=6' ..
-      '&oct=89&nov=45&dec=8', 0x6aac862b)
+      '&oct=89&nov=45&dec=8', 0x98464183)
 end
 
 @Test global function BottleTree()        hashTestSVG('images/bottletree.svg', 0xd7fb84ff) end

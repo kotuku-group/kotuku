@@ -294,22 +294,148 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
    }
 }
 
+//********************************************************************************************************************
+// An SVG with a Target shares the client's scene, so drawing that scene would draw the client's content as well.
+// Render() and SaveImage() use a private copy of the document instead, parsed from the same source with the same
+// parameters and colour.  Documents that were only supplied through DataFeed() cannot be copied.
+
+static ERR create_private_copy(extSVG *Self, extSVG **Result)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((Self->Path.empty()) and (Self->Statement.empty())) return log.warning(ERR::NoSupport);
+
+   extSVG *copy;
+   if (NewLocalObject(CLASSID::SVG, &copy) != ERR::Okay) return log.warning(ERR::NewObject);
+
+   copy->Path      = Self->Path;
+   copy->Statement = Self->Statement;
+   copy->Colour    = Self->Colour;
+   copy->Params    = Self->Params;
+   copy->Flags     = Self->Flags & ~(SVF::AUTOSCALE|SVF::ENFORCE_TRACKING);
+
+   if (InitObject(copy) != ERR::Okay) {
+      FreeResource(copy);
+      return log.warning(ERR::Init);
+   }
+
+   *Result = copy;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Returns true if the SVG draws into a client's scene (#Target) rather than one that it owns.
+
+static bool is_targeted(extSVG *Self)
+{
+   return Self->Scene->ownerID() != Self->UID;
+}
+
+//********************************************************************************************************************
+// The native size of a document is the width and height of its root viewport, else its view box, else 1920x1080.
+
+static void document_size(extSVG *Self, double &Width, double &Height)
+{
+   Width  = 0;
+   Height = 0;
+
+   if (auto view = Self->Viewport) {
+      Unit width(0), height(0);
+      if (Self->AutoscaleWidth.defined()) Width = Self->AutoscaleWidth;
+      else if (view->getWidth(width) IS ERR::Okay) Width = width;
+      if (Self->AutoscaleHeight.defined()) Height = Self->AutoscaleHeight;
+      else if (view->getHeight(height) IS ERR::Okay) Height = height;
+      if (Width <= 0)  view->getViewWidth(Width);
+      if (Height <= 0) view->getViewHeight(Height);
+   }
+
+   if (Width <= 0)  Width  = 1920;
+   if (Height <= 0) Height = 1080;
+}
+
+//********************************************************************************************************************
+// Draws a document that owns its scene into the (X, Y, Width, Height) area of Bitmap.  The scene's bitmap and page
+// size, the root viewport's size and the bitmap's clip region are restored before returning.
+
+static ERR render_document(extSVG *Self, objBitmap *Bitmap, int X, int Y, int Width, int Height)
+{
+   kt::Log log(__FUNCTION__);
+
+   auto scene = Self->Scene;
+   auto view  = Self->Viewport;
+   if (not view) return log.warning(ERR::NoData);
+
+   auto clip = Bitmap->Clip;
+   ClipRectangle area = { std::max(clip.Left, X), std::max(clip.Top, Y),
+      std::min(clip.Right, X + Width), std::min(clip.Bottom, Y + Height) };
+   if ((area.Right <= area.Left) or (area.Bottom <= area.Top)) return ERR::Okay;
+
+   double doc_width, doc_height;
+   document_size(Self, doc_width, doc_height);
+
+   Unit saved_width(0, FD_PURE), saved_height(0, FD_PURE);
+   view->getWidth(saved_width);
+   view->getHeight(saved_height);
+   saved_width.Type  &= ~FD_PURE;
+   saved_height.Type &= ~FD_PURE;
+
+   auto saved_bitmap      = scene->Bitmap;
+   auto saved_page_width  = scene->PageWidth;
+   auto saved_page_height = scene->PageHeight;
+
+   // Fix the root viewport at the document's native size, then scale it uniformly into the target area and centre
+   // it.  Without a fixed size, a percentage-sized root would follow the temporary page size.
+
+   view->setWidth(Unit(doc_width));
+   view->setHeight(Unit(doc_height));
+
+   VectorMatrix *matrix = nullptr;
+   if (auto error = view->newMatrix(&matrix, true); error != ERR::Okay) {
+      view->setWidth(saved_width);
+      view->setHeight(saved_height);
+      return log.warning(error);
+   }
+
+   auto scale = std::min(double(Width) / doc_width, double(Height) / doc_height);
+   vec::Scale(matrix, scale, scale);
+   vec::Translate(matrix, X + ((Width - (doc_width * scale)) * 0.5), Y + ((Height - (doc_height * scale)) * 0.5));
+   vec::FlushMatrix(matrix);
+
+   scene->setBitmap(Bitmap);
+   scene->setPageWidth(Bitmap->Width);
+   scene->setPageHeight(Bitmap->Height);
+   Bitmap->Clip = area;
+
+   auto error = Action(AC::Draw, scene, nullptr);
+
+   Bitmap->Clip = clip;
+   scene->setBitmap(saved_bitmap);
+   scene->PageWidth  = saved_page_width; // Direct assignment because the setters do not accept zero
+   scene->PageHeight = saved_page_height;
+   view->freeMatrix(matrix);
+   view->setWidth(saved_width);
+   view->setHeight(saved_height);
+   acRefresh(view);
+   return error;
+}
+
 /*********************************************************************************************************************
 
 -METHOD-
 Render: Performs high-quality rasterisation of the SVG document to a target bitmap.
 
-This method executes complete rasterisation of the SVG scene graph, producing a pixel-based representation within the
-specified target bitmap.  The rendering process handles all vector elements, gradients, filters, and effects with
-full anti-aliasing and precision.
+This method rasterises the SVG document into the `(X, Y, Width, Height)` area of the target bitmap.  The rendering
+process handles all vector elements, gradients, filters, and effects with full anti-aliasing and precision.
 
-The rendered output is positioned at coordinates `(X,Y)` within the target bitmap and scaled to the specified
-`(Width,Height)` dimensions.  The scaling operation maintains aspect ratios and applies appropriate filtering to
-ensure optimal visual quality.
+The document is scaled uniformly from its native size to fit the area, preserving its aspect ratio, and is centred
+within it.  The native size is the width and height of the root viewport, else its view box, else 1920x1080.  Output
+is clipped to the area and to the bitmap's clip region.  The document is drawn over the existing content of the
+bitmap, which is not cleared first.
 
-The scene's page dimensions are temporarily adjusted to match the specified width and height, ensuring that the
-entire document content is properly scaled and positioned within the target area.  This approach enables flexible
-rendering at arbitrary resolutions without affecting the original scene graph.
+The SVG object's scene is restored after drawing, so rendering does not affect the scene graph or a later draw.  If
+the SVG has a #Target, it shares the client's scene; a private copy of the document is parsed from the #Path or
+#Statement and drawn instead, so the client's content is not included.  The copy uses the same parameters and #Colour
+and starts at the beginning of any animation.
 
 <b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may
 require significant processing time.  Consider using appropriate dimensions that balance quality requirements with
@@ -325,74 +451,83 @@ int Height: Desired height of the rendered output in pixels.
 -RESULT-
 Okay: Rendering completed successfully.
 NullArgs: Required bitmap parameter was not provided.
+Args: The width or height is less than 1.
+NoData: The document has no root viewport.
+NoSupport: The SVG has a #Target, and its document was not supplied through #Path or #Statement.
 
 -TAGS-
-blocking, mutates-object, mutates-input
+blocking, mutates-input
 -END-
 
 *********************************************************************************************************************/
 
 static ERR SVG_Render(extSVG *Self, struct svg::Render *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   kt::Log log;
 
-   objBitmap *bmp = Args->Bitmap;
-   int page_width = Args->Width;
-   int page_height = Args->Height;
+   if ((not Args) or (not Args->Bitmap)) return log.warning(ERR::NullArgs);
+   if ((Args->Width < 1) or (Args->Height < 1)) return log.warning(ERR::Args);
 
-   Self->Scene->setBitmap(bmp);
+   if (is_targeted(Self)) {
+      extSVG *copy;
+      if (auto error = create_private_copy(Self, &copy); error != ERR::Okay) return error;
+      auto error = render_document(copy, Args->Bitmap, Args->X, Args->Y, Args->Width, Args->Height);
+      FreeResource(copy);
+      return error;
+   }
 
-   Self->Scene->setPageWidth(page_width);
-   Self->Scene->setPageHeight(page_height);
-
-//   Self->Scene->Viewport->setViewX(Args->X);
-//   Self->Scene->Viewport->setViewY(Args->Y);
-
-   auto data = bmp->offset(Args->X, Args->Y);
-   Action(AC::Draw, Self->Scene, nullptr);
-   bmp->Data = data;
-   return ERR::Okay;
+   return render_document(Self, Args->Bitmap, Args->X, Args->Y, Args->Width, Args->Height);
 }
 
 /*********************************************************************************************************************
 -ACTION-
 SaveImage: Saves the SVG document as a PNG image.
 
-This action will render the SVG document to a bitmap and save the resulting image.  The size of the image is
-determined by the @VectorScene.PageWidth and @VectorScene.PageHeight of the #Scene, or if not defined, the
-default of 1920x1080 is applied.
+This action renders the SVG document at its native size and saves the result.  The native size is the width and
+height of the root viewport, else its view box, else 1920x1080.  Fractional sizes are rounded up.  Areas that the
+document does not paint are transparent.  If the SVG has a #Target, a private copy of the document is rendered, as
+described for #Render().
 
 The image will be saved in PNG format by default, but can be changed by specifying an alternate `ClassID`.  PNG
 is recommended in particular because it supports an alpha channel.
 
+-ERRORS-
+Okay
+NullArgs
+CreateObject
+NoData: The document has no root viewport.
+NoSupport: The SVG has a #Target, and its document was not supplied through #Path or #Statement.
 -END-
 *********************************************************************************************************************/
 
 static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
 {
-   ERR error;
+   kt::Log log;
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return log.warning(ERR::NullArgs);
 
-   int width = 0;
-   int height = 0;
-   Self->Scene->getPageWidth(width);
-   Self->Scene->getPageHeight(height);
-
-   if (!width) width = 1920;
-   if (!height) height = 1080;
-
-   auto pic = objImage::create { fl::Width(width), fl::Height(height), fl::Flags(PCF::ALPHA|PCF::NEW) };
-   if (pic.ok()) {
-      if (!(error = Self->render(pic->Bitmap, 0, 0, width, height))) {
-         if (!(error = acSaveImage(*pic, Args->Dest, Args->ClassID))) {
-            return ERR::Okay;
-         }
-      }
+   if (is_targeted(Self)) {
+      extSVG *copy;
+      if (auto error = create_private_copy(Self, &copy); error != ERR::Okay) return error;
+      auto error = SVG_SaveImage(copy, Args);
+      FreeResource(copy);
+      return error;
    }
-   else error = ERR::CreateObject;
 
-   return error;
+   if (not Self->Viewport) return log.warning(ERR::NoData);
+
+   double doc_width, doc_height;
+   document_size(Self, doc_width, doc_height);
+   auto width  = int(std::ceil(doc_width));
+   auto height = int(std::ceil(doc_height));
+
+   auto pic = objImage::create { fl::Width(width), fl::Height(height), fl::Flags(PCF::NEW|PCF::FORCE_ALPHA_32) };
+   if (not pic.ok()) return log.warning(ERR::CreateObject);
+
+   gfx::DrawRectangle(pic->Bitmap, 0, 0, width, height, 0, BAF::FILL); // Unblended, so the image is transparent
+
+   if (auto error = render_document(Self, pic->Bitmap, 0, 0, width, height); error != ERR::Okay) return error;
+   return acSaveImage(*pic, Args->Dest, Args->ClassID);
 }
 
 /*********************************************************************************************************************

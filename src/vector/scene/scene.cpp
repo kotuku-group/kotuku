@@ -1084,7 +1084,10 @@ static ERR SET_Bitmap(extVectorScene *Self, objBitmap *Value)
       }
       else return ERR::Memory;
    }
-   else Self->Buffer = nullptr;
+   else {
+      if (Self->Buffer) { delete Self->Buffer; Self->Buffer = nullptr; }
+      Self->Bitmap = nullptr;
+   }
 
    return ERR::Okay;
 }

@@ -873,6 +873,9 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
    Self->QueryParams.clear();
    Self->ParamAttribs.clear();
    Self->ParamDeps.clear();
+   Self->TextContent.clear();
+   Self->AutoscaleWidth  = Unit();
+   Self->AutoscaleHeight = Unit();
    if (Self->XML) { FreeResource(Self->XML); Self->XML = nullptr; }
 
    // Parameters can be passed in the query string of an SVG path, e.g. "button.svg?color=red&label=OK"
@@ -961,12 +964,17 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
             auto view = Self->Scene->Viewport;
             while ((view) and (view->classID() != CLASSID::VECTORVIEWPORT)) view = (objVectorViewport *)view->Next;
             if (view) {
+               view->getWidth(Self->AutoscaleWidth);
+               view->getHeight(Self->AutoscaleHeight);
                view->setWidth(Unit(1.0, FD_SCALED));
                view->setHeight(Unit(1.0, FD_SCALED));
             }
          }
       }
-      else error = ERR::Init;
+      else {
+         FreeResource(xml);
+         error = ERR::Init;
+      }
    }
    else error = ERR::NewObject;
 
