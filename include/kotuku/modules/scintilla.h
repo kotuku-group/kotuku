@@ -275,7 +275,7 @@ class objScintilla : public Object {
    using create = kt::Create<objScintilla>;
    objScintilla(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   std::string TextStyle;           // A font definition that selects the font used for drawing and measuring document text.
+   std::string FontStyle;           // A font definition that selects the font used for drawing and measuring document text.
    std::string Path;                // Identifies the location of a text file to load.
    SEF   EventFlags;                // Specifies events that need to be reported from the Scintilla object.
    SCIF  Flags;                     // Optional flags.
@@ -485,8 +485,8 @@ class objScintilla : public Object {
 
    // Customised field getting
 
-   inline ERR getTextStyle(std::string_view &Value) noexcept {
-      Value = this->TextStyle;
+   inline ERR getFontStyle(std::string_view &Value) noexcept {
+      Value = this->FontStyle;
       return ERR::Okay;
    }
 
@@ -562,12 +562,12 @@ class objScintilla : public Object {
    }
 
    inline ERR getThemeXML(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[37];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getActivePopup(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[30];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -575,17 +575,17 @@ class objScintilla : public Object {
    }
 
    inline ERR getAllowTabs(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[36];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getAutoIndent(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[44];
+      auto field = &this->Class->Dictionary[45];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getCompletionCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->GetValue(this, &Value);
    }
 
@@ -608,7 +608,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getLineNumbers(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
+      auto field = &this->Class->Dictionary[39];
       return field->GetValue(this, &Value);
    }
 
@@ -618,12 +618,12 @@ class objScintilla : public Object {
    }
 
    inline ERR getShowWhitespace(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getEventCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->GetValue(this, &Value);
    }
 
@@ -636,17 +636,17 @@ class objScintilla : public Object {
    }
 
    inline ERR getSymbols(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTabWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[31];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWordwrap(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
+      auto field = &this->Class->Dictionary[43];
       return field->GetValue(this, &Value);
    }
 
@@ -659,7 +659,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getAnchor(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[40];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -691,7 +691,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getCanUndo(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -707,7 +707,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getSelectedText(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -715,12 +715,12 @@ class objScintilla : public Object {
    }
 
    inline ERR getChangeCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getDocumentRevision(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[32];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -744,25 +744,25 @@ class objScintilla : public Object {
    }
 
    inline ERR getEOLMode(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getIndentWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getIndentationGuides(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
       return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
-   inline ERR setTextStyle(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[45];
+   inline ERR setFontStyle(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -805,7 +805,7 @@ class objScintilla : public Object {
    }
 
    inline ERR setLexer(const SCLEX Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -815,22 +815,22 @@ class objScintilla : public Object {
    }
 
    inline ERR setThemeXML(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(this, field, 0x08100301, Value);
    }
 
    inline ERR setAllowTabs(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[36];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAutoIndent(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[44];
+      auto field = &this->Class->Dictionary[45];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCompletionCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -845,7 +845,7 @@ class objScintilla : public Object {
    }
 
    inline ERR setLineNumbers(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
+      auto field = &this->Class->Dictionary[39];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -860,12 +860,12 @@ class objScintilla : public Object {
    }
 
    inline ERR setShowWhitespace(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setEventCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -875,22 +875,22 @@ class objScintilla : public Object {
    }
 
    inline ERR setSymbols(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setTabWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWordwrap(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
+      auto field = &this->Class->Dictionary[43];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setChangeCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -900,17 +900,17 @@ class objScintilla : public Object {
    }
 
    inline ERR setEOLMode(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setIndentWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setIndentationGuides(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

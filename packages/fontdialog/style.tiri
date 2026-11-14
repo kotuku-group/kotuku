@@ -312,7 +312,7 @@ function paintParts(State:table!):array<str>
 end
 
 @Doc(text=[[
-@desc Return the font definition of the picker state's fill, stroke and effects, for the VectorText `textStyle`
+@desc Return the font definition of the picker state's fill, stroke and effects, for the VectorText `mergeStyle`
 field.  Every sample in the preview is painted from this definition.
 ]])
 fontdialog_style.paintDef = function(State:table!):str
@@ -323,8 +323,7 @@ end
 -- would otherwise appear in the definition.
 
 function layoutParts(State:table!):array<str>
-   parts = array<str>
-   parts.push(f'lineHeight={tidy(State.lineHeight)}')
+   parts = array<str> { f'lineHeight={tidy(State.lineHeight)}' }
    if not fontdialog_style.hasOutlines(State.font) then return parts end
    parts.push(f'letterSpacing={tidy(State.tracking / 1000)}em')
    parts.push(f'wordSpacing={tidy(State.wordSpace)}em')
@@ -349,11 +348,12 @@ fontdialog_style.featureList = function(State:table!):str
 end
 
 @Doc(text=[[
-@desc Return the font definition that a sample is drawn with, for the VectorText `textStyle` field: the paint settings
-of `paintDef()`, the line height and spacing, and the OpenType features.
+@desc Return the font definition that a sample is drawn with, for the VectorText `mergeStyle` field: the style of
+`fontStyle()`, the paint settings of `paintDef()`, the line height and spacing, and the OpenType features.
 ]])
 fontdialog_style.sampleDef = function(State:table!):str
-   parts = paintParts(State)
+   parts = array<str> { fontdialog_style.fontStyle(State) }
+   for part in values(paintParts(State)) do parts.push(part) end
    for part in values(layoutParts(State)) do parts.push(part) end
    return parts.concat('; ')
 end
@@ -363,15 +363,14 @@ end
 ]])
 fontdialog_style.fontDef = function(State:table!):str
    font = State.font
-   parts = array<str>
-   parts.push(f'face={font.name}')
-
-   parts.push(f'size={State.size * 0.75}pt')
-
-   parts.push(fontdialog_style.fontStyle(State)) -- Includes any axis that is away from its default
+   parts = array<str> {
+      f'face={font.name}',
+      f'size={State.size * 0.75}pt',
+      fontdialog_style.fontStyle(State), -- Includes any axis that is away from its default
+      f'kerning={State.kerning}'
+   }
 
    for part in values(layoutParts(State)) do parts.push(part) end
-   parts.push(f'kerning={State.kerning}')
    for part in values(paintParts(State)) do parts.push(part) end
 
    _, result = check mVec.NormaliseTextStyle(parts.concat('; '))
@@ -413,7 +412,7 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
       if settings.weight and (State.axes.wght != nil) then State.axes.wght = tonumber(settings.weight) end
       if settings.width and (State.axes.wdth != nil) then State.axes.wdth = unitValue(settings.width, '%') end
       for tag, value in settings do
-         if (State.axes[tag] != nil) and (tag.size() is 4) then State.axes[tag] = tonumber(value) end
+         if (State.axes[tag] != nil) and (#tag is 4) then State.axes[tag] = tonumber(value) end
       end
    else
       if settings.style and (settings.style in font.styles) then State.style = settings.style end

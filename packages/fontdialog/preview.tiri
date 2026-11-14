@@ -98,59 +98,6 @@ fontdialog_preview.textFor = function(Font:table!, Text:str!):str
    return Text
 end
 
--- Letter case conversion, which is UTF-8 aware for ASCII, Latin-1, Latin Extended-A, Greek and Cyrillic.  All of the
--- mapped letters occupy one or two bytes.  Letters with no single-letter counterpart, such as `ß`, are left as they are.
-
-function upperCode(Code:num!):num
-   if Code < 0x80 then return ((Code >= 0x61) and (Code <= 0x7a)) ? Code - 32 : Code end
-   if Code is 0xb5 then return 0x39c end
-   if Code is 0xff then return 0x178 end
-   if Code is 0x131 then return 0x49 end
-   if Code is 0x17f then return 0x53 end
-   if (Code >= 0xe0) and (Code <= 0xfe) then return (Code is 0xf7) ? Code : Code - 32 end
-   if ((Code >= 0x100) and (Code <= 0x137)) or ((Code >= 0x14a) and (Code <= 0x177)) then
-      return (Code % 2 is 1) ? Code - 1 : Code
-   end
-   if ((Code >= 0x139) and (Code <= 0x148)) or ((Code >= 0x179) and (Code <= 0x17e)) then
-      return (Code % 2 is 0) ? Code - 1 : Code
-   end
-   if Code is 0x3ac then return 0x386 end
-   if (Code >= 0x3ad) and (Code <= 0x3af) then return Code - 37 end
-   if Code is 0x3c2 then return 0x3a3 end
-   if Code is 0x3cc then return 0x38c end
-   if (Code >= 0x3cd) and (Code <= 0x3ce) then return Code - 63 end
-   if (Code >= 0x3b1) and (Code <= 0x3cb) then return Code - 32 end
-   if (Code >= 0x430) and (Code <= 0x44f) then return Code - 32 end
-   if (Code >= 0x450) and (Code <= 0x45f) then return Code - 80 end
-   return Code
-end
-
-function lowerCode(Code:num!):num
-   if Code < 0x80 then return ((Code >= 0x41) and (Code <= 0x5a)) ? Code + 32 : Code end
-   if Code is 0x130 then return 0x69 end
-   if Code is 0x178 then return 0xff end
-   if (Code >= 0xc0) and (Code <= 0xde) then return (Code is 0xd7) ? Code : Code + 32 end
-   if ((Code >= 0x100) and (Code <= 0x137)) or ((Code >= 0x14a) and (Code <= 0x177)) then
-      return (Code % 2 is 0) ? Code + 1 : Code
-   end
-   if ((Code >= 0x139) and (Code <= 0x148)) or ((Code >= 0x179) and (Code <= 0x17e)) then
-      return (Code % 2 is 1) ? Code + 1 : Code
-   end
-   if Code is 0x386 then return 0x3ac end
-   if (Code >= 0x388) and (Code <= 0x38a) then return Code + 37 end
-   if Code is 0x38c then return 0x3cc end
-   if (Code >= 0x38e) and (Code <= 0x38f) then return Code + 63 end
-   if (Code >= 0x391) and (Code <= 0x3ab) then return Code + 32 end
-   if (Code >= 0x400) and (Code <= 0x40f) then return Code + 80 end
-   if (Code >= 0x410) and (Code <= 0x42f) then return Code + 32 end
-   return Code
-end
-
-function encodeCode(Code:num!):str
-   if Code < 0x80 then return string.char(Code) end
-   return string.char(0xc0 | (Code >> 6), 0x80 | (Code & 0x3f))
-end
-
 -- Whether a character continues a word for title case.  Apostrophes do, so that `don't` has one capital.  General
 -- punctuation other than the right single quote ends a word, as do the Latin-1 symbols.
 
@@ -167,10 +114,14 @@ end
 
 @Doc(text=[[
 @desc Apply a letter case (`upper`, `lower`, `title` or `none`) to UTF-8 text.  Title case capitalises the first letter
-of each word and leaves the other letters as they are.
+of each word and leaves the other letters as they are.  Accented and non-Latin letters are converted as described for
+`string.upper()` and `string.lower()` with their Unicode option; letters with no single-letter counterpart, such as
+`ß`, are left as they are.
 ]])
 fontdialog_preview.applyCase = function(Text:str!, Case:str):str
-   if (Case != 'upper') and (Case != 'lower') and (Case != 'title') then return Text end
+   if Case is 'upper' then return Text.upper(true) end
+   if Case is 'lower' then return Text.lower(true) end
+   if Case != 'title' then return Text end
 
    parts = array<str>
    in_word = false
@@ -179,26 +130,19 @@ fontdialog_preview.applyCase = function(Text:str!, Case:str):str
       lead = Text.byte(i)
       size = 1
       code = lead
-      if lead >= 0xf0 then
+      remaining = #Text - i -- A sequence that is cut short is passed through a byte at a time
+      if (lead >= 0xf0) and (remaining >= 4) then
          size = 4
-      elseif lead >= 0xe0 then
+      elseif (lead >= 0xe0) and (lead < 0xf0) and (remaining >= 3) then
          size = 3
          code = ((lead & 0x0f) << 12) | ((Text.byte(i + 1) & 0x3f) << 6) | (Text.byte(i + 2) & 0x3f)
-      elseif lead >= 0xc0 then
+      elseif (lead >= 0xc0) and (lead < 0xe0) and (remaining >= 2) then
          size = 2
          code = ((lead & 0x1f) << 6) | (Text.byte(i + 1) & 0x3f)
       end
 
-      if size > 2 then
-         parts.push(Text.sub(i, i + size))
-      elseif Case is 'upper' then
-         parts.push(encodeCode(upperCode(code)))
-      elseif Case is 'lower' then
-         parts.push(encodeCode(lowerCode(code)))
-      else
-         parts.push(in_word ? Text.sub(i, i + size) : encodeCode(upperCode(code)))
-      end
-
+      char = Text.sub(i, i + size)
+      parts.push(in_word ? char : char.upper(true))
       in_word = isWordCode(code) or (size is 4)
       i += size
    end
@@ -243,10 +187,9 @@ end
 
 function sampleText(Target:obj!, State:table!, Fields:table!):obj
    fields = table.merge({
-      face      = State.font.name,
-      fontSize  = f'{State.size}px',
-      fontStyle = fontdialog_style.fontStyle(State),
-      textStyle = fontdialog_style.sampleDef(State)
+      face       = State.font.name,
+      fontSize   = f'{State.size}px',
+      mergeStyle = fontdialog_style.sampleDef(State)
    }, Fields)
    fields.textFlags = (fields.textFlags ?? 0) | sampleFlags(State)
    return Target.new('VectorText', fields)
@@ -656,7 +599,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       paint = fontdialog_style.sampleDef(s)
       if paint != self.livePaint then
          self.livePaint = paint
-         sample.textStyle = paint
+         sample.mergeStyle = paint
       end
 
       flags = sampleFlags(s)

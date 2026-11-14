@@ -11,6 +11,9 @@
       example   = 'Sample text',          -- preview text
       bkgd      = '#203040',            -- fill for the preview's background
       fontDef   = 'face=Noto Sans; ...',  -- font definition; its keys override the options above
+      align     = 'centre',               -- paragraph alignment: left, centre, right or justify
+      letterCase = 'upper',               -- letter case: none, upper, lower or title
+      paragraphSpacing = 0.8,             -- space between paragraphs, as a multiple of the font size
       resultFilter = { 'face', 'size' },  -- table or array of the key names to include in the Result
       features  = { 'list', 'preview' },  -- table or array of the panels to show; all of them if omitted.  The names
                                           -- are list, presets, preview, sizing, style, glyphs, fill, stroke,
@@ -18,8 +21,10 @@
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
 
-   Result holds face, style, size (px), pointSize, fill, fontFeatures, fontDef and settings, or only the keys named by
-   resultFilter.  fontFeatures is the value of the definition's features key, e.g. 'kern 1, liga 0, smcp 1'.
+   Result holds face, style, size (px), pointSize, fill, fontFeatures, fontDef, align, letterCase, paragraphSpacing and
+   settings, or only the keys named by resultFilter.  fontFeatures is the value of the definition's features key, e.g.
+   'kern 1, liga 0, smcp 1'.  The paragraph settings are not part of a font definition, so a full round trip passes
+   fontDef, align, letterCase and paragraphSpacing back as options.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
@@ -79,10 +84,15 @@ STACK_ORDER <const> = array<str> { 'presets', 'sizing', 'style', 'glyphs', 'fill
 
 DEFAULT_FACE <const> = 'Noto Sans'
 
+-- Values of the paragraph options.  The IDs match the buttons of the Alignment & layout panel.
+
+ALIGN_VALUES <const> = array<str> { 'left', 'centre', 'right', 'justify' }
+CASE_VALUES  <const> = array<str> { 'none', 'upper', 'lower', 'title' }
+
 -- The keys returned in the result when the client does not specify a resultFilter.
 
 glDefaultFilter <const> = array<str> {
-   'face', 'style', 'size', 'pointSize', 'fill', 'fontFeatures', 'fontDef'
+   'face', 'style', 'size', 'pointSize', 'fill', 'fontFeatures', 'fontDef', 'align', 'letterCase', 'paragraphSpacing'
    -- Not included: settings
 }
 
@@ -568,6 +578,9 @@ gui.dialog.font = function(Options:table)
             fill      = s.fill,
             fontFeatures = fontdialog_style.featureList(s),
             fontDef   = fontdialog_style.fontDef(s),
+            align     = fontdialog_style.textAlign(s),
+            letterCase = s.letterCase,
+            paragraphSpacing = s.paraSpace,
             settings  = fontdialog_style.resultSettings(s)
          }
 
@@ -645,6 +658,25 @@ gui.dialog.font = function(Options:table)
       end
 
       if definition then fontdialog_style.applyDef(&state, Options.fontDef) end
+
+      -- Paragraph settings aren't part of a font definition, so they have options of their own.  The spacing is
+      -- rounded to the slider's step.
+
+      if Options.align?? then
+         assert(Options.align in ALIGN_VALUES, f'Unknown alignment \'{Options.align}\'')
+         &state.align = Options.align
+      end
+
+      if Options.letterCase?? then
+         assert(Options.letterCase in CASE_VALUES, f'Unknown letter case \'{Options.letterCase}\'')
+         &state.letterCase = Options.letterCase
+      end
+
+      if Options.paragraphSpacing != nil then
+         spacing = tonumber(Options.paragraphSpacing)
+         assert(spacing != nil, f'Invalid paragraph spacing \'{Options.paragraphSpacing}\'')
+         &state.paraSpace = math.clamp(math.round(spacing * 10) / 10, 0, fontdialog_alignment.MAX_SPACING)
+      end
 
       &state.size = fontdialog_sizing.quantise(&state.font, &state.size)
 
@@ -910,7 +942,8 @@ end
 -- This sub-routine is provided for languages other than Tiri to use the interface.  Options are passed as script keys
 -- and the window ID is returned.  The outcome is written back to the script's keys before the window closes:
 -- 'response' is 'select' or 'cancel', and on Select 'face', 'style', 'size' (px), 'pointSize', 'fill', 'fontFeatures'
--- and 'fontDef' describe the font.  'fontDef' is the string equivalent of the Tiri result's settings table.
+-- and 'fontDef' describe the font, and 'align', 'letterCase' and 'paragraphSpacing' the paragraph.  'fontDef' is the
+-- string equivalent of the Tiri result's settings table, less the paragraph settings.
 
 @if(imported=false)
    script = obj.find('self')
@@ -925,6 +958,9 @@ end
       example   = arg('example'),
       bkgd      = arg('bkgd'),
       fontDef   = arg('fontDef'),
+      align     = arg('align'),
+      letterCase = arg('letterCase'),
+      paragraphSpacing = arg('paragraphSpacing'),
       title     = arg('title'),
       icon      = arg('icon'),
       theme     = arg('theme'),
@@ -940,6 +976,9 @@ end
             script.setKey('fill', Result.fill)
             script.setKey('fontFeatures', Result.fontFeatures)
             script.setKey('fontDef', Result.fontDef)
+            script.setKey('align', Result.align)
+            script.setKey('letterCase', Result.letterCase)
+            script.setKey('paragraphSpacing', tostring(Result.paragraphSpacing))
          end
          script.setKey('response', Result ? 'select' : 'cancel')
       end

@@ -1170,7 +1170,10 @@ static void save_font_style(XTag *Tag, std::string_view Style, int Weight)
 
       auto key = ft::normalise(Key);
       if (Key IS "opsz") {
-         if (auto value = ft::parse_number(Value)) opsz = *value;
+         if (auto value = ft::parse_number(Value)) {
+            opsz = *value;
+            opsz_none = true; // Canonical fixed sizes replace the original optical mode and explicit coordinate.
+         }
          else if (auto mode = ft::normalise(Value); (mode IS "none") or (mode IS "auto")) {
             opsz_none = mode IS "none";
             opsz.reset();
@@ -1289,7 +1292,7 @@ static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int 
    if ((!error) and (!(error = vt->getWeight(weight))) and (!(error = vt->getFontStyle(sv))))
       save_font_style(tag, sv, weight);
 
-   if ((!error) and (!(error = vt->getTextStyle(sv)))) {
+   if ((!error) and (!(error = vt->getMergeStyle(sv)))) {
       KeyValue *keys;
       if (vec::ReadTextStyle(sv, &keys) IS ERR::Okay) {
          auto &entries = *(KEYVALUE *)keys;

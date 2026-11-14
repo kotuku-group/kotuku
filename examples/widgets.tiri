@@ -241,12 +241,22 @@ end
       end
    end)
 
-   text = viewport.new('vectortext', table.merge({
-      x=win.margins.left, y=y, string='Kōtuku interfaces are drawn using real-time vector graphics',
+   -- The text sits in a row that spans the window between its margins, so that its alignment can follow the width of
+   -- the window.  Effects such as a glow are allowed to spill outside of the row.
+
+   TEXT_SAMPLE <const> = 'Kōtuku interfaces are drawn using real-time vector graphics'
+
+   textRow = viewport.new('VectorViewport', {
+      x = win.margins.left, xOffset = win.margins.right, y = y, height = 1, overflow = VOF_VISIBLE
+   })
+
+   text = textRow.new('vectortext', table.merge({
+      x=0, y=0, string=TEXT_SAMPLE,
       face='Noto Sans', fontSize=20, textFlags='!editable'
    }, win.theme.window.text, false))
    font_size = tonumber(text.fontSize)
-   text.y += font_size
+   text.y = font_size
+   textRow.height = font_size * 1.5
    y += font_size + gui.rpixel('12pt')
 
    msgButton = gui.button({
@@ -314,6 +324,29 @@ end
       }
    })
 
+   -- The most recent font dialog selection, which is passed back to the dialog so that every setting is restored when it
+   -- is reopened.  The paragraph settings are not part of a font definition, so they are kept separately.
+
+   fontChoice = { fontDef = nil, align = nil, letterCase = nil, paragraphSpacing = nil }
+
+   -- Apply a letter case from the font dialog to the sample.  The Unicode option of upper() and lower() also converts
+   -- accented letters.  Title case capitalises the first character of each space-separated word.
+
+   function applyCase(Text:str!, Case:str):str
+      if Case is 'upper' then return Text.upper(true) end
+      if Case is 'lower' then return Text.lower(true) end
+      if Case != 'title' then return Text end
+
+      words = Text.split(' ')
+      for i, word in words do
+         if #word is 0 then continue end
+         lead = word.byte(0)
+         size = (lead >= 0xf0) ? 4 : (lead >= 0xe0) ? 3 : (lead >= 0xc0) ? 2 : 1
+         words[i] = word.sub(0, size).upper(true) .. word.sub(size)
+      end
+      return words.concat(' ')
+   end
+
    fontButton = gui.button({
       target = viewport,
       label  = 'Select Font',
@@ -325,11 +358,50 @@ end
             gui.dialog.font({
                modal    = true,
                popOver  = win.surface,
+               fontDef  = fontChoice.fontDef ?? text.mergeStyle,
+               align    = fontChoice.align,
+               letterCase = fontChoice.letterCase,
+               paragraphSpacing = fontChoice.paragraphSpacing,
+               example  = TEXT_SAMPLE,
+               resultFilter = array<str> {
+                  'face', 'style', 'pointSize', 'fontDef', 'align', 'letterCase', 'paragraphSpacing'
+               },
                feedback = function(Result)
                   if not Result then
                      print('Dialog was cancelled.')
+                     return
+                  end
+
+                  print(f"The user selected '{Result.face}', size {Result.pointSize}, style '{Result.style}'")
+
+                  fontChoice.{
+                     fontDef = Result.fontDef, align = Result.align, letterCase = Result.letterCase,
+                     paragraphSpacing = Result.paragraphSpacing
+                  }
+
+                  -- The font definition carries the face, style, fill, stroke and effects such as the glow.  The size
+                  -- is left out because the widgets below the text are laid out for its current height.
+
+                  parts = array<str>
+                  for part in values(Result.fontDef.split(';')) do
+                     part = part.trim()
+                     if not part.startsWith('size=') then parts.push(part) end
+                  end
+                  text.fontStyle = parts.concat('; ')
+
+                  text.string = applyCase(TEXT_SAMPLE, Result.letterCase)
+
+                  -- Each line aligns about X, so X is moved to the matching edge or centre of the row.  Justification
+                  -- has no effect on a single line, so it is treated as left alignment.  The paragraph spacing is kept
+                  -- for the dialog but isn't shown, as the example text is a single line.
+
+                  align = Result.align
+                  if align is 'centre' then
+                     text.{ x = '50%', align = 'horizontal' }
+                  elseif align is 'right' then
+                     text.{ x = '100%', align = 'right' }
                   else
-                     print(f"The user selected '{Result.face}', size {Result.pointSize}, style '{Result.style}'")
+                     text.{ x = 0, align = 'left' }
                   end
                end
             })

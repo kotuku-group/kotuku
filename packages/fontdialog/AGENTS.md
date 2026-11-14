@@ -25,8 +25,10 @@ Known limitations:
   panel's switches use `GetFontFeatures()` instead.  Script, display, symbol and unclassified families are listed under the
   Other filter.  The weight axis defaults to 400 where the range
   allows, rather than the font's default instance, matching the Regular default of static families.
-- `string.upper()` is byte-based, so the preview uses `fontdialog_preview.applyCase()`.  It converts ASCII, Latin-1,
-  Latin Extended-A, Greek and Cyrillic; letters in other scripts are unchanged.
+- The preview's letter case uses `string.upper()` and `string.lower()` with their Unicode option, which convert
+  Latin-1, Latin Extended-A, Greek, Cyrillic and Latin Extended Additional letters; title case applies the same upper
+  case conversion to the first letter of each word in `fontdialog_preview.applyCase()`.  Letters in other scripts are
+  unchanged.
 - Presets are held as font definition strings, which `fontdialog_style.applyDef()` loads through `ReadTextStyle()`.
 - The font database only records Greek, Cyrillic, CJK and emoji among the non-Latin scripts, so under All scripts the
   other scripts' families keep the Latin sample and draw it with missing glyphs.

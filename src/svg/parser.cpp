@@ -964,7 +964,7 @@ ERR svgState::apply_text_properties(objVectorText *Text) const noexcept
 
    if (auto features = m_text_properties.find(SVF_font_feature_settings);
        (features != m_text_properties.end()) and (features->second != "normal")) {
-      if (auto error = Text->setTextStyle("features=" + features->second); error != ERR::Okay) return error;
+      if (auto error = Text->setMergeStyle("features=" + features->second); error != ERR::Okay) return error;
    }
 
    auto anchor = m_text_properties.find(SVF_text_anchor);
