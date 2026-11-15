@@ -2,20 +2,36 @@
   <!-- Created in 2026 by Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Deco frames</title>
   <desc>Concentric art deco diamond frames in antique gold on deep teal, with stepped squares where
-    four frames meet.</desc>
+    four frames meet.
+    Parameters: bkgd, fore, highlight and shade colour the background, gold frames, highlights and dark accents.</desc>
+  <style>
+    :root {
+      --bkgd: env(--bkgd, #1e3c39);
+      --fore: env(--fore, #bfa26a);
+      --highlight: env(--highlight, #d8c79e);
+      --shade: env(--shade, #8c7449);
+    }
+    .frames-bkgd-fill { fill: var(--bkgd); }
+    .frames-fore-stroke { stroke: var(--fore); }
+    .frames-highlight-stroke { stroke: var(--highlight); }
+    .frames-shade-stroke { stroke: var(--shade); }
+    .frames-fore-fill { fill: var(--fore); }
+    .frames-shade-fill { fill: var(--shade); }
+  </style>
   <defs>
     <pattern id="pidDecoFrames" patternUnits="userSpaceOnUse" width="48" height="48"
       viewBox="0 0 48 48">
-      <rect width="48" height="48" fill="#1e3c39"/>
+      <rect width="48" height="48" class="frames-bkgd-fill"/>
       <!-- Nested diamond frames -->
-      <path fill="none" stroke="#bfa26a" stroke-width="2" d="M24,3L45,24L24,45L3,24Z"/>
-      <path fill="none" stroke="#d8c79e" stroke-width="1" d="M24,8L40,24L24,40L8,24ZM24,16L32,24L24,32L16,24Z"/>
-      <path fill="none" stroke="#8c7449" stroke-width="1" d="M24,12L36,24L24,36L12,24Z"/>
-      <path fill="#bfa26a" d="M24,20L28,24L24,28L20,24Z"/>
+      <path fill="none" class="frames-fore-stroke" stroke-width="2" d="M24,3L45,24L24,45L3,24Z"/>
+      <path fill="none" class="frames-highlight-stroke" stroke-width="1"
+        d="M24,8L40,24L24,40L8,24ZM24,16L32,24L24,32L16,24Z"/>
+      <path fill="none" class="frames-shade-stroke" stroke-width="1" d="M24,12L36,24L24,36L12,24Z"/>
+      <path class="frames-fore-fill" d="M24,20L28,24L24,28L20,24Z"/>
       <!-- Stepped squares at the tile corners, split across the four corners -->
-      <path fill="#8c7449" d="M-5,-5h10v10h-10ZM-5,43h10v10h-10ZM43,-5h10v10h-10ZM43,43h10v10h-10Z"/>
-      <path fill="#1e3c39" d="M-3,-3h6v6h-6ZM-3,45h6v6h-6ZM45,-3h6v6h-6ZM45,45h6v6h-6Z"/>
-      <path fill="#bfa26a" d="M-1.5,-1.5h3v3h-3ZM-1.5,46.5h3v3h-3ZM46.5,-1.5h3v3h-3ZM46.5,46.5h3v3h-3Z"/>
+      <path class="frames-shade-fill" d="M-5,-5h10v10h-10ZM-5,43h10v10h-10ZM43,-5h10v10h-10ZM43,43h10v10h-10Z"/>
+      <path class="frames-bkgd-fill" d="M-3,-3h6v6h-6ZM-3,45h6v6h-6ZM45,-3h6v6h-6ZM45,45h6v6h-6Z"/>
+      <path class="frames-fore-fill" d="M-1.5,-1.5h3v3h-3ZM-1.5,46.5h3v3h-3ZM46.5,-1.5h3v3h-3ZM46.5,46.5h3v3h-3Z"/>
     </pattern>
   </defs>
   <rect width="100%" height="100%" fill="url(#pidDecoFrames)"/>

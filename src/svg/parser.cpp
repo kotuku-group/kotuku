@@ -89,7 +89,8 @@ std::string svgState::resolve_paint_server(const std::string &Value) noexcept
       if (auto scoped_id = scoped_paint_id(*tag->second, lookup); not scoped_id.empty()) {
          if (Self->Scene->findDef(scoped_id, nullptr) != ERR::Okay) {
             XTag clone = *tag->second;
-            rescope_params(Self, clone, m_param_scope);
+            auto paint_scope = param_values_only(*m_param_scope);
+            rescope_params(Self, clone, &paint_scope);
             for (int a=1; a < std::ssize(clone.Attribs); a++) {
                if (clone.Attribs[a].Name IS "id") { clone.Attribs[a].Value = scoped_id; break; }
             }
@@ -3495,9 +3496,19 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
    // SVG Parameters: <param> children define values for this instance only.  They inherit the enclosing scope and
    // their values are resolved against it, so <param name="a" value="param(b) red"/> is permitted.  Whitespace and
    // <param> children do not count as content for the purpose of choosing the cloning strategy below.
+   //
+   // If the document uses CSS custom properties, every instance has a scope so that the referenced content inherits
+   // the <use> element's custom properties.
 
    ParamScope scope;
-   bool has_params = false, has_content = false;
+   bool has_scope = false, has_content = false;
+   auto open_scope = [&] {
+      if (has_scope) return;
+      if (m_param_scope) scope = *m_param_scope;
+      has_scope = true;
+   };
+   if (Self->HasCustomProps) open_scope();
+
    for (auto &child : Tag.Children) {
       if (child.isContent()) {
          if (not trim_ws(child.Attribs[0].Value).empty()) has_content = true;
@@ -3512,17 +3523,16 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       std::optional<std::string> value;
       if (not read_param_element(Self, child, m_param_scope, name, value)) continue;
 
-      if (not has_params) {
-         if (m_param_scope) scope = *m_param_scope;
-         has_params = true;
-      }
-
+      open_scope();
       if (value) scope.Values[name] = std::move(*value);
       else scope.Values.erase(name);
    }
 
+   // Bind env() in custom properties after applying <param>, while <param> values still use the enclosing scope.
+   if (Self->HasCustomProps) apply_use_custom_props(Self, Tag, *tagref, m_param_scope, scope);
+
    auto saved_scope = m_param_scope;
-   if (has_params) m_param_scope = &scope;
+   if (has_scope) m_param_scope = &scope;
    auto restore_scope = deferred_call([this, saved_scope] {
       m_param_scope = saved_scope;
    });
@@ -4371,10 +4381,111 @@ static std::string css_values(const KatanaArray *Values)
 }
 
 //********************************************************************************************************************
-// Only simple/compound tag, universal, ID and class selectors are supported.  Reject an entire selector containing
-// combinators or unsupported components, rather than applying just its rightmost component.
+// Katana predates CSS custom properties and rejects '--name' as a syntax error.  This lexical pre-pass rewrites each
+// '--name' to the vendor-prefixed '-kt-cp-name', which Katana accepts as an ordinary identifier, so custom property
+// declarations and var(--name)/env(--name) references survive parsing.  Note that an author property literally named
+// '-kt-cp-...' will consequently be treated as a custom property.
+//
+// Comments, quoted strings and unquoted url() contents are copied verbatim.  A '--' is rewritten only when it starts a
+// name: the preceding character must not be a name character (so '.btn--primary' and '1--2' are untouched) and the
+// following character must be one (so '-->' is untouched).  CDO '<!--' is also left intact.  Selector names such as
+// '.--x' are rewritten too, and css_name_matches() maps them back for matching.  The source is returned as-is,
+// without allocation, when it contains no '--'.
 
-static bool css_matches(const KatanaSelector *Selector, const XTag &Tag, size_t &Specificity)
+static constexpr char CSS_CUSTOM_PREFIX[] = "-kt-cp-";
+
+static bool css_name_char(char C) noexcept
+{
+   return ((C >= 'a') and (C <= 'z')) or ((C >= 'A') and (C <= 'Z')) or ((C >= '0') and (C <= '9')) or
+      (C IS '_') or (C IS '-') or (C IS '\\') or ((unsigned char)C >= 0x80);
+}
+
+static std::string_view css_rewrite_custom_names(std::string_view Source, std::string &Buffer)
+{
+   if (Source.find("--") IS std::string_view::npos) return Source;
+
+   Buffer.clear();
+   Buffer.reserve(Source.size() + 32);
+
+   size_t i = 0;
+   const size_t end = Source.size();
+   while (i < end) {
+      const char c = Source[i];
+
+      if ((c IS '/') and (i + 1 < end) and (Source[i+1] IS '*')) { // Comment
+         auto close = Source.find("*/", i + 2);
+         close = (close IS std::string_view::npos) ? end : close + 2;
+         Buffer.append(Source.substr(i, close - i));
+         i = close;
+      }
+      else if ((c IS '"') or (c IS '\'')) { // Quoted string, honouring backslash escapes
+         size_t j = i + 1;
+         while (j < end) {
+            if (Source[j] IS '\\') j += 2;
+            else if (Source[j] IS c) { j++; break; }
+            else if (Source[j] IS '\n') break; // Unterminated string; CSS ends it at the newline
+            else j++;
+         }
+         if (j > end) j = end;
+         Buffer.append(Source.substr(i, j - i));
+         i = j;
+      }
+      else if (c IS '\\') { // Escape outside a string; copy the escaped character verbatim
+         const size_t n = std::min<size_t>(2, end - i);
+         Buffer.append(Source.substr(i, n));
+         i += n;
+      }
+      else if (((c IS 'u') or (c IS 'U')) and (i + 4 <= end) and iequals(Source.substr(i, 4), "url(") and
+            ((i IS 0) or not css_name_char(Source[i-1]))) {
+         // Unquoted url() content is a single token and may legitimately contain '--'.
+         size_t j = i + 4;
+         while ((j < end) and (std::string_view(" \t\r\n").find(Source[j]) != std::string_view::npos)) j++;
+         if ((j < end) and (Source[j] != '"') and (Source[j] != '\'')) {
+            auto close = Source.find(')', j);
+            close = (close IS std::string_view::npos) ? end : close + 1;
+            Buffer.append(Source.substr(i, close - i));
+            i = close;
+         }
+         else {
+            Buffer.append(Source.substr(i, j - i));
+            i = j;
+         }
+      }
+      else if ((c IS '-') and (i + 2 < end) and (Source[i+1] IS '-') and css_name_char(Source[i+2]) and
+            ((i IS 0) or ((not css_name_char(Source[i-1])) and (Source[i-1] != '!')))) {
+         Buffer.append(CSS_CUSTOM_PREFIX);
+         i += 2;
+      }
+      else {
+         Buffer.push_back(c);
+         i++;
+      }
+   }
+
+   return Buffer;
+}
+
+static bool is_css_custom_property(std::string_view Name) noexcept
+{
+   return Name.starts_with(CSS_CUSTOM_PREFIX);
+}
+
+// Compares a document name with a selector identifier, reversing the pre-pass so that '.-kt-cp-x' matches '--x'.
+
+static bool css_name_matches(std::string_view Name, std::string_view Selector) noexcept
+{
+   if (is_css_custom_property(Selector)) {
+      return Name.starts_with("--") and (Name.substr(2) IS Selector.substr(sizeof(CSS_CUSTOM_PREFIX) - 1));
+   }
+   return Name IS Selector;
+}
+
+//********************************************************************************************************************
+// Only simple/compound tag, universal, ID, class and :root selectors are supported.  Reject an entire selector
+// containing combinators or unsupported components, rather than applying just its rightmost component.  Root is the
+// outermost <svg> tag of the document.
+
+static bool css_matches(const KatanaSelector *Selector, const XTag &Tag, const XTag *Root, size_t &Specificity)
 {
    Specificity = 0;
    for (auto sel = Selector; sel; sel = sel->tagHistory) {
@@ -4389,7 +4500,7 @@ static bool css_matches(const KatanaSelector *Selector, const XTag &Tag, size_t 
             break;
          case KatanaSelectorMatchId: {
             const auto id = Tag.attrib("id");
-            if (not id or not sel->data or *id != sel->data->value) return false;
+            if (not id or not sel->data or not css_name_matches(*id, sel->data->value)) return false;
             Specificity += 0x10000;
             break;
          }
@@ -4401,7 +4512,7 @@ static bool css_matches(const KatanaSelector *Selector, const XTag &Tag, size_t 
             while (not list.empty()) {
                list = kt::font_traits::trim(list);
                auto end = list.find_first_of(" \t\r\n");
-               if (list.substr(0, end) IS sel->data->value) found = true;
+               if (css_name_matches(list.substr(0, end), sel->data->value)) found = true;
                if (end IS std::string_view::npos) break;
                list.remove_prefix(end + 1);
             }
@@ -4409,6 +4520,14 @@ static bool css_matches(const KatanaSelector *Selector, const XTag &Tag, size_t 
             Specificity += 0x100;
             break;
          }
+         case KatanaSelectorMatchPseudoClass:
+            // Katana resolves the pseudo type lazily; compare the name directly rather than relying on that state.
+            if (not sel->data or not sel->data->value or not iequals(std::string_view(sel->data->value), "root")) {
+               return false;
+            }
+            if (&Tag != Root) return false;
+            Specificity += 0x100;
+            break;
          default: return false;
       }
    }
@@ -4423,6 +4542,319 @@ struct CSSDeclaration {
 };
 
 //********************************************************************************************************************
+// CSS custom properties.  Computed values are held as serialised text, keyed by their pre-pass name ('-kt-cp-x').  A
+// property that is absent from the map is undefined.
+//
+// A reference to a property declared on the same tag is substituted directly.  A reference to an inherited or
+// undefined property becomes a deferred reference (CP_REF_OPEN) carrying the declaring tag and the document value.
+// Outside <use> instances these resolve to the document value, matching static substitution.  Inside an instance, a
+// property declared outside the referenced content takes the instance's value instead, because the content inherits
+// from the <use> element as a shadow tree does.  Values therefore keep their dependencies as deferred references.
+
+struct CSSCustomValue {
+   std::string value; // May contain deferred references
+   int decl_id;       // XTag.ID of the declaring tag
+   bool valid;        // False for the guaranteed-invalid value, e.g. a reference cycle or 'initial'
+};
+
+using CSSCustomProps = std::map<std::string, CSSCustomValue, std::less<>>;
+
+// Called for each var() with the property name, the unsubstituted fallback (nullptr if none) and the output buffer.
+// Returns false if the reference makes the value invalid at computed-value time.
+
+using CSSVarRef = std::function<bool(std::string_view, const std::string_view *, std::string &)>;
+
+static constexpr size_t CSS_MAX_SUBSTITUTION = 65536; // Caps exponential growth, e.g. '--b: var(--a) var(--a)' chains
+
+// Trims CSS white-space only.  The C0 characters of deferred references must survive.
+
+static std::string_view css_trim(std::string_view Value) noexcept
+{
+   constexpr std::string_view ws(" \t\n\r\f");
+   const auto start = Value.find_first_not_of(ws);
+   if (start IS std::string_view::npos) return {};
+   return Value.substr(start, Value.find_last_not_of(ws) - start + 1);
+}
+
+// Function is a three-letter name with its parenthesis, i.e. "var(" or "env(".
+
+static bool css_is_call(std::string_view Text, size_t Pos, std::string_view Function) noexcept
+{
+   return (Pos + 4 <= Text.size()) and iequals(Text.substr(Pos, 4), Function) and
+      ((Pos IS 0) or not css_name_char(Text[Pos-1]));
+}
+
+static bool css_is_var_call(std::string_view Text, size_t Pos) noexcept { return css_is_call(Text, Pos, "var("); }
+
+// True if the value contains var() or env(), which make a declaration valid at parse time.
+
+static bool css_has_substitution(std::string_view Text) noexcept
+{
+   for (auto pos = Text.find('('); pos != std::string_view::npos; pos = Text.find('(', pos + 1)) {
+      if ((pos >= 3) and (css_is_call(Text, pos - 3, "var(") or css_is_call(Text, pos - 3, "env("))) return true;
+   }
+   return false;
+}
+
+static bool has_deferred_ref(std::string_view Value) noexcept
+{
+   return Value.find_first_of(std::string_view("\x01\x04", 2)) != std::string_view::npos;
+}
+
+// Returns the index just past a quoted string that starts at Pos.
+
+static size_t css_skip_string(std::string_view Text, size_t Pos) noexcept
+{
+   const char quote = Text[Pos++];
+   while (Pos < Text.size()) {
+      if (Text[Pos] IS '\\') Pos += 2;
+      else if (Text[Pos++] IS quote) return Pos;
+   }
+   return Text.size();
+}
+
+// Locates the arguments of the function call whose name starts at Pos.  Returns the index of the closing parenthesis,
+// or npos if unbalanced; Comma receives the first top-level comma, or npos.
+
+static size_t css_call_args(std::string_view Text, size_t Pos, size_t &Comma) noexcept
+{
+   size_t j = Pos + 4;
+   int depth = 1;
+   Comma = std::string_view::npos;
+   while (j < Text.size()) {
+      const char c = Text[j];
+      if ((c IS '"') or (c IS '\'')) { j = css_skip_string(Text, j); continue; }
+      if (c IS '(') depth++;
+      else if (c IS ')') { if (--depth IS 0) return j; }
+      else if ((c IS ',') and (depth IS 1) and (Comma IS std::string_view::npos)) Comma = j;
+      j++;
+   }
+   return std::string_view::npos;
+}
+
+// Substitutes every var() in Text through Ref, appending the result to Output.  A fallback is only evaluated when it
+// is used.  Returns false if the value is invalid at computed-value time.
+
+static bool css_substitute_vars(std::string_view Text, const CSSVarRef &Ref, std::string &Output)
+{
+   size_t i = 0;
+   while (i < Text.size()) {
+      if ((Text[i] IS '"') or (Text[i] IS '\'')) {
+         const auto end = css_skip_string(Text, i);
+         Output.append(Text.substr(i, end - i));
+         i = end;
+      }
+      else if (css_is_var_call(Text, i)) {
+         size_t comma;
+         const auto j = css_call_args(Text, i, comma);
+         if (j IS std::string_view::npos) return false; // Unbalanced
+
+         auto name = css_trim(Text.substr(i + 4, std::min(comma, j) - (i + 4)));
+         if (not is_css_custom_property(name)) return false;
+
+         std::string_view fallback;
+         if (comma != std::string_view::npos) fallback = css_trim(Text.substr(comma + 1, j - comma - 1));
+         if (not Ref(name, (comma != std::string_view::npos) ? &fallback : nullptr, Output)) return false;
+
+         if (Output.size() > CSS_MAX_SUBSTITUTION) return false;
+         i = j + 1;
+      }
+      else Output.push_back(Text[i++]);
+   }
+   return true;
+}
+
+// Appends a deferred custom property reference.  An unusable fallback is omitted, which has the same effect as none.
+
+static void css_append_cp_ref(std::string_view Name, int DeclID, const std::string *Value,
+   const std::string_view *Fallback, const CSSVarRef &Ref, std::string &Output)
+{
+   Output.push_back(CP_REF_OPEN);
+   Output.append(Name);
+   Output.push_back(CP_REF_ID);
+   Output.append(std::to_string(DeclID));
+   if (Value) {
+      Output.push_back(CP_REF_VALUE);
+      Output.append(*Value);
+   }
+   if (Fallback) {
+      std::string fallback;
+      if (css_substitute_vars(*Fallback, Ref, fallback)) {
+         Output.push_back(CP_REF_FALLBACK);
+         Output.append(fallback);
+      }
+   }
+   Output.push_back(CP_REF_CLOSE);
+}
+
+// A reference to a property declared on the current tag; Value is nullptr if it is guaranteed-invalid.  A value with
+// deferred references may still fail to resolve, so it is wrapped in a reference that carries the fallback.
+
+static bool css_ref_local(std::string_view Name, int TagID, const std::string *Value, const std::string_view *Fallback,
+   const CSSVarRef &Ref, std::string &Output)
+{
+   if (Value) {
+      if (Fallback and has_deferred_ref(*Value)) css_append_cp_ref(Name, TagID, Value, Fallback, Ref, Output);
+      else Output.append(*Value);
+      return true;
+   }
+   if (Fallback) return css_substitute_vars(*Fallback, Ref, Output);
+   return false;
+}
+
+// A reference to an inherited or undefined property; Entry is nullptr if undefined.  Always deferred, because a <use>
+// instance may supply a different value.
+
+static bool css_ref_inherited(std::string_view Name, const CSSCustomValue *Entry, const std::string_view *Fallback,
+   const CSSVarRef &Ref, std::string &Output)
+{
+   css_append_cp_ref(Name, Entry ? Entry->decl_id : 0, (Entry and Entry->valid) ? &Entry->value : nullptr, Fallback,
+      Ref, Output);
+   return true;
+}
+
+// Converts each env() in Text to a deferred parameter reference (PARAM_REF_OPEN), which the parameter pass resolves
+// against <use> scopes, SetKey() and the query string.  env(--name) reads the parameter 'name'.  Any other env()
+// name is an unknown environment variable, so its fallback is used.  Returns false if the value is invalid at
+// computed-value time because a function call is malformed.  Unknown variables remain deferred until resolution.
+
+static bool css_defer_env(std::string_view Text, std::string &Output)
+{
+   size_t i = 0;
+   while (i < Text.size()) {
+      if ((Text[i] IS '"') or (Text[i] IS '\'')) {
+         const auto end = css_skip_string(Text, i);
+         Output.append(Text.substr(i, end - i));
+         i = end;
+      }
+      else if (css_is_call(Text, i, "env(")) {
+         size_t comma;
+         const auto close = css_call_args(Text, i, comma);
+         if (close IS std::string_view::npos) return false;
+
+         auto name = css_trim(Text.substr(i + 4, std::min(comma, close) - (i + 4)));
+         std::string_view fallback;
+         if (comma != std::string_view::npos) fallback = css_trim(Text.substr(comma + 1, close - comma - 1));
+
+         // An empty name represents an unknown environment variable.  Keep it deferred so an unusable nested
+         // fallback only invalidates the value when that fallback is selected.
+         Output.push_back(PARAM_REF_OPEN);
+         if (is_css_custom_property(name)) Output.append(name.substr(sizeof(CSS_CUSTOM_PREFIX) - 1));
+         if (comma != std::string_view::npos) {
+            Output.push_back(PARAM_REF_FALLBACK);
+            if (not css_defer_env(fallback, Output)) return false;
+         }
+         Output.push_back(PARAM_REF_CLOSE);
+
+         i = close + 1;
+      }
+      else Output.push_back(Text[i++]);
+   }
+   return true;
+}
+
+// Computes the custom properties declared on a tag over the inherited values in Computed, following CSS Custom
+// Properties Level 1: declarations are applied in cascade order, var() references resolve against the tag's own
+// computed values, and every property in a reference cycle becomes guaranteed-invalid.  An invalid property does not
+// inherit its parent value.  env() is deferred here so that a value that cannot be resolved can take a fallback.
+
+static void css_compute_custom_props(const std::vector<CSSDeclaration> &Declarations, int TagID,
+   CSSCustomProps &Computed)
+{
+   enum class STATE : uint8_t { PENDING, DONE, INVALID };
+   struct Declared {
+      std::string_view raw;
+      STATE state;
+      std::vector<std::string_view> dependencies;
+      int index = -1, low_link = -1;
+      bool on_stack = false;
+   };
+   std::map<std::string_view, Declared, std::less<>> declared;
+
+   for (const auto &decl : Declarations) { // Sorted by priority; the last applicable declaration wins.
+      if (not is_css_custom_property(decl.name)) continue;
+      std::string_view value(decl.value);
+      if (iequals(value, "inherit") or iequals(value, "unset")) declared.erase(decl.name);
+      else if (iequals(value, "initial") or (value IS "!unsupported")) declared[decl.name] = { value, STATE::INVALID };
+      else declared[decl.name] = { value, STATE::PENDING };
+   }
+
+   // Collect every dependency, including references in unused fallbacks, before substituting any values.
+   for (auto &[name, entry] : declared) {
+      CSSVarRef collect;
+      collect = [&](std::string_view Name, const std::string_view *Fallback, std::string &Output) -> bool {
+         if (declared.contains(Name)) entry.dependencies.push_back(Name);
+         if (Fallback) css_substitute_vars(*Fallback, collect, Output);
+         return true;
+      };
+      std::string ignored;
+      css_substitute_vars(entry.raw, collect, ignored);
+   }
+
+   // Tarjan's algorithm marks every member of a strongly connected component as invalid.  Merely marking the
+   // active recursion stack can miss members reached later through another fallback branch.
+   int next_index = 0;
+   std::vector<std::string_view> stack;
+   std::function<void(std::string_view)> find_cycles = [&](std::string_view Name) {
+      auto &entry = declared.find(Name)->second;
+      entry.index = entry.low_link = next_index++;
+      entry.on_stack = true;
+      stack.push_back(Name);
+      for (auto dependency : entry.dependencies) {
+         auto &other = declared.find(dependency)->second;
+         if (other.index IS -1) {
+            find_cycles(dependency);
+            entry.low_link = std::min(entry.low_link, other.low_link);
+         }
+         else if (other.on_stack) entry.low_link = std::min(entry.low_link, other.index);
+      }
+
+      if (entry.low_link != entry.index) return;
+      std::vector<std::string_view> component;
+      do {
+         component.push_back(stack.back());
+         declared.find(stack.back())->second.on_stack = false;
+         stack.pop_back();
+      } while (component.back() != Name);
+
+      if ((component.size() > 1) or (std::ranges::find(entry.dependencies, Name) != entry.dependencies.end())) {
+         for (auto member : component) declared.find(member)->second.state = STATE::INVALID;
+      }
+   };
+   for (auto &[name, entry] : declared) {
+      if (entry.index IS -1) find_cycles(name);
+   }
+
+   CSSVarRef ref;
+   std::function<const std::string *(std::string_view)> resolve = [&](std::string_view Name) -> const std::string * {
+      auto &entry = declared.find(Name)->second;
+      auto &slot = Computed[std::string(Name)];
+      if (entry.state IS STATE::DONE) return &slot.value;
+
+      if (entry.state IS STATE::PENDING) {
+         std::string result, deferred;
+         if (css_substitute_vars(entry.raw, ref, result) and css_defer_env(result, deferred)) {
+            entry.state = STATE::DONE;
+            slot = { std::move(deferred), TagID, true };
+            return &slot.value;
+         }
+      }
+
+      entry.state = STATE::INVALID;
+      slot = { std::string(), TagID, false };
+      return nullptr;
+   };
+
+   ref = [&](std::string_view Name, const std::string_view *Fallback, std::string &Output) -> bool {
+      if (declared.contains(Name)) return css_ref_local(Name, TagID, resolve(Name), Fallback, ref, Output);
+      auto it = Computed.find(Name); // Inherited, so already computed
+      return css_ref_inherited(Name, (it IS Computed.end()) ? nullptr : &it->second, Fallback, ref, Output);
+   };
+
+   for (auto &[name, entry] : declared) resolve(name);
+}
+
+//********************************************************************************************************************
 
 static void collect_styles(objXML::TAGS &Tags, std::vector<KatanaOutput *> &Sheets)
 {
@@ -4431,7 +4863,9 @@ static void collect_styles(objXML::TAGS &Tags, std::vector<KatanaOutput *> &Shee
          const auto type = tag.attrib("type");
          if (not type or iequals(*type, "text/css")) {
             auto content = tag.getContent();
-            if (auto sheet = katana_parse(content.data(), content.size(), KatanaParserModeStylesheet)) {
+            std::string buffer;
+            auto css = css_rewrite_custom_names(content, buffer);
+            if (auto sheet = katana_parse(css.data(), css.size(), KatanaParserModeStylesheet)) {
                Sheets.push_back(sheet);
             }
          }
@@ -4442,7 +4876,8 @@ static void collect_styles(objXML::TAGS &Tags, std::vector<KatanaOutput *> &Shee
 
 //********************************************************************************************************************
 
-static void cascade_styles(objXML::TAGS &Tags, const std::vector<KatanaOutput *> &Sheets)
+static void cascade_styles(extSVG *Self, objXML::TAGS &Tags, const std::vector<KatanaOutput *> &Sheets,
+   const XTag *Root, const CSSCustomProps &Inherited)
 {
    for (auto &tag : Tags) {
       if (not tag.isTag()) continue;
@@ -4463,7 +4898,7 @@ static void cascade_styles(objXML::TAGS &Tags, const std::vector<KatanaOutput *>
             size_t specificity = 0;
             for (unsigned j=0; j < style->selectors->length; j++) {
                size_t score;
-               if (css_matches((KatanaSelector *)style->selectors->data[j], tag, score)) {
+               if (css_matches((KatanaSelector *)style->selectors->data[j], tag, Root, score)) {
                   matched = true;
                   specificity = std::max(specificity, score);
                }
@@ -4472,11 +4907,13 @@ static void cascade_styles(objXML::TAGS &Tags, const std::vector<KatanaOutput *>
          }
       }
 
+      std::string buffer;
       for (size_t i=1; i < tag.Attribs.size(); ) {
          if (not iequals(tag.Attribs[i].Name, "style")) { i++; continue; }
          auto value = std::move(tag.Attribs[i].Value);
          tag.Attribs.erase(tag.Attribs.begin() + i);
-         if (auto css = katana_parse(value.data(), value.size(), KatanaParserModeDeclarationList)) {
+         auto source = css_rewrite_custom_names(value, buffer);
+         if (auto css = katana_parse(source.data(), source.size(), KatanaParserModeDeclarationList)) {
             append(css->declarations, 0x1000000); // Inline author specificity exceeds every supported selector.
             katana_destroy_output(css);
          }
@@ -4487,20 +4924,71 @@ static void cascade_styles(objXML::TAGS &Tags, const std::vector<KatanaOutput *>
          return Left.specificity < Right.specificity;
       });
 
-      // Keep lower-priority declarations: an invalid later value must leave the earlier applicable value intact.
-      // Presentation attributes precede all author declarations, independent of their XML attribute order.
-      for (const auto &declaration : declarations) tag.Attribs.emplace_back(declaration.name, declaration.value);
-      cascade_styles(tag.Children, Sheets);
+      // The map is only copied when the tag declares custom properties.
+
+      const CSSCustomProps *props = &Inherited;
+      CSSCustomProps computed;
+      if (std::ranges::any_of(declarations, [](const auto &D) { return is_css_custom_property(D.name); })) {
+         computed = Inherited;
+         css_compute_custom_props(declarations, tag.ID, computed);
+         props = &computed;
+         Self->HasCustomProps = true;
+      }
+
+      if ((not props->empty()) and svg_tag_is(tag, SVF_use)) { // Seeds the custom properties of its instances
+         auto &use_props = Self->UseCustomProps[tag.ID];
+         for (auto &[name, entry] : *props) use_props.push_back({ name, entry.value, entry.decl_id, entry.valid });
+      }
+
+      // Keep lower-priority declarations: a syntactically invalid later value must leave the earlier applicable value
+      // intact.  Presentation attributes precede all author declarations, independent of their XML attribute order.
+      //
+      // A declaration containing var() or env() is valid at parse time, so it overrides every lower-priority value,
+      // including the presentation attribute.  If its substitution fails it is invalid at computed-value time and the
+      // property is unset, so the attribute is left absent.  env() becomes a deferred reference, and a reference
+      // without a value or fallback likewise erases the attribute in the parameter pass.  Custom properties are never
+      // emitted as attributes.
+
+      for (auto &declaration : declarations) {
+         if (is_css_custom_property(declaration.name)) continue;
+         if (css_has_substitution(declaration.value)) {
+            for (size_t i=1; i < tag.Attribs.size(); ) { // Attribs[0] is the tag name
+               if (tag.Attribs[i].Name IS declaration.name) tag.Attribs.erase(tag.Attribs.begin() + i);
+               else i++;
+            }
+
+            CSSVarRef ref = [&](std::string_view Name, const std::string_view *Fallback, std::string &Output) -> bool {
+               auto it = props->find(Name);
+               if ((it != props->end()) and (it->second.decl_id IS tag.ID)) {
+                  return css_ref_local(Name, tag.ID, it->second.valid ? &it->second.value : nullptr, Fallback, ref,
+                     Output);
+               }
+               return css_ref_inherited(Name, (it IS props->end()) ? nullptr : &it->second, Fallback, ref, Output);
+            };
+
+            std::string resolved, deferred;
+            if (css_substitute_vars(declaration.value, ref, resolved) and css_defer_env(resolved, deferred)) {
+               tag.Attribs.emplace_back(declaration.name, std::move(deferred));
+            }
+         }
+         else tag.Attribs.emplace_back(declaration.name, std::move(declaration.value));
+      }
+      cascade_styles(Self, tag.Children, Sheets, Root, *props);
    }
 }
 
 //********************************************************************************************************************
 
-static void prepare_styles(objXML::TAGS &Tags)
+static void prepare_styles(extSVG *Self, objXML::TAGS &Tags)
 {
    std::vector<KatanaOutput *> sheets;
    collect_styles(Tags, sheets);
-   cascade_styles(Tags, sheets);
+
+   const XTag *root = nullptr;
+   for (auto &tag : Tags) {
+      if (tag.isTag() and svg_tag_is(tag, SVF_svg)) { root = &tag; break; }
+   }
+   cascade_styles(Self, Tags, sheets, root, CSSCustomProps());
    for (auto sheet : sheets) katana_destroy_output(sheet);
 }
 

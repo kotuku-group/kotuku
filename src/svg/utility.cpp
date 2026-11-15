@@ -460,18 +460,97 @@ static void parse_ids(extSVG *Self, XTag &Tag)
 //********************************************************************************************************************
 // SVG Parameters: an attribute value of the form "param(name) fallback" is substituted with the value of the named
 // parameter, or the fallback if the parameter is undefined.  Only values that start with "param(" are recognised.
+// Values may also contain deferred references from CSS env() (see PARAM_REF_OPEN), which are substituted wherever
+// they appear in the value.
+
+// Only XML white-space is trimmed; other C0 characters belong to deferred references.
+
+static bool is_ws(char C) noexcept { return (C IS ' ') or (C IS '\t') or (C IS '\n') or (C IS '\r'); }
 
 static std::string_view trim_ws(std::string_view Value) noexcept
 {
-   while ((not Value.empty()) and (unsigned(Value.front()) <= 0x20)) Value.remove_prefix(1);
-   while ((not Value.empty()) and (unsigned(Value.back()) <= 0x20)) Value.remove_suffix(1);
+   while ((not Value.empty()) and is_ws(Value.front())) Value.remove_prefix(1);
+   while ((not Value.empty()) and is_ws(Value.back())) Value.remove_suffix(1);
    return Value;
 }
 
 static bool is_param_value(std::string_view Value) noexcept
 {
-   while ((not Value.empty()) and (unsigned(Value.front()) <= 0x20)) Value.remove_prefix(1);
-   return Value.starts_with("param(");
+   if (Value.find_first_of(std::string_view("\x01\x04", 2)) != std::string_view::npos) return true;
+   return trim_ws(Value).starts_with("param(");
+}
+
+//********************************************************************************************************************
+// Parameter names are shared with CSS env(--name), so a leading '--' is not part of the name.
+
+static std::string_view param_key(std::string_view Name) noexcept
+{
+   if (Name.starts_with("--")) Name.remove_prefix(2);
+   return Name;
+}
+
+//********************************************************************************************************************
+// Locates the deferred reference that opens at Pos.  Returns the index of its PARAM_REF_CLOSE, or npos if the
+// encoding is malformed.  Name and Fallback receive the parts; HasFallback is false if no fallback was given.
+
+static size_t parse_param_ref(std::string_view Value, size_t Pos, std::string_view &Name, std::string_view &Fallback,
+   bool &HasFallback) noexcept
+{
+   int depth = 0;
+   size_t separator = std::string_view::npos;
+   for (size_t i = Pos; i < Value.size(); i++) {
+      if (Value[i] IS PARAM_REF_OPEN) depth++;
+      else if ((Value[i] IS PARAM_REF_FALLBACK) and (depth IS 1) and (separator IS std::string_view::npos)) {
+         separator = i;
+      }
+      else if ((Value[i] IS PARAM_REF_CLOSE) and (--depth IS 0)) {
+         HasFallback = separator != std::string_view::npos;
+         Name = Value.substr(Pos + 1, (HasFallback ? separator : i) - Pos - 1);
+         Fallback = HasFallback ? Value.substr(separator + 1, i - separator - 1) : std::string_view{};
+         return i;
+      }
+   }
+   return std::string_view::npos;
+}
+
+
+//********************************************************************************************************************
+// Locates the deferred custom property reference that opens at Pos (see CP_REF_OPEN).  Returns the index of its
+// CP_REF_CLOSE, or npos if the encoding is malformed.
+
+struct CustomPropRef {
+   std::string_view name, value, fallback;
+   int decl_id = 0;
+   bool has_value = false, has_fallback = false;
+};
+
+static size_t parse_custom_prop_ref(std::string_view Value, size_t Pos, CustomPropRef &Ref) noexcept
+{
+   constexpr auto npos = std::string_view::npos;
+   int depth = 0;
+   size_t id = npos, value = npos, fallback = npos;
+   for (size_t i = Pos; i < Value.size(); i++) {
+      switch (Value[i]) {
+         case CP_REF_OPEN: depth++; break;
+         case CP_REF_ID:       if ((depth IS 1) and (id IS npos)) id = i; break;
+         case CP_REF_VALUE:    if ((depth IS 1) and (value IS npos)) value = i; break;
+         case CP_REF_FALLBACK: if ((depth IS 1) and (fallback IS npos)) fallback = i; break;
+         case CP_REF_CLOSE:
+            if (--depth IS 0) {
+               if (id IS npos) return npos;
+               Ref.name = Value.substr(Pos + 1, id - Pos - 1);
+               auto id_text = Value.substr(id + 1, std::min({ value, fallback, i }) - id - 1);
+               std::from_chars(id_text.data(), id_text.data() + id_text.size(), Ref.decl_id);
+               Ref.has_value = value != npos;
+               if (Ref.has_value) Ref.value = Value.substr(value + 1, std::min(fallback, i) - value - 1);
+               Ref.has_fallback = fallback != npos;
+               if (Ref.has_fallback) Ref.fallback = Value.substr(fallback + 1, i - fallback - 1);
+               return i;
+            }
+            break;
+      }
+   }
+   return npos;
 }
 
 //********************************************************************************************************************
@@ -491,13 +570,36 @@ static bool parse_param_value(std::string_view Value, std::string_view &Name, st
    if (end IS std::string_view::npos) return false;
 
    Fallback = trim_ws(Value.substr(end + 1));
-   Name = trim_ws(Value.substr(0, end));
+   Name = param_key(trim_ws(Value.substr(0, end)));
 
    for (auto ch : Name) {
       if ((unsigned(ch) <= 0x20) or (ch IS '(')) { Name = {}; break; }
    }
 
    return not Name.empty();
+}
+
+//********************************************************************************************************************
+// Calls Function with the name of every parameter that Value references: a whole-value param() and each deferred
+// reference, including those nested in fallbacks.
+
+template <class T> static void for_each_param_name(std::string_view Value, T &&Function)
+{
+   std::string_view name, fallback;
+   if (parse_param_value(Value, name, fallback)) Function(name);
+
+   // A param() carried by a custom property or fallback becomes a whole value once its reference is substituted.
+   for (auto pos = Value.find_first_of(std::string_view("\x02\x06\x07", 3)); pos != std::string_view::npos;
+        pos = Value.find_first_of(std::string_view("\x02\x06\x07", 3), pos + 1)) {
+      if (parse_param_value(Value.substr(pos + 1), name, fallback)) Function(name);
+   }
+
+   for (auto pos = Value.find(PARAM_REF_OPEN); pos != std::string_view::npos;
+        pos = Value.find(PARAM_REF_OPEN, pos + 1)) {
+      bool has_fallback;
+      if ((parse_param_ref(Value, pos, name, fallback, has_fallback) != std::string_view::npos) and
+          (not name.empty())) Function(name);
+   }
 }
 
 //********************************************************************************************************************
@@ -514,17 +616,95 @@ static const std::string * find_param(extSVG *Self, const ParamScope *Scope, std
    return nullptr;
 }
 
-// Returns the substituted value, or nullopt if the attribute must be erased (no value and no fallback).
+// Substitutes every deferred reference in Value, appending the result to Output.  Returns false if a reference has
+// no value and no fallback, in which case the attribute must be erased.
+
+static bool resolve_param_refs(extSVG *Self, std::string_view Value, const ParamScope *Scope, std::string &Output);
+
+// Inside a <use> instance, a custom property declared outside the referenced content takes the instance's value, and
+// is undefined if the instance has none.  Otherwise the document value applies.  The fallback is used if the chosen
+// value is undefined or cannot be resolved.
+
+static bool resolve_custom_prop_ref(extSVG *Self, const CustomPropRef &Ref, const ParamScope *Scope,
+   std::string &Output)
+{
+   if ((Scope) and (Scope->Instance) and (not Scope->InstanceIDs.contains(Ref.decl_id))) {
+      if (auto it = Scope->CustomProps.find(Ref.name); it != Scope->CustomProps.end()) {
+         Output.append(it->second);
+         return true;
+      }
+   }
+   else if (Ref.has_value) {
+      std::string value;
+      if (resolve_param_refs(Self, Ref.value, Scope, value)) {
+         Output.append(value);
+         return true;
+      }
+   }
+
+   if (Ref.has_fallback) return resolve_param_refs(Self, Ref.fallback, Scope, Output);
+   return false;
+}
+
+static bool resolve_param_refs(extSVG *Self, std::string_view Value, const ParamScope *Scope, std::string &Output)
+{
+   size_t i = 0;
+   while (i < Value.size()) {
+      auto pos = Value.find_first_of(std::string_view("\x01\x04", 2), i);
+      Output.append(Value.substr(i, pos - i));
+      if (pos IS std::string_view::npos) break;
+
+      size_t end;
+      if (Value[pos] IS CP_REF_OPEN) {
+         CustomPropRef ref;
+         end = parse_custom_prop_ref(Value, pos, ref);
+         if (end IS std::string_view::npos) return false;
+         if (not resolve_custom_prop_ref(Self, ref, Scope, Output)) return false;
+      }
+      else {
+         std::string_view name, fallback;
+         bool has_fallback;
+         end = parse_param_ref(Value, pos, name, fallback, has_fallback);
+         if (end IS std::string_view::npos) return false;
+
+         if (auto value = find_param(Self, Scope, name)) Output.append(*value);
+         else if ((not has_fallback) or (not resolve_param_refs(Self, fallback, Scope, Output))) return false;
+      }
+      i = end + 1;
+   }
+   return true;
+}
+
+// Returns the substituted value, or nullopt if the attribute must be erased (no value and no fallback).  An authored
+// param() only applies to a whole value, whereas deferred references are substituted anywhere.
 
 static std::optional<std::string> resolve_param_value(extSVG *Self, std::string_view Value, const ParamScope *Scope)
 {
-   std::string_view name, fallback;
-   if (parse_param_value(Value, name, fallback)) {
-      if (auto value = find_param(Self, Scope, name)) return *value;
+   // Returns true if Value was a param() expression that resolved; otherwise Value becomes its fallback.
+   auto whole_param = [&](std::string_view &Value, std::string &Result) -> bool {
+      std::string_view name, fallback;
+      if (parse_param_value(Value, name, fallback)) {
+         if (auto value = find_param(Self, Scope, name)) { Result = *value; return true; }
+      }
+      Value = fallback; // Also applies to a malformed name
+      return false;
+   };
+
+   std::string result;
+   const bool authored_param = trim_ws(Value).starts_with("param(");
+   if (authored_param and whole_param(Value, result)) return result;
+
+   // A param() can also arrive whole through a custom property, e.g. '--a: param(x) red; fill: var(--a)'.
+
+   std::string expanded;
+   if (Value.find_first_of(std::string_view("\x01\x04", 2)) != std::string_view::npos) {
+      if (not resolve_param_refs(Self, Value, Scope, expanded)) return std::nullopt;
+      Value = expanded;
+      if ((not authored_param) and trim_ws(Value).starts_with("param(") and whole_param(Value, result)) return result;
    }
 
-   if (fallback.empty()) return std::nullopt;
-   return std::string(fallback);
+   if (Value.empty()) return std::nullopt;
+   return std::string(Value);
 }
 
 //********************************************************************************************************************
@@ -660,14 +840,59 @@ public:
 };
 
 //********************************************************************************************************************
+// Paint servers and other referenced resources resolve custom properties from their own position in the document, so
+// they are resolved against the parameter values of a scope without its instance custom properties.
+
+static ParamScope param_values_only(const ParamScope &Scope)
+{
+   ParamScope result;
+   result.Values = Scope.Values;
+   return result;
+}
+
+//********************************************************************************************************************
+// Completes the scope of a <use> instance with CSS custom properties.  Scope starts as a copy of Enclosing.  The <use>
+// element's computed custom properties are resolved with the instance's parameter values and added.  A property the <use>
+// element inherits from outside an enclosing instance is skipped, because the enclosing instance's value (already in
+// Scope) replaces it.  Content is the referenced element, whose subtree forms the instance.
+
+static void collect_tag_ids(const XTag &Tag, ankerl::unordered_dense::set<int> &IDs)
+{
+   IDs.insert(Tag.ID);
+   for (auto &child : Tag.Children) {
+      if (child.isTag()) collect_tag_ids(child, IDs);
+   }
+}
+
+static void apply_use_custom_props(extSVG *Self, const XTag &Use, const XTag &Content, const ParamScope *Enclosing,
+   ParamScope &Scope)
+{
+   const bool nested = (Enclosing) and (Enclosing->Instance);
+   const auto binding_scope = Scope; // Keep the enclosing custom properties stable while adding the instance's own.
+   if (auto it = Self->UseCustomProps.find(Use.ID); it != Self->UseCustomProps.end()) {
+      for (auto &prop : it->second) {
+         if ((nested) and (not Enclosing->InstanceIDs.contains(prop.DeclID))) continue;
+         std::string value;
+         if ((prop.Valid) and (resolve_param_refs(Self, prop.Value, &binding_scope, value))) {
+            Scope.CustomProps[prop.Name] = std::move(value);
+         }
+         else Scope.CustomProps.erase(prop.Name);
+      }
+   }
+
+   Scope.InstanceIDs.clear();
+   collect_tag_ids(Content, Scope.InstanceIDs);
+   Scope.Instance = true;
+}
+
+//********************************************************************************************************************
 // Collects the sorted names of all parameters referenced by a tag and its descendants.
 
 static void collect_param_names(extSVG *Self, const XTag &Tag, kt::vector<std::string> &Names)
 {
    if (auto it = Self->ParamAttribs.find(Tag.ID); it != Self->ParamAttribs.end()) {
       for (int a=1; a < std::ssize(it->second); a++) {
-         std::string_view name, fallback;
-         if (parse_param_value(it->second[a].Value, name, fallback)) Names.emplace_back(name);
+         for_each_param_name(it->second[a].Value, [&](std::string_view Name) { Names.emplace_back(Name); });
       }
    }
 
@@ -694,9 +919,9 @@ static bool read_param_element(extSVG *Self, const XTag &Tag, const ParamScope *
       }
    }
 
-   if ((not name) or (name->empty()) or (not value)) return false;
+   if ((not name) or (param_key(*name).empty()) or (not value)) return false;
 
-   Name = *name;
+   Name = param_key(*name);
    if (is_param_value(*value)) Value = resolve_param_value(Self, *value, Scope);
    else Value = *value;
    return true;
@@ -831,6 +1056,7 @@ static void parse_query_params(extSVG *Self, std::string_view Query)
 
       auto eq = pair.find('=');
       auto name = percent_decode(pair.substr(0, eq));
+      if (name.starts_with("--")) name.erase(0, 2);
       if (name.empty()) continue;
       Self->QueryParams[name] = (eq IS std::string_view::npos) ? std::string() : percent_decode(pair.substr(eq + 1));
    }
@@ -873,6 +1099,8 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
    Self->QueryParams.clear();
    Self->ParamAttribs.clear();
    Self->ParamDeps.clear();
+   Self->UseCustomProps.clear();
+   Self->HasCustomProps = false;
    Self->TextContent.clear();
    Self->AutoscaleWidth  = Unit();
    Self->AutoscaleHeight = Unit();
@@ -929,7 +1157,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
             Self->Scene->setCompliance(declares_kotuku_namespace(xml->Tags) ? VSC::NONE : VSC::SVG2);
          }
 
-         prepare_styles(xml->Tags);
+         prepare_styles(Self, xml->Tags);
          apply_document_params(Self, xml->Tags);
 
          objVector *sibling = nullptr;

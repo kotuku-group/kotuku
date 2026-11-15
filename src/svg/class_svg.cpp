@@ -31,35 +31,65 @@ target viewport instead, as does a document parsed into a #Target scene that alr
 
 <header>Parameters</header>
 
-SVG documents can be parameterised in accordance with the W3C SVG Parameters draft, allowing a client to alter
-colours, text and other values without editing the source document.  A document declares a substitution point by
-writing `param(name)` at the start of an attribute value, optionally followed by a fallback:
+SVG documents can be parameterised, allowing a client to alter colours, text and other values without editing the
+source document.  Values are supplied with #SetKey() prior to initialisation, or through the query string of the
+#Path, for example `button.svg?glaze=seagreen&amp;label=Buy%20now`.  Query values are percent-decoded.  If a name is
+defined by both #SetKey() and the query string, the #SetKey() value takes precedence.  A leading `--` is removed from
+names supplied by either route, so `--glaze` and `glaze` refer to the same parameter.
+
+A document can read a parameter in two ways.  The recommended way for styling is the CSS `env()` function, following
+the CSSWG CSS Linked Parameters draft.  The document binds each parameter to a CSS custom property, with a default
+value, and uses the property in its rules:
+
+<pre>
+&lt;style&gt;
+  :root { --glaze: env(--glaze, #3f533b); --shade: env(--shade, #26331f); }
+  .tile { fill: var(--glaze); stroke: var(--shade); }
+&lt;/style&gt;
+</pre>
+
+Because this is standard CSS, web browsers render such a document with its default values.  `env(--name, fallback)`
+reads the parameter `name`.  It can appear anywhere in a property value, including within a longer value such as
+`stroke-dasharray` and within custom property values.  If the parameter is undefined, the fallback is used.  If there
+is no fallback, the declaration is invalid and the property is unset.  Parameters never override custom properties
+implicitly; a document opts in by binding them with `env()`.
+
+The second way is the `param()` notation of the W3C SVG Parameters draft, which is written at the start of an
+attribute value and is optionally followed by a fallback:
 
 <pre>
 &lt;rect fill="param(colour) red" stroke="param(outline) black"/&gt;
 &lt;text content-value="param(label)"&gt;Default label&lt;/text&gt;
 </pre>
 
-Values are supplied with #SetKey() prior to initialisation, or through the query string of the #Path, for example
-`button.svg?colour=seagreen&amp;label=Buy%20now`.  Query values are percent-decoded.  If a name is defined by both
-#SetKey() and the query string, the #SetKey() value takes precedence.
-
-The following rules apply:
+The following rules apply to `param()`:
 
 <list type="bullet">
 <li>Only an attribute value that starts with `param(` is substituted, and the entire value is replaced.  A parameter
-reference cannot be embedded in a list value such as `points` or `transform`.</li>
+reference cannot be embedded in a list value such as `points` or `transform`; use `env()` in CSS for that.</li>
 <li>Names are case sensitive.  If a name is undefined, the fallback is used.  If there is no fallback, the attribute
 is treated as though it were absent and its initial value applies.  A parameter that is defined with an empty value
 is not replaced by the fallback.</li>
-<li>Declarations in `style` attributes and `&lt;style&gt;` sheets are supported.</li>
+<li>`param()` is also recognised in `style` attributes and `&lt;style&gt;` sheets, and in custom property values,
+provided that it forms the entire value of the property after substitution.</li>
+<li>Other viewers do not implement `param()` and treat the attribute as invalid.</li>
+</list>
+
+The following rules apply to both forms:
+
+<list type="bullet">
 <li>The `id` attribute is never substituted, so that references to the element remain stable.</li>
 <li>The `content-value` attribute of a `&lt;text&gt;` element replaces its text content.  If the parameter is
 undefined and there is no fallback, the element's own text is retained.</li>
 <li>A `&lt;use&gt;` element may contain `&lt;param name="..." value="..."/&gt;` children that apply to that instance
-only.  They override document values and are inherited by nested `&lt;use&gt;` instances.  Gradients that reference
-parameters are instantiated separately for each distinct set of values.  Clip paths, masks, filters, markers and
-patterns use document values.</li>
+only.  They override document values for `param()` and `env()` references inside the instance, and are inherited by
+nested `&lt;use&gt;` instances.  These values apply before resolving `env()` bindings in the instance's copy of the
+`&lt;use&gt;` element's custom properties, including inherited `:root` bindings and properties derived from them.
+Elements outside the instance retain their document values.  Explicit custom property values on `&lt;use&gt;` and
+declarations inside the content retain their priority.  The `&lt;param&gt;` values themselves resolve against the
+enclosing scope, so `&lt;param name="glaze" value="param(glaze) red"/&gt;` forwards an enclosing value.
+Gradients that reference parameters are instantiated separately for each distinct set of values.  Clip paths, masks,
+filters, markers and patterns use document values.</li>
 <li>An `&lt;image&gt;` element that references an SVG document may also contain `&lt;param&gt;` children.  They are
 appended to the href as query parameters, overriding values of the same name in the href, and are resolved against the
 active scope so that values can be forwarded, e.g. `&lt;param name="colour" value="param(colour) red"/&gt;`.
@@ -68,6 +98,32 @@ active scope so that values can be forwarded, e.g. `&lt;param name="colour" valu
 
 Values set with #SetKey() after initialisation do not alter the existing scene graph.  They are applied by the next
 parse, e.g. via #DataFeed(), and to symbols instantiated with #ParseSymbol().
+
+<header>CSS Custom Properties</header>
+
+CSS custom properties (`--name: value`) and `var()` are supported in `&lt;style&gt;` sheets and `style` attributes,
+with the semantics of CSS Custom Properties Level 1:
+
+<list type="bullet">
+<li>Custom properties are inherited, and the cascade follows importance, specificity and source order, as for other
+properties.  Names are case sensitive.  `:root` matches the outermost `&lt;svg&gt;` element.</li>
+<li>`var(--name, fallback)` uses the fallback if the property is undefined.  A fallback may contain further `var()`
+and `env()` references.</li>
+<li>A custom property that refers to itself through a cycle of `var()` references is invalid.</li>
+<li>A declaration that uses `var()` or `env()` replaces any presentation attribute of the same name.  If its value
+cannot be resolved, the property is unset, as in CSS, rather than falling back to the presentation attribute.  A
+declaration that is syntactically invalid is ignored and earlier values are kept.</li>
+<li>Custom properties declared on a `&lt;use&gt;` element are inherited by the referenced content, and declarations
+within that content override them.  Nested instances inherit from the enclosing `&lt;use&gt;`.  As in web browsers,
+the content does not inherit from the ancestors of the referenced element.</li>
+<li>Gradients, patterns, clip paths, masks, filters and markers resolve `var()` from their own position in the
+document, not from the element that references them.</li>
+</list>
+
+Custom property values are re-serialised by the CSS parser rather than kept as raw token text, so spacing and the
+spelling of some tokens may differ from the source.  `var()` and `env()` are not supported in presentation attributes
+such as `fill="var(--glaze)"`, consistent with web browsers.  `@property` and pseudo-classes other than `:root` are
+not supported.
 
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
@@ -104,6 +160,11 @@ effect.
 static ERR SVG_Activate(extSVG *Self)
 {
    if (!Self->Animations.empty()) {
+      if (Self->PauseStart) { // Resume from a paused state; the paused interval is excluded from the animation clock
+         Self->PausedTime += (double(PreciseTime()) / 1000000.0) - Self->PauseStart;
+         Self->PauseStart = 0;
+      }
+
       if (!Self->AnimationTimer) {
          SubscribeTimer(1.0 / (double)Self->FrameRate, C_FUNCTION(animation_timer), &Self->AnimationTimer);
          SubscribeAction(Self->Scene, AC::Free, C_FUNCTION(notify_free_scene));
@@ -133,7 +194,12 @@ animations are not required.
 
 static ERR SVG_Deactivate(extSVG *Self)
 {
-   if (Self->AnimationTimer) { UpdateTimer(Self->AnimationTimer, 0); Self->AnimationTimer = 0; }
+   if (Self->AnimationTimer) {
+      UpdateTimer(Self->AnimationTimer, 0);
+      Self->AnimationTimer = nullptr;
+      if (Self->Scene) UnsubscribeAction(Self->Scene, AC::Free); // Activate() will resubscribe
+      Self->PauseStart = double(PreciseTime()) / 1000000.0;
+   }
    return ERR::Okay;
 }
 
@@ -173,8 +239,8 @@ static ERR SVG_DataFeed(extSVG *Self, struct acDataFeed *Args)
 GetKey: Retrieves the value of a document parameter.
 
 GetKey() returns the document-level value of a parameter that was defined with #SetKey() or the query string of
-the #Path.  A value defined by #SetKey() takes precedence.  Values declared by `&lt;param&gt;` elements are scoped
-to their `&lt;use&gt;` instance and cannot be retrieved.
+the #Path.  A value defined by #SetKey() takes precedence.  A leading `--` is removed from the key.  Values declared
+by `&lt;param&gt;` elements are scoped to their `&lt;use&gt;` instance and cannot be retrieved.
 
 -ERRORS-
 Okay
@@ -187,7 +253,7 @@ static ERR SVG_GetKey(extSVG *Self, struct acGetKey *Args)
 {
    if ((not Args) or (not Args->Value)) return ERR::Args;
 
-   if (auto value = find_param(Self, nullptr, Args->Key)) {
+   if (auto value = find_param(Self, nullptr, param_key(Args->Key))) {
       Args->Value->assign(*value);
       return ERR::Okay;
    }
@@ -655,9 +721,10 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
 -ACTION-
 SetKey: Defines a document parameter.
 
-SetKey() defines a parameter value for substitution into `param()` references in the SVG document.  Please refer to
-the Parameters section of the class documentation for the syntax and rules.  An existing value of the same name is
-replaced, and zero-length values are permitted.
+SetKey() defines a parameter value for substitution into `env()` and `param()` references in the SVG document.
+Please refer to the Parameters section of the class documentation for the syntax and rules.  A leading `--` is removed
+from the key, so `--glaze` and `glaze` define the same parameter.  An existing value of the same name is replaced, and
+zero-length values are permitted.
 
 Parameters should be set prior to initialisation.  Setting a value afterwards does not alter the existing scene graph;
 the value is applied by the next parse and by #ParseSymbol().
@@ -665,7 +732,7 @@ the value is applied by the next parse and by #ParseSymbol().
 -ERRORS-
 Okay
 NullArgs: The key is empty.
-InvalidValue: The key contains white-space or parentheses, so cannot be referenced by `param()`.
+InvalidValue: The key is `--` alone, or contains white-space or parentheses, so cannot be referenced.
 -END-
 *********************************************************************************************************************/
 
@@ -673,12 +740,15 @@ static ERR SVG_SetKey(extSVG *Self, struct acSetKey *Args)
 {
    if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
-   for (auto ch : Args->Key) {
+   const auto key = param_key(Args->Key);
+   if (key.empty()) return ERR::InvalidValue;
+
+   for (auto ch : key) {
       if ((unsigned(ch) <= 0x20) or (ch IS '(') or (ch IS ')')) return ERR::InvalidValue;
    }
 
-   if (auto it = Self->Params.find(Args->Key); it != Self->Params.end()) it->second.assign(Args->Value);
-   else Self->Params.emplace(std::string(Args->Key), std::string(Args->Value));
+   if (auto it = Self->Params.find(key); it != Self->Params.end()) it->second.assign(Args->Value);
+   else Self->Params.emplace(std::string(key), std::string(Args->Value));
    return ERR::Okay;
 }
 
@@ -797,8 +867,10 @@ static ERR SET_FrameRate(extSVG *Self, int Value)
 -FIELD-
 ParamNames: Lists the names of the parameters that the document references.
 
-This field returns the sorted, unique names of every parameter referenced by a `param()` expression in the document,
-whether or not a value has been supplied for it.  It can be used to detect a value set with #SetKey() that the document
+This field returns the sorted, unique names of every parameter referenced by a `param()` or `env()` expression in the
+document, whether or not a value has been supplied for it.  Names are reported without a leading `--`, and custom
+property names are not included.  A reference is only reported if it reaches an element, so an `env()` binding in a
+custom property that is never used is omitted.  It can be used to detect a value set with #SetKey() that the document
 does not use.  The array is empty if the document references no parameters or has not yet been parsed.
 -END-
 
@@ -810,10 +882,8 @@ static ERR GET_ParamNames(extSVG *Self, std::span<std::string> &Value)
 
    for (auto &[id, attribs] : Self->ParamAttribs) {
       for (int a=1; a < std::ssize(attribs); a++) {
-         std::string_view name, fallback;
-         if ((attribs[a].Name != "id") and (parse_param_value(attribs[a].Value, name, fallback))) {
-            Self->ParamNames.emplace_back(name);
-         }
+         if (attribs[a].Name IS "id") continue;
+         for_each_param_name(attribs[a].Value, [&](std::string_view Name) { Self->ParamNames.emplace_back(Name); });
       }
    }
 
