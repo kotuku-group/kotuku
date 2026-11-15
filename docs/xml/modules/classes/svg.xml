@@ -43,13 +43,24 @@
 </pre>
 <p>The following rules apply to <code>param()</code>:</p>
 <list type="bullet">
-<li>Only an attribute value that starts with <code>param(</code> is substituted, and the entire value is replaced.  A parameter
-reference cannot be embedded in a list value such as <code>points</code> or <code>transform</code>; use <code>env()</code> in CSS for that.</li>
+<li>An attribute value that starts with <code>param(name)</code> is substituted as a whole: the entire value is replaced, and
+any text following the closing parenthesis is the fallback.</li>
+<li>As a Kōtuku extension, the list-valued attributes <code>points</code>, <code>values</code>, <code>transform</code>, <code>gradientTransform</code> and
+<code>patternTransform</code> also accept inline expressions as individual items, e.g. <code>points=&quot;0,0 param(x, 10),20&quot;</code>,
+<code>values=&quot;0;param(mid, 0.5);1&quot;</code> and <code>transform=&quot;translate(param(x, 0), param(y, 0)) scale(2)&quot;</code>.  An inline expression
+is written <code>param(name)</code> or <code>param(name, fallback)</code>, and its fallback ends at the matching closing parenthesis.  A
+fallback may contain further inline expressions.  A value that starts with <code>param(name)</code> without a comma keeps the
+whole-attribute meaning, although inline expressions within its fallback are still substituted.  Text in quotes and
+names that merely end in <code>param</code>, such as <code>myparam(x)</code>, are left unchanged.  If an inline expression is undefined and
+has no fallback, or is malformed (e.g. unbalanced or with an invalid name), the entire attribute is treated as absent.
+Supplied values are inserted as-is and are not expanded further.</li>
 <li>Names are case sensitive.  If a name is undefined, the fallback is used.  If there is no fallback, the attribute
 is treated as though it were absent and its initial value applies.  A parameter that is defined with an empty value
 is not replaced by the fallback.</li>
 <li><code>param()</code> is also recognised in <code>style</code> attributes and <code>&lt;style&gt;</code> sheets, and in custom property values,
 provided that it forms the entire value of the property after substitution.</li>
+<li>Inline expressions are also recognised in <code>style</code> declarations of the supported attributes, e.g.
+<code>transform: translate(param(x, 0), 0)</code>.</li>
 <li>Other viewers do not implement <code>param()</code> and treat the attribute as invalid.</li>
 </list>
 <p>The following rules apply to both forms:</p>
