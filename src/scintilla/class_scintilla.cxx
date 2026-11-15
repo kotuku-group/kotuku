@@ -166,7 +166,7 @@ static const struct {
    { "*.sql",           SCLEX::SQL },
    { "*.vb",            SCLEX::VB },
    { "*.vbscript",      SCLEX::VBSCRIPT },
-   { "*.xml",           SCLEX::XML },
+   { "*.xml|*.svg|*.ripl|*.rpl", SCLEX::XML },
    { "*.json|*.jsonld",  SCLEX::JSON },
    { "*.md|*.markdown",  SCLEX::MARKDOWN }
 };

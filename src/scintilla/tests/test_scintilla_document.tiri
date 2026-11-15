@@ -298,6 +298,18 @@ end
    assert(sci.lexer is 0, f'No lexer can be chosen for an unknown file type, got {sci.lexer}')
 end
 
+-- SVG and RIPL files are XML.
+
+@Test function XMLDocumentTypesUseTheXMLLexer()
+   for ext in values(array<str> { 'xml', 'svg', 'ripl', 'rpl', 'SVG' }) do
+      local path = 'temp:scintilla_test_xml.' .. ext
+      defer(Path) mSys.DeleteFile(Path) end(path)
+      writeTempFile(path, '<root a="1"/>\n')
+      local scene <close>, vp, sci = newEditor({ path=path, flags=SCIF_DETECT_LEXER })
+      assert(sci.lexer is SCLEX_XML, f'The XML lexer must be detected for .{ext}, got {sci.lexer}')
+   end
+end
+
 -- Regression: Lexer was registered as init-only, so it could not be changed after initialisation.
 
 @Test function ChangeLexerAfterInit()
