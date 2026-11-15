@@ -400,6 +400,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@NoDiscard
 function footerButton(Text:str, Primary:bool, Activate:func):table
 
    return gui.button({
@@ -1507,6 +1508,7 @@ function buildPalette(Target:obj)
 
    btn_x = LIST_PAD_X + list_w - 2 - (SMALL_BUTTON * 5) - (4 * 6)
 
+   @NoDiscard
    function[&&] iconButton(Index:num, Icon:str, Tip:str, Activate:func):table
       return gui.button({
          target = panel.body,

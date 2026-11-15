@@ -616,6 +616,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    -- The icon buttons: the palette actions on the left, and the database's Import and Export on the right.
 
+   @NoDiscard
    function button(X:num, Icon:str, Tip:str, Activate:func):table
       return gui.button({
          target = left.body, x = X, y = buttons_y, height = ICON_BUTTON, icon = Icon, tip = Tip,

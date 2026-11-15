@@ -24,6 +24,7 @@ function imageLocation(Path:str!):str
    end
 end
 
+@NoDiscard
 gui.icon = function(Options:table!)
    self = setmetatable(entity { -- Public interface
       parentViewport = Options.target,

@@ -11,6 +11,7 @@ Documentation is available in the Kotuku Wiki.
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@NoDiscard
 gui.panel = function(Options:table!)
    self = setmetatable(entity {
       events       = Options.events ?? { },

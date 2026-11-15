@@ -69,6 +69,7 @@ function thinTicks(List:array<double>!, Scale:num!):array<double>
    return array<double> { unique[0], unique[count - 1] }
 end
 
+@NoDiscard
 gui.slider = function(Options:table!)
    min = Options.min or 0
    max = Options.max or 1
