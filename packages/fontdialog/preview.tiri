@@ -286,7 +286,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    seg_y = divider_h + math.floor((footer_h - FOOTER_SEG_H) * 0.5)
    footer_pad = panel_theme.headerPad ?? 9
 
-   self.viewSeg = fontdialog_controls.segmented(Picker, self.footer, {
+   self.viewSeg = fdc.segmented(Picker, self.footer, {
       x = footer_pad, y = seg_y, height = FOOTER_SEG_H, size = FOOTER_SEG_SIZE, items = array<table> {
          { id = 'para', label = 'Paragraph' }, { id = 'water', label = 'Waterfall' }
       },
@@ -306,8 +306,8 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       theme = { bkgd = { roundX = 3, roundY = 3 } },
       events = {
          activate = function()
-            chosen = fontdialog_controls.pickColour(self, self.footer,
-               fontdialog_controls.toHex(body_fill), 'Select preview background')
+            chosen = fdc.pickColour(self, self.footer,
+               fdc.toHex(body_fill), 'Select preview background')
             if chosen then self.setBackground(chosen) end
          end
       }
@@ -316,7 +316,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    -- The mode buttons are held in a viewport anchored to the right of the footer.
 
    mode_box = self.footer.new('VectorViewport', { xOffset = footer_pad, y = seg_y, width = 1, height = FOOTER_SEG_H })
-   self.modeSeg = fontdialog_controls.segmented(Picker, mode_box, {
+   self.modeSeg = fdc.segmented(Picker, mode_box, {
       height = FOOTER_SEG_H, size = FOOTER_SEG_SIZE, multi = true, items = array<table> {
          { id = 'compare', label = 'Compare', icon = 'layout/column_two', tip = 'Compare with frozen settings (C)' },
          { id = 'edit', label = 'Edit text', icon = 'tools/edit', tip = 'Edit the sample text in the preview' }

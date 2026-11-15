@@ -147,6 +147,16 @@ colourpicker_eyedropper.unlisten = function(Handle:num)
    if Handle then mGfx.UnsubscribeInput(Handle) end
 end
 
+-- Return the refresh rate of the primary display in Hz, or nil if the display does not report one.
+
+colourpicker_eyedropper.refreshRate = function():num
+   err, info = mGfx.GetDisplayInfo(0)
+   if (err != ERR_Okay) or (not info) then return nil end
+   rate = info.refreshRate
+   if (rate is <num>) and (rate > 0) then return rate end
+   return nil
+end
+
 -- Shared Display bridge for the scratch row; native Display calls must remain in this source file.
 
 colourpicker_eyedropper.startDrag = function(Source:obj!, Item:num!, Datatypes:str!, Preview:obj):num

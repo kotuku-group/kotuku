@@ -5,8 +5,8 @@
 
    namespace fontdialog_alignment { }
 
-PAD   <const> = fontdialog_controls.PAD
-ROW_H <const> = fontdialog_controls.ROW_H
+PAD   <const> = fdc.PAD
+ROW_H <const> = fdc.ROW_H
 
 fontdialog_alignment.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 8 + (ROW_H * 3) + 8
 fontdialog_alignment.MAX_SPACING = 2 -- Greatest paragraph spacing, as a multiple of the font size
@@ -48,19 +48,19 @@ fontdialog_alignment.new = function(Picker:table!, Target:obj!, Options:table!):
    body = self.panel.body
    y = 8
 
-   self.align = fontdialog_controls.segmentedRow(Picker, body, {
+   self.align = fdc.segmentedRow(Picker, body, {
       x = PAD, y = y, label = 'Align', items = ALIGN_ITEMS, selected = state.align,
       onChange = function(ID) Picker.update({ align = ID }, 'alignment') end
    })
    y += ROW_H
 
-   self.letterCase = fontdialog_controls.segmentedRow(Picker, body, {
+   self.letterCase = fdc.segmentedRow(Picker, body, {
       x = PAD, y = y, label = 'Case', items = CASE_ITEMS, selected = state.letterCase,
       onChange = function(ID) Picker.update({ letterCase = ID }, 'alignment') end
    })
    y += ROW_H
 
-   self.paraSpace = fontdialog_controls.sliderRow(Picker, body, {
+   self.paraSpace = fdc.sliderRow(Picker, body, {
       x = PAD, y = y, width = inner, label = 'Para space', min = 0, max = fontdialog_alignment.MAX_SPACING, step = 0.1, value = state.paraSpace,
       format = function(V):str return string.format('%.1f em', V) end,
       onChange = function(V) Picker.update({ paraSpace = V }, 'alignment') end
@@ -74,7 +74,7 @@ fontdialog_alignment.new = function(Picker:table!, Target:obj!, Options:table!):
       outlined = fontdialog_style.hasOutlines(s.font)
       if outlined != self.outlined then
          self.outlined = outlined
-         fontdialog_controls.setEnabled(array<table> { self.align.buttons.justify }, outlined)
+         fdc.setEnabled(array<table> { self.align.buttons.justify }, outlined)
          self.align.select(align)
       end
 

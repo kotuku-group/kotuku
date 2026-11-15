@@ -8,8 +8,13 @@ OKLCH colour picker dialog.  Open it with:
    gui.dialog.colour({
       colour   = 'oklch(0.62 0.18 258)', -- CSS string, or an RGB table such as a previous feedback result
       gamut    = 'p3', -- Optional target gamut for this window: 'srgb', 'p3', 'a98', 'rec2020' or 'none'
-      feedback = function(Colour) ... end -- gui RGB table (gui.nrgb), or nil on cancel
+      feedback = function(Colour, Status) ... end -- See below
    })
+
+The feedback function receives a gui RGB table (gui.nrgb) and a Status of 'active', 'closed' or 'cancelled'.  While the
+dialog is open, each fresh colour change is reported as 'active', at most once per display refresh (the latest colour
+is always delivered).  The dialog then reports 'closed' with the applied colour, or 'cancelled' with a nil Colour,
+exactly once.
 
 The mode bar switches the window body between two tabs (selectTab(), Ctrl+Tab, Ctrl+1/2):
 
@@ -113,6 +118,7 @@ HUE_STOPS        <const> = 16
 HUE_TRACK_MIN_C  <const> = 0.05 -- The hue track is drawn with at least this chroma so that it stays readable
 C_MAX            <const> = 0.4  -- Chroma slider range; 100% chroma in CSS Color 4
 COPIED_TIME      <const> = 1.2  -- Seconds that a readout cell shows "Copied"
+DEFAULT_REFRESH  <const> = 60   -- Hz, for active feedback when the display doesn't report a refresh rate
 SNAP_HUE         <const> = 4    -- Degrees within which a linked colour dragged on the wheel snaps to a scheme hue
 
 -- Right column
@@ -1819,6 +1825,7 @@ function buildCentre()
          deriveState(&state)
          &colour = outputColour(&state)
          &refresh('clamp')
+         &notifyActive()
       end)
 
    &schemeChip = colourpicker_parts.chip(col, { y = CENTRE_PAD_Y + SELECT_HEIGHT + 8, text = '', tokens = t })
@@ -2551,6 +2558,9 @@ gui.dialog.colour = function(Options:table)
    self = entity { -- Public variables and resources that need to be retained
       colour    = nil, -- Always the current output colour (gui.mtRGB)
       feedback  = option_feedback,
+      feedbackKey  = nil, -- Identifies the colour last reported to feedback
+      feedbackTime = 0, -- PreciseTime() of the last 'active' feedback
+      feedbackInterval = 1 / (colourpicker_eyedropper.refreshRate() ?? DEFAULT_REFRESH), -- Seconds between them
       themeName = nil, -- The picker theme, derived from the window's theme
       initial   = initial,
       initialPalette = colourpalette.duplicate(settings.palette), -- Restored by Reset
@@ -2611,6 +2621,42 @@ gui.dialog.colour = function(Options:table)
          -- Wheel, slider and key edits arrive continuously, so the swatch colour is saved when the window closes
          -- (or with the next palette action) rather than rewriting the database for every pointer movement.
          if state.active != nil then &colourUnsaved = true end
+         if Source != 'init' then &notifyActive() end
+      end
+
+      -- Report fresh colour changes to the client with an 'active' status, no faster than the display refreshes.
+      -- A change inside the interval is deferred to its end, when the latest colour is sent.  Colours equal to the
+      -- last one reported are skipped.
+
+      function colourKey(Colour:table):str
+         return f'{Colour}|{Colour.css}'
+      end
+
+      &sendActive = function()
+         if &finished or (not &feedback) then return end
+         key = colourKey(&colour)
+         if key is &feedbackKey then return end
+         &feedbackKey = key
+         &feedbackTime = colourpicker_parts.now()
+         try
+            &feedback(&colour, 'active')
+         except e
+            msg(f'Colour picker feedback failed: {e.message}')
+         end
+      end
+
+      &notifyActive = function()
+         if &finished or (not &feedback) or &feedbackTimer then return end
+         if colourKey(&colour) is &feedbackKey then return end
+         wait = &feedbackInterval - ((colourpicker_parts.now() - &feedbackTime) / 1000000)
+         if wait <= 0 then
+            &sendActive()
+         else
+            &feedbackTimer = colourpicker_parts.after(wait, function()
+               &feedbackTimer = nil
+               &sendActive()
+            end)
+         end
       end
 
       -- Update every view from the state.  Source names the view that made the change, so that its value isn't written
@@ -2818,6 +2864,7 @@ gui.dialog.colour = function(Options:table)
          &colour = outputColour(s)
          &refresh('drop')
          if Index != nil then &saveDatabase() end
+         &notifyActive()
       end
 
       -- Add a colour as a new swatch, owned by the user and named after its colour, without changing the editing
@@ -3404,7 +3451,7 @@ gui.dialog.colour = function(Options:table)
          &viewport.acDraw()
       end
 
-      -- Close the window and notify the client once.  Colour is nil for a cancellation.
+      -- Close the window and notify the client once, with a 'closed' status, or 'cancelled' if Colour is nil.
 
       &finish = function(Colour:table)
          if &finished then return end
@@ -3418,6 +3465,7 @@ gui.dialog.colour = function(Options:table)
          &stopScratchDrag()
          &stopEyedropper()
          if &colourUnsaved then &saveDatabase() end -- Cancel keeps swatch colour edits
+         colourpicker_parts.cancelTimer(&feedbackTimer)
 
          feedback = &feedback
          &feedback = nil
@@ -3428,7 +3476,7 @@ gui.dialog.colour = function(Options:table)
          &paletteDialog?.window?.surface?.free()
 
          fields = array<str> {
-            'manager', 'paletteDialog', 'modeTabs', 'copyTimer',
+            'manager', 'paletteDialog', 'modeTabs', 'copyTimer', 'feedbackTimer',
             'relPanel', 'relSliders', 'relRows', 'btnSwap', 'contrastPanel', 'ramp', 'exportPanel', 'code',
             'copiedCell', 'wheel', 'loupe', 'btnPick', 'pickedSample', 'preview', 'paletteView', 'paletteModeBox',
             'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnImport',
@@ -3438,7 +3486,7 @@ gui.dialog.colour = function(Options:table)
          }
          for field in values(fields) do self[field] = nil end
 
-         if feedback then feedback(Colour) end
+         if feedback then feedback(Colour, Colour ? 'closed' : 'cancelled') end
       end
 
       -- Palette edits save immediately in both tabs.  Cancel cancels the colour result and preference changes;
@@ -3647,6 +3695,7 @@ gui.dialog.colour = function(Options:table)
       trackKeyOwners(&&)
 
       &setColour(initial.l, initial.c, initial.h, initial.alpha, 'init')
+      &feedbackKey = colourKey(&colour) -- The initial colour is not a change
 
       fitWindow()
 
@@ -3680,7 +3729,8 @@ end
       popOver     = tonumber(arg('popOver')),
       okLabel     = arg('okLabel'),
       cancelLabel = arg('cancelLabel'),
-      feedback    = function(Colour:table)
+      feedback    = function(Colour:table, Status:str)
+         if Status is 'active' then return end
          if Colour then
             script.setKey('rgb', tostring(Colour))
             script.setKey('css', Colour.css)

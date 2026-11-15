@@ -5,8 +5,8 @@
 
    namespace fontdialog_sizing { }
 
-PAD   <const> = fontdialog_controls.PAD
-ROW_H <const> = fontdialog_controls.ROW_H
+PAD   <const> = fdc.PAD
+ROW_H <const> = fdc.ROW_H
 
 MIN_SIZE <const> = 6
 MAX_SIZE <const> = 144
@@ -122,7 +122,7 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
    y = 8
 
    function row(Options:table!):table
-      result = fontdialog_controls.sliderRow(Picker, body, table.merge({ x = PAD, y = y, width = inner }, Options))
+      result = fdc.sliderRow(Picker, body, table.merge({ x = PAD, y = y, width = inner }, Options))
       y += ROW_H
       return result
    end
@@ -142,7 +142,7 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
       label = 'Size', min = MIN_SIZE, max = MAX_SIZE, step = PT_STEP / PT_PER_PX, value = state.size,
       format = function(V):str return fontdialog_sizing.formatSize(self.strikes ? self.strikes[V] : V) end,
       parse = function(Text:str):num -- A typed size is in points, as shown, unless it has another unit
-         points = fontdialog_controls.parseNumber(Text)
+         points = fdc.parseNumber(Text)
          if points is nil then return nil end
          pixels = (Text.endsWith('px')) ? points : (points / PT_PER_PX)
          return sliderValue(pixels)
@@ -176,7 +176,7 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
       onChange = function(V) Picker.update({ wordSpace = V }, 'sizing') end
    })
 
-   self.kerning = fontdialog_controls.segmentedRow(Picker, body, {
+   self.kerning = fdc.segmentedRow(Picker, body, {
       x = PAD, y = y, label = 'Kerning', items = KERNING_ITEMS, selected = state.kerning,
       onChange = function(ID) Picker.update({ kerning = ID }, 'sizing') end
    })
@@ -192,7 +192,7 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
       outlined = fontdialog_style.hasOutlines(s.font)
       if outlined != self.outlined then
          self.outlined = outlined
-         fontdialog_controls.setEnabled(array<table> { self.tracking, self.wordSpace }, outlined)
+         fdc.setEnabled(array<table> { self.tracking, self.wordSpace }, outlined)
       end
 
       if (Source is 'font') or (Source is 'init') or (Source is 'reset') or (Source is 'preset') then
@@ -218,7 +218,7 @@ fontdialog_sizing.new = function(Picker:table!, Target:obj!, Options:table!):tab
 
          if locked != self.sizeLocked then
             self.sizeLocked = locked
-            fontdialog_controls.setEnabled(array<table> { self.size }, not locked)
+            fdc.setEnabled(array<table> { self.size }, not locked)
          end
       end
 

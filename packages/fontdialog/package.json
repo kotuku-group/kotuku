@@ -45,8 +45,8 @@
     },
     {
       "path": "alignment.tiri",
-      "size": 3463,
-      "sha256": "598e9aad011759d6d1a0923a442175dea75b3eb7e62edaded090ebc99cc33123",
+      "size": 3367,
+      "sha256": "b6660612effb71e6d4630245f91c2a89adedb9bff31b5cfe83356788c62f1fa0",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -57,38 +57,38 @@
     },
     {
       "path": "controls.tiri",
-      "size": 24441,
-      "sha256": "3ff1601070aacd44bf7a7505a075f62bff1e2d3794242e7f8ac080dd4ade7dac",
+      "size": 24862,
+      "sha256": "48be17d23e6bd2d123cfbe398a514adf9c36a2d6d214a1ce02806fd3e3816dec",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "effects.tiri",
-      "size": 6621,
-      "sha256": "aff7e8208ecbcede3934c783927eec1473b8a429bd7a64d846c9a22b670a090e",
+      "size": 6461,
+      "sha256": "2fbc9e92fb60270b42ac2520b90c81831c71b597056c9e6d314a3ae765110f60",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "fill.tiri",
-      "size": 2737,
-      "sha256": "300e97f6374a8a1329d9469203b45d5ee27d368cbfeeee65bd65602b1b683cfb",
+      "size": 2934,
+      "sha256": "893cc7426f8d8b00321dee7a3d10ac44f1912b005c31486ea83caa5f53800bb0",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "fontdialog.tiri",
-      "size": 40787,
-      "sha256": "c2f36b004dbfa8d74e8d88884f7016a7e6a7d083abdc6fbc9189e51661dff388",
+      "size": 40739,
+      "sha256": "b25a6d439037615a0881e2beacdfd4c30909dfb5d2b9173fa280967f97d50b41",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "fontlist.tiri",
-      "size": 14295,
-      "sha256": "518f992b95a32fe9c420513dc3d3744b0532bb64ef9654f657f159fe662f1c01",
+      "size": 14231,
+      "sha256": "bb1a31ddb27603dc0d41e62b268231263658faf02b45ef2e1fd9653bf57a35b3",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "glyphs.tiri",
-      "size": 6962,
-      "sha256": "26f118bb821f33375423a861078a88db7fe4a10f40ba90f3013e83ffc3af7352",
+      "size": 6914,
+      "sha256": "b2dc8b2a1709b4c0c35773feb479785bdedb64792ebfa3494b0ca4f59060b3e7",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -98,21 +98,27 @@
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
+      "path": "pickcolour.tiri",
+      "size": 2159,
+      "sha256": "e377606430cfe75db2cd8ae42d6f9001598a6d923ad884a33359a13e23f133cb",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
       "path": "presets.tiri",
-      "size": 7359,
-      "sha256": "b97ac25dc1f98309129abea3bf087ee45fc4a2f6b3bd3beb788ecf6fb8d8c7d0",
+      "size": 7343,
+      "sha256": "715056eec4c6469be88a98c78994ff1c4e5147f51b1186d45d878009f32751c3",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "preview.tiri",
-      "size": 31777,
-      "sha256": "cc196f43183c63481649165f31d27d3ab6787a97e466ed58498676722de71a6d",
+      "size": 31713,
+      "sha256": "9633c5fa4de064f09cbda10898cfdc91a4b576203a4cbb52bf80ca00c51f6cda",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "sizing.tiri",
-      "size": 9083,
-      "sha256": "9596bf870a30a8d5cfa93efef455f0d7bd2112f547cbe913533a683900772eaf",
+      "size": 8971,
+      "sha256": "a77642123092012f69408f159d7fe12cabc72382d75739b2b6cb3955b49a6231",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -123,20 +129,20 @@
     },
     {
       "path": "stroke.tiri",
-      "size": 4213,
-      "sha256": "bca5d704522bd26004f58bc3a2b2901a0b01f7bbbc8991bcdb66ca9a7d9bcd86",
+      "size": 4201,
+      "sha256": "f97f1c8131f954ba614b89310941ba0000d960328779c6530962422fefe612d1",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "style.tiri",
-      "size": 24819,
-      "sha256": "bbeea333f40c012a0cabf431dfeeb219a7324c077e6df10b1f5e3d500861e9ca",
+      "size": 24611,
+      "sha256": "8481866351d13f12a5a06ab1ecc1df853ce9be7d4eb49771dceaff010e179e63",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "theme.tiri",
-      "size": 8539,
-      "sha256": "1536a4522e97fcba00ad91f15e4ac37e39b3de44a0afaeab78e89b5f583bbbe6",
+      "size": 8544,
+      "sha256": "fda42c1477c563fd09cc4064b8a2277c133d995862767af70464da50a104ec8c",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ],

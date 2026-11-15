@@ -9,7 +9,11 @@
    gui.dialog.colour({
       colour  = 'rgb(255,0,0)',
       theme   = arg('theme'),
-      feedback = function(Colour)
+      feedback = function(Colour, Status)
+         if Status is 'active' then
+            print(f'Active colour: {Colour.css}')
+            return
+         end
          if not Colour then
             print('Dialog was cancelled.')
          else
