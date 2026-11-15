@@ -50,6 +50,10 @@ public:
    ERR clipboardAddText(CSTRING Text) override;
    ERR clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool Cut) override;
    ERR clipboardClear() override;
+   bool foreignPoint(double X, double Y, HOSTWINDOW Exclude) override;
+   ERR startDragExport(const std::vector<std::string> &Files, const std::string *Text, HOSTWINDOW Exclude) override;
+   ERR dropDragExport() override;
+   void cancelDragExport() override;
 };
 
 }

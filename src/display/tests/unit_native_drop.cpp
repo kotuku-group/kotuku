@@ -49,6 +49,23 @@ struct NativeDropObservation {
    std::string Receipt;
 };
 
+#ifndef _WIN32
+class NativeCancelDriver : public HeadlessDriver {
+public:
+   OBJECTID SourceAtRelease = 0;
+   int Cancellations = 0;
+
+   void cancelDragExport() override {
+      Cancellations++;
+      if (auto pointer = gfx::AccessPointer()) {
+         SourceAtRelease = ((extPointer *)pointer)->DragSourceID;
+         ReleaseObject(pointer);
+      }
+      display::DriverButtonInput(0x0001, false);
+   }
+};
+#endif
+
 static ERR native_sink_new(OBJECTPTR Self, APTR)
 {
    new (Self) Object(Self->Class, Self->UID);
@@ -158,6 +175,30 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
    gfx::SetModalSurface(0);
    auto callback = C_FUNCTION(native_drop_notify, &state);
    SubscribeAction(*first, AC::DragDrop, callback);
+#ifndef _WIN32
+   {
+      native_test_movement(first->UID, 25, 40);
+      display::DriverButtonInput(0x0001, true);
+      auto pointer = (extPointer *)gfx::AccessPointer();
+      check(pointer != nullptr, "Access the pointer for export cancellation");
+      if (pointer) {
+         auto release_pointer = kt::Defer([&]() { ReleaseObject(pointer); });
+         NativeCancelDriver driver;
+         const auto saved_driver = glDriver;
+         auto restore_driver = kt::Defer([&]() { glDriver = saved_driver; });
+         glDriver = &driver;
+         pointer->DragSourceID = sink->UID;
+         pointer->NativeExport = true;
+         const auto calls = state.Calls;
+         end_cursor_drag(pointer, false);
+         check((driver.Cancellations IS 1) and (driver.SourceAtRelease IS 0),
+            "Export cancellation clears the session before synthesising a release");
+         check((not pointer->NativeExport) and (pointer->ButtonClicks[0].LastClicked IS 0),
+            "Export cancellation releases the held pointer button");
+         check(state.Calls IS calls, "A release during cancellation never delivers a drop");
+      }
+   }
+#endif
    auto clipboard_snapshot = []() {
       const std::lock_guard lock(glClipboardLock);
       std::string result;

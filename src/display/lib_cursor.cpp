@@ -621,21 +621,27 @@ surface and forward it to the registered @VectorViewport under the pointer.
 The DragDrop action is dispatched synchronously, so the Source must be able to answer data requests during the
 dispatch.  A new drag and drop operation cannot be started until the dispatch has returned.
 
-On Windows and X11, a drag that leaves all of the application's windows is exported as a native drag (OLE or XDND),
-so that it can be dropped into other applications, including other Kōtuku processes.  At that point the Source
-receives one `DATA::REQUEST` for each of `DATA::FILE` and `DATA::TEXT` that `Datatypes` includes, sent from the
-@Display object.  The receipts are copied, so the native recipient does not depend on the Source after the handoff.
-Only copies are offered.  File paths must resolve to native locations; paths on virtual volumes are omitted, and
-folders are offered without a trailing separator.  If the pointer returns to one of the application's windows, the
-original Source, `Item` and `Datatypes` are used again, and a drop there is delivered as usual.  A drop accepted by a
-native recipient ends the operation with `ERR::Okay`; refusal, a release where nothing accepts the drop, and
-cancellation with Escape end it with `ERR::Cancelled`.  The preview `Surface` is hidden while the pointer is over other
-applications.
+On Windows, X11 and Wayland, a drag that leaves all of the application's windows is exported as a native drag (OLE,
+XDND or the Wayland data device), so that it can be dropped into other applications, including other Kōtuku processes.
+At that point the Source receives one `DATA::REQUEST` for each of `DATA::FILE` and `DATA::TEXT` that `Datatypes`
+includes, sent from the @Display object.  The receipts are copied, so the native recipient does not depend on the
+Source after the handoff.  Only copies are offered.  File paths must resolve to native locations; paths on virtual
+volumes are omitted, and folders are offered without a trailing separator.  If the pointer returns to one of the
+application's windows, the original Source, `Item` and `Datatypes` are used again, and a drop there is delivered as
+usual.  A drop accepted by a native recipient ends the operation with `ERR::Okay`; refusal, a release where nothing
+accepts the drop, and cancellation with Escape end it with `ERR::Cancelled`.  The preview `Surface` is hidden while the
+pointer is over other applications.
 
-On X11, the operation ends as soon as the button is released over another application, so a new drag can start
-immediately.  The result is reported when the recipient confirms the drop, or after ten seconds without a response.
-A new drag cannot be exported until that result is known, but it still works within the application.  Wayland and
-other platforms do not export drags.
+On X11 and Wayland, the operation ends as soon as the button is released over another application, so a new drag can
+start immediately.  The result is reported when the recipient confirms the drop, or after ten seconds without a
+response.  A new drag cannot be exported until that result is known, but it still works within the application.
+Other platforms do not export drags.
+
+Wayland does not reveal window positions, so the export starts when the pointer leaves the window that was pressed,
+even if it moves onto another of the application's windows.  The compositor then runs the drag, and hover over any of
+the application's windows is routed back to the original Source.  No drag image is supplied to the compositor.
+Keyboard input does not normally reach the application during the compositor's drag, so whether Escape cancels the
+operation depends on the compositor.
 
 The operation is cancelled without a drop if the Source object is freed, or if the SystemPointer receives a
 Deactivate action.  A @Clipboard source is told when the operation ends through its @Clipboard.DragEndHandler, unless

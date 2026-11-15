@@ -275,13 +275,16 @@ public:
    // as one holding the drag preview, or null.
    //
    // foreignPoint() returns true if the point is not over a window of this driver, so another application or the
-   // desktop would receive a drop there.  startDragExport() takes an immutable copy of absolute native paths and UTF-8
-   // text (null if none) and follows the pointer until the export ends.  It returns ERR::InUse while an earlier
-   // export is still waiting for its recipient.  dropDragExport() is called when the primary button is released
-   // during an export, and ends the driver's hover state.  It returns DROP_INTERNAL if the pointer is over one of our
-   // windows, so the drop is delivered internally; ERR::Okay if the result will be reported by DragExportEnded; or
-   // another error if nothing can receive the drop.  cancelDragExport() abandons hover without a drop, and is ignored
-   // once the drop has been sent.  A driver that closes with a drop outstanding abandons it without DragExportEnded.
+   // desktop would receive a drop there.  Wayland cannot locate windows, so it reports whether the pointer has left
+   // the pressed window, and afterwards whether the compositor's drag is outside all of our windows.
+   //
+   // startDragExport() takes an immutable copy of absolute native paths and UTF-8 text (null if none) and follows the
+   // pointer until the export ends.  It returns ERR::InUse while an earlier export is still waiting for its recipient.
+   // dropDragExport() is called when the primary button is released during an export, and ends the driver's hover
+   // state.  It returns DROP_INTERNAL if the pointer is over one of our windows, so the drop is delivered internally;
+   // ERR::Okay if the result will be reported by DragExportEnded; or another error if nothing can receive the drop.
+   // cancelDragExport() abandons hover without a drop, and is ignored once the drop has been sent.  A driver that
+   // closes with a drop outstanding abandons it without DragExportEnded.
 
    // dropDragExport() result for a release over one of our windows.  Named because Xlib defines False as a macro.
 
