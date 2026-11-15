@@ -263,6 +263,7 @@ void encode_callable(Encoder &Output, const CallableDescriptor &Callable)
    Output.u32(uint32_t(Callable.Results.size()));
    for (const auto &result : Callable.Results) encode_value(Output, result);
    Output.u16(Callable.DeclaredResults);
+   Output.byte(Callable.NoDiscardResults);
    Output.boolean(Callable.VariadicParameters);
    Output.boolean(Callable.VariadicResults);
 }
@@ -284,6 +285,7 @@ CallableDescriptor decode_callable(Decoder &Input)
    });
    decode_records<ValueDescriptor>(Input, result.Results, decode_value);
    result.DeclaredResults = Input.u16();
+   result.NoDiscardResults = Input.byte();
    result.VariadicParameters = Input.boolean();
    result.VariadicResults = Input.boolean();
    return result;

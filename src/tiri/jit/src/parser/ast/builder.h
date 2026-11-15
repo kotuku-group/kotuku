@@ -231,6 +231,7 @@ private:
    ParserResult<StmtNodePtr> parse_function_stmt();
    ParserResult<StmtNodePtr> parse_annotated_statement();
    ParserResult<std::vector<AnnotationEntry>> parse_annotations(bool Single = false);
+   ParserResult<bool> apply_function_annotations(FunctionExprPayload &Function);
    ParserResult<AnnotationArgValue> parse_annotation_value();
    ParserResult<StmtNodePtr> parse_if();
    ParserResult<StmtNodePtr> parse_while();

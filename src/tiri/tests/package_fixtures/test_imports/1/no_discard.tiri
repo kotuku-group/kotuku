@@ -1,0 +1,24 @@
+@Package(name="tests/no-discard", version="1")
+
+-- @NoDiscard contracts must reach importers through source compilation and installed (cached) interfaces.
+
+namespace no_discard { }
+
+@NoDiscard
+no_discard.make = function():table
+   return {}
+end
+
+@NoDiscard
+function no_discard.inferred()
+   return {}
+end
+
+no_discard.plain = function():table
+   return {}
+end
+
+@NoDiscard
+global nd_global_make = function():table
+   return {}
+end

@@ -219,6 +219,7 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
 
       auto function = std::make_unique<FunctionExprPayload>();
       function->is_vararg = exported.Callable->VariadicParameters;
+      function->no_discard_results = exported.Callable->NoDiscardResults;
       std::vector<const ContractDescriptor *> parameters;
       for (const ContractDescriptor &parameter : exported.Callable->Parameters) parameters.push_back(&parameter);
       std::ranges::sort(parameters, {}, &ContractDescriptor::Position);

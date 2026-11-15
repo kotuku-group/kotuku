@@ -264,6 +264,14 @@ enum class CallArgumentSyntax : uint8_t {
    StringLiteral
 };
 
+// Retention performed by compiler-generated typed-array constructors, including their optional padding wrapper.
+// Ordinary calls never acquire retention semantics from their name or signature.
+enum class CallResultRetention : uint8_t {
+   None,
+   ArrayElements,
+   FirstArgument
+};
+
 //********************************************************************************************************************
 
 struct Identifier {
@@ -489,6 +497,7 @@ struct CallExprPayload {
    CallDispatch dispatch = CallDispatch::Direct;
    ExprNodeList arguments;
    CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
+   CallResultRetention result_retention = CallResultRetention::None;
    bool forwards_multret = false;
    bool receives_pipe_results = false;
    BuiltinCallableID compiler_callable = BuiltinCallableID::Invalid;
@@ -515,6 +524,7 @@ struct CallExprPayload {
    mutable StaticContextuality contextual_designation_result = StaticContextuality::Unknown;
    mutable bool unresolved_method_reported = false;
    mutable bool optional_receiver_reported = false;
+   mutable bool no_discard_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
@@ -665,6 +675,18 @@ struct FunctionExprPayload {
    mutable StaticCallableHandle callable{};
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function
+
+   // Result positions that callers must store or forward (bit N is result N+1).  This semantic contract is normalised
+   // from @NoDiscard and remains independent of the runtime annotation payload, which may omit annotation details.
+
+   static_assert(MAX_RETURN_TYPES <= 8, "no_discard_results stores one bit per result position");
+   uint8_t no_discard_results = 0;
+   SourceSpan no_discard_span{};               // Location of the @NoDiscard declaration for diagnostics
+   mutable bool no_discard_reported = false;   // Suppresses repeat declaration diagnostics across analysis passes
+
+   [[nodiscard]] bool no_discard_at(size_t Position) const {
+      return Position < MAX_RETURN_TYPES and (this->no_discard_results & (1u << Position)) != 0;
+   }
 
    // True if the function inherits the caller's context during entity member dispatch.
    [[nodiscard]] bool is_ordinary() const { return context.kind != FunctionContextKind::None; }

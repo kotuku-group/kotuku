@@ -48,6 +48,7 @@ Interface sample_interface()
    callable.Parameters = { { structure_value("Point"), "point", 0, true, true } };
    callable.Results = { number_value() };
    callable.DeclaredResults = 1;
+   callable.NoDiscardResults = 1;
    result.Exports.push_back({ "geometry.length", ExportKind::GLOBAL,
       ValueDescriptor { .Kind = ValueKind::FUNCTION, .Proof = ProofKind::CLOSED, .Nullable = false },
       callable, {}, true });
@@ -179,6 +180,25 @@ bool round_trip_and_determinism(kt::Log &Log)
    changed.Exports[0].Callable->Results[0].Nullable = true;
    if (finalise_fixture(changed)->digest() IS finalise_fixture(sample_interface())->digest()) {
       Log.error("A compile-time surface change did not change the interface digest");
+      return false;
+   }
+
+   // @NoDiscard obligations are part of the compile-time surface: they must decode intact, and removing one must
+   // change the digest so that dependants compiled against the contract are rebuilt.
+
+   const ExportDescriptor *decoded_length = nullptr;
+   for (const auto &exported : decoded.CompileTimeInterface->descriptors().Exports) {
+      if (exported.Name IS "geometry.length") decoded_length = &exported;
+   }
+   if (not decoded_length or not decoded_length->Callable or decoded_length->Callable->NoDiscardResults != 1) {
+      Log.error("A callable's @NoDiscard result obligation did not survive the envelope round trip");
+      return false;
+   }
+
+   auto released = sample_interface();
+   released.Exports[0].Callable->NoDiscardResults = 0;
+   if (finalise_fixture(released)->digest() IS finalise_fixture(sample_interface())->digest()) {
+      Log.error("Removing a @NoDiscard obligation did not change the interface digest");
       return false;
    }
    return true;
@@ -534,7 +554,7 @@ bool malformed_and_bounds(kt::Log &Log)
        not expect(encoded.substr(0, 40), tiri::cache::FormatError::TRUNCATED)) return false;
 
    auto unsupported = encoded;
-   unsupported[8] = 10;
+   unsupported[8] = char(SCHEMA_VERSION - 1);
    if (not expect(unsupported, tiri::cache::FormatError::UNSUPPORTED_VERSION)) return false;
 
    auto damaged_interface = encoded;

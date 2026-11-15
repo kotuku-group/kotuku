@@ -85,6 +85,7 @@ static const struct {
 #include "assignment_target_resolution.h"
 #include "static_type_descriptor.h"
 #include "static_descriptor_analysis.h"
+#include "no_discard_analysis.h"
 #include "value_categories.h"
 #include "../../../defs.h"
 
@@ -103,6 +104,7 @@ static const struct {
 #include "import_interface_export.cpp"
 #include "parse_control_flow.cpp"
 #include "constant_evaluator.cpp"
+#include "no_discard_analysis.cpp"
 #include "ir_emitter/ir_emitter.cpp"
 #include "parse_constants.cpp"
 #include "parse_scope.cpp"
@@ -263,6 +265,14 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
       return;
    }
    collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
+   validate_no_discard_results(Context, *chunk);
+
+   if (Context.diagnostics().has_errors() and Context.config().abort_on_error) {
+      builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
+      raise_accumulated_diagnostics(Context);
+      return;
+   }
 
    // Emit bytecode instructions
 

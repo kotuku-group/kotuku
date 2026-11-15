@@ -1,0 +1,8 @@
+@Package(name="tests/no-discard-reexport", version="1")
+
+-- Re-exports tests/no-discard through the nested module interface merge.
+
+import 'tests/no-discard'
+
+namespace no_discard_reexport { }
+no_discard_reexport.value = 1

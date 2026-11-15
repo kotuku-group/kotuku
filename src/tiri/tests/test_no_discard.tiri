@@ -1,0 +1,469 @@
+-- Flute tests for the @NoDiscard function annotation.
+--
+-- Declaration, result-consumption and import contracts from docs/plans/tiri/1_tiri_no_discard.md.
+
+include 'core'
+
+@NoDiscard
+function no_discard_named():table
+   return { name='named' }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function expect_valid(Source:str, Context:str)
+   local result = debug.validate(Source)
+   if not result.success then
+      local message = result.diagnostics?[0]?.message ?? 'no diagnostic'
+      assert(false, f'{Context}: expected valid source, got: {message}')
+   end
+end
+
+-- Asserts that a declaration or call fails with exactly one NoDiscard diagnostic containing the expected message.
+
+function expect_no_discard_error(Source:str, Message:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, f'{Context}: source should fail validation')
+   assert(#result.diagnostics > 0, f'{Context}: a diagnostic should be reported')
+   local first = result.diagnostics[0]
+   assert(first.code is 'NoDiscard', f'{Context}: expected code NoDiscard, got {first.code}: {first.message}')
+   assert(first.message.find(Message, 0, true) != nil,
+      f'{Context}: expected diagnostic containing "{Message}", got: {first.message}')
+
+   local count = 0
+   for _, diagnostic in pairs(result.diagnostics) do
+      if diagnostic.code is 'NoDiscard' then count++ end
+   end
+   assert(count is 1, f'{Context}: expected one NoDiscard diagnostic, got {count}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+local constructor_source = [[
+@NoDiscard
+function make():<table, num>
+   return { value=1 }, 2
+end
+]]
+
+@Test function StorageDestinationsRetainFreshResults()
+   for source in values(array<str> {
+      'local value = make()',
+      'value = make()',
+      'global glNoDiscardValue = make()',
+      'local value = {}\nvalue = make()',
+      'local value = {}\nfunction replace() value = make() end',
+      'local owner = {}\nowner.widget = make()',
+      'local owner = {}\nowner[0] = make()',
+      'local owner = {}\nowner.{ widget=make(), [0]=make() }',
+      'local owner = {}\nowner?.{ widget=make() }',
+      'local owner = entity {}\nusing owner do &widget = make() end',
+      'namespace owner { widget=make() }',
+      'local value = (make())',
+      'local first, second = make()',
+      'local first, _ = make()',
+      'local first, second = make(), 3',
+      'local value = {}\nvalue ?= make()',
+      'local value = {}\nvalue ??= make()'
+   }) do
+      expect_valid(constructor_source .. source, source)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AggregatesMustReachStorage()
+   for source in values(array<str> {
+      'local value = { widget=make() }',
+      'local value = { make() }',
+      'local value = { nested={ widget=make() } }',
+      'local value = { [make()]=3 }',
+      'local value = { make(), 3 }',
+      'local value = array<table> { (make()) }',
+      'local value = array<table, 4> { (make()) }',
+      'local size = 4\nlocal value = array<table, size> { (make()) }',
+      'local value = array<any> { make() }',
+      'local value = array<any> { make(), 3 }',
+      'print({ widget=make() })',
+      'print({ [make()]={ nested=make() } })',
+      'print(array<table> { (make()) })',
+      'print(array<table, 4> { (make()) })'
+   }) do
+      expect_valid(constructor_source .. source, source)
+   end
+
+   for source in values(array<str> {
+      '_ = { widget=make() }',
+      '_ = { nested={ make() } }',
+      '_ = { [make()]=3 }',
+      '_ = array<table> { (make()) }',
+      '_ = array<table, 4> { (make()) }',
+      'local value = { widget=make() }.widget'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DiscardsAndResultAdjustmentAreRejected()
+   expect_no_discard_error(constructor_source .. 'make()', "Result 1 of 'make'", 'bare call')
+   for source in values(array<str> {
+      '_ = make()',
+      'local _ = make()',
+      'local _, second = make()',
+      'local _, second = make(), 3',
+      'local value = 0\n_, value = make()'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'blank assignment', source)
+   end
+   -- Surplus explicit expressions are already forbidden by the assignment grammar, before semantic validation.
+   local surplus = debug.validate(constructor_source .. 'local first = 3\nfirst = 3, make()')
+   assert(not surplus.success and surplus.diagnostics[0].code is 'InvalidAssignment',
+      'An excess first result must not bypass the existing assignment-arity check')
+   expect_no_discard_error(constructor_source .. 'local value = {}\nvalue ..= make()', 'Converting',
+      'compound assignment converts the result')
+   expect_no_discard_error(constructor_source .. 'make().{ field=1 }', 'Immediate member',
+      'field-block receiver temporary is not client storage')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FiltersPreserveOriginalResultObligations()
+   for source in values(array<str> {
+      'local value = [*]make()',
+      'local value = [*_]make()',
+      'local first, _ = [**_]make()',
+      'local first, second = [*_]make(), 3',
+      'local owner = { widget=[*_]make() }',
+      'local value = ([*]make())'
+   }) do
+      expect_valid(constructor_source .. source, source)
+   end
+   for filter in values(array<str> { '[]', '[_]', '[_*]', '[__*]', '[_*_]' }) do
+      expect_no_discard_error(constructor_source .. 'local value = ' .. filter .. 'make()', 'result filter', filter)
+   end
+   expect_no_discard_error(constructor_source .. 'local _, value = [*]make()', 'blank assignment',
+      'storing an unrelated result does not satisfy the first result')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArgumentsAndPipesAcceptFreshResults()
+   for source in values(array<str> {
+      'print(make())',
+      'print(make(), 3)',
+      'print(3, make())',
+      'print((make()))',
+      'print([*_]make())',
+      'local widgets = array<table>\nwidgets.push((make()))',
+      'function consume(Value:any, ...) end\nconsume(make())',
+      'function consume(...) end\nconsume(make(), make())',
+      'function pass(Flag:bool) print(Flag ? make() : {}) end',
+      'local owner = { consume=function(...) end }\nowner.consume?(make())',
+      'local owner = entity { consume=function(Value:any) end }\nowner.consume(make())',
+      'local value = tostring(make())',
+      'local value = f"{make()}"',
+      'local value = make() |> tostring()',
+      'local value = make() |1> tostring()',
+      'make() |2> print()',
+      'defer(Value) print(Value) end(make())'
+   }) do
+      expect_valid(constructor_source .. source, source)
+   end
+end
+
+@Test function PassedResultsReachRetainingFunctions()
+   exec([[
+@NoDiscard function create():table return { value=42 } end
+local widgets = array<table>
+widgets.push(create())
+assert(#widgets is 1 and widgets[0].value is 42, 'A passed constructor result must reach array.push')
+local owner = {}
+function retain(Widget:table) owner.widget = Widget end
+create() |> retain()
+assert(owner.widget.value is 42, 'A piped constructor result must reach its callee')
+]])
+end
+
+@Test function ProjectionsAndConversionsStillRejectFreshResults()
+   for source in values(array<str> {
+      'local value = make().value',
+      'local value = make()[0]',
+      'local value = make()?.value',
+      'make().value = 3'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'Immediate member', source)
+   end
+   for source in values(array<str> {
+      'local value = not make()',
+      'local value = make() is nil',
+      'local value = make()??',
+      'print(make().value)',
+      'print([_*]make())',
+      'print(not make())',
+      'print(make() or {})'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
+   end
+   local pipe_source = '@NoDiscard function build(Value:any):table return {} end\n'
+   expect_valid(pipe_source .. 'local value = 1 |> build()', 'stored pipe destination result')
+   expect_no_discard_error(pipe_source .. '1 |> build()', "Result 1 of 'build'", 'discarded pipe destination result')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function OnlyAnnotatedReturnPositionsForwardFreshResults()
+   for source in values(array<str> {
+      '@NoDiscard function wrapper():table return make() end',
+      '@NoDiscard function wrapper():table return (make()) end',
+      '@NoDiscard function wrapper():table return [*_]make() end',
+      '@NoDiscard function wrapper():<table, num> return make(), 3 end',
+      '@NoDiscard function wrapper():table return { widget=make() } end',
+      'function wrapper() local value = make() return value end'
+   }) do
+      expect_valid(constructor_source .. source, source)
+   end
+   for source in values(array<str> {
+      'function wrapper() return make() end',
+      'function wrapper() return { widget=make() } end',
+      '@NoDiscard function wrapper():<num, table> return 3, make() end',
+      '@NoDiscard function wrapper():table local inner = function() return make() end return {} end',
+      'local lazy = <{ make() }>'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'protected result position', source)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConditionalResultsFollowTheirActualValueFlow()
+   for source in values(array<str> {
+      'local flag = true\nlocal value = flag ? make() : {}',
+      'local flag = false\nlocal value = flag ? {} : make()',
+      'local flag = false\nlocal value = flag or make()',
+      'local flag = true\nlocal value = flag and make()',
+      'local value = nil ?? make()',
+      'local value = { make() } or false',
+      'local value = { widget=make(), keep=true } ?? {}',
+      'local value = choose 1 from 1 -> make() else -> {} end',
+      'local owner = {}\nchoose 1 from 1 -> owner.widget = make() end',
+      '@NoDiscard function wrapper(Flag):table return Flag ? make() : {} end',
+      'local value = false and make()',
+      'local value = true or make()',
+      'local value = false ? make().value : 1'
+   }) do
+      expect_valid(constructor_source .. source, source)
+   end
+   for source in values(array<str> {
+      'local value = make() and {}',
+      'local value = make() or {}',
+      'local value = make() ?? {}',
+      'local value = make() ? 1 : 2',
+      'local value = { make() } and {}',
+      'local value = { make() } ?? {}',
+      '_ = true ? make() : {}',
+      'local value = (false ? {} : make()).value',
+      'if make() then end',
+      'local value = choose make() from _ -> 1 end'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
+   end
+   expect_no_discard_error(constructor_source .. 'choose 1 from 1 -> _ = make() end', 'blank assignment',
+      'statement-valued choose arm')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AliasesAndCapturedAliasesPreserveContracts()
+   expect_valid(constructor_source .. 'local alias = make\nlocal value = alias()', 'stored resolved alias')
+   expect_no_discard_error(constructor_source .. 'local alias = make\nalias()', "Result 1 of 'alias'", 'alias')
+   expect_no_discard_error(constructor_source .. 'local alias = make\nfunction inner() alias() end',
+      "Result 1 of 'alias'", 'captured alias')
+   expect_valid('local ns = {}\n@NoDiscard function ns.make():table return {} end\nns.make()',
+      'members of dynamic local tables have no statically resolved callable descriptor')
+   expect_valid(constructor_source .. 'local alias = make\nalias = function() return {} end\nalias()',
+      'a reassigned callable has no statically resolved identity')
+   expect_valid(constructor_source .. 'function invoke(Callback) Callback() end\ninvoke(make)',
+      'unresolved higher-order calls do not infer a contract')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DirectGlobalDeclarationsPublishContracts()
+   for declaration in values(array<str> {
+      '@NoDiscard global function glNoDiscardMake():table return {} end\n',
+      '@NoDiscard global glNoDiscardMake = function():table return {} end\n',
+      '@NoDiscard global function glNoDiscardMake() return {} end\n',
+      '@NoDiscard global glNoDiscardMake = function() return {} end\n'
+   }) do
+      expect_valid(declaration .. 'local value = glNoDiscardMake()', 'stored direct global result')
+      for use in values(array<str> {
+         'glNoDiscardMake()',
+         '_ = glNoDiscardMake()',
+         'function inner() glNoDiscardMake() end',
+         'local callback = function() glNoDiscardMake() end',
+         'local callbacks = { function() glNoDiscardMake() end }'
+      }) do
+         expect_no_discard_error(declaration .. use, "Result 1 of 'glNoDiscardMake'", use)
+      end
+      expect_valid(declaration .. 'glNoDiscardMake = function():table return {} end\nglNoDiscardMake()',
+         'reassigned global callable identity is unresolved')
+      expect_valid(declaration ..
+         'function replace() glNoDiscardMake = function():table return {} end end\nglNoDiscardMake()',
+         'a captured global write invalidates its callable identity')
+      expect_valid(declaration .. 'local glNoDiscardMake = function() return {} end\nglNoDiscardMake()',
+         'a local function shadows the global contract')
+   end
+   expect_valid('global function glNoDiscardPlain():table return {} end\nglNoDiscardPlain()',
+      'unannotated direct global results remain discardable')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EachOriginatingCallIsReportedOnce()
+   local result = debug.validate(constructor_source .. 'print({ widget=make() }.widget)\nmake()')
+   assert(result.success is false, 'Both fresh calls should fail validation')
+   assert(#result.diagnostics is 2, f'Expected one diagnostic per call, got {#result.diagnostics}')
+   assert(result.diagnostics[0].line is 5 and result.diagnostics[1].line is 6,
+      'Call diagnostics should identify their originating source lines')
+   assert(result.diagnostics[0].code is 'NoDiscard' and result.diagnostics[1].code is 'NoDiscard',
+      'Both diagnostics should have the dedicated NoDiscard code')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NestedBodiesCannotHideDiscardedResults()
+   for source in values(array<str> {
+      'do make() end',
+      'function inner() make() end',
+      'local callback = function() make() end',
+      'local callbacks = { callback=function() make() end }',
+      'defer make() end',
+      'try make() except e end',
+      'try local value = 1 except e\nmake() end',
+      'try local value = 1 success make() end',
+      'checkall make() end',
+      'local owner = {}\nusing owner do make() end',
+      'for index in {0 to 1} do make() end',
+      'repeat make() until true',
+      'local flag = true\nwhile flag do make() break end',
+      'local flag = true\nif flag then make() end',
+      'local flag = false\nif flag then else make() end',
+      'check make()',
+      'local value = false\nvalue ?! check make()',
+      'function wrapper(Value) Value ?! return make() end',
+      'return make()'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SupportedAttachmentFormsAreAccepted()
+   expect_valid('@NoDiscard function make() return {} end', 'named function')
+   expect_valid('@NoDiscard local function make() return {} end', 'local function')
+   expect_valid('@NoDiscard local make = function() return {} end', 'local assignment')
+   expect_valid('@NoDiscard global glNoDiscardMake = function() return {} end', 'global declaration')
+   expect_valid('local ns = {}\n@NoDiscard ns.make = function() return {} end', 'namespace member assignment')
+   expect_valid('local ns = {}\n@NoDiscard function ns.make() return {} end', 'namespace member function')
+   expect_valid('@NoDiscard\nfunction make() return {} end', 'annotation on its own line')
+   expect_valid('@NoDiscard; @Doc(text="Makes a value") function make() return {} end', 'combined annotations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DeclaredAndInferredResultsAreAccepted()
+   expect_valid('@NoDiscard function make():table return {} end', 'declared single result')
+   expect_valid('@NoDiscard function make():<table, num> return {}, 1 end', 'declared multiple results')
+   expect_valid('@NoDiscard function make(Options:table!):table! return Options end', 'required result')
+   expect_valid('@NoDiscard function make() return nil end', 'nil first result is not a separate requirement')
+   expect_valid('function inner() return {} end\n@NoDiscard function make() return inner() end',
+      'forwarded call results may supply the first result')
+   expect_valid('@NoDiscard function make(...):any return ... end', 'varargs may supply the first result')
+   expect_valid('@NoDiscard function make(Flag) if Flag then return end return {} end',
+      'one value-bearing return path is sufficient')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArgumentsAreRejected()
+   expect_no_discard_error('@NoDiscard(position=1) function make() return {} end', 'does not accept arguments',
+      'named argument')
+   expect_no_discard_error('@NoDiscard(strict) function make() return {} end', 'does not accept arguments',
+      'bare argument')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DuplicateAnnotationsAreRejected()
+   expect_no_discard_error('@NoDiscard; @NoDiscard function make() return {} end', 'more than once',
+      'semicolon separated')
+   expect_no_discard_error('@NoDiscard\n@NoDiscard\nfunction make() return {} end', 'more than once',
+      'line separated')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FunctionsWithoutAFirstResultAreRejected()
+   expect_no_discard_error('@NoDiscard function make():<> end', 'declares no results', 'explicit void')
+   expect_no_discard_error('@NoDiscard function make() local value = 1 end', 'never returns a value',
+      'no return statement')
+   expect_no_discard_error('@NoDiscard function make(Flag) if Flag then return end end', 'never returns a value',
+      'bare returns only')
+   expect_no_discard_error('@NoDiscard function make() local inner = function() return 1 end end',
+      'never returns a value', 'nested function returns do not count')
+   expect_no_discard_error('@NoDiscard function make() if false then return 1 end end', 'never returns a value',
+      'unreachable returns do not count')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DiagnosticsIdentifyTheAnnotation()
+   local result = debug.validate('local value = 1\n\n   @NoDiscard function make() end')
+   assert(result.success is false, 'An empty @NoDiscard function should fail validation')
+   local diagnostic = result.diagnostics[0]
+   assert(diagnostic.line is 3, f'The diagnostic should identify the annotation line, got {diagnostic.line}')
+   assert(diagnostic.column is 4, f'The diagnostic should identify the annotation column, got {diagnostic.column}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ValidationBuffersDoNotInheritPreviouslyLoadedSources()
+   local result = debug.validate(constructor_source .. 'make()', { path='no_discard_buffer.tiri' })
+   assert(not result.success and #result.diagnostics is 1, 'Expected one diagnostic from the validation buffer')
+   local diagnostic = result.diagnostics[0]
+   assert(diagnostic.code is 'NoDiscard', 'Expected the NoDiscard diagnostic')
+   assert(diagnostic.file is nil, 'A synthetic validation buffer must not inherit a previously loaded source file')
+   assert(diagnostic.line is 5, f'Expected the originating call line, got {diagnostic.line}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnannotatedFunctionsAreUnchanged()
+   expect_valid('function make() end\nmake()', 'unannotated function without results')
+   expect_valid('function make() return {} end\nmake()', 'unannotated call result may be discarded')
+   expect_valid('@Note function make() end', 'other annotations impose no result contract')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnotatedFunctionsExecuteAndPublishMetadata()
+   local value = no_discard_named()
+   assert(value.name is 'named', 'An annotated function should execute normally')
+
+   local entry = debug.anno.get(no_discard_named)
+   assert(entry != nil and #entry.annotations is 1, 'The annotation should be registered at runtime')
+   assert(entry.annotations[0].name is 'NoDiscard', 'The runtime annotation should be named NoDiscard')
+
+   local result = debug.validate('@NoDiscard function make():table return {} end', { symbols=true })
+   assert(result.success, 'Symbol extraction source should validate')
+   local symbol = result.symbols[0]
+   assert(symbol.name is 'make', f'Expected symbol make, got {symbol.name}')
+   assert(symbol.annotations[0].name is 'NoDiscard', 'Tooling metadata should expose the annotation')
+   assert(symbol.noDiscard is true, 'Tooling metadata should expose the normalised first-result contract')
+
+   local plain = debug.validate('function make():table return {} end', { symbols=true })
+   assert(plain.symbols[0].noDiscard is false, 'An unannotated symbol should not report a @NoDiscard contract')
+end

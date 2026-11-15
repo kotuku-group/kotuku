@@ -84,14 +84,24 @@ struct StaticValueDescriptor {
    [[nodiscard]] bool proved() const noexcept;
 };
 
+// Result positions that a caller must store or forward, one bit per position (bit N is result N+1).  The mask is
+// carried separately from the value descriptors so that type refinement and descriptor joins cannot erase it.
+
+using StaticResultObligations = uint8_t;
+static_assert(MAX_RETURN_TYPES <= 8, "StaticResultObligations stores one bit per result position");
+
 struct StaticResultSet {
    std::array<StaticValueDescriptor, MAX_RETURN_TYPES> values{};
    uint16_t declared_count = 0;
    uint8_t stored_count = 0;
+   StaticResultObligations no_discard = 0;
    bool variadic = false;
    bool dynamic = false;
 
    [[nodiscard]] StaticValueDescriptor value_at(size_t Position) const;
+   [[nodiscard]] bool no_discard_at(size_t Position) const noexcept {
+      return Position < MAX_RETURN_TYPES and (this->no_discard & (1u << Position)) != 0;
+   }
 };
 
 enum class StaticCallableSource : uint8_t {
@@ -105,7 +115,14 @@ struct StaticCallableDescriptor {
    StaticResultSetHandle results{};
    StaticBindingID binding_id{};
    StaticCallableSource source = StaticCallableSource::TiriFunction;
+   StaticResultObligations no_discard = 0; // Declared @NoDiscard positions; survives result-set refreshes
    bool immutable = false;
+};
+
+struct StaticImportNamespace {
+   const InstalledImportInterface *installed = nullptr;
+   ImportedModuleUnit *module = nullptr; // Source-compiled module when no installed interface is available
+   const std::string *name = nullptr;
 };
 
 struct StaticBindingDescriptor {
@@ -116,9 +133,7 @@ struct StaticBindingDescriptor {
    StaticValueHandle analysed_value{};
    StaticCallableHandle callable{};
    StaticBindingID alias_of{};
-   const InstalledImportInterface *import_interface = nullptr;
-   ImportedModuleUnit *import_module = nullptr; // Source-compiled module supplying the namespace when not installed
-   const std::string *import_namespace = nullptr;
+   std::vector<StaticImportNamespace> import_namespaces;
    uint8_t result_position = 0;
    uint16_t function_depth = 0;
    bool immutable = true;

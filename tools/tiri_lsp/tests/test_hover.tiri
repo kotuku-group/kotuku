@@ -521,3 +521,13 @@ end
    hover = hoverAt("local t = {}\nt.{\n   f = function(A:num):num return A + 1 end\n}\nt.|f(1)\n")
    assertContains(hover, 't.f(A: num):num', 'A function assigned in a field block should have a t.f signature.')
 end
+
+@Test function NoDiscardContractAppearsInHover()
+   local hover = hoverAt('@NoDiscard function create():table return {} end\nlocal value = cre|ate()\n')
+   assertContains(hover, '`@NoDiscard`', 'Function hover must expose the storage contract')
+   assertContains(hover, 'store the first result', 'Function hover must explain what the annotation requires')
+   assertContains(hover, 'or pass it to a function', 'Function hover must describe accepted argument passing')
+
+   hover = hoverAt('function create():table return {} end\nlocal value = cre|ate()\n')
+   assert(not hover.find('@NoDiscard'), 'Unannotated functions must not acquire a contract in hover')
+end

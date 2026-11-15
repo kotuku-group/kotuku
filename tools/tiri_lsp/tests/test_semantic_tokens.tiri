@@ -950,3 +950,23 @@ end
    pending = findToken(tokens, 3, 6, 'call')
    assert(pending and pending.type is 3, 'An incomplete optional call should still be tokenised while typing.')
 end
+
+@Test function ImportedNoDiscardCallsReportEditorErrors()
+   local result:table = computeDiagnostics(makeDoc("import 'gui/slider'\ngui.slider({})\n"))
+   assert(#result.diagnostics is 1, 'The discarded imported slider must produce one editor diagnostic')
+   local diagnostic = result.diagnostics[0]
+   assert(diagnostic.code is 'NoDiscard' and diagnostic.severity is 1,
+      'The editor must preserve the NoDiscard error code and severity')
+   assert(diagnostic.range.start.line is 1, 'The editor must identify the imported call line')
+   assert(diagnostic.message.find('gui.slider') != nil, 'The editor must identify the constructor')
+
+   result = computeDiagnostics(makeDoc("import 'gui/slider'\nlocal owner = { slider=gui.slider({}) }\n"))
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.severity != 1, 'Retained widgets must validate without executing the constructor')
+   end
+   result = computeDiagnostics(makeDoc("import 'gui/slider'\nlocal widgets = array<table>\n" ..
+      'widgets.push(gui.slider({}))\n'))
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.severity != 1, 'Passed widgets must validate without executing the constructor')
+   end
+end

@@ -49,6 +49,7 @@
 #include "type_checker.h"
 #include "parser.h"
 #include "static_descriptor_analysis.h"
+#include "no_discard_analysis.h"
 #include "table_ownership.h"
 #include "ir_emitter/ir_emitter.h"
 #include "../runtime/lj_array.h"
@@ -1281,6 +1282,259 @@ static bool test_immutable_global_contract_analysis(kt::Log &Log)
       Log.error("a reduced declaration discarded the established parser flow contract: %s", reduced.c_str());
       return false;
    }
+   return true;
+}
+
+//********************************************************************************************************************
+// @NoDiscard is normalised to a result-position mask and published through callable and result descriptors.  The
+// contract must survive aliases and result filters, must not follow a reassigned binding, and must not depend on
+// optional type analysis.
+
+static bool test_no_discard_descriptor_publication(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "@NoDiscard local function make():<table, num> return {}, 1 end\n"
+      "local alias = make\n"
+      "local a = make()\n"
+      "local b = alias()\n"
+      "local c = [_*]make()\n"
+      "local d = [*_]make()\n"
+      "local function plain() return {} end\n"
+      "local e = plain()\n"
+      "local changing = make\n"
+      "changing = plain\n"
+      "local f = changing()\n"
+      "@NoDiscard local function inferred() return {} end\n"
+      "local g = inferred()\n"
+      "@NoDiscard global function glNoDiscardDeclared():table return {} end\n"
+      "local h = glNoDiscardDeclared()\n"
+      "@NoDiscard global glNoDiscardAssigned = function():table return {} end\n"
+      "local i = glNoDiscardAssigned()\n"
+      "@NoDiscard global function glNoDiscardChanging():table return {} end\n"
+      "glNoDiscardChanging = plain\n"
+      "local j = glNoDiscardChanging()\n";
+
+   for (bool type_analysis : { true, false }) {
+      LuaStateHolder state;
+      lua_State *L = state.get();
+      StringReaderCtx reader{ source.data(), source.size() };
+      LexState lex(L, unit_reader, &reader, "no-discard-publication", std::nullopt);
+      FuncState &fs = lex.fs_init();
+      ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
+      ParserConfig config;
+      config.abort_on_error = false;
+      config.max_diagnostics = 32;
+      config.enable_type_analysis = type_analysis;
+      ParserSession session(context, config);
+      lex.next();
+      AstBuilder builder(context);
+      auto chunk = builder.parse_chunk();
+      if (not chunk.ok()) {
+         Log.error("@NoDiscard publication fixture did not parse");
+         log_diagnostics(context.diagnostics().entries(), Log);
+         return false;
+      }
+
+      resolve_assignment_targets(context, *chunk.value_ref());
+      discover_static_bindings(context, *chunk.value_ref());
+      propagate_static_descriptors(context, *chunk.value_ref());
+      if (type_analysis) run_type_analysis(context, *chunk.value_ref());
+      propagate_static_descriptors(context, *chunk.value_ref());
+      if (context.diagnostics().has_errors()) {
+         Log.error("@NoDiscard publication fixture produced errors (type analysis %s)", type_analysis ? "on" : "off");
+         log_diagnostics(context.diagnostics().entries(), Log);
+         return false;
+      }
+
+      const auto &statements = chunk.value_ref()->statements;
+      auto local_value = [&](size_t Index) -> const ExprNode * {
+         if (Index >= statements.size()) return nullptr;
+         const auto *statement = std::get_if<LocalDeclStmtPayload>(&statements[Index]->data);
+         if (not statement or statement->values.empty()) return nullptr;
+         return statement->values.front().get();
+      };
+      auto result_mask = [&](size_t Index) -> int {
+         const ExprNode *value = local_value(Index);
+         if (not value or not value->static_results) return -1;
+         return context.descriptors().results(value->static_results).no_discard;
+      };
+      auto callable_mask = [&](size_t Index) -> int {
+         const ExprNode *value = local_value(Index);
+         const auto *call = value ? std::get_if<CallExprPayload>(&value->data) : nullptr;
+         if (not call or not call->callable) return -1;
+         return context.descriptors().callable(call->callable).no_discard;
+      };
+
+      const auto *declaration = std::get_if<LocalFunctionStmtPayload>(&statements[0]->data);
+      if (not declaration or not declaration->function or declaration->function->no_discard_results != 1 or
+          not declaration->function->no_discard_at(0) or declaration->function->no_discard_at(1)) {
+         Log.error("@NoDiscard was not normalised to result position one");
+         return false;
+      }
+
+      if (callable_mask(2) != 1 or result_mask(2) != 1 or callable_mask(3) != 1 or result_mask(3) != 1) {
+         Log.error("@NoDiscard did not reach direct and aliased calls (type analysis %s): %d %d %d %d",
+            type_analysis ? "on" : "off", callable_mask(2), result_mask(2), callable_mask(3), result_mask(3));
+         return false;
+      }
+
+      if (result_mask(4) != 0 or result_mask(5) != 1) {
+         Log.error("result filters did not remap @NoDiscard positions: [_*]=%d [*_]=%d",
+            result_mask(4), result_mask(5));
+         return false;
+      }
+
+      if (callable_mask(7) > 0 or result_mask(7) > 0) {
+         Log.error("an unannotated function acquired a @NoDiscard contract");
+         return false;
+      }
+
+      if (callable_mask(10) > 0 or result_mask(10) > 0) {
+         Log.error("a reassigned binding retained the previous function's @NoDiscard contract");
+         return false;
+      }
+
+      if (callable_mask(12) != 1 or result_mask(12) != 1) {
+         Log.error("@NoDiscard was lost for an inferred signature (type analysis %s): %d %d",
+            type_analysis ? "on" : "off", callable_mask(12), result_mask(12));
+         return false;
+      }
+
+      for (size_t index : { size_t(14), size_t(16) }) {
+         if (callable_mask(index) != 1 or result_mask(index) != 1) {
+            Log.error("@NoDiscard was lost for a direct global (type analysis %s): %d %d",
+               type_analysis ? "on" : "off", callable_mask(index), result_mask(index));
+            return false;
+         }
+      }
+
+      if (callable_mask(19) > 0 or result_mask(19) > 0) {
+         Log.error("a reassigned global retained its previous @NoDiscard contract");
+         return false;
+      }
+
+      // Optional type analysis has no public Flute switch.  Exercise the mandatory consumption pass here with
+      // either setting: [_*]make() is the fixture's sole invalid use, and repeated validation must not duplicate it.
+      validate_no_discard_results(context, *chunk.value_ref());
+      validate_no_discard_results(context, *chunk.value_ref());
+      auto diagnostics = context.diagnostics().entries();
+      if (diagnostics.size() != 1 or diagnostics[0].code != ParserErrorCode::NoDiscard or
+          diagnostics[0].message.find("result filter") IS std::string::npos) {
+         Log.error("@NoDiscard consumption failed (type analysis %s)", type_analysis ? "on" : "off");
+         log_diagnostics(diagnostics, Log);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Imported @NoDiscard contracts must reach importer call descriptors whether the module is compiled from source or
+// installed from its portable interface, and must survive a re-export of a nested module's global function.  The
+// source path is forced by SCF::PROCESS_DOC, which disables the import cache; executing the imports then activates
+// the modules so that later parses install their portable interfaces.
+
+static bool test_no_discard_import_publication(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   if (not L) return false;
+   luaL_openlibs(L);
+
+   // Parses Source through static descriptor propagation.  Each statement after the import declares one local from
+   // a call; Expected lists the @NoDiscard mask required of each call, where 0 means no contract.
+
+   auto check = [&](std::string_view Source, const char *Label, bool ForceSource, std::vector<int> Expected) -> bool {
+      SCF old_flags = L->script->Flags;
+      if (ForceSource) L->script->Flags |= SCF::PROCESS_DOC;
+
+      StringReaderCtx reader{ Source.data(), Source.size() };
+      LexState lex(L, unit_reader, &reader, "no-discard-import", std::nullopt);
+      FuncState &fs = lex.fs_init();
+      ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
+      ParserConfig config;
+      config.abort_on_error = false;
+      config.max_diagnostics = 32;
+      ParserSession session(context, config);
+      lex.next();
+      AstBuilder builder(context);
+      auto chunk = builder.parse_chunk();
+      L->script->Flags = old_flags;
+      if (not chunk.ok()) {
+         Log.error("%s: fixture did not parse: %s", Label, chunk.error_ref().message.c_str());
+         return false;
+      }
+
+      const auto &statements = chunk.value_ref()->statements;
+      const auto *import = statements.empty() ? nullptr : std::get_if<ImportStmtPayload>(&statements[0]->data);
+      if (not import or import->entries.empty() or not import->entries[0].module_unit) {
+         Log.error("%s: the fixture did not produce an imported module unit", Label);
+         return false;
+      }
+
+      // The source path must not have an installed interface, otherwise this test would not distinguish the paths.
+
+      bool installed = bool(import->entries[0].module_unit->installed_interface);
+      if (installed IS ForceSource) {
+         Log.error("%s: expected the %s path", Label, ForceSource ? "source" : "installed-interface");
+         return false;
+      }
+
+      resolve_assignment_targets(context, *chunk.value_ref());
+      discover_static_bindings(context, *chunk.value_ref());
+      propagate_static_descriptors(context, *chunk.value_ref());
+      run_type_analysis(context, *chunk.value_ref());
+      propagate_static_descriptors(context, *chunk.value_ref());
+      if (context.diagnostics().has_errors()) {
+         Log.error("%s: fixture produced errors", Label);
+         log_diagnostics(context.diagnostics().entries(), Log);
+         return false;
+      }
+
+      for (size_t i = 0; i < Expected.size(); ++i) {
+         const auto *local = i + 1 < statements.size() ?
+            std::get_if<LocalDeclStmtPayload>(&statements[i + 1]->data) : nullptr;
+         const ExprNode *value = local and not local->values.empty() ? local->values.front().get() : nullptr;
+         const auto *call = value ? std::get_if<CallExprPayload>(&value->data) : nullptr;
+         if (not call) {
+            Log.error("%s: statement %d is not a local call declaration", Label, int(i + 1));
+            return false;
+         }
+         int callable = call->callable ? context.descriptors().callable(call->callable).no_discard : 0;
+         int results = value->static_results ? context.descriptors().results(value->static_results).no_discard : 0;
+         if (callable != Expected[i] or results != Expected[i]) {
+            Log.error("%s: call %d expected @NoDiscard mask %d, got callable=%d results=%d", Label, int(i + 1),
+               Expected[i], callable, results);
+            return false;
+         }
+      }
+      return true;
+   };
+
+   constexpr std::string_view direct =
+      "import 'tests/no-discard'\n"
+      "local a = no_discard.make()\n"
+      "local b = no_discard.inferred()\n"
+      "local c = no_discard.plain()\n"
+      "local d = nd_global_make()\n"
+      "local e = no_discard?.make()\n"
+      "local f = no_discard?.inferred()\n";
+   constexpr std::string_view reexport =
+      "import 'tests/no-discard-reexport'\n"
+      "local d = nd_global_make()\n";
+
+   if (not check(direct, "source import", true, { 1, 1, 0, 1, 1, 1 })) return false;
+   if (not check(reexport, "source re-export", true, { 1 })) return false;
+
+   if (lua_load(L, direct, "no-discard-activate") or lua_pcall(L, 0, 0, 0) or
+       lua_load(L, reexport, "no-discard-activate-reexport") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("the @NoDiscard import fixtures did not execute: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   if (not check(direct, "installed import", false, { 1, 1, 0, 1, 1, 1 })) return false;
+   if (not check(reexport, "installed re-export", false, { 1 })) return false;
    return true;
 }
 
@@ -13112,7 +13366,7 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 116> tests = { {
+   constexpr std::array<TestCase, 118> tests = { {
       { "nested_function_failure_after_bytecode_growth", test_nested_function_failure_after_bytecode_growth },
       { "ordinary_function_policy", test_ordinary_function_policy },
       { "function_context_binding_syntax", test_function_context_binding_syntax },
@@ -13143,6 +13397,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "global_callable_contract_without_type_analysis", test_global_callable_contract_without_type_analysis },
       { "immutable_global_contract_analysis", test_immutable_global_contract_analysis },
+      { "no_discard_descriptor_publication", test_no_discard_descriptor_publication },
+      { "no_discard_import_publication", test_no_discard_import_publication },
       { "loop_ast", test_loop_ast },
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "field_assignment_block_lowering", test_field_assignment_block_lowering },

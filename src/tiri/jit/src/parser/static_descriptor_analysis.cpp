@@ -55,7 +55,9 @@ public:
    {
       this->scopes_.clear();
       this->global_names_.clear();
+      this->global_functions_.clear();
       this->interface_globals_.clear();
+      this->source_import_units_.clear();
       this->scopes_.push_back(BindingScope{});
       this->discover_block(Module, false);
       this->resolve_all_callables();
@@ -213,6 +215,9 @@ private:
             this->report_binding_invariant(Reference.identifier,
                "non-lexical assignment target unexpectedly has a published binding");
          }
+         if (not this->validation_only_ and category IS AssignmentTargetResolution::ExistingGlobal) {
+            this->global_functions_[Reference.identifier.symbol] = nullptr;
+         }
          return;
       }
 
@@ -268,6 +273,21 @@ private:
       this->report_diagnostic(diagnostic);
    }
 
+   // Reports an invalid @NoDiscard declaration once, even when discovery is repeated for the same function.
+
+   void report_no_discard_declaration(const FunctionExprPayload &Function, std::string Message)
+   {
+      if (Function.no_discard_reported) return;
+      Function.no_discard_reported = true;
+
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::NoDiscard;
+      diagnostic.message = std::move(Message);
+      diagnostic.token = Token::from_span(Function.no_discard_span, TokenKind::Annotate);
+      this->report_diagnostic(diagnostic);
+   }
+
    // Decision D3: a weak context binding is defeated if the function body, or any function nested in it, refers to
    // the bound identifier, because the upvalue retains the target strongly.  Member and index references are not
    // checked.  Uses are recorded by note_binding_use() while the body is discovered.
@@ -299,12 +319,20 @@ private:
 
       this->function_depth_++;
       this->scopes_.push_back(BindingScope{});
+      this->result_supply_.push_back(false);
       for (auto &parameter : Function.parameters) {
          this->declare(parameter.name, nullptr, 0, nullptr, true);
       }
       if (Function.body) this->discover_block(*Function.body, false);
+      bool supplies_result = this->result_supply_.back();
+      this->result_supply_.pop_back();
       this->scopes_.pop_back();
       this->function_depth_--;
+
+      if (Function.no_discard_at(0) and not supplies_result and not this->validation_only_) {
+         this->report_no_discard_declaration(Function,
+            "@NoDiscard function never returns a value; it must supply a first result for the caller to store");
+      }
 
       if (weak_binding) {
          WeakBindingCheck check = this->weak_binding_checks_.back();
@@ -324,7 +352,9 @@ private:
       std::vector<BindingScope> importer_scopes = std::move(this->scopes_);
       this->function_depth_++;
       this->scopes_.push_back(BindingScope{});
+      this->result_supply_.push_back(false);
       this->discover_block(Body, false);
+      this->result_supply_.pop_back();
       this->scopes_ = std::move(importer_scopes);
       this->function_depth_--;
    }
@@ -472,6 +502,16 @@ private:
       if (NewScope) this->scopes_.pop_back();
    }
 
+   // Global storage has no lexical binding ID.  Retain a single direct definition separately; any other write or
+   // redeclaration makes its identity uncertain, including writes discovered before the declaration.
+
+   void declare_global_callable(GCstr *Name, const FunctionExprPayload *Function)
+   {
+      if (not Name or this->validation_only_) return;
+      auto [entry, inserted] = this->global_functions_.try_emplace(Name, Function);
+      if (not inserted) entry->second = nullptr;
+   }
+
    void validate_unreachable_expression(ExprNode &Expression)
    {
       StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
@@ -538,8 +578,15 @@ private:
          case AstNodeKind::GlobalDeclStmt: {
             auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->discover_expression(*value);
-            for (auto &name : payload.names) {
+            for (size_t i = 0; i < payload.names.size(); ++i) {
+               auto &name = payload.names[i];
                if (name.symbol) this->global_names_.push_back(name.symbol);
+               const FunctionExprPayload *function = nullptr;
+               if (payload.op IS AssignmentOperator::Plain and i < payload.values.size() and payload.values[i] and
+                   payload.values[i]->kind IS AstNodeKind::FunctionExpr) {
+                  function = &std::get<FunctionExprPayload>(payload.values[i]->data);
+               }
+               if (not name.is_blank) this->declare_global_callable(name.symbol, function);
             }
             break;
          }
@@ -563,6 +610,9 @@ private:
             else if (payload.name.is_explicit_global and not payload.name.segments.empty() and
                      payload.name.segments.front().symbol) {
                this->global_names_.push_back(payload.name.segments.front().symbol);
+               if (payload.name.segments.size() IS 1) {
+                  this->declare_global_callable(payload.name.segments.front().symbol, payload.function.get());
+               }
             }
             else if (not payload.name.segments.empty() and payload.name.segments.front().binding_id and
                      not this->validation_only_) {
@@ -645,9 +695,13 @@ private:
             break;
          }
          case AstNodeKind::ReturnStmt: {
-            for (auto &value : std::get<ReturnStmtPayload>(Statement.data).values) {
+            auto &payload = std::get<ReturnStmtPayload>(Statement.data);
+            for (auto &value : payload.values) {
                if (value) this->discover_expression(*value);
             }
+            // A value-bearing return may supply a first result.  A multiple-result call or '...' is not proved
+            // empty, so it counts as supplying one.
+            if (not payload.values.empty() and not this->result_supply_.empty()) this->result_supply_.back() = true;
             break;
          }
          case AstNodeKind::DeferStmt: {
@@ -727,6 +781,7 @@ private:
                      this->interface_globals_[name] = { installed.get(), &exported };
                   }
                }
+               else if (entry.module_unit and body) this->source_import_units_.push_back(entry.module_unit.get());
                if (entry.namespace_name) {
                   const ExprNode *initialiser = nullptr;
                   const FunctionExprPayload *function = nullptr;
@@ -748,9 +803,10 @@ private:
 
                   if (binding_id and entry.module_unit) {
                      auto &binding = this->catalogue_.binding(binding_id);
-                     binding.import_interface = installed.get();
-                     binding.import_module = installed ? nullptr : entry.module_unit.get();
-                     binding.import_namespace = &entry.default_namespace;
+                     // Several packages may extend one namespace.  Retain every contributor so an unrelated later
+                     // import cannot erase an earlier member's callable contract.
+                     binding.import_namespaces.push_back({ installed.get(),
+                        installed ? nullptr : entry.module_unit.get(), &entry.default_namespace });
                      binding.is_import_namespace = true;
                      if (installed) {
                         if (const auto *exported = installed->find_export(entry.default_namespace)) {
@@ -796,6 +852,7 @@ private:
       results.stored_count = uint8_t(std::min<size_t>(Function.return_types.count, MAX_RETURN_TYPES));
       results.variadic = Function.return_types.is_variadic;
       results.dynamic = not Function.return_types.is_explicit and not Function.return_types.is_inferred;
+      results.no_discard = Function.no_discard_results;
       for (size_t i = 0; i < results.stored_count; ++i) {
          StaticValueDescriptor value = this->catalogue_.value(Function.return_types.descriptors[i]);
          value.primary = Function.return_types.types[i];
@@ -826,6 +883,7 @@ private:
       callable.function = &Function;
       callable.results = results;
       callable.binding_id = Binding;
+      callable.no_discard = Function.no_discard_results;
       callable.immutable = true;
       mutable_function.callable = this->catalogue_.add_callable(callable);
       return mutable_function.callable;
@@ -901,30 +959,53 @@ private:
       if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
          const auto &reference = std::get<NameRef>(direct->callable->data);
          if (reference.binding_id or not reference.identifier.symbol) return;
+         const FunctionExprPayload *function = nullptr;
          auto imported = this->interface_globals_.find(reference.identifier.symbol);
-         if (imported IS this->interface_globals_.end()) return;
-         const FunctionExprPayload *function = imported->second.first->callable(*imported->second.second);
+         if (imported != this->interface_globals_.end()) {
+            function = imported->second.first->callable(*imported->second.second);
+         }
+         else {
+            // Later imports take precedence, as they do for installed interface globals.
+            GCstr *name = reference.identifier.symbol;
+            for (auto unit = this->source_import_units_.rbegin(); unit != this->source_import_units_.rend(); ++unit) {
+               function = source_module_global(this->context_, **unit, std::string_view(strdata(name), name->len));
+               if (function) break;
+            }
+         }
          if (function) Call.callable = this->function_callable(*function);
          return;
       }
-      if (direct->callable->kind != AstNodeKind::MemberExpr) return;
-      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
-      if (not member.table or member.table->kind != AstNodeKind::IdentifierExpr or not member.member.symbol) return;
-      const auto &base = std::get<NameRef>(member.table->data);
+      const ExprNode *receiver = nullptr;
+      GCstr *member = nullptr;
+      if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+         const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
+         receiver = payload.table.get();
+         member = payload.member.symbol;
+      }
+      else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+         const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
+         receiver = payload.table.get();
+         member = payload.member.symbol;
+      }
+      if (not receiver or receiver->kind != AstNodeKind::IdentifierExpr or not member) return;
+      const auto &base = std::get<NameRef>(receiver->data);
       if (not base.binding_id) return;
       const auto &binding = this->catalogue_.binding(base.binding_id);
-      if (not binding.import_namespace) return;
-      std::string_view member_name(strdata(member.member.symbol), member.member.symbol->len);
-      const FunctionExprPayload *function = nullptr;
-      if (binding.import_interface) {
-         const auto *exported = binding.import_interface->find_member(*binding.import_namespace, member_name);
-         function = exported ? binding.import_interface->callable(*exported) : nullptr;
+      std::string_view member_name(strdata(member), member->len);
+      for (auto source = binding.import_namespaces.rbegin(); source != binding.import_namespaces.rend(); ++source) {
+         const FunctionExprPayload *function = nullptr;
+         if (source->installed) {
+            const auto *exported = source->installed->find_member(*source->name, member_name);
+            if (not exported) continue;
+            function = source->installed->callable(*exported);
+         }
+         else if (source->module) {
+            function = source_module_member(this->context_, *source->module, *source->name, member_name);
+            if (not function) continue;
+         }
+         if (function) Call.callable = this->function_callable(*function);
+         break;
       }
-      else if (binding.import_module) {
-         function = source_module_member(this->context_, *binding.import_module, *binding.import_namespace,
-            member_name);
-      }
-      if (function) Call.callable = this->function_callable(*function);
    }
 
    void annotate_call(CallExprPayload &Call)
@@ -937,6 +1018,13 @@ private:
             const auto &reference = std::get<NameRef>(direct->callable->data);
             StaticCallableHandle resolved = this->resolve_binding_callable(reference.binding_id);
             if (resolved) Call.callable = resolved;
+            else if (not reference.binding_id) {
+               auto global = this->global_functions_.find(reference.identifier.symbol);
+               if (global != this->global_functions_.end()) {
+                  Call.callable = global->second ? this->function_callable(*global->second) : StaticCallableHandle{};
+                  Call.results = {};
+               }
+            }
          }
       }
       if (Call.callable) Call.results = this->catalogue_.callable(Call.callable).results;
@@ -1440,6 +1528,11 @@ private:
 
    void annotate_callables_expression(ExprNode &Expression)
    {
+      if (Expression.kind IS AstNodeKind::FunctionExpr) {
+         auto &function = std::get<FunctionExprPayload>(Expression.data);
+         if (function.context.reference) this->annotate_callables_expression(*function.context.reference);
+         if (function.body) this->annotate_callables_block(*function.body);
+      }
       this->walk_expression_children(Expression, [this](ExprNode &Child) {
          this->annotate_callables_expression(Child);
       });
@@ -2325,12 +2418,17 @@ private:
                   const auto &reference = std::get<NameRef>(base->data);
                   if (reference.binding_id) {
                      const auto &binding = this->catalogue_.binding(reference.binding_id);
-                     if (binding.import_interface and binding.import_namespace) {
-                        std::string_view member_name(strdata(member), member->len);
-                        if (const auto *exported = binding.import_interface->find_member(
-                            *binding.import_namespace, member_name)) {
-                           value = binding.import_interface->static_value(exported->Value);
+                     std::string_view member_name(strdata(member), member->len);
+                     for (auto source = binding.import_namespaces.rbegin();
+                          source != binding.import_namespaces.rend(); ++source) {
+                        if (source->installed) {
+                           if (const auto *exported = source->installed->find_member(*source->name, member_name)) {
+                              value = source->installed->static_value(exported->Value);
+                              break;
+                           }
                         }
+                        else if (source->module and
+                            source_module_member(this->context_, *source->module, *source->name, member_name)) break;
                      }
                   }
                }
@@ -2546,6 +2644,7 @@ private:
       StaticResultSet inferred;
       bool have_return = false;
       if (Function.body) this->collect_return_descriptors(*Function.body, inferred, have_return);
+      inferred.no_discard = Function.no_discard_results;
       if (have_return) {
          if (Function.return_types.is_explicit or Function.return_types.is_inferred) {
             inferred.declared_count = Function.return_types.count;
@@ -2918,6 +3017,7 @@ private:
                visit(c.pattern);
                for (auto &v : c.tuple_patterns) visit(v);
                visit(c.guard); visit(c.result);
+               if (c.result_stmt) this->walk_statement_expressions(*c.result_stmt, Visit);
             }
             break;
          }
@@ -2969,9 +3069,12 @@ private:
          case AstNodeKind::DeferStmt:
             for (auto &v : std::get<DeferStmtPayload>(Statement.data).arguments) visit(v);
             break;
-         case AstNodeKind::ConditionalShorthandStmt:
-            visit(std::get<ConditionalShorthandStmtPayload>(Statement.data).condition);
+         case AstNodeKind::ConditionalShorthandStmt: {
+            auto &payload = std::get<ConditionalShorthandStmtPayload>(Statement.data);
+            visit(payload.condition);
+            if (payload.body) this->walk_statement_expressions(*payload.body, Visit);
             break;
+         }
          case AstNodeKind::TryExceptStmt:
             for (auto &c : std::get<TryExceptPayload>(Statement.data).except_clauses) {
                for (auto &v : c.filter_codes) visit(v);
@@ -3076,8 +3179,10 @@ private:
    std::vector<BindingScope> scopes_;
    std::vector<std::pair<GCstr *, StaticValueHandle>> global_values_;
    std::vector<GCstr *> global_names_;
+   std::unordered_map<GCstr *, const FunctionExprPayload *> global_functions_;
    std::unordered_map<GCstr *, std::pair<const InstalledImportInterface *,
       const tiri::import_cache::ExportDescriptor *>> interface_globals_;
+   std::vector<ImportedModuleUnit *> source_import_units_; // Imported modules compiled from source, in import order
    struct WeakBindingCheck {
       StaticBindingID binding;
       SourceSpan use{};
@@ -3085,6 +3190,7 @@ private:
    };
 
    std::vector<WeakBindingCheck> weak_binding_checks_;
+   std::vector<bool> result_supply_; // Per discovered function: true once a return statement supplies a value
    const BlockStmt *enclosing_body_ = nullptr;
    uint16_t function_depth_ = 0;
    bool native_calls_only_ = false;

@@ -307,6 +307,7 @@ tiri::import_cache::CallableDescriptor portable_callable(const FunctionExprPaylo
    result.VariadicParameters = Function.is_vararg;
    result.VariadicResults    = Function.return_types.is_variadic;
    result.DeclaredResults    = Function.return_types.count;
+   result.NoDiscardResults   = Function.no_discard_results;
 
    for (size_t i = 0; i < Function.parameters.size(); ++i) {
       const auto &parameter = Function.parameters[i];
@@ -811,5 +812,21 @@ const FunctionExprPayload * source_module_member(ParserContext &Context, Importe
    const SourceModuleExports *exports = SourceExportCollector::source_module_exports(Context, Unit);
    if (not exports or not exports->namespaces.contains(std::string(Namespace))) return nullptr;
    auto found = exports->exports.find(std::format("{}.{}", Namespace, Member));
+   return found IS exports->exports.end() ? nullptr : found->second;
+}
+
+//********************************************************************************************************************
+// Resolves a global call target exported by a module that was compiled from source in this compilation.  Dotted names
+// and namespaces are excluded, matching the global bindings published from an installed interface.
+
+const FunctionExprPayload * source_module_global(ParserContext &Context, ImportedModuleUnit &Unit,
+   std::string_view Name)
+{
+   if (Name.find('.') != std::string_view::npos) return nullptr;
+   const SourceModuleExports *exports = SourceExportCollector::source_module_exports(Context, Unit);
+   if (not exports) return nullptr;
+   std::string key(Name);
+   if (exports->namespaces.contains(key)) return nullptr;
+   auto found = exports->exports.find(key);
    return found IS exports->exports.end() ? nullptr : found->second;
 }
