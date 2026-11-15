@@ -356,10 +356,6 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
 
 void end_cursor_drag(extPointer *Self, bool Unsubscribe)
 {
-#ifndef _WIN32
-   cancel_host_export(Self);
-#endif
-
    if (Self->DragSurface) {
       kt::ScopedObjectLock surface(Self->DragSurface);
       if (surface.granted()) acHide(*surface);
@@ -387,6 +383,12 @@ void end_cursor_drag(extPointer *Self, bool Unsubscribe)
    Self->DragData.fill(0);
    Self->DragFeedback = -1;
    Self->NativeDrag = false;
+
+#ifndef _WIN32
+   // A driver may synthesise a button release during cancellation.  Clear the session first so that the release
+   // cannot deliver a drop for the cancelled drag.
+   cancel_host_export(Self);
+#endif
 
    // A final drag event clears destination feedback even if the pointer does not move after cancellation.
    InputEvent event = {};

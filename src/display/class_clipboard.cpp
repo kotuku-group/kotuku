@@ -775,8 +775,8 @@ destination accepted the data or completed a transfer; any data requests made by
 reached the #RequestHandler.
 
 The pointer's drag session is clear when the callback runs.  No notification is sent if the clipboard is freed while
-the operation is active.  On X11, a drop on another application is reported when the recipient confirms it, which can
-be after a new drag operation has started.  Use `Item` to tell the operations apart.
+the operation is active.  On X11 and Wayland, a drop on another application is reported when the recipient confirms
+it, which can be after a new drag operation has started.  Use `Item` to tell the operations apart.
 
 -FIELD-
 Flags: Optional clipboard behaviour flags.

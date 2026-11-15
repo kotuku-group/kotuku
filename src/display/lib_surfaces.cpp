@@ -458,10 +458,12 @@ void DriverDragExportEnded(bool) { }
 #else
 
 //********************************************************************************************************************
-// Outbound native dragging for hosts without a modal drag loop, such as X11.  The driver follows the pointer and
-// speaks the native protocol while the internal session continues unchanged, so a drag that returns to one of our
-// windows needs no special handling.  The session is handed to the driver when the pointer first leaves all of our
-// windows with the primary button held, and the payload is requested from the source once, at that point.
+// Outbound native dragging for hosts without a modal drag loop, such as X11 and Wayland.  The driver follows the
+// pointer and speaks the native protocol while the internal session continues unchanged, so a drag that returns to one
+// of our windows needs no special handling.  A Wayland compositor runs the drag itself; its driver reports hover over
+// our windows as ordinary movement and synthesises the release that the compositor consumes.  The session is handed
+// to the driver when the pointer first leaves all of our windows with the primary button held, and the payload is
+// requested from the source once, at that point.
 //
 // A release over our own window is delivered by the ordinary internal path.  A release over another application ends
 // the internal session at once, so that a new drag can start, but its single notification is deferred until the

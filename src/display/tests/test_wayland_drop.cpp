@@ -83,6 +83,12 @@ int main()
       if (glSnapshotsCreated != glSnapshotsReleased) glFailures++;
       if (glFailures != before) std::fprintf(stderr, "Wayland drop case %d failed\n", int(test_case));
    }
+   for (auto test_case : { ExportCase::ForeignCopy, ExportCase::ForeignRefused, ExportCase::ForeignNoAction,
+         ExportCase::NoTarget, ExportCase::StartRefused, ExportCase::ReturnToOwn, ExportCase::StaleOwnOffer,
+         ExportCase::ForeignKotuku, ExportCase::TimeoutServed, ExportCase::TimeoutUnread, ExportCase::Cancel,
+         ExportCase::CancelGranted, ExportCase::ReleaseElsewhere, ExportCase::SourceEnded, ExportCase::Unavailable }) {
+      glFailures += wayland_export_test(test_case);
+   }
    destroy_display_driver(driver);
    if (glClipboardChanges) glFailures++;
    return glFailures ? 1 : 0;
