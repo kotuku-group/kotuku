@@ -5,18 +5,18 @@ Supershape Demonstration
 
    import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
 
-   local glWindow, glViewport, glShapeView, glShape
-   sliders = array<table>
+local glWindow, glViewport, glShapeView, glShape
 
-   glY     = 14
-   glMode  = 'Shape'
-   glCount = 5
+widgets = array<table>
+glY     = 14
+glMode  = 'Shape'
+glCount = 5
 
-   FILL_COLOUR <const> = '#65b5df'
+FILL_COLOUR <const> = '#65b5df'
 
-   MODS <const> = array<str> {
-      'None', 'exp(r)', 'log(r)', 'atan(r)', 'exp(1/r)', '1+cos(r)^2', 'sin(r)^2', '1+sin(r)^2', 'cos(r)^2'
-   }
+MODS <const> = array<str> {
+   'None', 'exp(r)', 'log(r)', 'atan(r)', 'exp(1/r)', '1+cos(r)^2', 'sin(r)^2', '1+sin(r)^2', 'cos(r)^2'
+}
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -49,7 +49,7 @@ function addSlider(Label:str, Value:num, Min:num, Max:num, Step:num, Apply:func)
       string   = string.format(caption_format, Label, Value)
    }, gui.getTheme(glViewport).window.text))
 
-   sliders.push(gui.slider({
+   gui.slider({
       target = glViewport, x = 16, y = glY + 20, width = 270, step = Step,
       min = Min, max = Max, value = Value,
       events = {
@@ -60,7 +60,7 @@ function addSlider(Label:str, Value:num, Min:num, Max:num, Step:num, Apply:func)
             redraw()
          end
       }
-   }))
+   })
    glY += 52
 end
 

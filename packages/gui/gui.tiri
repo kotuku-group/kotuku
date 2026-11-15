@@ -2690,7 +2690,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
-         text      = { fill = Palette.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
+         text      = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
@@ -2827,7 +2827,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
-         text      = { fill = Palette.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
+         text      = { fill = Palette.altText, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style, },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },

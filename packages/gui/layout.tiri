@@ -30,8 +30,10 @@ end
 gui.layout.fitText = function(Text:obj!, String:str!, MaxWidth:num!, Prefix:str, Suffix:str):bool
    Prefix ?= ''
    Suffix ?= ''
+
    Text.string = Prefix .. String .. Suffix
    if Text.textWidth <= MaxWidth then return true end
+
    cut = #String
    while cut > 0 do
       cut -= 1
@@ -39,6 +41,7 @@ gui.layout.fitText = function(Text:obj!, String:str!, MaxWidth:num!, Prefix:str,
       Text.string = f'{Prefix}{String.sub(0, cut).rtrim()}…{Suffix}'
       if Text.textWidth <= MaxWidth then return true end
    end
+
    return false
 end
 
@@ -158,9 +161,9 @@ gui.layout.label = function(Target:obj!, Options:table!):table
          name      = 'Label',
          x         = 0,
          y         = 0,
-         face      = gui.fonts.window.face,
-         fontSize  = string.format('%.2fpt', gui.fonts.window.size),
-         fontStyle = gui.fonts.window.style,
+         face      = gui.fonts.widget.face,
+         fontSize  = f'{gui.fonts.widget.size}pt',
+         fontStyle = gui.fonts.widget.style,
          string    = Options.string,
          lineLimit = 1
       }, Options.style))
