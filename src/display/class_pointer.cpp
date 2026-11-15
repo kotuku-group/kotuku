@@ -208,6 +208,12 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
 
    if (bi >= std::ssize(Self->ButtonClicks)) Self->ButtonClicks.resize(bi+1);
 
+   // Surface changes under a stationary pointer (show, hide, restacking, destruction) only refresh the over-object
+   // after the delayed refresh_pointer() timer.  A press must not wait for it, or it would be delivered to a surface
+   // that is no longer under the pointer.  Any crossing events are queued ahead of the press.
+
+   if (userinput.Value > 0) get_over_object(Self);
+
    if (userinput.Value <= 0) {
       // Button released.  Button releases are always reported relative to the object that received the original button press.
       // The surface immediately below the pointer does not receive any information about the release.
