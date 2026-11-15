@@ -71,7 +71,8 @@ end
 end
 
 @Test function ExplicitDimensionsIncludeLabel()
-   local surface <close>, slider = newSlider({ width=240, height=40, label='Resolution:', value=0.5 })
+   local surface <close>, slider = newSlider({ style='track', width=240, height=40, label='Resolution:',
+      value=0.5 })
    assert(slider.viewport.width is 240 and slider.viewport.height is 40,
       'Explicit dimensions must describe the whole labelled widget')
    assert(slider.trackVP.width is 240 - slider.prvLabel.size,
@@ -115,7 +116,7 @@ end
       assert(slider.viewport.x is 470 and slider.viewport.y is 300,
          'Anchored widgets must follow parent resizing')
 
-      local stretched = gui.slider({ target=slider.viewport.parent, orientation=orientation,
+      local stretched = gui.slider({ target=slider.viewport.parent, orientation=orientation, style='track',
          x=0, xOffset=0, y=10, yOffset=20, value=0.25,
          label=(orientation is 'horizontal') ? 'Resolution:' : nil
       })
@@ -142,7 +143,7 @@ end
 
 @Test function PercentageDimensionsResizeTrackAndThumb()
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
-      local surface <close>, slider = newSlider({ orientation=orientation, x='10%', y='10%',
+      local surface <close>, slider = newSlider({ orientation=orientation, style='track', x='10%', y='10%',
          width='50%', height='50%', value=0.5, label=(orientation is 'horizontal') ? 'Resolution:' : nil
       })
       assert(slider.viewport.width is 250 and slider.viewport.height is 150,
@@ -663,7 +664,7 @@ end
 @Test function ValuePositionsFollowRangeDirectionAndReserveOutsideSpace()
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       for position in values(array<str> { 'in-min', 'in-centre', 'in-max', 'out-min', 'out-centre', 'out-max' }) do
-         local surface <close>, slider = newSlider({ orientation=orientation, valuePos=position,
+         local surface <close>, slider = newSlider({ orientation=orientation, style='track', valuePos=position,
             x=0, xOffset=0, y=0, yOffset=0, label='Gain:', labelPos='left', value=0.5
          })
          slider.viewport.scene.bitmap = surface.buffer
@@ -823,7 +824,8 @@ end
    assert(slider.prvBarBkgd.height is slider.thickness and slider.viewport.height is slider.thickness,
       'The default breadth must match the track thickness')
 
-   local larger = gui.slider({ target=slider.viewport.parent, thickness=10, thumbSize='200%', value=1 })
+   local larger = gui.slider({ target=slider.viewport.parent, style='track', thickness=10, thumbSize='200%',
+      value=1 })
    assert(larger.prvThumbSize is 20 and larger.viewport.height is 20,
       'A percentage must size the thumb relative to the track and expand the default breadth')
    assert(larger.prvBarBkgd.height is 10 and larger.prvBarBkgd.y is 5 and larger.thumbVP.y is 0,
@@ -1339,7 +1341,7 @@ end
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       for gap in values(array<int> { default_gap, 6 }) do
          for size in values(array<double> { 0.5, 1, 2, 4, 5, 8, 18 }) do
-            local surface <close>, slider = newSlider({ orientation=orientation, thumbLength=size,
+            local surface <close>, slider = newSlider({ orientation=orientation, style='track', thumbLength=size,
                thumbSize=18, value=1, theme=(gap is default_gap) ? nil : { bkgd={ strokeWidth=gap } }
             })
             local thumb, button = slider.thumbVP, slider.button
@@ -1365,7 +1367,8 @@ end
 end
 
 @Test function ThumbLengthGivesRectangularThumb()
-   local surface <close>, slider = newSlider({ width=200, thickness=4, thumbSize=18, thumbLength=8, value=1 })
+   local surface <close>, slider = newSlider({ style='track', width=200, thickness=4, thumbSize=18, thumbLength=8,
+      value=1 })
    assert(slider.thumbVP.width is 8 and slider.thumbVP.height is 18,
       'A horizontal thumb must be thumbLength long and thumbSize broad')
    assert(slider.thumbVP.x is slider.trackVP.width - 8,
@@ -1377,7 +1380,7 @@ end
    feed(JET_LMB, 0, 0)
    assert(slider.value is 1 / 192, f'Track clicks must centre the thumb by its length, got {slider.value}')
 
-   local vertical = gui.slider({ target=slider.viewport.parent, orientation='vertical', thickness=4,
+   local vertical = gui.slider({ target=slider.viewport.parent, orientation='vertical', style='track', thickness=4,
       thumbSize='300%', thumbLength='150%', height=100, value=0
    })
    assert(vertical.thumbVP.width is 12 and vertical.thumbVP.height is 6,
@@ -1387,7 +1390,7 @@ end
 
    local raised = false
    try
-      gui.slider({ target=slider.viewport.parent, thumbLength=0 })
+      gui.slider({ target=slider.viewport.parent, style='track', thumbLength=0 })
    except
       raised = true
    end
@@ -1397,8 +1400,8 @@ end
 @Test function OverhangInsetsTrackToThumbCentre()
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       local vertical = orientation is 'vertical'
-      local surface <close>, slider = newSlider({ orientation=orientation, theme={ overhang=true }, min=0, max=10,
-         step=1, ticks=true, thickness=10, thumbSize=24, thumbLength=25, valuePos='in-min', value=0,
+      local surface <close>, slider = newSlider({ orientation=orientation, style='track', theme={ overhang=true }, min=0,
+         max=10, step=1, ticks=true, thickness=10, thumbSize=24, thumbLength=25, valuePos='in-min', value=0,
          width=vertical ? nil : 200, height=vertical ? 200 : nil
       })
 
@@ -1422,8 +1425,8 @@ end
 
       -- Inside text keeps the same distance from the track's minimum end as it does without overhang.
 
-      local plain = gui.slider({ target=slider.viewport.parent, orientation=orientation, min=0, max=10, step=1,
-         thickness=10, thumbSize=24, thumbLength=25, valuePos='in-min', value=0,
+      local plain = gui.slider({ target=slider.viewport.parent, orientation=orientation, style='track', min=0,
+         max=10, step=1, thickness=10, thumbSize=24, thumbLength=25, valuePos='in-min', value=0,
          width=vertical ? nil : 200, height=vertical ? 200 : nil
       })
       local plain_host = plain.trackVP
@@ -1449,13 +1452,13 @@ end
    assert(plain.thumbVP.x is 0, 'Without overhang the thumb must start within the track')
 end
 
--- An anchored thumb keeps its minimum end at the start of the track and grows with the value.  Dragging resizes the
+-- A slide thumb keeps its minimum end at the start of the track and grows with the value.  Dragging resizes the
 -- thumb rather than moving it, and the value follows the pointer as it does for a moving thumb.
 
 @Test function AnchoredThumbGrowsFromMinimum()
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       local vertical = orientation is 'vertical'
-      local surface <close>, slider = newSlider({ orientation=orientation, anchored=true, min=0, max=10, value=0,
+      local surface <close>, slider = newSlider({ orientation=orientation, style='slide', min=0, max=10, value=0,
          thickness=10, thumbSize=10, thumbLength=10, width=vertical ? nil : 210, height=vertical ? 210 : nil
       })
       local thumb, button, host = slider.thumbVP, slider.button, slider.trackVP
@@ -1508,7 +1511,7 @@ end
 
 @Test function SilentSetValueSkipsActivation()
    local hits = 0
-   local surface <close>, slider = newSlider({ value=0, events={ activate=function(Value) hits++ end } })
+   local surface <close>, slider = newSlider({ style='track', value=0, events={ activate=function(Value) hits++ end } })
    slider.setValue(0.75, true)
    assert(slider.value is 0.75 and hits is 0, 'A silent update must change the value without activation')
    assert(math.abs(slider.thumbVP.x - ((slider.trackVP.width - slider.prvThumbLength) * 0.75)) < 0.000001,
@@ -1629,14 +1632,14 @@ end
    local slider = gui.slider({ target=root, x=10, y=10, width=200, label='Level', valuePos='in-centre', step=0.1,
       ticks=true })
    local disabled = gui.slider({ target=root, x=10, y=60, width=200, disabled=true, ticks=true, step=0.25 })
-   local styled = gui.slider({ target=root, x=10, y=110, width=200, theme={ fore={ fill='#0000ff' } } })
+   local styled = gui.slider({ target=root, x=10, y=110, width=200, theme={ slideFill={ fill='#0000ff' } } })
    local track = { x=slider.prvBarBkgd.x, width=slider.prvBarBkgd.width }
    assert(slider.prvBarBkgd.fill is light.slider.bkgd.fill, 'The slider must start with the light theme')
    assert(styled.button.fill is '#0000ff', 'Options.theme must be applied')
 
    gui.broadcastTheme(scene, gui.setTheme(scene, 'dark'))
    assert(slider.prvBarBkgd.fill is dark.slider.bkgd.fill, 'The track must take the dark theme')
-   assert(slider.button.fill is dark.slider.fore.fill, 'The thumb must take the dark theme')
+   assert(slider.button.fill is dark.slider.slideFill.fill, 'The thumb must take the dark theme')
    assert(slider.labelText.fill is dark.slider.text.fill and slider.valueText.fill is dark.slider.text.fill,
       'The label and value must take the dark text fill')
    assert(table.size(slider.prvTickPaths) > 0, 'The slider must have ticks')
@@ -1652,7 +1655,7 @@ end
    assert(slider.prvBarBkgd.fill is '#040506', 'setTheme() must apply the per-instance override')
    gui.broadcastTheme(scene, gui.setTheme(scene, 'light'))
    assert(slider.prvBarBkgd.fill is '#040506', 'The override must survive the broadcast')
-   assert(slider.button.fill is light.slider.fore.fill, 'Values outside the override must follow the theme')
+   assert(slider.button.fill is light.slider.slideFill.fill, 'Values outside the override must follow the theme')
    slider.setTheme(nil)
    assert(slider.prvBarBkgd.fill is light.slider.bkgd.fill, 'setTheme(nil) must clear the override')
 end

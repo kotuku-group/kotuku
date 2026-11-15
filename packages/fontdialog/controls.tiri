@@ -208,6 +208,7 @@ fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:tab
    using Picker do
       row.slider = gui.slider({
          target    = Target,
+         style     = 'track',
          x         = x + label_w,
          y         = y + ((ROW_H - SLIDER_THUMB) * 0.5),
          width     = width - label_w - value_w - 6,

@@ -86,11 +86,8 @@ gui.slider = function(Options:table!)
       labelPos   = Options.labelPos ?? 'left',
       labelAlign = Options.labelAlign ?? 'left',
       labelWidth = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
-      thickness  = Options.thickness ?? DEFAULT_THICKNESS, -- Breadth of the track
-      thumbSize  = Options.thumbSize ? Options.thumbSize : '100%', -- Pixels or % of thickness
-      thumbLength = Options.thumbLength, -- Thumb size along the track in pixels or % of thickness; defaults to thumbSize
       increment  = Options.increment, -- Change per arrow key or wheel event; nil for the default
-      anchored   = Options.anchored is true, -- The thumb extends from the minimum end to the value
+      style      = Options.style is 'track' ? 'track' : 'slide', -- Options: track (knob) or slide (anchored)
       ticks      = Options.ticks, -- true, an interval, { major, minor } or an array of values
       tickPos    = Options.tickPos ?? 'end',
       events     = Options.events ?? { },
@@ -142,10 +139,17 @@ gui.slider = function(Options:table!)
          &events?.enable()
       end,
 
+      -- The thumb's style set for the slider's style: slideFill for the filled bar of a slide, or thumbFill for the
+      -- thumb that moves along a track.
+
+      prvFill = function():table
+         return ((&style is 'slide') ? &prvTheme.slideFill : &prvTheme.thumbFill) ?? { }
+      end,
+
       prvApplyStyle = function()
          theme = &prvTheme
          gui.applyStyle(&prvBarBkgd, table.merge({ opacity = 1 }, theme.bkgd))
-         gui.applyStyle(&button, theme.fore)
+         gui.applyStyle(&button, table.merge({ opacity = 1 }, &prvFill())) -- Undo any highlight opacity
 
          if &disabled then
             gui.applyStyle(&prvBarBkgd, theme.disabled)
@@ -614,7 +618,7 @@ gui.slider = function(Options:table!)
          if &orientation is 'V' then
             track = math.max(0, height - &prvThumbLength)
             &thumbVP.y = track - (fraction * track)
-            if &anchored then &thumbVP.height = &prvThumbLength + (fraction * track) end
+            if &style is 'slide' then &thumbVP.height = &prvThumbLength + (fraction * track) end
             &thumbVP.x = math.floor((width - &prvThumbSize) * 0.5)
             &prvBarBkgd.x = math.floor((width - &thickness) * 0.5)
 
@@ -624,7 +628,7 @@ gui.slider = function(Options:table!)
             end
          else
             travel = fraction * math.max(0, width - &prvThumbLength)
-            if &anchored then &thumbVP.width = &prvThumbLength + travel else &thumbVP.x = travel end
+            if &style is 'slide' then &thumbVP.width = &prvThumbLength + travel else &thumbVP.x = travel end
             &thumbVP.y = math.floor((height - &prvThumbSize) * 0.5)
             &prvBarBkgd.y = math.floor((height - &thickness) * 0.5)
 
@@ -634,7 +638,7 @@ gui.slider = function(Options:table!)
             end
          end
 
-         if &anchored and &button then
+         if &style is 'slide' and &button then
             &button.width = &thumbVP.width - (&prvGapX * 2)
             &button.height = &thumbVP.height - (&prvGapY * 2)
          end
@@ -649,7 +653,7 @@ gui.slider = function(Options:table!)
 
       prvThumbPosition = function():num
          if &orientation is 'V' then return &thumbVP.y end
-         return &anchored ? (&thumbVP.width - &prvThumbLength) : &thumbVP.x
+         return &style is 'slide' ? (&thumbVP.width - &prvThumbLength) : &thumbVP.x
       end,
 
       free = function()
@@ -669,6 +673,21 @@ gui.slider = function(Options:table!)
       assert(target, 'A target viewport is required.')
       assert(&max > &min, 'The min/max values are invalid.')
       assert(&step >= 0, 'The step value cannot be negative.')
+
+      -- Breadth of the track
+      if Options.thickness then
+         &thickness = Options.thickness
+      elseif &style is 'slide' then
+         &thickness = DEFAULT_THICKNESS
+      else -- Track style, track is smaller than the thumb.
+         &thickness = DEFAULT_THICKNESS * .5
+      end
+
+      &thumbSize  = Options.thumbSize ? Options.thumbSize : '100%' -- Pixels or % of thickness (located in track viewport)
+
+      if &style != 'slide' then
+         &thumbLength = Options.thumbLength -- Fixed thumb size in track mode
+      end
 
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
@@ -722,7 +741,7 @@ gui.slider = function(Options:table!)
       end
 
       &prvThumbSize = thumbPixels(&thumbSize, 'thumbSize') -- Breadth across the track
-      &prvThumbLength = (&thumbLength != nil) ? thumbPixels(&thumbLength, 'thumbLength') : &prvThumbSize
+      &prvThumbLength = &thumbLength ? thumbPixels(&thumbLength, 'thumbLength') : &prvThumbSize
       assert((&increment is nil) or ((&increment is <num>) and (&increment > 0)), f"Invalid increment '{&increment}'")
 
       breadth = math.max(&thickness, &prvThumbSize)
@@ -860,16 +879,16 @@ gui.slider = function(Options:table!)
 
          if &orientation is 'V' then
             scale = ((display_h ?? 0) > 0) ? display_h / track_vp.height : 1
-            origin = &anchored ? &prvDragPosition : OriginY
+            origin = &style is 'slide' ? &prvDragPosition : OriginY
             &setValue(&prvTrackValue(origin + ((Y - OriginY) / scale)))
          else
             scale = ((display_w ?? 0) > 0) ? display_w / track_vp.width : 1
-            origin = &anchored ? &prvDragPosition : OriginX
+            origin = &style is 'slide' ? &prvDragPosition : OriginX
             &setValue(&prvTrackValue(origin + ((X - OriginX) / scale)))
          end
       end
 
-      if &anchored then
+      if &style is 'slide' then
          function[<weak> &&] anchoredPress(Viewport:obj!, Msg)
             repeat
                if (Msg.type is JET_LMB) and (Msg.value > 0) then &prvDragPosition = &prvThumbPosition() end
@@ -887,8 +906,10 @@ gui.slider = function(Options:table!)
       end
 
       GAP <const> = math.ceil(&prvTheme.bkgd.strokeWidth) -- Whole pixels keep the thumb edges sharp
+
       -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.  The
       -- insets follow the configured thumb dimensions, which an anchored thumb exceeds as it grows.
+
       thumb_width = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength
       thumb_height = (&orientation is 'V') ? &prvThumbLength : &prvThumbSize
       &prvGapX = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
@@ -896,7 +917,7 @@ gui.slider = function(Options:table!)
 
       &button = &thumbVP.new('VectorRectangle', table.merge({
          x = &prvGapX, y = &prvGapY, width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2)
-      }, &prvTheme.fore))
+      }, &prvFill()))
 
       if &valueText then
          &valueText.acMoveToFront()
@@ -1029,6 +1050,7 @@ gui.slider = function(Options:table!)
       gui.registerWidget(&viewport, &&)
 
       if Options.disabled then &disable() end
+
       &events.show?()
       return &&
    end

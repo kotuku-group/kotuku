@@ -208,7 +208,7 @@ fontdialog_theme.channelSlider = function(Name:str!, ThumbSize:num!, Fill:str):t
          strokeWidth = 1,
          opacity = 1
       },
-      fore = { -- Inner thumb
+      thumbFill = { -- Inner thumb
          x = (ThumbSize - THUMB_WIDTH) * 0.5, y = (ThumbSize - THUMB_HEIGHT) * 0.5,
          width = THUMB_WIDTH, height = THUMB_HEIGHT,
          roundX = 1, roundY = 1,

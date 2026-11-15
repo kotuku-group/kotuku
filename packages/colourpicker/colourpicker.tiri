@@ -927,8 +927,12 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
       if ch.id is 'alpha' then y += 4 end
 
       gradient = scene.new('GradientLinear', {
-         stops = channelStops(ch.id, self.state), units = 'userspace',
-         x1 = SLIDER_THUMB * 0.5, y1 = 0, x2 = track_w - (SLIDER_THUMB * 0.5), y2 = 0
+         stops = channelStops(ch.id, self.state),
+         units = 'userspace',
+         x1 = SLIDER_THUMB * 0.5,
+         y1 = 0,
+         x2 = track_w - (SLIDER_THUMB * 0.5),
+         y2 = 0
       })
 
       check scene.mtAddDef(ch.def, gradient)
@@ -962,6 +966,7 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
 
       channel.slider = gui.slider({
          target    = body,
+         style     = 'track',
          x         = track_x,
          y         = y + ((CHANNEL_ROW - SLIDER_THUMB) * 0.5),
          width     = track_w,
@@ -2093,6 +2098,7 @@ function buildRelationship(Target:obj)
 
       row.slider = gui.slider({
          target    = &relRows,
+         style     = 'track',
          x         = track_x,
          y         = y + ((REL_ROW - SLIDER_THUMB) * 0.5),
          width     = track_w,

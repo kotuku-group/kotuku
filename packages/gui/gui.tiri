@@ -2742,7 +2742,8 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
       },
       slider = {
          bkgd          = { fill = Palette.mid, stroke = Palette.edge, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
-         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         slideFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         thumbFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text          = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
@@ -2880,7 +2881,8 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
       },
       slider = {
          bkgd          = { fill = Palette.mid, stroke = Palette.edge, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
-         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         slideFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         thumbFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
