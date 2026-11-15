@@ -1097,3 +1097,215 @@ end
    assert((left.red is 255) and (left.blue is 0), f'Left instance: {left.red},{left.green},{left.blue}')
    assert((right.red is 0) and (right.blue is 255), f'Right instance: {right.red},{right.green},{right.blue}')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Inline parameter expressions in list-valued attributes: param(name) and param(name, fallback) as individual items.
+
+function bounds(Name:str!):<num, num, num, num>
+   local _, x, y, w, h = obj.find(Name).mtGetBoundary(0)
+   return x, y, w, h
+end
+
+function assertBounds(Name:str!, X:num, Y:num, W:num, H:num, Message:str)
+   local x, y, w, h = bounds(Name)
+   assert((x is X) and (y is Y) and (w is W) and (h is H),
+      f'{Message}: expected {X},{Y},{W},{H}, got {x},{y},{w},{h}')
+end
+
+@Test function InlinePointsResolve()
+   local scene, svg <close> = loadParams([[
+      <polygon id="mixed" points="0,0 param(x, 10),20 30,param(y, 40)"/>
+      <polygon id="bare" points="0,0 param(x),20 30,40"/>
+      <polygon id="spaced" points="0,0  param( x ,  10 ) , 20 30,40"/>
+      <polygon id="negative" points="param(nx, -5),-6 1,1 2,2"/>
+      <polygon id="dashed" points="0,0 param(--x, 10),20"/>
+   ]], { x='100', nx='-50' })
+   assertBounds('mixed', 0, 0, 100, 40, 'Defined value and fallback in one list')
+   assertBounds('bare', 0, 0, 100, 40, 'Inline param() without a fallback')
+   assertBounds('spaced', 0, 0, 100, 40, 'White-space around names and fallbacks')
+   assertBounds('negative', -50, -6, 52, 8, 'Negative values and fallbacks')
+   assertBounds('dashed', 0, 0, 100, 20, 'Dashed names are normalised')
+end
+
+@Test function InlineFallbacksApplyWithoutValues()
+   local scene, svg <close> = loadParams([[
+      <polygon id="p" points="0,0 param(x, 10),20 30,param(y, 40)"/>
+      <polygon id="nested" points="0,0 param(x, param(z, 15)),20"/>
+   ]], { z='25' })
+   assertBounds('p', 0, 0, 30, 40, 'Fallbacks')
+   assertBounds('nested', 0, 0, 25, 20, 'A fallback may contain another inline expression')
+end
+
+@Test function InlineUndefinedErasesAttribute()
+   local scene, svg <close> = loadParams([[
+      <polygon id="undef" points="0,0 param(missing),20 30,40"/>
+      <rect id="t" width="5" height="5" transform="translate(param(missing), 0)"/>
+   ]])
+   assertBounds('undef', 0, 0, 0, 0, 'An undefined inline value without a fallback erases points')
+   assertBounds('t', 0, 0, 5, 5, 'An undefined inline value without a fallback erases the transform')
+end
+
+@Test function InlineEmptyValueGetsNoFallback()
+   local scene, svg <close> = loadParams([[
+      <rect id="t" width="5" height="5" transform="translate(10, 0) param(extra, scale(3))"/>
+   ]], { extra='' })
+   assertBounds('t', 10, 0, 5, 5, 'A defined empty value must not take the fallback')
+end
+
+@Test function InlineMalformedErasesAttribute()
+   local scene, svg <close> = loadParams([[
+      <polygon id="control" points="0,0 10,0 10,10"/>
+      <polygon id="unclosed" points="0,0 param(x, 10,20 30,40"/>
+      <polygon id="empty" points="0,0 param( , 10),20 30,40"/>
+      <polygon id="spaced" points="0,0 param(a b, 10),20 30,40"/>
+      <rect id="t" width="5" height="5" transform="translate(param(x, 4"/>
+   ]], { x='100' })
+   assertBounds('control', 0, 0, 10, 10, 'Control polygon')
+   for id in values({ 'unclosed', 'empty', 'spaced' }) do
+      assertBounds(id, 0, 0, 0, 0, f'{id}: a malformed expression erases the attribute')
+   end
+   assertBounds('t', 0, 0, 5, 5, 'A malformed transform is erased')
+end
+
+@Test function InlineTransformsResolve()
+   local scene, svg <close> = loadParams([[
+      <rect id="attr" width="5" height="5" transform="translate(param(x, 0), param(y, 0)) scale(2)"/>
+      <rect id="styled" width="5" height="5" style="transform: translate(param(x, 0), param(y, 7))"/>
+      <rect id="legacy" width="5" height="5" transform="param(t) translate(param(x, 1), 2)"/>
+      <rect id="whole" width="5" height="5" transform="param(t) translate(3, 4)"/>
+   ]], { x='100' })
+   assertBounds('attr', 100, 0, 10, 10, 'Inline transform arguments')
+   assertBounds('styled', 100, 7, 5, 5, 'Inline expressions in a style declaration')
+   assertBounds('legacy', 100, 2, 5, 5, 'A legacy fallback may contain inline expressions')
+   assertBounds('whole', 3, 4, 5, 5, 'The legacy whole-attribute form is unchanged')
+end
+
+@Test function LegacyWholeValueIsUnchangedInLists()
+   local scene, svg <close> = loadParams([[
+      <polygon id="whole" points="param(pts) 0,0 10,0 10,10"/>
+      <polygon id="fallback" points="param(none) 0,0 20,0 20,20"/>
+      <rect id="t" width="5" height="5" transform="param(t)"/>
+   ]], { pts='0,0 50,0 50,50', t='translate(9, 0)' })
+   assertBounds('whole', 0, 0, 50, 50, 'A leading legacy param() replaces the whole value')
+   assertBounds('fallback', 0, 0, 20, 20, 'Legacy fallback')
+   assertBounds('t', 9, 0, 5, 5, 'Legacy transform value')
+end
+
+@Test function InlineQuotedLiteralsAndIdentifiersAreIgnored()
+   local scene <close> = obj.new('VectorScene', { pageWidth=64, pageHeight=64 })
+   local svg <close> = obj.new('svg')
+   svg.target = scene
+   svg.statement = [[<svg xmlns="http://www.w3.org/2000/svg">
+      <rect width="8" height="8"><animate attributeName="class" values="'param(quoted)';b;myparam(ident)" dur="1s"/>
+      </rect>
+      <polygon points="0,0 param(alpha, 1),0 param(beta),1"/>
+      <rect width="8" height="8" transform="translate(param(gamma, 0), param(alpha, 0))"/>
+   </svg>]]
+   check svg.init()
+
+   local names = svg.paramNames
+   local joined = ''
+   for i in {0 to #names} do joined ..= names[i] .. ' ' end
+   assert(joined is 'alpha beta gamma ', 'Inline names only, excluding quoted text and identifiers: ' .. joined)
+end
+
+@Test function InlineExpressionsUseInstanceScopes()
+   local scene, svg <close> = loadParams([[
+      <defs><g id="tpl"><rect width="5" height="5" transform="translate(param(dx, 1), param(dy, 2))"/></g></defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="u1"><use xlink:href="#tpl"><param name="dx" value="30"/></use></g>
+      <g id="u2"><use xlink:href="#tpl"><param name="dx" value="40"/><param name="dy" value="50"/></use></g>
+   ]], { dy='20' })
+   local function check_use(Name:str, X:num, Y:num)
+      local _, x, y = useChild(Name).mtGetBoundary(0)
+      assert((x is X) and (y is Y), f'{Name}: expected {X},{Y}, got {x},{y}')
+   end
+   check_use('doc', 1, 20)
+   check_use('u1', 30, 20)
+   check_use('u2', 40, 50)
+end
+
+@Test function InlineSymbolsUseLaterSetKey()
+   local scene, svg <close> = loadParams([[
+      <defs><symbol id="sym"><polygon points="0,0 param(w, 10),0 param(w, 10),10"/></symbol></defs>
+   ]])
+   local vp1 = scene.new('VectorViewport', { width=100, height=100 })
+   check svg.mtParseSymbol('sym', vp1)
+   check svg.acSetKey('w', '60')
+   local vp2 = scene.new('VectorViewport', { width=100, height=100 })
+   check svg.mtParseSymbol('sym', vp2)
+
+   local _, _, _, w1 = vp1.child.mtGetBoundary(0)
+   local _, _, _, w2 = vp2.child.mtGetBoundary(0)
+   assert(w1 is 10, f'The first instance keeps its fallback: got {w1}')
+   assert(w2 is 60, f'A later instance uses the new value: got {w2}')
+end
+
+@Test function InlineGradientTransformsAreScoped()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <linearGradient id="grad" gradientUnits="userSpaceOnUse" x1="0" x2="1"
+            gradientTransform="translate(param(gx, 0), 0)">
+            <stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
+         </linearGradient>
+         <g id="tpl"><rect width="20" height="10" fill="url(#grad)"/></g>
+      </defs>
+      <g transform="translate(0, 0)"><use xlink:href="#tpl"/></g>
+      <g transform="translate(0, 20)"><use xlink:href="#tpl"><param name="gx" value="15"/></use></g>
+   ]])
+   local bmp <close> = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   scene.acDraw()
+   local doc, shifted = pixel(bmp, 10, 5), pixel(bmp, 10, 25)
+   assert((doc.blue is 255) and (doc.red is 0), f'Document gradient: {doc.red},{doc.green},{doc.blue}')
+   assert((shifted.red is 255) and (shifted.blue is 0),
+      f'Instance gradient is translated: {shifted.red},{shifted.green},{shifted.blue}')
+end
+
+@Test function InlineColourMatrixValues()
+   local scene, svg <close> = loadParams([[
+      <defs><filter id="f" x="0" y="0" width="1" height="1">
+         <feColorMatrix type="matrix"
+            values="param(rr, 1) 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1"/>
+      </filter></defs>
+      <rect width="10" height="10" fill="#ff0000" filter="url(#f)"/>
+   ]], { rr='0' })
+   local bmp <close> = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   scene.acDraw()
+   local p = pixel(bmp, 5, 5)
+   assert(p.red is 0, f'The red channel must be removed by the inline matrix value: {p.red},{p.green},{p.blue}')
+end
+
+@Test function InlineValuesAreNotExpandedAgain()
+   local scene, svg <close> = loadParams([[
+      <rect id="inline" width="5" height="5" transform="param(p, translate(1, 1))"/>
+      <rect id="fallback" width="5" height="5" transform="param(none, param(z) translate(2, 2))"/>
+   ]], { p='param(z) translate(7, 7)', z='translate(50, 50)' })
+   local _, x:num, y:num = obj.find('inline').mtGetBoundary(0)
+   assert((x is 7) and (y is 7), f'A supplied value must be inserted once, without expansion: got {x},{y}')
+   _, x, y = obj.find('fallback').mtGetBoundary(0)
+   assert((x is 52) and (y is 52), f'Inline expressions in an authored fallback are expanded: got {x},{y}')
+end
+
+@Test function InlineEncodingKeepsLegacyCustomPropertyValues()
+   local style = [[<style>:root { --t: param(t) translate(3, 4); --u: translate(param(x, 1), 2) }
+      .t { transform: var(--t) } .u { transform: var(--u) }</style>
+      <rect id="t" class="t" width="5" height="5"/><rect id="u" class="u" width="5" height="5"/>]]
+
+   local scene, svg <close> = loadParams(style, { t='translate(9, 0)', x='20' })
+   assertBounds('t', 9, 0, 5, 5, 'A legacy param() carried by var() replaces the whole value')
+   assertBounds('u', 20, 2, 5, 5, 'An inline expression carried by var()')
+   scene.free() -- The second document reuses the element names
+
+   local scene2, svg2 <close> = loadParams(style)
+   assertBounds('t', 3, 4, 5, 5, 'The legacy fallback carried by var()')
+   assertBounds('u', 1, 2, 5, 5, 'The inline fallback carried by var()')
+end
+
+@Test function EmptyContributionsDoNotHideSuppliedValues()
+   local scene, svg <close> = loadParams([[
+      <rect id="t" width="5" height="5" transform="param(missing, ) param(p, translate(1, 1))"/>
+   ]], { p='param(z) translate(7, 7)', z='translate(50, 50)' })
+   assertBounds('t', 7, 7, 5, 5, 'A supplied value after an empty fallback must not be expanded again')
+end

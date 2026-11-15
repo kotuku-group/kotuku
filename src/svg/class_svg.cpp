@@ -65,13 +65,24 @@ attribute value and is optionally followed by a fallback:
 The following rules apply to `param()`:
 
 <list type="bullet">
-<li>Only an attribute value that starts with `param(` is substituted, and the entire value is replaced.  A parameter
-reference cannot be embedded in a list value such as `points` or `transform`; use `env()` in CSS for that.</li>
+<li>An attribute value that starts with `param(name)` is substituted as a whole: the entire value is replaced, and
+any text following the closing parenthesis is the fallback.</li>
+<li>As a Kōtuku extension, the list-valued attributes `points`, `values`, `transform`, `gradientTransform` and
+`patternTransform` also accept inline expressions as individual items, e.g. `points="0,0 param(x, 10),20"`,
+`values="0;param(mid, 0.5);1"` and `transform="translate(param(x, 0), param(y, 0)) scale(2)"`.  An inline expression
+is written `param(name)` or `param(name, fallback)`, and its fallback ends at the matching closing parenthesis.  A
+fallback may contain further inline expressions.  A value that starts with `param(name)` without a comma keeps the
+whole-attribute meaning, although inline expressions within its fallback are still substituted.  Text in quotes and
+names that merely end in `param`, such as `myparam(x)`, are left unchanged.  If an inline expression is undefined and
+has no fallback, or is malformed (e.g. unbalanced or with an invalid name), the entire attribute is treated as absent.
+Supplied values are inserted as-is and are not expanded further.</li>
 <li>Names are case sensitive.  If a name is undefined, the fallback is used.  If there is no fallback, the attribute
 is treated as though it were absent and its initial value applies.  A parameter that is defined with an empty value
 is not replaced by the fallback.</li>
 <li>`param()` is also recognised in `style` attributes and `&lt;style&gt;` sheets, and in custom property values,
 provided that it forms the entire value of the property after substitution.</li>
+<li>Inline expressions are also recognised in `style` declarations of the supported attributes, e.g.
+`transform: translate(param(x, 0), 0)`.</li>
 <li>Other viewers do not implement `param()` and treat the attribute as invalid.</li>
 </list>
 

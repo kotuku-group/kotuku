@@ -675,6 +675,36 @@ static bool resolve_param_refs(extSVG *Self, std::string_view Value, const Param
    return true;
 }
 
+// Identifies the source of the first non-empty contribution to the expansion of Value.  A supplied value is inserted
+// once, so a leading "param(" within it must not be interpreted as a whole-value expression.  References that expand
+// to nothing (e.g. an empty fallback) are passed over.  Custom property references count as authored text, because
+// they are the means by which a whole param() expression is carried.
+
+enum class LEAD : uint8_t { NONE, VALUE, TEXT };
+
+static LEAD leading_source(extSVG *Self, std::string_view Value, const ParamScope *Scope) noexcept
+{
+   size_t i = 0;
+   while (i < Value.size()) {
+      if (is_ws(Value[i])) { i++; continue; }
+      if (Value[i] != PARAM_REF_OPEN) return LEAD::TEXT;
+
+      std::string_view name, fallback;
+      bool has_fallback;
+      const auto end = parse_param_ref(Value, i, name, fallback, has_fallback);
+      if (end IS std::string_view::npos) return LEAD::TEXT;
+
+      if (auto value = find_param(Self, Scope, name)) {
+         if (not trim_ws(*value).empty()) return LEAD::VALUE;
+      }
+      else if (has_fallback) {
+         if (auto lead = leading_source(Self, fallback, Scope); lead != LEAD::NONE) return lead;
+      }
+      i = end + 1;
+   }
+   return LEAD::NONE;
+}
+
 // Returns the substituted value, or nullopt if the attribute must be erased (no value and no fallback).  An authored
 // param() only applies to a whole value, whereas deferred references are substituted anywhere.
 
@@ -698,9 +728,10 @@ static std::optional<std::string> resolve_param_value(extSVG *Self, std::string_
 
    std::string expanded;
    if (Value.find_first_of(std::string_view("\x01\x04", 2)) != std::string_view::npos) {
+      const bool carried = (not authored_param) and (leading_source(Self, Value, Scope) != LEAD::VALUE);
       if (not resolve_param_refs(Self, Value, Scope, expanded)) return std::nullopt;
       Value = expanded;
-      if ((not authored_param) and trim_ws(Value).starts_with("param(") and whole_param(Value, result)) return result;
+      if (carried and trim_ws(Value).starts_with("param(") and whole_param(Value, result)) return result;
    }
 
    if (Value.empty()) return std::nullopt;
@@ -729,6 +760,146 @@ static void resolve_tag_params(extSVG *Self, XTag &Tag, const kt::vector<XMLAttr
 }
 
 //********************************************************************************************************************
+// Inline parameter expressions (a Kotuku extension): list-valued attributes may contain param(name) or
+// param(name, fallback) as individual items, e.g. points="0,0 param(x, 10),20".  The fallback is bounded by the
+// matching parenthesis.  Each expression is converted to a deferred reference (PARAM_REF_OPEN) so that it resolves
+// with env() references in the parameter pass.  A value that starts with the legacy "param(name) fallback" form keeps
+// whole-attribute semantics, but inline expressions within its fallback are still converted.
+
+static bool supports_inline_params(std::string_view Name) noexcept
+{
+   switch (strhash(Name)) {
+      case SVF_points: case SVF_values: case SVF_transform: case SVF_gradientTransform: case SVF_patternTransform:
+         return true;
+      default:
+         return false;
+   }
+}
+
+static bool is_ident_char(char C) noexcept
+{
+   return ((C >= 'a') and (C <= 'z')) or ((C >= 'A') and (C <= 'Z')) or ((C >= '0') and (C <= '9')) or
+      (C IS '_') or (C IS '-');
+}
+
+// Returns the index just past the quoted literal that starts at Pos.  XML attribute values have no escape sequences.
+
+static size_t skip_quoted(std::string_view Text, size_t Pos) noexcept
+{
+   const auto end = Text.find(Text[Pos], Pos + 1);
+   return (end IS std::string_view::npos) ? Text.size() : end + 1;
+}
+
+static bool is_inline_param_call(std::string_view Text, size_t Pos) noexcept
+{
+   return Text.substr(Pos).starts_with("param(") and ((Pos IS 0) or (not is_ident_char(Text[Pos-1])));
+}
+
+// Locates the arguments of the param( call at Pos.  Returns the index of the matching parenthesis, or npos if it is
+// unbalanced.  Comma receives the first top-level comma, or npos.
+
+static size_t inline_param_args(std::string_view Text, size_t Pos, size_t &Comma) noexcept
+{
+   Comma = std::string_view::npos;
+   int depth = 1;
+   size_t i = Pos + 6;
+   while (i < Text.size()) {
+      const char c = Text[i];
+      if ((c IS '"') or (c IS '\'')) { i = skip_quoted(Text, i); continue; }
+      if (c IS '(') depth++;
+      else if (c IS ')') { if (--depth IS 0) return i; }
+      else if ((c IS ',') and (depth IS 1) and (Comma IS std::string_view::npos)) Comma = i;
+      i++;
+   }
+   return std::string_view::npos;
+}
+
+// A legacy "param(name) fallback" at the start of a value keeps whole-value semantics.  This applies to an attribute
+// value and to each value carried by a deferred CSS reference, e.g. '--t: param(t) translate(3,4)' read through
+// var(--t), because those values are substituted whole before the legacy form is interpreted.  If such a prefix
+// starts at Pos, it is copied to Output and the index following it is returned; otherwise Pos is returned.  The
+// value is bounded by the next deferred-reference control character.  A legacy prefix without a closing parenthesis
+// is copied to the end of the value unchanged, for the existing whole-value handling.
+
+static size_t copy_legacy_param(std::string_view Text, size_t Pos, std::string &Output)
+{
+   auto start = Pos;
+   while ((start < Text.size()) and is_ws(Text[start])) start++;
+   if (not Text.substr(start).starts_with("param(")) return Pos;
+
+   size_t comma;
+   const auto close = inline_param_args(Text, start, comma);
+   if ((close != std::string_view::npos) and (comma != std::string_view::npos)) return Pos; // Inline form
+
+   auto limit = Text.find_first_of(std::string_view("\x01\x02\x03\x04\x05\x06\x07\x08", 8), start);
+   if (limit IS std::string_view::npos) limit = Text.size();
+   auto end = Text.substr(0, limit).find(')', start);
+   end = (end IS std::string_view::npos) ? limit : end + 1;
+   Output.append(Text.substr(Pos, end - Pos));
+   return end;
+}
+
+// Appends Text to Output with each inline param() converted to a deferred reference.  Quoted literals are copied
+// verbatim.  If Whole is true, Text is an attribute value whose leading legacy param() is retained, as is that of
+// each value carried by a deferred CSS reference.  Returns false if an expression is malformed.
+
+static bool encode_inline_params(std::string_view Text, std::string &Output, bool Whole)
+{
+   size_t i = Whole ? copy_legacy_param(Text, 0, Output) : 0;
+   while (i < Text.size()) {
+      const char c = Text[i];
+      if ((c IS '"') or (c IS '\'')) {
+         const auto end = skip_quoted(Text, i);
+         Output.append(Text.substr(i, end - i));
+         i = end;
+      }
+      else if (is_inline_param_call(Text, i)) {
+         size_t comma;
+         const auto close = inline_param_args(Text, i, comma);
+         if (close IS std::string_view::npos) return false;
+
+         const auto name = param_key(trim_ws(Text.substr(i + 6, std::min(comma, close) - i - 6)));
+         if (name.empty()) return false;
+         for (auto ch : name) {
+            if ((uint8_t(ch) <= 0x20) or (std::string_view("(),'\"").find(ch) != std::string_view::npos)) {
+               return false;
+            }
+         }
+
+         Output.push_back(PARAM_REF_OPEN);
+         Output.append(name);
+         if (comma != std::string_view::npos) {
+            Output.push_back(PARAM_REF_FALLBACK);
+            const auto fallback = trim_ws(Text.substr(comma + 1, close - comma - 1));
+            if (not encode_inline_params(fallback, Output, false)) return false;
+         }
+         Output.push_back(PARAM_REF_CLOSE);
+         i = close + 1;
+      }
+      else {
+         Output.push_back(Text[i++]);
+         if (Whole and ((c IS PARAM_REF_FALLBACK) or (c IS CP_REF_VALUE) or (c IS CP_REF_FALLBACK))) {
+            i = copy_legacy_param(Text, i, Output);
+         }
+      }
+   }
+   return true;
+}
+
+// Converts the inline expressions of a supported attribute value.  Returns false if the value is malformed, in which
+// case the attribute must be erased.
+
+static bool apply_inline_params(std::string &Value)
+{
+   if (Value.find("param(") IS std::string::npos) return true;
+
+   std::string output;
+   if (not encode_inline_params(Value, output, true)) return false;
+   Value = std::move(output);
+   return true;
+}
+
+//********************************************************************************************************************
 // Document pass, performed once after styles are folded into attributes.  The raw attributes of every tag using
 // param() are saved so that they can be re-resolved for <use> scopes and ParseSymbol().
 
@@ -736,6 +907,16 @@ static void apply_document_params(extSVG *Self, objXML::TAGS &Tags)
 {
    for (auto &tag : Tags) {
       if (not tag.isTag()) continue;
+
+      for (int a=1; a < std::ssize(tag.Attribs); a++) {
+         auto &attrib = tag.Attribs[a];
+         if (supports_inline_params(attrib.Name) and (not apply_inline_params(attrib.Value))) {
+            kt::Log(__FUNCTION__).warning("Malformed param() in '%s' @ line %d: %.60s", attrib.Name.c_str(),
+               tag.LineNo, attrib.Value.c_str());
+            tag.Attribs.erase(tag.Attribs.begin() + a);
+            a--;
+         }
+      }
 
       for (int a=1; a < std::ssize(tag.Attribs); a++) {
          if ((tag.Attribs[a].Name != "id") and (is_param_value(tag.Attribs[a].Value))) {
