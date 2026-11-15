@@ -69,7 +69,9 @@ file, `user:config/colourpicker.json`, stores `activePalette`, display preferenc
 last used by Import and Export), with no palette data.  Legacy
 settings palettes migrate once; an existing database entry takes precedence over the settings copy.
 
-Palette edit actions save immediately from both tabs, including reset and clipboard replacement.  Display
+Palette edit actions save immediately from both tabs, including reset and clipboard replacement.  Colour changes to
+the active swatch (wheel, sliders, keys, eyedropper) are continuous, so `setColour()` only flags them; they are
+written when the window closes (`finish()`, Apply or close) or by the next palette action's `saveDatabase()`.  Display
 refreshes, scratch edits and preference changes do not trigger database encoding or saving.  Cancel cancels
 the colour result and discards preference changes; it keeps saved palette edits.  Reset restores the palette snapshot
 captured when it was opened and saves that restoration.  Apply and window close save preferences and the active ID.

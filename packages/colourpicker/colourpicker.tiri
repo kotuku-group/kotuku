@@ -2608,7 +2608,9 @@ gui.dialog.colour = function(Options:table)
          deriveState(state)
          &colour = outputColour(state)
          &refresh(Source)
-         if state.active != nil then &saveDatabase() end
+         -- Wheel, slider and key edits arrive continuously, so the swatch colour is saved when the window closes
+         -- (or with the next palette action) rather than rewriting the database for every pointer movement.
+         if state.active != nil then &colourUnsaved = true end
       end
 
       -- Update every view from the state.  Source names the view that made the change, so that its value isn't written
@@ -3278,6 +3280,7 @@ gui.dialog.colour = function(Options:table)
       end
 
       &saveDatabase = function():bool
+         &colourUnsaved = false
          if not &syncDatabase() then
             &reportDatabaseError('The edited palette was removed. Reopen the picker before saving.')
             return false
@@ -3414,6 +3417,7 @@ gui.dialog.colour = function(Options:table)
          defer surface?.free() end
          &stopScratchDrag()
          &stopEyedropper()
+         if &colourUnsaved then &saveDatabase() end -- Cancel keeps swatch colour edits
 
          feedback = &feedback
          &feedback = nil
