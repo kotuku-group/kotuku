@@ -278,6 +278,15 @@ gui.window = function(Options:table!)
          end
       end
 
+      -- If a modal surface is already active, the window surface must be promoted or 
+      -- the user can't interact with it
+
+      if &surface.modal is 0 then
+         if mGfx.GetModalSurface() != 0 then
+            &surface.modal = true
+         end
+      end
+
       &visible = true
       &surface.acShow()
       if &surface.flags has RNF_HAS_FOCUS then

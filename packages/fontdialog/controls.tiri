@@ -5,6 +5,7 @@
 
    import 'gui', 'gui/button', 'gui/slider', 'gui/toggle', 'json'
    import './theme', './parts'
+   import 'gui/colourpicker/colour'
    include 'vector'
 
    namespace fontdialog_controls { }
@@ -480,18 +481,29 @@ fontdialog_controls.toHex = function(Colour:str!):str
    end
 end
 
+-- OKLCH values are kept in OKLCH, so that colours outside sRGB are not clipped by a conversion to hex.
+
+function isOklch(Colour:str!):bool
+   return Colour.startsWith('oklch(')
+end
+
 -- Only colour values have an alpha channel; a painter such as a gradient reference does not.
 
 function isColourValue(Colour:str!):bool
-   return Colour.startsWith('#') or Colour.startsWith('rgb')
+   return Colour.startsWith('#') or Colour.startsWith('rgb') or isOklch(Colour)
 end
 
 @Doc(text=[[
-@desc Multiply the alpha channel of a colour by Percent, returning `#RRGGBBAA`.  An opaque setting returns the colour
-unchanged, as does a value that is not a colour, such as a gradient reference.
+@desc Multiply the alpha channel of a colour by Percent, returning `#RRGGBBAA`, or an `oklch()` string with an alpha
+component if the colour is OKLCH.  An opaque setting returns the colour unchanged, as does a value that is not a
+colour, such as a gradient reference.
 ]])
 fontdialog_controls.withAlpha = function(Colour:str!, Percent:num!):str
    if (Percent >= 100) or (not isColourValue(Colour)) then return Colour end
+   if isOklch(Colour) then
+      ok = colourmath.parseColour(Colour)
+      if ok then return colourmath.toOklchString(ok.l, ok.c, ok.h, ok.alpha * Percent / 100) end
+   end
    rgb = gui.strToRGB(Colour)
    return hexColour(rgb) .. string.format('%02X', math.round(rgb.a * Percent * 2.55))
 end
@@ -501,9 +513,24 @@ end
 ]])
 fontdialog_controls.splitAlpha = function(Colour:str!):<str, num>
    if not isColourValue(Colour) then return Colour, 100 end
+   if isOklch(Colour) then
+      ok = colourmath.parseColour(Colour)
+      if (not ok) or (ok.alpha >= 1) then return Colour, 100 end
+      return colourmath.toOklchString(ok.l, ok.c, ok.h), math.round(ok.alpha * 100)
+   end
    rgb = gui.strToRGB(Colour)
    if rgb.a >= 1 then return Colour, 100 end
    return hexColour(rgb), math.round(rgb.a * 100)
+end
+
+@Doc(text=[[
+@desc Format a colour for display as an `oklch()` string, which can describe every colour that the picker can choose.
+A value that can't be parsed, such as a gradient reference, is returned unchanged.
+]])
+fontdialog_controls.displayColour = function(Colour:str!):str
+   ok = colourmath.parseColour(Colour)
+   if not ok then return Colour end
+   return colourmath.toOklchString(ok.l, ok.c, ok.h, ok.alpha)
 end
 
 @Doc(text=[[
@@ -514,7 +541,8 @@ so that it is loaded once per control.
 @input Colour: the initial colour, as a CSS string
 @input Title: the dialog's title
 @input PreserveAlpha: include the chosen opacity in the returned colour
-@result The chosen colour as `#RRGGBB` (or `#RRGGBBAA` with PreserveAlpha), or nil if cancelled.
+@result The chosen colour as an `oklch()` string (with an alpha component only if PreserveAlpha is set and the colour is
+translucent), or nil if cancelled.
 ]])
 fontdialog_controls.pickColour = function(Owner:table!, Target:obj!, Colour:str!, Title:str!, PreserveAlpha:bool):str
    -- Using a script to open the colour picker is more resource efficient (no pre-loading of the import)
@@ -551,6 +579,10 @@ fontdialog_controls.pickColour = function(Owner:table!, Target:obj!, Colour:str!
    _, result = script.acGetKey('result')
    if not result?? then return nil end
    chosen = json.decode(result)
+   ok = chosen.oklch
+   if ok then -- Lossless, including colours outside sRGB
+      return colourmath.toOklchString(ok.l, ok.c, ok.h, PreserveAlpha ? chosen.a : nil)
+   end
    colour = hexColour(chosen)
    if PreserveAlpha then colour ..= string.format('%02X', math.round(chosen.a * 255)) end
    return colour
@@ -599,15 +631,24 @@ fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:
       fill = t.fg0
    })
 
-   fontdialog_parts.text(vp, {
+   cb.label = fontdialog_parts.text(vp, {
       x = vp.width - 10, y = fontdialog_parts.baseline(0, height, 11), size = 11, fill = t.fg3, align = 'right',
       string = Options.label ?? 'Colour Picker  ›'
    })
 
+   -- oklch() strings are long, so the value is reduced in size if it would otherwise meet the label.
+
    cb.set = function(Colour:str!)
       cb.colour = Colour
       cb.swatch.fill = Colour
-      cb.hex.string = Colour.upper()
+      cb.hex.string = fontdialog_controls.displayColour(Colour)
+      limit = cb.label.x - cb.label.textWidth - 8 - cb.hex.x
+      size = 12
+      cb.hex.fontSize = f'{size}px'
+      while (cb.hex.textWidth > limit) and (size > 9) do
+         size -= 1
+         cb.hex.fontSize = f'{size}px'
+      end
       vp.acDraw()
    end
 

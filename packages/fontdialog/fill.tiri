@@ -44,9 +44,15 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
    })
 
    self.colour = fontdialog_controls.colourButton(Picker, body, {
-      x = PAD, y = 10, width = inner - toggle_size - toggle_gap,
-      colour = (state.fill != 'none') ? state.fill : Picker.defaultFill, title = 'Text Fill', label = 'Fill',
-      onChange = function(Colour) Picker.update({ fill = Colour }, 'fill') end
+      x      = PAD,
+      y      = 10,
+      width  = inner - toggle_size - toggle_gap,
+      colour = (state.fill != 'none') ? state.fill : Picker.defaultFill,
+      title  = 'Text Fill',
+      label  = 'Fill',
+      onChange = function(Colour)
+         Picker.update({ fill = Colour }, 'fill')
+      end
    })
 
    self.opacity = fontdialog_controls.sliderRow(Picker, body, {

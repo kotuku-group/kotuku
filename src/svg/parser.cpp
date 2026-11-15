@@ -2817,6 +2817,22 @@ void svgState::proc_pattern(XTag &Tag) noexcept
 }
 
 //********************************************************************************************************************
+// Records the UID of the vector generated from Tag in the private '_id' attribute.  An existing '_id' is overwritten
+// because a shared subtree (e.g. a <symbol> without parameters) is processed once per <use> instance.  Appending
+// would grow the tag with every instance and make processing quadratic in the number of instances.
+
+static void set_vector_id(XTag &Tag, OBJECTID UID)
+{
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      if (Tag.Attribs[a].Name IS "_id") {
+         Tag.Attribs[a].Value = std::to_string(UID);
+         return;
+      }
+   }
+   Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(UID) });
+}
+
+//********************************************************************************************************************
 
 ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVector * &Result) noexcept
 {
@@ -2844,7 +2860,7 @@ ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVecto
 
       if (!vector->init()) {
          state.process_shape_children(Tag, vector);
-         Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(vector->UID) });
+         set_vector_id(Tag, vector->UID);
          Result = vector;
          return error;
       }
@@ -3281,7 +3297,7 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
       if (!rect->init()) {
          process_shape_children(Tag, rect);
-         Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(rect->UID) });
+         set_vector_id(Tag, rect->UID);
          Vector = rect;
          return ERR::Okay;
       }
@@ -3842,7 +3858,7 @@ void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noe
 
             if (!group->init()) {
                Vector = group;
-               Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(group->UID) });
+               set_vector_id(Tag, group->UID);
 
                state.process_tag(child, Tag, group, Vector);
             }
@@ -3876,7 +3892,7 @@ void svgState::proc_group(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noex
 
    if (!group->init()) {
       Vector = group;
-      Tag.Attribs.push_back(XMLAttrib { "_id", std::to_string(group->UID) });
+      set_vector_id(Tag, group->UID);
    }
    else FreeResource(group);
 }
