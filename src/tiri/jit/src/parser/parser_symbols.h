@@ -55,6 +55,7 @@ struct ParserSymbolMetadata {
    std::string kind;
    std::string signature;
    std::string binding;   // Function context binding as written, e.g. '[<weak> &&]'; empty if there is none
+   bool no_discard = false; // The first result is marked @NoDiscard
    SourceSpan span{};
    SourceSpan end_span{};
    std::vector<ParserAnnotationMetadata> annotations;

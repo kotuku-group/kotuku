@@ -79,6 +79,7 @@ static CSTRING error_code_name(ParserErrorCode Code)
       case ParserErrorCode::TooManyExceptionFilters:   return "Too many exception filters";
       case ParserErrorCode::InvalidContextBinding:     return "Invalid context binding";
       case ParserErrorCode::InvalidOptionalCall:       return "Invalid optional call";
+      case ParserErrorCode::NoDiscard:                 return "No-discard contract";
       default: return "Unknown";
    }
 }

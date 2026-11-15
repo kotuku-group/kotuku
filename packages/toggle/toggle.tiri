@@ -120,7 +120,7 @@ gui.toggle = function(Options:table!):table
 
       if &label then
          &_label = gui.layout.label(&viewport, {
-            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = &theme.window.text
+            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = &theme.widget.text
          })
          &labelText = &_label.text
          &_label.reserve(box)

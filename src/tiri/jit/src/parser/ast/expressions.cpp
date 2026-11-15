@@ -941,6 +941,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
             const bool forward_multret = not args.back()->is_grouped;
             ExprNodePtr array_of_call = make_builtin_call(
                this->ctx, span, FastFunc::array_of, std::move(args), TiriType::Array, forward_multret);
+            std::get<CallExprPayload>(array_of_call->data).result_retention = CallResultRetention::ArrayElements;
 
             // If size was specified (literal or expression) and may be larger than values count, wrap in IIFE to resize
             // For literal sizes, we only wrap if size > values count
@@ -1022,6 +1023,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                else call_args.push_back(
                   make_literal_expr(span, LiteralValue::number(double(specified_size.literal))));
                node = make_call_expr(span, std::move(anon_func), std::move(call_args), false);
+               std::get<CallExprPayload>(node->data).result_retention = CallResultRetention::FirstArgument;
             }
             else node = std::move(array_of_call);
          }

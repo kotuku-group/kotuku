@@ -435,6 +435,9 @@ function formatDocumentSymbolHover(Symbol:table):str
    if not hoverTextHasContent(signature) and not hoverTextHasContent(doc_text) then return nil end
 
    md = f'**{signature}**'
+   if Symbol.noDiscard then
+      md ..= '\n\n`@NoDiscard`: store the first result in a non-blank variable or container, or pass it to a function.'
+   end
    if hoverTextHasContent(Symbol.binding) then
       md ..= f'\n\nContext binding: `function{Symbol.binding}`'
    end

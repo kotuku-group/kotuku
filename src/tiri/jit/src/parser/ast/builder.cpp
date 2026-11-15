@@ -56,13 +56,15 @@ static std::unique_ptr<FunctionExprPayload> move_function_payload(ExprNodePtr &N
    if (payload IS nullptr) return std::make_unique<FunctionExprPayload>();
 
    std::unique_ptr<FunctionExprPayload> result = std::make_unique<FunctionExprPayload>();
-   result->parameters        = std::move(payload->parameters);
-   result->is_vararg         = payload->is_vararg;
-   result->is_thunk          = payload->is_thunk;
-   result->context           = std::move(payload->context);
-   result->return_types      = payload->return_types;  // Copy return type information
-   result->body              = std::move(payload->body);
-   result->annotations = std::move(payload->annotations);
+   result->parameters         = std::move(payload->parameters);
+   result->is_vararg          = payload->is_vararg;
+   result->is_thunk           = payload->is_thunk;
+   result->context            = std::move(payload->context);
+   result->return_types       = payload->return_types;  // Copy return type information
+   result->body               = std::move(payload->body);
+   result->annotations        = std::move(payload->annotations);
+   result->no_discard_results = payload->no_discard_results;
+   result->no_discard_span    = payload->no_discard_span;
    return result;
 }
 
@@ -85,6 +87,7 @@ static bool token_is_range_separator(const Token &Token, bool &IsInclusive)
       IsInclusive = false;
       return true;
    }
+
    if (token_identifier_is(Token, "into")) {
       IsInclusive = true;
       return true;
@@ -169,6 +172,7 @@ static bool source_has_range_separator_on_opening_line(ParserContext &Context, R
                if (not (std::isalnum(uint8_t(word_char)) or word_char IS '_')) break;
                pos++;
             }
+
             if (range_word_matches(source.substr(start, pos - start))) has_range_separator = true;
             continue;
          }
@@ -877,6 +881,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
                case AstNodeKind::ContinueStmt: terminator_name = "continue"; break;
                default: break;
             }
+
             if (terminator_name) {
                this->ctx.emit_tip(1, TipCategory::TypeSafety,
                   std::format("Unreachable code after '{}' statement", terminator_name),

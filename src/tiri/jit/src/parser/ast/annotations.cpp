@@ -330,35 +330,38 @@ ParserResult<std::vector<AnnotationEntry>> AstBuilder::parse_annotations(bool Si
 //********************************************************************************************************************
 // Attaches parsed annotations to a function expression value.
 
-static bool attach_annotations_to_function_value(ExprNodePtr &Value, std::vector<AnnotationEntry> &Annotations)
+static FunctionExprPayload * attach_annotations_to_function_value(ExprNodePtr &Value,
+   std::vector<AnnotationEntry> &Annotations)
 {
-   if (not Value or Value->kind != AstNodeKind::FunctionExpr) return false;
+   if (not Value or Value->kind != AstNodeKind::FunctionExpr) return nullptr;
 
    if (auto *function = std::get_if<FunctionExprPayload>(&Value->data)) {
       function->annotations = std::move(Annotations);
-      return true;
+      return function;
    }
 
-   return false;
+   return nullptr;
 }
 
 //********************************************************************************************************************
-// Attaches parsed annotations to a statement containing a single function expression.
+// Attaches parsed annotations to a statement containing a single function expression.  Returns the annotated
+// function, or nullptr if the statement does not declare exactly one function value.
 
-static bool attach_annotations_to_statement(StmtNode &Statement, std::vector<AnnotationEntry> &Annotations)
+static FunctionExprPayload * attach_annotations_to_statement(StmtNode &Statement,
+   std::vector<AnnotationEntry> &Annotations)
 {
    if (Statement.kind IS AstNodeKind::FunctionStmt) {
       auto *payload = std::get_if<FunctionStmtPayload>(&Statement.data);
       if (payload and payload->function) {
          payload->function->annotations = std::move(Annotations);
-         return true;
+         return payload->function.get();
       }
    }
    else if (Statement.kind IS AstNodeKind::LocalFunctionStmt) {
       auto *payload = std::get_if<LocalFunctionStmtPayload>(&Statement.data);
       if (payload and payload->function) {
          payload->function->annotations = std::move(Annotations);
-         return true;
+         return payload->function.get();
       }
    }
    else if (Statement.kind IS AstNodeKind::AssignmentStmt) {
@@ -380,7 +383,44 @@ static bool attach_annotations_to_statement(StmtNode &Statement, std::vector<Ann
       }
    }
 
-   return false;
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Normalises semantic annotations into function metadata.  @NoDiscard takes no arguments and marks result position
+// one; the result-position mask keeps multiple-result handling independent of the annotation spelling.  A function
+// that explicitly declares no results cannot satisfy the contract.  Inferred signatures are checked during static
+// binding discovery, because the body must be analysed first.
+
+ParserResult<bool> AstBuilder::apply_function_annotations(FunctionExprPayload &Function)
+{
+   bool no_discard = false;
+   for (const auto &annotation : Function.annotations) {
+      if (not annotation.name) continue;
+      if (std::string_view(strdata(annotation.name), annotation.name->len) != "NoDiscard") continue;
+
+      Token location = Token::from_span(annotation.span, TokenKind::Annotate);
+      if (no_discard) {
+         return this->fail<bool>(ParserErrorCode::NoDiscard, location,
+            "@NoDiscard is declared more than once for the same function");
+      }
+
+      if (not annotation.args.empty()) {
+         return this->fail<bool>(ParserErrorCode::NoDiscard, location,
+            "@NoDiscard does not accept arguments; it always applies to the first result");
+      }
+
+      if (Function.return_types.is_void()) {
+         return this->fail<bool>(ParserErrorCode::NoDiscard, location,
+            "@NoDiscard function declares no results; it must supply a first result for the caller to store");
+      }
+
+      no_discard = true;
+      Function.no_discard_results |= 1u;
+      Function.no_discard_span = annotation.span;
+   }
+
+   return ParserResult<bool>::success(true);
 }
 
 //********************************************************************************************************************
@@ -442,10 +482,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
          "annotations must precede a function declaration or function assignment");
    }
 
-   if (not stmt or not attach_annotations_to_statement(*stmt, annotations)) {
+   FunctionExprPayload *function = stmt ? attach_annotations_to_statement(*stmt, annotations) : nullptr;
+   if (not function) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
          "annotations must precede a function declaration or function assignment");
    }
+
+   auto applied = this->apply_function_annotations(*function);
+   if (not applied.ok()) return ParserResult<StmtNodePtr>::failure(applied.error_ref());
 
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }

@@ -48,7 +48,8 @@ enum class ParserErrorCode : uint16_t {
    FunctionSignatureMismatch, // Function definition does not match an earlier forward declaration
    TooManyExceptionFilters, // More than 4 error codes declared for an except handler
    InvalidContextBinding,   // function[X] binding is not a table, or a weak binding is also captured lexically
-   InvalidOptionalCall      // Unsupported or ambiguous `member?(...)` form, or a proved non-table receiver
+   InvalidOptionalCall,     // Unsupported or ambiguous `member?(...)` form, or a proved non-table receiver
+   NoDiscard                // Invalid @NoDiscard declaration, or a discarded @NoDiscard result
 };
 
 struct ParserDiagnostic {

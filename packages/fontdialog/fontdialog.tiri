@@ -844,6 +844,7 @@ gui.dialog.font = function(Options:table)
          hints.pop()
       end
 
+      @NoDiscard
       function footerButton(Text:str, Primary:bool, Activate:func):table
          return gui.button({
             target = &footer, y = (FOOTER_HEIGHT - BUTTON_HEIGHT) * 0.5, width = 100, height = BUTTON_HEIGHT,

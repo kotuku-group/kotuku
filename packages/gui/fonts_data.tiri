@@ -39,7 +39,6 @@ glFontDefaults = {
    -- All sizes are scaled to gui.interface.dpi on first access
    default  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Always matches gui.interface.fontSize
    window   = { face='Noto Sans UI', size='100%', style='Regular' }, -- For text placed against the window background, e.g. labels
-   button   = { face='Noto Sans UI', size='100%', style='Regular' }, -- Button labels
    filesys  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Text for files, folders
    icon     = { face='Noto Sans,Noto Sans UI', size='100%', style='Bold' }, -- Labeling for icons
    menu     = { face='Noto Sans,Noto Sans UI', size='100%', style='Medium' }, -- Menu & dropdown item text
@@ -49,7 +48,7 @@ glFontDefaults = {
    xsmall   = { face='Micro', size=6, style='Medium' }, -- The smallest available, still legible size
    large    = { face='Noto Sans,Noto Sans UI', size='130%', style='Medium' }, -- Recommended text for headers
    input    = { face='Noto Sans UI', size='100%', style='Regular' }, -- Text inside input widgets (e.g. combobox)
-   widget   = { face='Noto Sans UI', size='100%', style='Regular' } -- Text inside non-input widgets (e.g. button)
+   widget   = { face='Noto Sans UI', size='100%', style='Regular' } -- Default text for widgets, inc. labels
 }
 
 gui.fonts = scaledFonts(glFontDefaults, glStyle.fonts)

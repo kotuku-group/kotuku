@@ -509,6 +509,7 @@ StaticResultSet map_static_result_filter(
    for (size_t source = 0; source < source_limit and output < MAX_RETURN_TYPES; ++source) {
       bool keep = source < ExplicitCount ? ((KeepMask & (uint64_t(1) << source)) != 0) : TrailingKeep;
       if (not keep) continue;
+      if (Source.no_discard_at(source)) result.no_discard |= StaticResultObligations(1u << output);
       result.values[output++] = Source.value_at(source);
    }
 

@@ -189,6 +189,7 @@ struct ParserSymbolMetadata {
    std::string name;
    std::string kind;       // "function" or "thunk"
    std::string signature;  // e.g. "greet(Name: str):str"
+   bool no_discard;        // First result is marked @NoDiscard
    SourceSpan span;
    SourceSpan end_span;
    std::vector<ParserAnnotationMetadata> annotations;
@@ -222,6 +223,7 @@ The table exposed to Tiri is zero-indexed and has this shape:
          name = "greet",
          kind = "function",
          signature = "greet(Name: str):str",
+         noDiscard = false,
          line = 5,
          column = 10,
          endLine = 7,

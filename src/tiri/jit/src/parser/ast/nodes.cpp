@@ -1234,7 +1234,7 @@ size_t ast_expression_child_count(const ExprNode &Node)
 }
 
 //********************************************************************************************************************
-// Render a function context binding reference as written, e.g. 'self.owner' or '&viewport'.
+// Render a reference as written for function context bindings and call diagnostics, e.g. 'self.owner' or '&viewport'.
 
 std::string context_binding_text(const ExprNode &Reference)
 {
@@ -1253,6 +1253,13 @@ std::string context_binding_text(const ExprNode &Reference)
             std::string_view(strdata(member.member.symbol), member.member.symbol->len) : std::string_view("?");
          if (member.table and member.table->kind IS AstNodeKind::CurrentContextExpr) return std::format("&{}", field);
          return std::format("{}.{}", member.table ? context_binding_text(*member.table) : "?", field);
+      }
+
+      case AstNodeKind::SafeMemberExpr: {
+         const auto &member = std::get<SafeMemberExprPayload>(Reference.data);
+         std::string_view field = member.member.symbol ?
+            std::string_view(strdata(member.member.symbol), member.member.symbol->len) : std::string_view("?");
+         return std::format("{}?.{}", member.table ? context_binding_text(*member.table) : "?", field);
       }
 
       case AstNodeKind::IndexExpr: {

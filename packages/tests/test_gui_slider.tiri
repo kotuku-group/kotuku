@@ -391,23 +391,73 @@ end
    assert(math.abs(second.value - 0.51) < 0.000001, 'Tab focus must route keyboard input to the next slider')
 end
 
-function abandonedSlider():<obj, func, array<int>>
+function abandonedSlider(Events:table):<obj, func, array<int>>
    local surface, slider = newSlider({ orientation='vertical', value=0.5,
-      label='Gain:', labelPos='top', labelAlign='centre' })
+      label='Gain:', labelPos='top', labelAlign='centre', events=Events })
    local weak_slider <weak> = slider
    return surface, function():table return weak_slider end,
       array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.button.id,
          slider.labelText.id, slider.prvLabel.slot.id }
 end
 
-@Test function NativeCallbacksDoNotRetainSlider()
+@Test function ViewportRetainsDiscardedSliderUntilFree()
+   local hits = 0
+   local surface <close>, read, ids = abandonedSlider({ activate=function(Value) hits++ end })
+   processing.collect('full')
+   assert(read() != nil, 'The viewport must retain a discarded slider')
+   for id in values(ids) do
+      assert(obj.find(id), 'A discarded slider must preserve its native vectors')
+   end
+   sendKey(KEY_END)
+   assert(hits is 1 and read().value is 1, 'A discarded slider must still activate after collection')
+
+   read().free()
+   processing.collect('full')
+   assert(read() is nil, 'Free must release the viewport retention of the slider')
+   for id in values(ids) do
+      assert(not obj.find(id), 'Free must release a discarded slider and its native vectors')
+   end
+   assert(obj.find(surface.id), 'Free must preserve the hosting surface')
+   sendKey(KEY_HOME)
+   assert(hits is 1, 'Free must remove the slider input callbacks')
+end
+
+@Test function ParentDestructionReleasesDiscardedSlider()
    local surface <close>, read, ids = abandonedSlider()
    processing.collect('full')
-   assert(read() is nil, 'Native callbacks must not retain an unreferenced slider')
+   assert(read() != nil, 'The live viewport must retain the slider')
+   surface.free()
+   processing.collect('full')
+   assert(read() is nil, 'Parent destruction must release the slider state')
    for id in values(ids) do
-      assert(not obj.find(id), 'Slider finalisation must release its native vectors')
+      assert(not obj.find(id), 'Parent destruction must release the slider vectors')
    end
-   assert(obj.find(surface.id), 'Slider finalisation must preserve the hosting surface')
+end
+
+@Test function ViewportDestructionClearsRetainedSlider()
+   local surface <close>, slider = newSlider({ value=0.5 })
+   slider.viewport.free()
+   assert(slider.viewport is nil and slider.disabled and not slider.hasFocus,
+      'Native viewport destruction must invalidate the slider state')
+   slider.free()
+   sendKey(KEY_END)
+end
+
+@Test function FreeReleasesSliderVectors()
+   local surface <close>, slider = newSlider({ label='Gain:', valuePos='out-max', ticks=true, step=0.1 })
+   local parent_id = slider.viewport.parent.id
+   local ids = array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.button.id,
+      slider.labelText.id, slider.prvLabel.slot.id, slider.valueText.id }
+   for _, path in slider.prvTickPaths do ids.push(path.id) end
+
+   slider.free()
+   assert(slider.viewport is nil and slider.disabled and not slider.hasFocus,
+      'Free must clear the viewport and disable the slider')
+   for id in values(ids) do
+      assert(not obj.find(id), 'Free must release the slider and all its native vectors')
+   end
+   assert(obj.find(parent_id) and obj.find(surface.id), 'Free must preserve the parent viewport and surface')
+   slider.free()
    sendKey(KEY_END)
 end
 
@@ -429,8 +479,23 @@ end
    sendKey(KEY_END)
    assert(activated, 'Keyboard input must dispatch activation')
    processing.collect('full')
-   assert(not obj.find(viewport_id), 'Returning from the callback must release its acquired slider')
+   assert(obj.find(viewport_id), 'Returning from the callback must preserve the parent-owned viewport')
    sendKey(KEY_HOME)
+end
+
+@Test function FreeDuringActivationReleasesSlider()
+   local hits = 0
+   local surface <close>, slider = newSlider({ value=0.5, events={ activate=function(Value)
+      hits++
+      &free()
+   end } })
+   local viewport_id = slider.viewport.id
+   sendKey(KEY_END)
+   assert(hits is 1 and slider.viewport is nil and not obj.find(viewport_id),
+      'Free during activation must release the viewport safely')
+   slider.free()
+   sendKey(KEY_HOME)
+   assert(hits is 1, 'Freed slider callbacks must no longer receive input')
 end
 
 @Test function LabelPositionsReserveTrackSpaceInBothOrientations()
@@ -675,7 +740,7 @@ end
    assert(raised, 'A non-positive valueWidth must be rejected')
 end
 
-@Test function OutsideValueDisplayFollowsRangeChangesAndCollection()
+@Test function OutsideValueDisplayFollowsRangeChangesAndFree()
    local surface <close>, slider = newSlider({ valuePos='out-max', step=1, min=0, max=10, value=5 })
    local track_width = slider.trackVP.width
    slider.setRange(-1000, 1000)
@@ -686,10 +751,11 @@ end
    slider.setRange(0, 10)
    assert(slider.valueText.string is '0', 'Range clamping must refresh value text')
    local ids = array<int> { slider.viewport.id, slider.valueText.id }
+   slider.free()
    slider = nil
    processing.collect('full')
    for id in values(ids) do
-      assert(not obj.find(id), 'Collection must release the widget and its value text')
+      assert(not obj.find(id), 'Free must release the widget and its value text')
    end
 end
 

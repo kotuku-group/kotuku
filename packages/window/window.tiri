@@ -25,9 +25,9 @@ end
 
 function completeTheme(Theme:table!, Base:table!):table
    local result = table.clone(Theme)
-   result.scheme ?= Base.scheme
+   result.scheme  ?= Base.scheme
    result.palette ?= Base.palette
-   result.init ?= Base.init
+   result.init    ?= Base.init
    if result.menu and not result.menubar?.menu then
       result.menubar = table.merge(result.menubar, { menu = result.menu })
    end
@@ -53,6 +53,7 @@ function setDisplayIcon(Display:obj, Icon:str)
    end
 end
 
+@NoDiscard
 gui.window = function(Options:table!)
    self = setmetatable(entity { -- Public interface
       events       = Options.events ?? { },

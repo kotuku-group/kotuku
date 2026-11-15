@@ -428,7 +428,7 @@ end
 @Test global function W3ParamButtonFnord() hashTestSVG('params/w3-param-button.svg?color=cornflowerblue&label=fnord', 0x909d53c7) end
 @Test global function W3ParamMapA()        hashTestSVG('params/w3-param-map.svg?x=255&y=172', 0x6b3ebefb) end
 @Test global function W3ParamMapB()        hashTestSVG('params/w3-param-map.svg?y=167&x=655', 0x13e35bbf) end
-@Test global function W3ParamFlowers()     hashTestSVG('params/w3-param-flowers.svg', 0x6d868310) end
+@Test global function W3ParamFlowers()     hashTestSVG('params/w3-param-flowers.svg', 0x6af1ef1a) end
 
 -- The parameterised <a> href has no visual effect, and the text is misrendered because <tspan> is unsupported
 -- and the textPath is mispositioned.

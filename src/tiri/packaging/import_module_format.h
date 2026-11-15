@@ -14,9 +14,12 @@
 
 namespace tiri::import_cache {
 
-// Schema 16 stores module-cache fragments: each payload holds only its own initialiser and references separately
-// cached dependencies.  Schema 15 payloads embedded their complete dependency graphs and are ordinary misses.
-constexpr uint32_t SCHEMA_VERSION = 16;
+// Schema 19 invalidates bytecode compiled before @NoDiscard checks covered direct globals and safe imported calls.
+// Schema 18 invalidates bytecode compiled before @NoDiscard consumption validation.  Schema 17 adds result
+// obligations to callable exports, so that an older interface cannot silently
+// erase the contract.  Schema 16 introduced module-cache fragments: each payload holds only its own initialiser and
+// references separately cached dependencies.  Older payloads are ordinary misses.
+constexpr uint32_t SCHEMA_VERSION = 20;
 // Bytecode header flag that marks a module-cache fragment payload.  Mirrors BCDUMP_F_FRAGMENT.
 constexpr uint8_t FRAGMENT_PAYLOAD_FLAG = 0x10;
 constexpr size_t MAX_INTERFACE_SIZE = 8 * 1024 * 1024;
@@ -77,6 +80,8 @@ struct CallableDescriptor {
    std::vector<ContractDescriptor> Parameters;   // Describes the callable's parameters.
    std::vector<ValueDescriptor> Results;         // Describes the callable's result values.
    uint16_t DeclaredResults = 0;                  // Stores the number of declared results.
+   uint8_t NoDiscardResults = 0;                  // @NoDiscard positions; bit N is result N+1, independent of
+                                                  // DeclaredResults because inferred signatures may be unpublished.
    bool VariadicParameters = false;               // Indicates whether parameters are variadic.
    bool VariadicResults = false;                  // Indicates whether results are variadic.
 

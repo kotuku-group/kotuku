@@ -126,7 +126,7 @@ gui.divider = function(Options:table)
          check &_vp.scene.mtAddDef(div_name, &_pattern)
       end
 
-      &_vp.subscribe('free', function()
+      &_vp.subscribe('free', function[<weak> &&]()
          if &_anchored then mGfx.UnlockCursor(&_vp) end
       end)
 
@@ -163,7 +163,9 @@ gui.divider = function(Options:table)
 
       &_pct = (&_div[&_anchor] + HALF_GAP) / &_vp[&_length]
 
-      &_vp.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj!, Event)
+      function parentFeedback(Viewport:obj!, Event)
+         if &_freed then return ERR_Terminate end
+
          if &_proportional then
             if &_orientation is 'h' then
                arrangeAll(self, &_pct * Viewport.width)
@@ -175,7 +177,27 @@ gui.divider = function(Options:table)
          end
 
          Viewport.acDraw()
-      end)
+      end
+
+      &_vp.mtSubscribeFeedback(FM_PATH_CHANGED, parentFeedback)
+
+      -- Removes the divider: its strip, its pattern and its subscription to the parent's feedback.  The two viewports
+      -- are left as they are, so the client can lay them out again or free them.  Create a new divider to restore it.
+
+      &free = function()
+         if &_freed then return end
+         &_freed = true
+         if &_anchored then
+            &_anchored = false
+            mGfx.UnlockCursor(&_vp)
+         end
+         if &_vp.exists() then &_vp.mtSubscribeFeedback(0, parentFeedback) end
+         &_dividerVP?.free()
+         &_pattern?.free()
+         &_dividerVP = nil
+         &_pattern = nil
+         &_stripe = nil
+      end
 
       check &_dividerVP.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function(Viewport:obj!, Events)
          ev = Events

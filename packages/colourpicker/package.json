@@ -59,8 +59,8 @@
     },
     {
       "path": "colourpicker.tiri",
-      "size": 151214,
-      "sha256": "92a1a0f6ecffff016f96cda50e4fcab417122dcb09f88b3b1ce04f702df29797",
+      "size": 151239,
+      "sha256": "a3b200b42e45db430fcb406ef4669ccb586ea618bd93714c8c3af70e62ce9aba",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -89,8 +89,8 @@
     },
     {
       "path": "manager.tiri",
-      "size": 60842,
-      "sha256": "b97f4d0a36933989ccde4917035020dba0fa68fbfa0b620de2366e827d4febd9",
+      "size": 60856,
+      "sha256": "b752b5425d0af253db424b5cbbe3e85631da596270ce1adbeec4a91eb521a51a",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

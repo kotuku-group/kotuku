@@ -1061,6 +1061,7 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
       case ParserErrorCode::TooManyExceptionFilters: return "TooManyExceptionFilters";
       case ParserErrorCode::InvalidContextBinding: return "InvalidContextBinding";
       case ParserErrorCode::InvalidOptionalCall: return "InvalidOptionalCall";
+      case ParserErrorCode::NoDiscard: return "NoDiscard";
       default: return "Unknown";
    }
 }
@@ -1198,6 +1199,7 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
       set_table_string(L, "kind", symbol.kind);
       set_table_string(L, "signature", symbol.signature);
       if (not symbol.binding.empty()) set_table_string(L, "binding", symbol.binding);
+      set_table_bool(L, "noDiscard", symbol.no_discard);
       set_table_int(L, "line", source_position(symbol.span.line));
       set_table_int(L, "column", source_position(symbol.span.column));
       set_table_int(L, "endLine", source_position(symbol.end_span.line));
