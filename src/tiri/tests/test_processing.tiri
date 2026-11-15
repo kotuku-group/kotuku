@@ -212,3 +212,36 @@ end
    assert(err is ERR_Okay, f'The outer sleep should report its signal, got error {err}')
    assert(elapsed < 1.5, f'The outer sleep should wake when the nested sleep returns, took {elapsed}s')
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- proc.signal() must signal the objects monitored by the processing object, otherwise it cannot wake proc.sleep().
+
+@Test function SignalWakesMonitoredObject()
+   local target = obj.new('xml', { flags='NEW' })
+   proc = processing.new({ timeout = 2, signals = array<obj> { target } })
+
+   err, timer = mSys.SubscribeTimer(0.05, function()
+      proc.signal()
+      return ERR_Terminate
+   end)
+
+   start = mSys.PreciseTime()
+   err = proc.sleep()
+   elapsed = (mSys.PreciseTime() - start) / 1000000
+   assert(err is ERR_Okay, f'proc.signal() should wake the sleep, got error {err}')
+   assert(elapsed < 1, f'proc.signal() should wake the sleep promptly, took {elapsed}s')
+end
+
+@Test function SignalWakesAllModeSleep()
+   local a = obj.new('xml', { flags='NEW' })
+   local b = obj.new('xml', { flags='NEW' })
+   proc = processing.new({ timeout = 2, signals = array<obj> { a, b }, mode = 'all' })
+
+   err, timer = mSys.SubscribeTimer(0.05, function()
+      proc.signal()
+      return ERR_Terminate
+   end)
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, f'proc.signal() should wake an all-mode sleep, got error {err}')
+end

@@ -430,6 +430,9 @@ ERR classify_object_write_miss(objMetaClass *Class, uint32_t FieldHash)
 extern int object_newindex(lua_State *Lua)
 {
    if (auto def = lj_get_object_fast(Lua, 1)) {
+      // A wrapper cleared by free() has no class, so it is rejected before the class is used in an error message.
+      if (not def->uid) luaL_error(Lua, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
+
       if (auto hash = luaL_checkstringhash(Lua, 2)) {
          OBJECTPTR obj;
          if (auto error = access_object(def, obj); error IS ERR::Okay) {
@@ -453,8 +456,8 @@ extern int object_newindex(lua_State *Lua)
             }
          }
          else { // Report why the object could not be accessed rather than dropping the write silently.
-            luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName.c_str(),
-               luaL_checkstring(Lua, 2), GetErrorMsg(error));
+            luaL_error(Lua, error, "Write failure: %s.%s: %s",
+               def->classptr ? def->classptr->ClassName.c_str() : "?", luaL_checkstring(Lua, 2), GetErrorMsg(error));
          }
       }
    }
@@ -482,7 +485,8 @@ extern int object_newindex(lua_State *Lua)
       // NB: No readability check is required - if the field isn't in the table, it's not readable.
       auto result = func->Call(Lua, *func, def); // On error, result is 0 and CaughtError is defined.
       if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) {
-         luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(),
+         luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s",
+            def->classptr ? def->classptr->ClassName.c_str() : "?",
             luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
       }
       return result;

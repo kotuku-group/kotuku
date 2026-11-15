@@ -695,3 +695,30 @@ end
    assert(child.name is '7', 'Child initialisation must convert a numeric string-field value')
    assert(child.owner.id is config.id, 'Child initialisation must preserve the owner')
 end
+
+-- Writing to a freed object must raise an error.  free() clears the wrapper's class, and the write path previously
+-- dereferenced it to report the failure, which crashed the process.
+
+@Test function WriteToFreedObjectRaises()
+   local config = obj.new('config', { })
+   local child = config.new('config', { name='child' })
+   child.free()
+
+   local code
+   try
+      child.name = 'after free'
+   except e
+      code = e.code
+   end
+   assert(code is ERR_DoesNotExist, f'Writing to a freed object must raise ERR_DoesNotExist, got {code}')
+
+   local orphan = config.new('config', { name='orphan' })
+   config.free()
+   code = nil
+   try
+      orphan.name = 'after owner free'
+   except e
+      code = e.code
+   end
+   assert(code != nil, 'Writing to an object freed with its owner must raise an error')
+end
