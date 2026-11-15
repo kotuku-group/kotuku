@@ -13,7 +13,7 @@
 PAD_X     <const> = 8   -- Inset of the search row and the list rows
 SEARCH_H  <const> = 24
 FILTER_Y  <const> = 8 + SEARCH_H + 6
-TOP_H     <const> = FILTER_Y + fontdialog_controls.SEG_H + 8 -- The search and filter rows and their padding
+TOP_H     <const> = FILTER_Y + fdc.SEG_H + 8 -- The search and filter rows and their padding
 ROW_H     <const> = 30
 VIEW_EDGE <const> = 4   -- Inset of the rows within a listview
 STAR_X    <const> = 8
@@ -184,7 +184,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    -- Filters, below the search row.  An empty filter group admits every family.
 
-   self.classFilter = fontdialog_controls.segmented(Picker, body, {
+   self.classFilter = fdc.segmented(Picker, body, {
       x = PAD_X, y = FILTER_Y, items = CLASS_ITEMS, multi = true,
       onChange = function(ID, Pressed)
          self.classes[ID] = Pressed ? true : nil
@@ -192,7 +192,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       end
    })
 
-   self.techFilter = fontdialog_controls.segmented(Picker, body, {
+   self.techFilter = fdc.segmented(Picker, body, {
       x = PAD_X + self.classFilter.width + 6, y = FILTER_Y, items = TECH_ITEMS, multi = true,
       onChange = function(ID, Pressed)
          self.techs[ID] = Pressed ? true : nil
@@ -200,7 +200,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       end
    })
 
-   self.scriptFilter = fontdialog_controls.segmented(Picker, body, {
+   self.scriptFilter = fdc.segmented(Picker, body, {
       y = FILTER_Y, items = SCRIPT_ITEMS, multi = true,
       onChange = function(ID, Pressed)
          self.allScripts = Pressed

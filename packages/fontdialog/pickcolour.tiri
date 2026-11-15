@@ -1,0 +1,65 @@
+
+   import 'gui/colourpicker', 'gui/colourpicker/colour'
+
+-- Format a feedback colour as a CSS string.  Alpha is included only if it is less than 1.
+
+function formatColour(Colour:table!, Alpha:num):str
+   ok = Colour.oklch
+   if ok then return colourmath.toOklchString(ok.l, ok.c, ok.h, Alpha) end -- Lossless, including colours outside sRGB
+   return colourmath.toHex(Colour.r, Colour.g, Colour.b, Alpha)
+end
+
+return function(Owner:table!, Target:obj!, Colour:str!, Title:str!, PreserveAlpha:bool, Preview:obj,
+   PreviewOpacity:num):str
+
+   proc = processing.new({ signals = array<obj> { obj.find('self'), Target }, mode = 'any' })
+
+   -- The preview is found by its UID on each use, because the font dialog can replace it while the picker is open,
+   -- and a write to a freed object reference is not safe.
+
+   local preview_id = Preview?.id
+   local original_fill = Preview?.fill
+
+   function setPreviewFill(Fill:str)
+      if preview_id is nil then return end
+      sample = obj.find(preview_id)
+      if sample then
+         sample.fill = Fill
+         sample.acDraw()
+      end
+   end
+
+   local result
+   picker = gui.dialog.colour({
+      colour   = Colour,
+      title    = Title,
+      modal    = false,
+      feedback = function(Colour:table, Status:str!)
+         if Status is 'active' then
+            opacity = (PreviewOpacity != nil) ? PreviewOpacity : 100
+            alpha = (PreserveAlpha ? Colour.a : 1) * opacity / 100
+            setPreviewFill(formatColour(Colour, (alpha < 1) ? alpha : nil))
+            return
+         end
+
+         if Status is 'cancelled' then setPreviewFill(original_fill) end
+         result = Colour
+         proc.signal()
+      end
+   })
+
+   -- The processing loop also wakes when the parent is freed.  Close its colour picker on that path and if the
+   -- wait is interrupted, without signalling a caller that is no longer waiting.
+   defer
+      if not picker.finished then
+         picker.feedback = nil
+         picker.cancel()
+         setPreviewFill(original_fill)
+      end
+   end
+
+   proc.sleep()
+
+   if not result?? then return nil end
+   return formatColour(result, PreserveAlpha ? result.a : nil)
+end

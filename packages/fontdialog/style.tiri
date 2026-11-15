@@ -23,8 +23,8 @@ function fontdialog_sizing_pixels(Size:str!):num
    return unitValue(Size, 'px')
 end
 
-PAD   <const> = fontdialog_controls.PAD
-ROW_H <const> = fontdialog_controls.ROW_H
+PAD   <const> = fdc.PAD
+ROW_H <const> = fdc.ROW_H
 
 -- Labels and slider steps of the registered axes.  The ranges are read from the font database, and those of the
 -- OpenType specification are only used if the database has no range for an axis.
@@ -281,14 +281,14 @@ end
 function paintParts(State:table!):array<str>
    parts = array<str>
    if not fontdialog_style.hasOutlines(State.font) then
-      parts.push(f'fill={fontdialog_controls.withAlpha(State.fill, 100)}')
+      parts.push(f'fill={fdc.withAlpha(State.fill, 100)}')
       return parts
    end
 
-   parts.push(f'fill={fontdialog_controls.withAlpha(State.fill, State.opacity)}')
+   parts.push(f'fill={fdc.withAlpha(State.fill, State.opacity)}')
 
    if State.strokeOn then
-      parts.push(f'stroke={fontdialog_controls.withAlpha(State.strokeColour, State.strokeOpacity)}')
+      parts.push(f'stroke={fdc.withAlpha(State.strokeColour, State.strokeOpacity)}')
       parts.push(f'strokeWidth={tidy(State.strokeWidth)}em')
       parts.push(f'lineJoin={State.strokeJoin}')
    else
@@ -451,11 +451,11 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
    if settings.kerning then State.kerning = (settings.kerning is 'none') ? 'none' : 'metrics' end -- No optical kerning
 
    fill_alpha, stroke_alpha = 100, 100
-   if settings.fill then State.fill, fill_alpha = fontdialog_controls.splitAlpha(settings.fill) end
+   if settings.fill then State.fill, fill_alpha = fdc.splitAlpha(settings.fill) end
 
    if settings.stroke then
       State.strokeOn = settings.stroke != 'none'
-      if State.strokeOn then State.strokeColour, stroke_alpha = fontdialog_controls.splitAlpha(settings.stroke) end
+      if State.strokeOn then State.strokeColour, stroke_alpha = fdc.splitAlpha(settings.stroke) end
    end
 
    -- The dialog has no opacity for the text as a whole, so a definition's `opacity` key is applied to both colours.
@@ -478,7 +478,7 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
          shadow = settings.shadow.split(' ')
          State.shadowX, State.shadowY = lengthEm(shadow[0], State.size), lengthEm(shadow[1], State.size)
          State.shadowBlur = lengthEm(shadow[2], State.size)
-         _, State.shadowOpacity = fontdialog_controls.splitAlpha(shadow.concat(' ', nil, 3))
+         _, State.shadowOpacity = fdc.splitAlpha(shadow.concat(' ', nil, 3))
       end
    end
 
@@ -549,7 +549,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
 
          for tag in values(font.axes) do
             def = axisDef(font, tag)
-            self.axisRows[tag] = fontdialog_controls.sliderRow(Picker, content, {
+            self.axisRows[tag] = fdc.sliderRow(Picker, content, {
                x = PAD, y = y, width = inner, label = def.label, min = def.min, max = def.max, step = def.step,
                value = s.axes[tag] ?? def.default,
                format = function(V):str return tostring(math.round(V)) end,
@@ -563,7 +563,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
          end
 
          if font.italic then
-            self.italicBox = fontdialog_controls.checkRow(Picker, content, {
+            self.italicBox = fdc.checkRow(Picker, content, {
                x = PAD, y = y + 4, label = 'Italic', value = s.italic,
                onToggle = function(Value) Picker.update({ italic = Value }, 'style') end
             })
@@ -580,7 +580,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
 
          items = array<table>
          for style in values(styles) do items.push({ id = style, label = style }) end
-         self.styleSeg = fontdialog_controls.segmented(Picker, content, {
+         self.styleSeg = fdc.segmented(Picker, content, {
             x = PAD, y = y, wrap = inner, items = items, selected = s.style,
             onChange = function(ID) Picker.update({ style = ID }, 'style') end
          })
@@ -594,10 +594,10 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
          items = FEATURES.filter((Feature) => Feature.id in self.supported)
 
          if #items > 0 then
-            fontdialog_controls.subhead(Picker, content, PAD, y, 'OpenType features')
+            fdc.subhead(Picker, content, PAD, y, 'OpenType features')
             y += 18
 
-            self.features = fontdialog_controls.segmented(Picker, content, {
+            self.features = fdc.segmented(Picker, content, {
                x = PAD, y = y, wrap = inner, items = items, multi = true, selected = s.features,
                onChange = function(ID, Pressed)
                   features = table.clone(Picker.state.features)

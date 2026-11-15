@@ -115,7 +115,7 @@ fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):ta
 
       dims = self.view.itemDimensions(item)
       list = self.view
-      self.editor = fontdialog_controls.inlineEdit(Picker, body, {
+      self.editor = fdc.inlineEdit(Picker, body, {
          x = list.viewport.x + list.frame.x + list.page.x + dims.x,
          y = list.viewport.y + list.frame.y + list.page.y + dims.y,
          width = dims.width, height = dims.height, text = Name, size = FONT_SIZE, charLimit = NAME_LIMIT,

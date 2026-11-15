@@ -5,10 +5,10 @@
 
    namespace fontdialog_stroke { }
 
-PAD   <const> = fontdialog_controls.PAD
-ROW_H <const> = fontdialog_controls.ROW_H
+PAD   <const> = fdc.PAD
+ROW_H <const> = fdc.ROW_H
 
-fontdialog_stroke.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fontdialog_controls.COLOUR_H + 4 + (ROW_H * 3) + 6
+fontdialog_stroke.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fdc.COLOUR_H + 4 + (ROW_H * 3) + 6
 
 JOIN_ITEMS <const> = array<table> {
    { id = 'miter', label = 'Miter' }, { id = 'round', label = 'Round' }, { id = 'bevel', label = 'Bevel' }
@@ -45,7 +45,7 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
 
    self.enabled = gui.toggle({
       target = body, x = PAD + inner - toggle_size,
-      y = y + ((fontdialog_controls.COLOUR_H - toggle_size) * 0.5),
+      y = y + ((fdc.COLOUR_H - toggle_size) * 0.5),
       value = state.strokeOn, width = toggle_size, height = toggle_size,
       events = {
          activate = function()
@@ -54,28 +54,47 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
       }
    })
 
-   self.colour = fontdialog_controls.colourButton(Picker, body, {
-      x = PAD, y = y, width = inner - toggle_size - toggle_gap,
-      colour = state.strokeColour, title = 'Stroke Colour', label = 'Stroke',
-      onChange = function(Colour) Picker.update({ strokeColour = Colour, strokeOn = true }, 'stroke') end
+   self.colour = fdc.colourButton(Picker, body, {
+      x      = PAD,
+      y      = y,
+      width  = inner - toggle_size - toggle_gap,
+      colour = state.strokeColour,
+      title  = 'Stroke Colour',
+      label  = 'Stroke',
+      onChange = function(Colour)
+         Picker.update({ strokeColour = Colour, strokeOn = true }, 'stroke')
+      end
    })
-   y += fontdialog_controls.COLOUR_H + 4
 
-   self.opacity = fontdialog_controls.sliderRow(Picker, body, {
-      x = PAD, y = y, width = inner, label = 'Opacity', min = 0, max = 100, step = 1, value = state.strokeOpacity,
-      format = function(V):str return f'{math.round(V)}%' end,
-      onChange = function(V) Picker.update({ strokeOpacity = V, strokeOn = true }, 'stroke') end
+   y += fdc.COLOUR_H + 4
+
+   self.opacity = fdc.sliderRow(Picker, body, {
+      x      = PAD,
+      y      = y,
+      width  = inner,
+      label  = 'Opacity',
+      min    = 0,
+      max    = 100,
+      step   = 1,
+      value  = state.strokeOpacity,
+      format = function(V):str
+         return f'{math.round(V)}%'
+      end,
+      onChange = function(V)
+         Picker.update({ strokeOpacity = V, strokeOn = true }, 'stroke')
+      end
    })
+
    y += ROW_H
 
-   self.width = fontdialog_controls.sliderRow(Picker, body, {
+   self.width = fdc.sliderRow(Picker, body, {
       x = PAD, y = y, width = inner, label = 'Width', min = 0, max = 0.25, step = 0.005, value = state.strokeWidth,
       format = widthLabel,
       onChange = function(V) Picker.update({ strokeWidth = V, strokeOn = true }, 'stroke') end
    })
    y += ROW_H
 
-   self.join = fontdialog_controls.segmentedRow(Picker, body, {
+   self.join = fdc.segmentedRow(Picker, body, {
       x = PAD, y = y, label = 'Join', items = JOIN_ITEMS, selected = state.strokeJoin,
       onChange = function(ID) Picker.update({ strokeJoin = ID }, 'stroke') end
    })
@@ -87,7 +106,7 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
 
       if outlined != self.outlined then
          self.outlined = outlined
-         fontdialog_controls.setEnabled(array<table> { self.enabled, self.colour, self.opacity, self.width, self.join },
+         fdc.setEnabled(array<table> { self.enabled, self.colour, self.opacity, self.width, self.join },
             outlined)
       end
 
@@ -101,6 +120,7 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
          if self.enabled.value != s.strokeOn then self.enabled.setState(s.strokeOn) end
          return
       end
+
       self.enabled.setState(stroke_on)
       self.colour.set(s.strokeColour)
       self.opacity.set(s.strokeOpacity)

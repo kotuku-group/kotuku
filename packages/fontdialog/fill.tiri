@@ -5,10 +5,10 @@
 
    namespace fontdialog_fill { }
 
-PAD   <const> = fontdialog_controls.PAD
-ROW_H <const> = fontdialog_controls.ROW_H
+PAD   <const> = fdc.PAD
+ROW_H <const> = fdc.ROW_H
 
-fontdialog_fill.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fontdialog_controls.COLOUR_H + 4 + ROW_H + 6
+fontdialog_fill.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fdc.COLOUR_H + 4 + ROW_H + 6
 
 @Doc(text=[[
 @desc Create the Fill panel.
@@ -34,7 +34,7 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    self.enabled = gui.toggle({
       target = body, x = PAD + inner - toggle_size,
-      y = 10 + ((fontdialog_controls.COLOUR_H - toggle_size) * 0.5),
+      y = 10 + ((fdc.COLOUR_H - toggle_size) * 0.5),
       value = state.fill != 'none', width = toggle_size, height = toggle_size,
       events = {
          activate = function()
@@ -43,20 +43,25 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
       }
    })
 
-   self.colour = fontdialog_controls.colourButton(Picker, body, {
+   self.colour = fdc.colourButton(Picker, body, {
       x      = PAD,
       y      = 10,
       width  = inner - toggle_size - toggle_gap,
       colour = (state.fill != 'none') ? state.fill : Picker.defaultFill,
       title  = 'Text Fill',
       label  = 'Fill',
+      preview = function():<obj, num> -- The live paragraph follows the colour while it is chosen
+         state = Picker.state
+         opacity = fontdialog_style.hasOutlines(state.font) ? state.opacity : 100
+         return Picker.preview?.liveSample, opacity
+      end,
       onChange = function(Colour)
          Picker.update({ fill = Colour }, 'fill')
       end
    })
 
-   self.opacity = fontdialog_controls.sliderRow(Picker, body, {
-      x = PAD, y = 10 + fontdialog_controls.COLOUR_H + 4, width = inner, label = 'Opacity', min = 0, max = 100,
+   self.opacity = fdc.sliderRow(Picker, body, {
+      x = PAD, y = 10 + fdc.COLOUR_H + 4, width = inner, label = 'Opacity', min = 0, max = 100,
       step = 1, value = state.opacity,
       format = function(V):str return f'{math.round(V)}%' end,
       onChange = function(V) Picker.update({ opacity = V }, 'fill') end
@@ -66,7 +71,7 @@ fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
       outlined = fontdialog_style.hasOutlines(Picker.state.font)
       if outlined != self.outlined then
          self.outlined = outlined
-         fontdialog_controls.setEnabled(array<table> { self.opacity }, outlined)
+         fdc.setEnabled(array<table> { self.opacity }, outlined)
       end
 
       fill_on = Picker.state.fill != 'none'

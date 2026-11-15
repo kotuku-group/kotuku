@@ -5,8 +5,8 @@
 
    namespace fontdialog_effects { }
 
-PAD     <const> = fontdialog_controls.PAD
-ROW_H   <const> = fontdialog_controls.ROW_H
+PAD     <const> = fdc.PAD
+ROW_H   <const> = fdc.ROW_H
 CHECK_H <const> = 26
 BLEND_H <const> = 24
 
@@ -42,7 +42,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
    function sliders(Rows:array<table>):table
       group = { viewport = body.new('VectorViewport', { x = 0, width = '100%', height = #Rows * ROW_H }), rows = { } }
       for i, row in Rows do
-         group.rows[row.key] = fontdialog_controls.sliderRow(Picker, group.viewport, {
+         group.rows[row.key] = fdc.sliderRow(Picker, group.viewport, {
             x = PAD + 22, y = i * ROW_H, width = inner - 22, label = row.label, labelWidth = 54,
             min = row.min, max = row.max, step = row.step ?? 0.01, value = state[row.key],
             format = row.format ?? lengthLabel,
@@ -52,7 +52,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       return group
    end
 
-   self.shadowBox = fontdialog_controls.checkRow(Picker, body, {
+   self.shadowBox = fdc.checkRow(Picker, body, {
       x = PAD, label = 'Drop shadow', value = state.shadowOn,
       onToggle = function(Value) Picker.update({ shadowOn = Value }, 'effects-layout') end
    })
@@ -65,7 +65,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
          format = function(V):str return f'{math.round(V)}%' end }
    })
 
-   self.glowBox = fontdialog_controls.checkRow(Picker, body, {
+   self.glowBox = fdc.checkRow(Picker, body, {
       x = PAD, label = 'Outer glow', value = state.glowOn,
       onToggle = function(Value) Picker.update({ glowOn = Value }, 'effects-layout') end
    })
@@ -74,13 +74,13 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       { key = 'glowRadius', label = 'Radius', min = 0.01, max = 1 }
    })
 
-   self.glowColour = fontdialog_controls.colourButton(Picker, body, {
+   self.glowColour = fdc.colourButton(Picker, body, {
       x = PAD + 22, width = inner - 22, colour = state.glowColour ?? state.fill,
       dialogTitle = 'Outer Glow Colour', label = 'Glow', preserveAlpha = true,
       onChange = function(Colour) Picker.update({ glowColour = Colour }, 'effects') end
    })
 
-   self.blendLabel = fontdialog_controls.text(body, { x = PAD, size = 12, fill = t.fg1, string = 'Blend' })
+   self.blendLabel = fdc.text(body, { x = PAD, size = 12, fill = t.fg1, string = 'Blend' })
 
    self.blend = gui.combobox({
       target = body, x = PAD + 76, width = inner - 76, height = BLEND_H, items = BLENDS.map(B => { label = B }),
@@ -119,11 +119,11 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
       y += CHECK_H
       showGroup(self.glow, glow_on)
       self.glowColour.button.viewport.visibility = glow_on ? VIS_VISIBLE : VIS_HIDDEN
-      fontdialog_controls.setEnabled(array<table> { self.glowColour }, glow_on)
+      fdc.setEnabled(array<table> { self.glowColour }, glow_on)
 
       if glow_on then
          self.glowColour.button.viewport.y = y
-         y += fontdialog_controls.COLOUR_H + 4
+         y += fdc.COLOUR_H + 4
          self.glow.viewport.y = y
          y += self.glow.viewport.height
       end
@@ -147,7 +147,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
 
       if outlined != self.outlined then
          self.outlined = outlined
-         fontdialog_controls.setEnabled(array<table> { self.shadowBox, self.glowBox, self.blend }, outlined)
+         fdc.setEnabled(array<table> { self.shadowBox, self.glowBox, self.blend }, outlined)
       end
 
       parts = array<str>

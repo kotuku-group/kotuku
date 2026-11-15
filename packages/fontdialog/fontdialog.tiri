@@ -248,7 +248,7 @@ gui.dialog.font = function(Options:table)
       previewBkgd = Options.bkgd, -- Overrides the fill of the preview's background
       finished  = false,
       isTyping  = false,
-      inlineEditor = nil, -- The open fontdialog_controls.inlineEdit() editor
+      inlineEditor = nil, -- The open fdc.inlineEdit() editor
       presets   = array<table>, -- The user's presets as { name, faces, def }
       activePreset = nil, -- Name of the preset most recently applied
       pins      = { },
@@ -627,7 +627,7 @@ gui.dialog.font = function(Options:table)
 
       &themeName = fontdialog_theme.apply(&window.scene, 'fontdialog')
       &tokens = fontdialog_theme.tokens(&themeName)
-      &defaultFill = fontdialog_controls.toHex(&theme.page.text.fill ?? '#000000')
+      &defaultFill = fdc.toHex(&theme.page.text.fill ?? '#000000')
 
       -- Initial settings: the requested family, or the first default preset.  A requested size overrides the preset's.  The
       -- other options are then applied, and fontDef last so that its keys take precedence.  The final size is
@@ -650,7 +650,7 @@ gui.dialog.font = function(Options:table)
       if size then &state.size = size end
 
       if Options.style?? then fontdialog_style.applyDef(&state, Options.style) end
-      if Options.fill?? then &state.fill = fontdialog_controls.toHex(Options.fill) end
+      if Options.fill?? then &state.fill = fdc.toHex(Options.fill) end
       if Options.example?? then
          &state.text = Options.example
       else

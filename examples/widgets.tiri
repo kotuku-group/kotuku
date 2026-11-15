@@ -310,7 +310,9 @@ end
                modal   = true,
                popOver = win.surface,
                colour  = 'rgb(255,0,0)',
-               feedback = function(Colour:table)
+               feedback = function(Colour:table, Status:str)
+                  if Status is 'active' then return end
+
                   if not Colour then
                      print('Dialog was cancelled.')
                      return

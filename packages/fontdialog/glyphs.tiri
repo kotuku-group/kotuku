@@ -6,7 +6,7 @@
 
    namespace fontdialog_glyphs { }
 
-PAD      <const> = fontdialog_controls.PAD
+PAD      <const> = fdc.PAD
 INFO_ROW <const> = 18
 COV_ROW  <const> = 19
 BAR_H    <const> = 4
@@ -67,7 +67,7 @@ fontdialog_glyphs.new = function(Picker:table!, Target:obj!, Options:table!):tab
    t     = Picker.tokens
    inner = Options.width - (PAD * 2)
    mono  = fontdialog_parts.FACE_MONO
-   text  = fontdialog_controls.text
+   text  = fdc.text
 
    self = { height = fontdialog_glyphs.HEIGHT, rows = array<table>, font = nil }
 
@@ -95,7 +95,7 @@ fontdialog_glyphs.new = function(Picker:table!, Target:obj!, Options:table!):tab
    self.family = infoRow('Family')
    self.format = infoRow('Format')
    y += 4
-   fontdialog_controls.divider(Picker, body, PAD, y, inner)
+   fdc.divider(Picker, body, PAD, y, inner)
    y += 5
 
    -- The coverage rows are created once and filled by update(), which hides the unused rows.
