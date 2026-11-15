@@ -58,16 +58,18 @@ end
 -- for the caller to report once the view is consistent.
 
 function clearItems(View):any
-   local failure:any = nil
-   local items = View.items
-   View.zones = { }
-   View.hoveredItem = nil
-   View.activeZone = nil
-   View.hItem = nil
-   View.kItem = nil
-   View.items = { }
-   View.lookup = { }
-   View._contentsVersion = (View._contentsVersion ?? 0) + 1
+   failure:any = nil
+   items = View.items
+   View.{
+      zones       = { },
+      hoveredItem = nil,
+      activeZone  = nil,
+      hItem       = nil,
+      kItem       = nil,
+      items       = { },
+      lookup      = { },
+      _contentsVersion = (View._contentsVersion ?? 0) + 1
+   }
 
    if items then
       for item in values(items) do
@@ -75,6 +77,7 @@ function clearItems(View):any
          failure ?= err
       end
    end
+
    return failure
 end
 
@@ -112,9 +115,11 @@ function selectionTransaction(View:table!, Wanted:table!, Lead:table, Anchor:tab
       end
    end
 
-   View.sItem = Lead?._selected and selectionEligible(View, Lead) ? Lead : first
-   View.selectionAnchor = selectionEligible(View, Anchor) ? Anchor : nil
-   View.activeItem = Active
+   View.{
+      sItem           = Lead?._selected and selectionEligible(View, Lead) ? Lead : first,
+      selectionAnchor = selectionEligible(View, Anchor) ? Anchor : nil,
+      activeItem      = Active
+   }
 
    for item in values(deselected) do item?._selectEvent(View, item) end
 
@@ -378,6 +383,7 @@ function beginDrag(View:table!, Press:table!)
 
    local err = datatypes != '' ? mGfx.StartCursorDrag(clipboard.id, session.id, datatypes,
       session.preview?.id ?? 0) : ERR_NoData
+
    if err != ERR_Okay then
       msg(f'Failed to start drag: {mSys.GetErrorMsg(err)}')
       finishDrag(View, 'cancelled')
@@ -486,10 +492,9 @@ function updateDropFeedback(View:table!)
 
    pointer.dragFeedback = accepted ? 1 : 0
 
-   View._dropActive = true
-   View._dropItem = item
-   View._dropInfo = drop
+   View.{ _dropActive = true, _dropItem = item, _dropInfo = drop }
    View._dropOutline.visibility = accepted ? VIS_VISIBLE : VIS_HIDDEN
+
    highlightItem(View, accepted ? item : nil)
    mGfx.SetCursor(0, 0, accepted ? PTC_DEFAULT : PTC_STOP, '', View.frame.id)
 

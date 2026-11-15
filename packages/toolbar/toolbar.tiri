@@ -65,7 +65,7 @@ gui.toolbar = function(Options:table)
    function sendFeedback()
       item = &_current
       if item and item.callback and (not item.disabled) and (not &_disabled) then
-         item.callback(self, item)
+         item.callback(&&, item)
       end
    end
 
@@ -759,6 +759,20 @@ gui.toolbar = function(Options:table)
       restyle()
    end
 
+   -- Release the toolbar, including the tooltip and the group mask owned by the scene.
+
+   self.free = function()
+      viewport = &viewport
+      &viewport = nil
+      &_disabled = true
+      &_hasFocus = false
+      &_hoverTip?.cancel()
+      &_hoverTip = nil
+      &_groupClip?.free()
+      &_groupClip = nil
+      viewport?.free()
+   end
+
    -- Main entry point
 
    using self do
@@ -847,7 +861,9 @@ gui.toolbar = function(Options:table)
          end
       })
 
-      &viewport.subscribe('free', function(Viewport, Args)
+      &viewport.subscribe('free', function[&&]()
+         &viewport = nil
+         &free()
          self = { }
       end)
 
