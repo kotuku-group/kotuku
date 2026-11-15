@@ -375,7 +375,9 @@ end
                   print(f"The user selected '{Result.face}', size {Result.pointSize}, style '{Result.style}'")
 
                   fontChoice.{
-                     fontDef = Result.fontDef, align = Result.align, letterCase = Result.letterCase,
+                     fontDef          = Result.fontDef,
+                     align            = Result.align,
+                     letterCase       = Result.letterCase,
                      paragraphSpacing = Result.paragraphSpacing
                   }
 

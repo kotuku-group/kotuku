@@ -346,6 +346,28 @@ end
       f'Menu positioned at {menu.surface.x},{menu.surface.y} instead of 80,60')
 end
 
+@Test function AnchoredPopupsStayWithinHorizontalBounds()
+   for scale in values(array<double> { 1, 2, 20 }) do
+      local surface <close>, target = newTarget()
+      target.x = 30
+      local menu = gui.menu({ target=surface, relative=target, popup=true, scale=scale, y=20,
+         items=array<table> { { label='Open' } } })
+      defer menu.surface?.free() end
+      surface.acShow()
+      surface.acDraw()
+      processing.sleep(0)
+
+      for offset in values(array<int> { -80, 100, 490 }) do
+         menu.x = offset
+         menu.show()
+         local expected = math.max(0, math.min(target.absX + offset, surface.width - menu.surface.width))
+         assert(menu.surface.x is expected,
+            f'At scale {scale} and offset {offset}, expected x={expected}, got {menu.surface.x}')
+         menu.hide()
+      end
+   end
+end
+
 @Test function DisabledRowDoesNotActivatePreviousRow()
    local surface <close>, target = newTarget()
    local hits = 0

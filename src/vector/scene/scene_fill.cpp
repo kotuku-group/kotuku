@@ -534,7 +534,7 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
 
          triangle_raster.reset();
          triangle_raster.add_path(span_gen);
-         agg::render_scanlines_aa(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
+         agg::render_scanlines_clipped(triangle_raster, masked_scanline, RenderBase, span_allocator, span_gen);
       }
    };
 
@@ -1134,7 +1134,6 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
    typedef agg::span_interpolator_linear<> interpolator_type;
    typedef agg::span_allocator<agg::rgba8> span_allocator_type;
    typedef agg::pod_auto_array<agg::rgba8, MAX_SPAN> color_array_type;
-   typedef agg::renderer_base<agg::pixfmt_psl>  RENDERER_BASE_TYPE;
 
    agg::trans_affine   transform;
    interpolator_type   span_interpolator(transform);
@@ -1155,19 +1154,20 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
    auto render_gradient = [&]<typename Method>(Method SpreadMethod, double SpanA, double SpanB) {
       typedef agg::span_gradient<agg::rgba8, interpolator_type, Method, color_array_type> span_gradient_type;
-      typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, span_gradient_type> renderer_gradient_type;
 
-      span_gradient_type  span_gradient(span_interpolator, SpreadMethod, *Table, SpanA, SpanB);
-      renderer_gradient_type solidrender_gradient(RenderBase, span_allocator, span_gradient);
+      span_gradient_type span_gradient(span_interpolator, SpreadMethod, *Table, SpanA, SpanB);
+
+      // Spans are clipped to RenderBase before colours are generated, so a zoomed gradient only pays for its visible
+      // pixels.
 
       if ((!Render) or (Render->clip_stack_empty())) {
          agg::scanline_u8 scanline;
-         agg::render_scanlines(*active_raster, scanline, solidrender_gradient);
+         agg::render_scanlines_clipped(*active_raster, scanline, RenderBase, span_allocator, span_gradient);
       }
       else { // Masked gradient
          auto alpha_mask = Render->clip_stack_top().mask();
          agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
-         agg::render_scanlines(*active_raster, masked_scanline, solidrender_gradient);
+         agg::render_scanlines_clipped(*active_raster, masked_scanline, RenderBase, span_allocator, span_gradient);
       }
    };
 
@@ -1725,19 +1725,17 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       // If SpreadMethod is CLIP, the original target path raster remains active and clips the field to the fill.
 
       typedef agg::span_gradient_sdf<agg::rgba8, interpolator_type, color_array_type> sdf_span_type;
-      typedef agg::renderer_scanline_aa<RENDERER_BASE_TYPE, span_allocator_type, sdf_span_type> sdf_renderer_type;
 
       sdf_span_type sdf_span(span_interpolator, gradient_func, *Table, 0, 256.0);
-      sdf_renderer_type sdf_render(RenderBase, span_allocator, sdf_span);
 
       if ((!Render) or (Render->clip_stack_empty())) {
          agg::scanline_u8 scanline;
-         agg::render_scanlines(*active_raster, scanline, sdf_render);
+         agg::render_scanlines_clipped(*active_raster, scanline, RenderBase, span_allocator, sdf_span);
       }
       else {
          auto alpha_mask = Render->clip_stack_top().mask();
          agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
-         agg::render_scanlines(*active_raster, masked_scanline, sdf_render);
+         agg::render_scanlines_clipped(*active_raster, masked_scanline, RenderBase, span_allocator, sdf_span);
       }
    }
 }

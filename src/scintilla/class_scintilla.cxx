@@ -66,8 +66,8 @@ only after an editor commits the insertion; dropping onto another kind of widget
 start of the drag prevents it.
 
 Text and files dragged from other applications on Windows, Wayland and X11 are received in the same way, and are
-always copies.  On Windows and X11, selected text dragged out to another application is offered as a copy, and the
-source text is never removed.
+always copies.  On Windows, X11 and Wayland, selected text dragged out to another application is offered as a copy,
+and the source text is never removed.
 
 On X11, selecting text publishes it as the primary selection.  The middle mouse button inserts the primary selection
 at that position as one undo action, with document line-ending conversion and read-only enforcement.
