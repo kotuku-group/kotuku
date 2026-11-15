@@ -479,7 +479,7 @@ gui.menu = function(Options:table!)
       applyScale()
       scale = &scale > 0 ? &scale : 1
 
-      if &popup then
+      if &popup and not &relative then
          -- Popups open at the pointer unless the client has set display coordinates in popupX and popupY.
 
          local err:num, cursor_x:num, cursor_y:num
@@ -584,24 +584,29 @@ gui.menu = function(Options:table!)
                absX = relative_info.absX + &relative.absX,
                absY = relative_info.absY + &relative.absY
             }
-            target = { absX = 0, absY = 0, height = 4096 }
+            target = { absX = 0, absY = 0, width = 4096, height = 4096 }
 
             if Options.target then
                err, info = mGfx.GetSurfaceInfo(Options.target)
                if err is ERR_Okay then
                   target.absX   = info.absX
                   target.absY   = info.absY
+                  target.width  = info.width
                   target.height = info.height
                end
             else
                err, display = mGfx.GetDisplayInfo(0)
                if err is ERR_Okay then
+                  target.width = display.width
                   target.height = display.height
                end
             end
 
             x = rel.absX + &x - target.absX
             y = rel.absY + &y - target.absY
+
+            -- Keep anchored menus inside the target; oversized menus start at its left edge.
+            x = math.max(0, math.min(x, target.width - surface.width))
 
             if &reverseY then
                y = rel.absY + (Options.y ?? 0) - target.absY - surface.height

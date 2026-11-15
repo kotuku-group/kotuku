@@ -82,14 +82,15 @@ gui.panel = function(Options:table!)
 
       header_pad = theme.headerPad
       edge       = theme.bkgd.strokeWidth ?? 0
+      inset      = math.ceil(edge) -- The body clears the border on a whole pixel, so that its content is pixel aligned
       meta_base  = { } -- Values of the meta text's fields that the highlight replaces
       bkgd_defaults, header_defaults, divider_defaults = { }, { }, { }
 
       if Options.flush or Options.scroll then
-         &padding.left   ?= edge
-         &padding.right  ?= edge
+         &padding.left   ?= inset
+         &padding.right  ?= inset
          &padding.top    ?= 0
-         &padding.bottom ?= edge
+         &padding.bottom ?= inset
       else
          &padding.left   ?= gui.sizing.widget.margin
          &padding.right  ?= gui.sizing.widget.margin
@@ -622,10 +623,10 @@ gui.panel = function(Options:table!)
          -- the border, and margins keep the sliders out of the rounded ends.  A bar that meets the divider, or the
          -- other bar, is square at that end.
 
-         flush_bottom = &padding.bottom is edge
-         round_tr = (not &header and (&padding.top is edge) and (&padding.right is edge)) ? 1 : 0
-         round_br = (flush_bottom and (&padding.right is edge)) ? 1 : 0
-         round_bl = (flush_bottom and (&padding.left is edge)) ? 1 : 0
+         flush_bottom = &padding.bottom is inset
+         round_tr = (not &header and (&padding.top is inset) and (&padding.right is inset)) ? 1 : 0
+         round_br = (flush_bottom and (&padding.right is inset)) ? 1 : 0
+         round_bl = (flush_bottom and (&padding.left is inset)) ? 1 : 0
          round_br_h = (Options.scroll is 'both') ? 0 : round_br -- The vertical bar takes the corner
 
          -- The styling is a scrollbar override rather than its theme option, so that it is recomputed from the

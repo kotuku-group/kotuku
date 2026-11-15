@@ -505,11 +505,7 @@ gui.menubar = function(Options:table)
          base_theme = gui.getTheme(Options.target)
          buildTheme()
          &viewport = Options.target.new('vectorviewport')
-         &viewport.x      = Options.x ?? 0
-         &viewport.y      = Options.y ?? 0
-         &viewport.height = 1
-         &viewport.xOffset = Options.xOffset ?? 0
-
+         &viewport.{ x = Options.x ?? 0, y = Options.y ?? 0, height = 1, xOffset = Options.xOffset ?? 0 }
          &viewport.init()
 
          &viewport.subscribe('free', function(Viewport, Args)
@@ -526,11 +522,11 @@ gui.menubar = function(Options:table)
                item = next_item
             end
 
-            &_first = nil
-            &_last = nil
+            &_first       = nil
+            &_last        = nil
             &_currentItem = nil
-            &_lastMenu = nil
-            &viewport = nil
+            &_lastMenu    = nil
+            &viewport     = nil
          end)
 
          &viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
