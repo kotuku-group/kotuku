@@ -4,10 +4,12 @@
   <desc>Squares of slate blue, mustard and brick red, each casting a charcoal shadow down to the left, so that
     the shadows interlock into a stepped pattern on cream.  Parameters: chroma, a multiplier of the colour
     intensity, where 1 is the original level and 0 is greyscale.</desc>
+
   <defs>
     <filter id="fltBauhausStepsChroma" color-interpolation-filters="sRGB">
       <feColorMatrix type="saturate" values="param(chroma) 1"/>
     </filter>
+
     <pattern id="pidBauhausSteps" patternUnits="userSpaceOnUse" width="72" height="72"
       viewBox="0 0 144 144">
       <g filter="url(#fltBauhausStepsChroma)">
@@ -26,5 +28,6 @@
       </g>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidBauhausSteps)"/>
 </svg>

@@ -23,6 +23,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <variant>
 #include <cfloat>
 #include <cmath>
+#include <charconv>
 #include <kotuku/main.h>
 #include <kotuku/modules/compression.h>
 #include <kotuku/modules/filesystem.h>
@@ -102,7 +103,40 @@ template<typename Value> using SVGStringLookupMap =
 
 struct ParamScope {
    SVGStringLookupMap<std::string> Values;
+   // CSS custom properties of a <use> instance, resolved and keyed by their pre-pass name ('-kt-cp-x').  They apply
+   // to references whose declaring tag lies outside the referenced content, identified by InstanceIDs.
+   SVGStringLookupMap<std::string> CustomProps;
+   ankerl::unordered_dense::set<int> InstanceIDs;
+   bool Instance = false;
 };
+
+// The computed custom properties of a <use> element, which seed the scope of its instance.  Value may contain
+// deferred references.  DeclID is the XTag.ID of the declaring tag.  Valid is false for the guaranteed-invalid value.
+
+struct UseCustomProp {
+   std::string Name, Value;
+   int DeclID;
+   bool Valid;
+};
+
+// Deferred parameter references, produced by the CSS cascade for env() and resolved by the parameter pass.  The
+// encoding is PARAM_REF_OPEN name [PARAM_REF_FALLBACK fallback] PARAM_REF_CLOSE, and fallbacks may nest further
+// references.  XML 1.0 forbids these C0 characters in attribute values, so authored content cannot collide with them.
+
+static constexpr char PARAM_REF_OPEN     = '\x01';
+static constexpr char PARAM_REF_FALLBACK = '\x02';
+static constexpr char PARAM_REF_CLOSE    = '\x03';
+
+// Deferred custom property references, produced by the CSS cascade for var() of an inherited or undefined property,
+// and resolved by the parameter pass against <use> instance scopes.  The encoding is CP_REF_OPEN name CP_REF_ID
+// declaring-tag-id [CP_REF_VALUE document-value] [CP_REF_FALLBACK fallback] CP_REF_CLOSE.  The value and fallback may
+// nest further references of either kind.  Tab, LF, CR and FF are avoided because they are white-space.
+
+static constexpr char CP_REF_OPEN     = '\x04';
+static constexpr char CP_REF_ID       = '\x05';
+static constexpr char CP_REF_VALUE    = '\x06';
+static constexpr char CP_REF_FALLBACK = '\x07';
+static constexpr char CP_REF_CLOSE    = '\x08';
 
 struct svgAnimState {
    VectorMatrix *matrix = nullptr;
@@ -124,7 +158,9 @@ class extSVG : public objSVG {
    SVGStringLookupMap<XTag *> IDs;
    ankerl::unordered_dense::map<std::string, objFilterEffect *> Effects; // All effects, registered by their SVG identifier.
    double SVGVersion;
-   double AnimEpoch;  // Epoch time for the animations.
+   double AnimEpoch;  // Epoch time for the animations, measured on the animation clock.
+   double PausedTime = 0; // Total seconds spent deactivated; excluded from the animation clock
+   double PauseStart = 0; // Real time (seconds) at which the animation was deactivated, or 0 if not paused
    objXML *XML;
    std::string Folder;
    std::list<std::variant<anim_transform, anim_motion, anim_value>> Animations; // NB: Pointer stability is a container requirement
@@ -141,6 +177,8 @@ class extSVG : public objSVG {
    ankerl::unordered_dense::map<int, kt::vector<XMLAttrib>> ParamAttribs; // Raw attribs of param() tags, by XTag.ID
    SVGStringLookupMap<kt::vector<std::string>> ParamDeps; // Parameter names referenced by a definition's subtree
    std::vector<std::string> ParamNames; // Backing store for the ParamNames field
+   ankerl::unordered_dense::map<int, std::vector<UseCustomProp>> UseCustomProps; // By the XTag.ID of each <use>
+   bool HasCustomProps = false; // True if the document declares a CSS custom property
    TIMER AnimationTimer;
    int16_t  Cloning;  // Incremented when inside a duplicated tag space, e.g. due to a <use> tag
    std::unordered_map<OBJECTID, svgTextContent> TextContent;
@@ -157,6 +195,13 @@ class extSVG : public objSVG {
    }
 
    ~extSVG();
+
+   // Animation time in seconds.  Time spent deactivated is excluded, and the clock is frozen while paused.
+
+   double anim_clock() const {
+      const double now = PauseStart ? PauseStart : double(PreciseTime()) / 1000000.0;
+      return now - PausedTime;
+   }
 };
 
 struct svgState {
@@ -716,7 +761,7 @@ static double read_unit(std::string_view &);
 static ERR  init_svg(void);
 static ERR  init_rsvg(void);
 
-static void prepare_styles(objXML::TAGS &);
+static void prepare_styles(extSVG *, objXML::TAGS &);
 static bool split_svg_query(std::string_view, std::string_view &, std::string_view &) noexcept;
 
 static ERR  save_svg_scan(extSVG *, objXML *, objVector *, int);

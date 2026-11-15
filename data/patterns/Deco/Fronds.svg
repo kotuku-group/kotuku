@@ -4,11 +4,28 @@
   <desc>Staggered arched tiles in a glazed forest green, each moulded with a palm frond in relief and set in pale
     grout.  Parameters: glaze, shade and light colour the tile surface, rib grooves and rib highlights; grout colours
     the joints.</desc>
+
+  <style>
+    :root {
+      --glaze: env(--glaze, #3f533b);
+      --shade: env(--shade, #26331f);
+      --light: env(--light, #7d9372);
+      --grout: env(--grout, #ebe8df);
+    }
+    .fronds-surface { fill: var(--glaze); }
+    .fronds-groove { stroke: var(--shade); }
+    .fronds-rib { stroke: var(--glaze); }
+    .fronds-highlight { stroke: var(--light); }
+    .fronds-joint { stroke: var(--grout); }
+    .fronds-background { fill: var(--grout); }
+  </style>
+
   <defs>
     <!-- One tile: a round arch on top, with a cusped base that seats on the two arches of the row below -->
     <clipPath id="decoFrondsClip">
       <path d="M0,40A40,40 0 0 1 80,40V176A40,40 0 0 0 40,216A40,40 0 0 0 0,176Z"/>
     </clipPath>
+
     <!-- Paired ribs leave the spine steeply and flatten towards the edges; the tile clip trims them -->
     <path id="decoFrondsRibs" fill="none" d="
         M40,0C38,-12 22,-24 -2,-28M40,0C42,-12 58,-24 82,-28 M40,7C38,-5 22,-17 -2,-21M40,7C42,-5 58,-17 82,-21
@@ -29,23 +46,26 @@
         22,179 -2,175M40,203C42,191 58,179 82,175 M40,210C38,198 22,186 -2,182M40,210C42,198 58,186 82,182
         M40,217C38,205 22,193 -2,189M40,217C42,205 58,193 82,189 M40,224C38,212 22,200 -2,196M40,224C42,212 58,200
         82,196"/>
+
     <symbol id="decoFrondsTile" overflow="visible">
       <g clip-path="url(#decoFrondsClip)">
-        <rect width="80" height="216" fill="param(glaze) #3f533b"/>
+        <rect width="80" height="216" class="fronds-surface"/>
         <!-- Relief: a dark groove below each rib, the rib body, then a highlight along its crest -->
-        <use href="#decoFrondsRibs" stroke="param(shade) #26331f" stroke-width="4.6" transform="translate(0,1.2)"/>
-        <use href="#decoFrondsRibs" stroke="param(glaze) #3f533b" stroke-width="3.4"/>
-        <use href="#decoFrondsRibs" stroke="param(light) #7d9372" stroke-width="1.1" transform="translate(0,-0.9)"/>
+        <use href="#decoFrondsRibs" class="fronds-groove" stroke-width="4.6" transform="translate(0,1.2)"/>
+        <use href="#decoFrondsRibs" class="fronds-rib" stroke-width="3.4"/>
+        <use href="#decoFrondsRibs" class="fronds-highlight" stroke-width="1.1" transform="translate(0,-0.9)"/>
         <!-- Glaze thins and brightens over the rounded tile edge -->
-        <path fill="none" stroke="param(light) #7d9372" stroke-width="4" opacity="0.5"
+        <path fill="none" class="fronds-highlight" stroke-width="4" opacity="0.5"
           d="M0,40A40,40 0 0 1 80,40V176A40,40 0 0 0 40,216A40,40 0 0 0 0,176Z"/>
       </g>
-      <path fill="none" stroke="param(grout) #ebe8df" stroke-width="3"
+      <path fill="none" class="fronds-joint" stroke-width="3"
         d="M0,40A40,40 0 0 1 80,40V176A40,40 0 0 0 40,216A40,40 0 0 0 0,176Z"/>
     </symbol>
+
     <!-- Rows are staggered by half a tile, so the cell holds one whole tile and quarters of four more -->
+
     <pattern id="pidDecoFronds" patternUnits="userSpaceOnUse" width="60" height="264" viewBox="0 0 80 352">
-      <rect width="80" height="352" fill="param(grout) #ebe8df"/>
+      <rect width="80" height="352" class="fronds-background"/>
       <use href="#decoFrondsTile"/>
       <use href="#decoFrondsTile" x="-40" y="-176"/>
       <use href="#decoFrondsTile" x="40" y="-176"/>
@@ -53,5 +73,6 @@
       <use href="#decoFrondsTile" x="40" y="176"/>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidDecoFronds)"/>
 </svg>

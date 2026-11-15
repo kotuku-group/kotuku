@@ -546,3 +546,554 @@ end
       <rect width="8" height="8" fill="red"/></svg>]] })
    assert(#svg.paramNames is 0, 'A document with no param() references must report no names')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- CSS custom properties: lexical pre-pass and :root.
+
+@Test function CustomPropertyDeclarationsParse()
+   -- Katana rejects '--name' natively; the pre-pass must let custom properties coexist with ordinary declarations.
+   local scene, svg <close> = loadParams([[
+      <style>.a { --glaze: red; fill: blue; --other: var(--glaze) } .b { fill: var(--glaze, navy); --x: 1 }</style>
+      <rect id="sheet" width="10" height="10" class="a"/>
+      <rect id="inline" width="10" height="10" style="--q: 1; fill: teal; --r: env(--q, red)"/>
+   ]])
+   assert(obj.find('sheet').fill is 'blue', f"sheet: got {obj.find('sheet').fill}")
+   assert(obj.find('inline').fill is 'teal', f"inline: got {obj.find('inline').fill}")
+end
+
+@Test function CustomPropertyPrePassLeavesOtherDashesIntact()
+   local scene, svg <close> = loadParams([[
+      <style>
+         /* --commented { fill: red } */
+         .btn--primary { fill: orange }
+         .quoted { font-family: "a--b"; fill: purple }
+         .--dashed { fill: lime }
+      </style>
+      <rect id="bem" width="10" height="10" class="btn--primary"/>
+      <rect id="quoted" width="10" height="10" class="quoted"/>
+      <rect id="dashed" width="10" height="10" class="--dashed"/>
+   ]])
+   assert(obj.find('bem').fill is 'orange', f"BEM class: got {obj.find('bem').fill}")
+   assert(obj.find('quoted').fill is 'purple', f"Quoted string: got {obj.find('quoted').fill}")
+   assert(obj.find('dashed').fill is 'lime', f"Dashed class: got {obj.find('dashed').fill}")
+end
+
+@Test function RootMatchesOutermostSvg()
+   local scene, svg <close> = loadParams([[
+      <style>:root { opacity: 0.5; stroke: green } rect:root { fill: red } :hover { fill: red }</style>
+      <svg id="inner" width="50" height="50"><rect id="nested" width="5" height="5"/></svg>
+   ]])
+   local inner = obj.find('inner')
+   assert(inner.parent.opacity is 0.5, f":root must match the outermost <svg>, opacity {inner.parent.opacity}")
+   assert(inner.opacity is 1, f":root must not match a nested <svg>, opacity {inner.opacity}")
+   assert(obj.find('nested').stroke is 'green', f"Inherited from :root: got {obj.find('nested').stroke}")
+   assert(obj.find('nested').fill is 'rgb(0,0,0)', f"rect:root and :hover must not match: {obj.find('nested').fill}")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- CSS custom properties: cascade, inheritance and static var() substitution.
+
+@Test function CustomPropertiesInheritAndCascade()
+   local scene, svg <close> = loadParams([[
+      <style>
+         :root { --glaze: red }
+         rect { fill: var(--glaze) }
+         .near { --glaze: blue }
+         #spec { --glaze: lime } .spec { --glaze: navy }
+         .imp { --glaze: purple !important }
+         .reset { --glaze: inherit }
+      </style>
+      <rect id="inherited" width="5" height="5"/>
+      <g class="near"><rect id="nearer" width="5" height="5"/>
+         <g class="reset"><rect id="explicit_inherit" width="5" height="5"/></g></g>
+      <rect id="inline" class="spec" width="5" height="5" style="--glaze: aqua"/>
+      <rect id="spec" class="spec" width="5" height="5"/>
+      <rect id="important" class="imp" width="5" height="5" style="--glaze: aqua"/>
+   ]])
+   assert(obj.find('inherited').fill is 'red', f"Inherited from :root: got {obj.find('inherited').fill}")
+   assert(obj.find('nearer').fill is 'blue', f"Nearer declaration: got {obj.find('nearer').fill}")
+   assert(obj.find('explicit_inherit').fill is 'blue', f"inherit keyword: got {obj.find('explicit_inherit').fill}")
+   assert(obj.find('inline').fill is 'aqua', f"Inline style beats a sheet: got {obj.find('inline').fill}")
+   assert(obj.find('spec').fill is 'lime', f"ID beats class: got {obj.find('spec').fill}")
+   assert(obj.find('important').fill is 'purple', f"!important beats inline: got {obj.find('important').fill}")
+end
+
+@Test function CustomPropertyNamesAreCaseSensitive()
+   local scene, svg <close> = loadParams([[
+      <style>:root { --Tone: blue; --tone: green } .a { fill: var(--Tone) } .b { fill: var(--tone) }</style>
+      <rect id="upper" class="a" width="5" height="5"/>
+      <rect id="lower" class="b" width="5" height="5"/>
+   ]])
+   assert(obj.find('upper').fill is 'blue', f"--Tone: got {obj.find('upper').fill}")
+   assert(obj.find('lower').fill is 'green', f"--tone: got {obj.find('lower').fill}")
+end
+
+@Test function VarFallbacksAndReferences()
+   local scene, svg <close> = loadParams([[
+      <style>
+         :root { --glaze: red }
+         .fallback { fill: var(--missing, navy) }
+         .nested { fill: var(--missing, var(--missing2, orange)) }
+         .defined { fill: var(--glaze, navy) }
+         .chain { --a: var(--glaze); --b: var(--a); fill: var(--b) }
+         .initial { --glaze: initial; fill: var(--glaze, pink) }
+      </style>
+      <rect id="fallback" class="fallback" width="5" height="5"/>
+      <rect id="nested" class="nested" width="5" height="5"/>
+      <rect id="defined" class="defined" width="5" height="5"/>
+      <rect id="chain" class="chain" width="5" height="5"/>
+      <rect id="initial" class="initial" width="5" height="5"/>
+   ]])
+   assert(obj.find('fallback').fill is 'navy', f"Fallback: got {obj.find('fallback').fill}")
+   assert(obj.find('nested').fill is 'orange', f"Nested fallback: got {obj.find('nested').fill}")
+   assert(obj.find('defined').fill is 'red', f"Defined value ignores fallback: got {obj.find('defined').fill}")
+   assert(obj.find('chain').fill is 'red', f"var() inside a custom property: got {obj.find('chain').fill}")
+   assert(obj.find('initial').fill is 'pink', f"initial is guaranteed-invalid: got {obj.find('initial').fill}")
+end
+
+@Test function CustomPropertyCyclesAreInvalid()
+   local scene, svg <close> = loadParams([[
+      <style>
+         .pair { --a: var(--b); --b: var(--a, teal); fill: var(--a, gold); stroke: var(--b, silver) }
+         .self { --s: var(--s); fill: var(--s, maroon) }
+      </style>
+      <rect id="pair" class="pair" width="5" height="5"/>
+      <rect id="selfref" class="self" width="5" height="5"/>
+   ]])
+   assert(obj.find('pair').fill is 'gold', f"--a is in a cycle: got {obj.find('pair').fill}")
+   assert(obj.find('pair').stroke is 'silver', f"--b is in a cycle despite its fallback: got {obj.find('pair').stroke}")
+   assert(obj.find('selfref').fill is 'maroon', f"Self reference: got {obj.find('selfref').fill}")
+end
+
+@Test function CustomPropertyCyclesIncludeUnusedFallbacks()
+   local scene, svg <close> = loadParams([[
+      <rect id="self_fallback" width="5" height="5"
+         style="--b: blue; --a: var(--b, var(--a)); fill: var(--a, gold)"/>
+      <rect id="branch_cycle" width="5" height="5" style="
+         --a: var(--b, var(--c)); --b: var(--a, blue); --c: var(--b, red);
+         fill: var(--a, gold); stroke: var(--c, silver)"/>
+      <rect id="safe_fallback" width="5" height="5" style="
+         --a: var(--a); --safe: var(--a, teal); fill: var(--safe)"/>
+   ]])
+   assert(obj.find('self_fallback').fill is 'gold', 'An unused self-reference still creates a cycle')
+   assert(obj.find('branch_cycle').fill is 'gold', 'The first branch of a cycle must be invalid')
+   assert(obj.find('branch_cycle').stroke is 'silver', 'A later branch in the same cycle must also be invalid')
+   assert(obj.find('safe_fallback').fill is 'teal', 'A property outside the cycle can use its own fallback')
+end
+
+@Test function UnresolvedVarUnsetsTheProperty()
+   -- A var() declaration wins the cascade at parse time; if it cannot be resolved the property is unset, so the
+   -- presentation attribute must not survive.
+   local scene, svg <close> = loadParams([[
+      <style>.unset { fill: var(--undefined) }</style>
+      <rect id="initial" class="unset" fill="yellow" width="5" height="5"/>
+      <g fill="olive"><rect id="inherits" class="unset" fill="yellow" width="5" height="5"/></g>
+      <rect id="kept" fill="yellow" width="5" height="5"/>
+   ]])
+   assert(obj.find('initial').fill is 'rgb(0,0,0)', f"Initial fill: got {obj.find('initial').fill}")
+   assert(obj.find('inherits').fill is 'olive', f"Inherited fill: got {obj.find('inherits').fill}")
+   assert(obj.find('kept').fill is 'yellow', f"Unstyled rect: got {obj.find('kept').fill}")
+end
+
+@Test function VarWithinLongerValue()
+   local scene, svg <close> = loadParams([[
+      <style>:root { --d: 3 } .dash { stroke-dasharray: var(--d) 5, var(--d) 7 }</style>
+      <rect id="dash" class="dash" stroke="black" width="5" height="5"/>
+   ]])
+   local dashes = obj.find('dash').dashArray
+   assert(#dashes is 4, f"Expected 4 dash values, got {#dashes}")
+   assert((dashes[0] is 3) and (dashes[1] is 5) and (dashes[2] is 3) and (dashes[3] is 7),
+      f"Unexpected dashes {dashes[0]},{dashes[1]},{dashes[2]},{dashes[3]}")
+end
+
+@Test function CustomPropertyCarriesParam()
+   local scene, svg <close> = loadParams([[
+      <style>:root { --tone: param(colour) maroon } rect { fill: var(--tone) }</style>
+      <rect id="rect" width="5" height="5"/>
+   ]], { colour='#123456' })
+   assert(obj.find('rect').fill is '#123456', f"param() through var(): got {obj.find('rect').fill}")
+end
+
+@Test function GradientStopResolvesVar()
+   local scene, svg <close> = loadParams([[
+      <style>:root { --stop: blue } stop.themed { stop-color: var(--stop) }</style>
+      <defs><linearGradient id="grad"><stop class="themed" offset="0"/><stop offset="1" stop-color="black"/>
+      </linearGradient></defs>
+      <rect width="10" height="10" fill="url(#grad)"/>
+   ]])
+   local _, gradient:obj = scene.mtFindDef('grad')
+   local stop = gradient.stops[0].rgb
+   assert((stop.red is 0) and (stop.blue is 1), f'Stop colour: {stop.red},{stop.green},{stop.blue}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- CSS env(): parameters read as environment variables, per CSS Linked Parameters.
+
+local ENV_STYLE = [[<style>
+   :root { --glaze: env(--glaze, #3f533b) }
+   .tile { fill: var(--glaze) }
+   .direct { fill: env(--glaze, red) }
+</style>]]
+
+@Test function EnvTakesFallbackWithoutKey()
+   local scene, svg <close> = loadParams(ENV_STYLE .. [[
+      <rect id="tile" class="tile" width="5" height="5"/>
+      <rect id="direct" class="direct" width="5" height="5"/>
+   ]])
+   assert(obj.find('tile').fill is '#3f533b', f"Via :root custom property: got {obj.find('tile').fill}")
+   assert(obj.find('direct').fill is 'red', f"Direct env(): got {obj.find('direct').fill}")
+end
+
+@Test function EnvReadsSetKey()
+   for key in values({ 'glaze', '--glaze' }) do
+      local scene, svg <close> = loadParams(ENV_STYLE .. [[
+         <rect id="tile" class="tile" width="5" height="5"/>
+         <rect id="direct" class="direct" width="5" height="5"/>
+      ]], { [key]='seagreen' })
+      assert(obj.find('tile').fill is 'seagreen', f"SetKey('{key}') via var(): got {obj.find('tile').fill}")
+      assert(obj.find('direct').fill is 'seagreen', f"SetKey('{key}') direct: got {obj.find('direct').fill}")
+      assert(svg.getKey('glaze', '') is 'seagreen', f"GetKey('glaze') after SetKey('{key}')")
+      assert(svg.getKey('--glaze', '') is 'seagreen', f"GetKey('--glaze') after SetKey('{key}')")
+   end
+end
+
+@Test function SetKeyRejectsBareDashes()
+   local svg <close> = obj.new('svg')
+   assert(svg.acSetKey('--', 'red') is ERR_InvalidValue, 'A key of only -- has no name')
+end
+
+@Test function EnvReadsQueryString()
+   writeFile('temp:svg_params_env_query.svg', [[<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+      <style>rect { fill: env(--glaze, red) }</style><rect id="eq_rect" width="20" height="20"/></svg>]])
+
+   for query in values({ 'glaze=navy', '--glaze=navy', '%2D%2Dglaze=navy' }) do
+      local scene = obj.new('VectorScene', { pageWidth=20, pageHeight=20 })
+      local svg <close> = obj.new('svg', { target=scene, path='temp:svg_params_env_query.svg?' .. query })
+      assert(obj.find('eq_rect').fill is 'navy', f"Query '{query}': got {obj.find('eq_rect').fill}")
+   end
+
+   local scene = obj.new('VectorScene', { pageWidth=20, pageHeight=20 })
+   local svg <close> = obj.new('svg')
+   svg.target = scene
+   svg.path = 'temp:svg_params_env_query.svg?glaze=navy'
+   check svg.acSetKey('--glaze', 'teal')
+   check svg.init()
+   assert(obj.find('eq_rect').fill is 'teal', f"SetKey beats the query: got {obj.find('eq_rect').fill}")
+end
+
+@Test function EnvWithinLongerValue()
+   local scene, svg <close> = loadParams([[
+      <style>:root { --gap: env(--gap, 4) } .dash { stroke-dasharray: env(--dash, 2) var(--gap) 6 }</style>
+      <rect id="dash" class="dash" stroke="black" width="5" height="5"/>
+   ]], { dash='3' })
+   local dashes = obj.find('dash').dashArray
+   assert((#dashes is 6) and (dashes[0] is 3) and (dashes[1] is 4) and (dashes[2] is 6),
+      f"Unexpected dashes: count {#dashes}, first {dashes[0]},{dashes[1]},{dashes[2]}")
+end
+
+@Test function EnvFallbacksAndUnknownNames()
+   local scene, svg <close> = loadParams([[
+      <style>
+         .nested { fill: env(--x, env(--y, gold)) }
+         .standard { fill: env(safe-area-inset-top, teal) }
+         .undefined { fill: env(--nope) }
+      </style>
+      <rect id="nested" class="nested" width="5" height="5"/>
+      <rect id="standard" class="standard" width="5" height="5"/>
+      <rect id="undefined" class="undefined" fill="yellow" width="5" height="5"/>
+   ]], { y='lime' })
+   assert(obj.find('nested').fill is 'lime', f"Nested env() fallback: got {obj.find('nested').fill}")
+   assert(obj.find('standard').fill is 'teal', f"Unknown standard variable: got {obj.find('standard').fill}")
+   assert(obj.find('undefined').fill is 'rgb(0,0,0)',
+      f"An undefined env() without a fallback unsets the property: got {obj.find('undefined').fill}")
+end
+
+@Test function UnusedEnvFallbackDoesNotInvalidateValue()
+   for keys in values({ { colour='blue' }, {} }) do
+      local scene, svg <close> = loadParams([[
+         <g fill="olive">
+            <rect id="direct_fallback" width="5" height="5"
+               style="fill: env(--colour, env(unknown))"/>
+            <rect id="property_fallback" width="5" height="5"
+               style="--tone: env(--colour, env(unknown)); fill: var(--tone, gold)"/>
+            <rect id="nested_fallback" width="5" height="5"
+               style="fill: env(--colour, env(unknown, teal))"/>
+         </g>
+      ]], keys)
+      assert(obj.find('direct_fallback').fill is (keys.colour ?? 'olive'),
+         'An unknown env() only invalidates a fallback when it is selected')
+      assert(obj.find('property_fallback').fill is (keys.colour ?? 'gold'),
+         'A custom property retains its usable env() value or takes the var() fallback')
+      assert(obj.find('nested_fallback').fill is (keys.colour ?? 'teal'),
+         'An unknown env() can provide its own fallback')
+      local names = ''
+      for name in values(svg.paramNames) do names ..= name .. ' ' end
+      assert(names is 'colour ', 'Unknown environment variables must not appear as parameter names: ' .. names)
+   end
+end
+
+@Test function DashedParamReferencesUseNormalisedNames()
+   local scene, svg <close> = loadParams([[
+      <rect id="dashed_reference" width="5" height="5" fill="param(--colour) red"/>
+      <rect id="plain_reference" width="5" height="5" fill="param(colour) red"/>
+      <defs><g id="dashed_template"><rect width="5" height="5" fill="param(--colour) red"/></g></defs>
+      <g id="dashed_scope"><use href="#dashed_template"><param name="--colour" value="lime"/></use></g>
+   ]], { ['--colour']='blue' })
+   assert(obj.find('dashed_reference').fill is 'blue', 'A dashed param() name matches the normalised SetKey name')
+   assert(obj.find('plain_reference').fill is 'blue', 'Plain and dashed param() names refer to the same value')
+   assert(useChild('dashed_scope').fill is 'lime', 'Dashed param() names resolve against the instance scope')
+   local names = ''
+   for name in values(svg.paramNames) do names ..= name .. ' ' end
+   assert(names is 'colour ', 'ParamNames normalises and deduplicates param() references: ' .. names)
+
+   writeFile('temp:svg_params_dashed_reference.svg', [[<svg xmlns="http://www.w3.org/2000/svg">
+      <rect id="dashed_query" width="5" height="5" fill="param(--colour) red"/></svg>]])
+   local query_scene = obj.new('VectorScene', { pageWidth=20, pageHeight=20 })
+   local query_svg <close> = obj.new('svg', {
+      target=query_scene, path='temp:svg_params_dashed_reference.svg?--colour=teal'
+   })
+   assert(obj.find('dashed_query').fill is 'teal', 'Dashed param() references also match query parameters')
+end
+
+@Test function UseParamReachesEnv()
+   local scene, svg <close> = loadParams([[
+      <style>.tile { fill: env(--glaze, red) }</style>
+      <defs><g id="tpl"><rect class="tile" width="10" height="10"/></g></defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="scoped"><use xlink:href="#tpl"><param name="glaze" value="blue"/></use></g>
+      <g id="dashed"><use xlink:href="#tpl"><param name="--glaze" value="lime"/></use></g>
+   ]])
+   assert(useChild('doc').fill is 'red', f"Document scope: got {useChild('doc').fill}")
+   assert(useChild('scoped').fill is 'blue', f"<param> scope: got {useChild('scoped').fill}")
+   assert(useChild('dashed').fill is 'lime', f"<param name='--glaze'>: got {useChild('dashed').fill}")
+end
+
+@Test function EnvGradientsAreScopedPerInstance()
+   local scene, svg <close> = loadParams([[
+      <style>stop.themed { stop-color: env(--c, red) }</style>
+      <defs>
+         <linearGradient id="grad"><stop class="themed" offset="0"/><stop offset="1" stop-color="black"/>
+         </linearGradient>
+         <g id="tpl"><rect width="10" height="10" fill="url(#grad)"/></g>
+      </defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="u1"><use xlink:href="#tpl"><param name="c" value="blue"/></use></g>
+   ]])
+   assert(useChild('doc').fill is 'url(#grad)', f"Document scope: got {useChild('doc').fill}")
+   local u1 = useChild('u1').fill
+   assert(u1 != 'url(#grad)', 'A scoped env() value should produce a separate gradient')
+
+   local err:any, scoped:obj = scene.mtFindDef(u1.sub(5, -1))
+   assert(err is ERR_Okay, f'The scoped gradient {u1} should be registered')
+   local stop = scoped.stops[0].rgb
+   assert((stop.red is 0) and (stop.blue is 1), f'Scoped stop colour: {stop.red},{stop.green},{stop.blue}')
+end
+
+@Test function ParamNamesListsEnvNames()
+   local scene <close> = obj.new('VectorScene', { pageWidth=64, pageHeight=64 })
+   local svg <close> = obj.new('svg', { target=scene, statement=[[<svg xmlns="http://www.w3.org/2000/svg">
+      <style>
+         :root { --glaze: env(--glaze, red); --unused: blue }
+         .a { fill: var(--glaze); stroke: env(--outer, env(--inner, black)) }
+         .b { fill: env(safe-area-inset-top, teal) }
+      </style>
+      <rect class="a" width="8" height="8" stroke-width="param(width) 2"/>
+      <rect class="b" width="8" height="8"/>
+   </svg>]] })
+   local joined = ''
+   for name in values(svg.paramNames) do joined ..= name .. ' ' end
+   assert(joined is 'glaze inner outer width ', 'env() names listed; custom property names excluded: ' .. joined)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- CSS custom properties in <use> instances.  The referenced content inherits from the <use> element, as a shadow
+-- tree does in browsers.
+
+function leafOf(Name:str):obj
+   local v:obj = obj.find(Name)
+   while v.child do v = v.child end
+   return v
+end
+
+local USE_STYLE = [[<style>:root { --glaze: gray } .tile { fill: var(--glaze) }</style>]]
+
+@Test function UseCustomPropertiesReachContent()
+   local scene, svg <close> = loadParams(USE_STYLE .. [[
+      <defs>
+         <symbol id="sym"><rect class="tile" width="5" height="5"/></symbol>
+         <g id="tpl"><rect class="tile" width="5" height="5"/></g>
+      </defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="red"><use xlink:href="#tpl" style="--glaze: red"/></g>
+      <g id="blue"><use xlink:href="#tpl" style="--glaze: blue"/></g>
+      <g id="symbol"><use xlink:href="#sym" style="--glaze: orange"/></g>
+      <g id="symbol_doc"><use xlink:href="#sym"/></g>
+   ]])
+   assert(leafOf('doc').fill is 'gray', f"Document value: got {leafOf('doc').fill}")
+   assert(leafOf('red').fill is 'red', f"First instance: got {leafOf('red').fill}")
+   assert(leafOf('blue').fill is 'blue', f"Second instance: got {leafOf('blue').fill}")
+   assert(leafOf('symbol').fill is 'orange', f"<symbol> instance: got {leafOf('symbol').fill}")
+   assert(leafOf('symbol_doc').fill is 'gray', f"The shared <symbol> must be restored: got {leafOf('symbol_doc').fill}")
+end
+
+@Test function UseUndefinedInDocumentIsSupplied()
+   local scene, svg <close> = loadParams([[
+      <style>.tile { fill: var(--undeclared, teal) }</style>
+      <defs><g id="tpl"><rect class="tile" width="5" height="5"/></g></defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="supplied"><use xlink:href="#tpl" style="--undeclared: lime"/></g>
+   ]])
+   assert(leafOf('doc').fill is 'teal', f"Fallback outside an instance value: got {leafOf('doc').fill}")
+   assert(leafOf('supplied').fill is 'lime', f"Supplied by <use>: got {leafOf('supplied').fill}")
+end
+
+@Test function ContentDeclarationsOverrideUse()
+   local scene, svg <close> = loadParams(USE_STYLE .. [[
+      <style>.local { --glaze: purple } .derived { --edge: var(--glaze); stroke: var(--edge) }</style>
+      <defs>
+         <g id="tpl_local" class="local"><rect class="tile" width="5" height="5"/></g>
+         <g id="tpl_derived" class="derived"><rect class="tile" width="5" height="5"/></g>
+      </defs>
+      <g id="local"><use xlink:href="#tpl_local" style="--glaze: red"/></g>
+      <g id="derived"><use xlink:href="#tpl_derived" style="--glaze: navy"/></g>
+   ]])
+   assert(leafOf('local').fill is 'purple', f"Declaration inside the content: got {leafOf('local').fill}")
+   assert(leafOf('derived').stroke is 'navy',
+      f"A content property derived from an inherited one sees the instance value: got {leafOf('derived').stroke}")
+end
+
+@Test function NestedUseChainsCustomProperties()
+   local scene, svg <close> = loadParams(USE_STYLE .. [[
+      <defs>
+         <g id="tpl"><rect class="tile" width="5" height="5"/></g>
+         <g id="outer"><use xlink:href="#tpl"/></g>
+         <g id="outer_override"><use xlink:href="#tpl" style="--glaze: lime"/></g>
+      </defs>
+      <g id="chained"><use xlink:href="#outer" style="--glaze: maroon"/></g>
+      <g id="overridden"><use xlink:href="#outer_override" style="--glaze: maroon"/></g>
+   ]])
+   assert(leafOf('chained').fill is 'maroon', f"Outer value flows through: got {leafOf('chained').fill}")
+   assert(leafOf('overridden').fill is 'lime', f"Inner <use> overrides: got {leafOf('overridden').fill}")
+end
+
+@Test function TemplateAncestorsAreNotInherited()
+   -- The instance inherits from the <use> element, not from the template's own ancestors.
+   local scene, svg <close> = loadParams([[
+      <defs><g style="--hidden: red"><g id="tpl"><rect style="fill: var(--hidden, teal)" width="5" height="5"/></g>
+      </g></defs>
+      <g id="instance"><use xlink:href="#tpl"/></g>
+   ]])
+   assert(leafOf('instance').fill is 'teal', f"Expected the fallback: got {leafOf('instance').fill}")
+end
+
+@Test function UseCustomPropertiesCarryParameters()
+   local style = [[<style>:root { --glaze: env(--glaze, gray) } .tile { fill: var(--glaze) }</style>
+      <defs><g id="tpl"><rect class="tile" width="5" height="5"/></g></defs>
+      <g id="doc"><use xlink:href="#tpl"/></g>
+      <g id="styled"><use xlink:href="#tpl" style="--glaze: env(--other, red)"/></g>
+   ]]
+   local scene, svg <close> = loadParams(style, { glaze='seagreen', other='orange' })
+   assert(leafOf('doc').fill is 'seagreen', f"SetKey via :root in an instance: got {leafOf('doc').fill}")
+   assert(leafOf('styled').fill is 'orange', f"env() in a <use> custom property: got {leafOf('styled').fill}")
+end
+
+@Test function UseParamRebindsRootCustomProperty()
+   local scene, svg <close> = loadParams([[
+      <style>:root { --glaze: env(--glaze, gray) } .tile { fill: var(--glaze) }</style>
+      <defs>
+         <g id="tpl"><rect class="tile" width="5" height="5"/></g>
+         <symbol id="sym"><rect class="tile" width="5" height="5"/></symbol>
+      </defs>
+      <rect id="outside" class="tile" width="5" height="5"/>
+      <g id="group"><use xlink:href="#tpl"><param name="glaze" value="blue"/></use></g>
+      <g id="symbol"><use xlink:href="#sym"><param name="glaze" value="blue"/></use></g>
+      <g id="sibling"><use xlink:href="#tpl"/></g>
+   ]], { glaze='teal' })
+   assert(leafOf('group').fill is 'blue', f"Root binding in a group instance: got {leafOf('group').fill}")
+   assert(leafOf('symbol').fill is 'blue', f"Root binding in a symbol instance: got {leafOf('symbol').fill}")
+   assert(obj.find('outside').fill is 'teal', 'Elements outside the instance keep the document value')
+   assert(leafOf('sibling').fill is 'teal', 'Instance parameters must not leak to a sibling')
+end
+
+@Test function UseParamRebindsOwnCustomProperty()
+   local scene, svg <close> = loadParams([[
+      <style>.tile { fill: var(--glaze) }</style>
+      <defs><g id="tpl"><rect class="tile" width="5" height="5"/></g></defs>
+      <g id="bound"><use xlink:href="#tpl" style="--glaze: env(--glaze, gray)">
+         <param name="glaze" value="blue"/>
+      </use></g>
+      <g id="explicit"><use xlink:href="#tpl" style="--glaze: red">
+         <param name="glaze" value="blue"/>
+      </use></g>
+   ]])
+   assert(leafOf('bound').fill is 'blue', f"The use element's own binding: got {leafOf('bound').fill}")
+   assert(leafOf('explicit').fill is 'red', 'A parameter does not replace an explicit custom property value')
+end
+
+@Test function UseParamRebindsDerivedRootProperty()
+   local scene, svg <close> = loadParams([[
+      <style>
+         :root { --glaze: env(--glaze, gray); --edge: var(--glaze) }
+         .tile { fill: var(--edge) }
+         .local { --glaze: green; --edge: var(--glaze) }
+      </style>
+      <defs>
+         <g id="tpl"><rect class="tile" width="5" height="5"/></g>
+         <g id="tpl_local"><rect class="tile local" width="5" height="5"/></g>
+      </defs>
+      <g id="derived"><use xlink:href="#tpl"><param name="glaze" value="blue"/></use></g>
+      <g id="local"><use xlink:href="#tpl_local"><param name="glaze" value="blue"/></use></g>
+      <g id="default"><use xlink:href="#tpl"/></g>
+   ]])
+   assert(leafOf('derived').fill is 'blue', f"Derived root property: got {leafOf('derived').fill}")
+   assert(leafOf('local').fill is 'green', 'Content declarations override instance custom properties')
+   assert(leafOf('default').fill is 'gray', 'An instance without parameters keeps the fallback')
+end
+
+@Test function NestedUseParamForwardingPrecedesBindings()
+   local scene, svg <close> = loadParams([[
+      <style>.tile { fill: var(--glaze) }</style>
+      <defs>
+         <g id="tpl"><rect class="tile" width="5" height="5"/></g>
+         <g id="outer"><use xlink:href="#tpl" style="--glaze: env(--forwarded, gray)">
+            <param name="glaze" value="lime"/>
+            <param name="forwarded" value="param(glaze) red"/>
+         </use></g>
+      </defs>
+      <g id="forwarded"><use xlink:href="#outer"><param name="glaze" value="blue"/></use></g>
+      <g id="fallback"><use xlink:href="#outer"/></g>
+   ]])
+   assert(leafOf('forwarded').fill is 'blue',
+      f"Forwarding reads the enclosing value, not the sibling param: got {leafOf('forwarded').fill}")
+   assert(leafOf('fallback').fill is 'red', f"Forwarding fallback: got {leafOf('fallback').fill}")
+end
+
+@Test function GradientVarUsesDefinitionPosition()
+   local scene, svg <close> = loadParams(USE_STYLE .. [[
+      <style>stop.themed { stop-color: var(--glaze) }</style>
+      <defs>
+         <linearGradient id="grad"><stop class="themed" offset="0"/><stop offset="1" stop-color="black"/>
+         </linearGradient>
+         <g id="tpl"><rect width="5" height="5" fill="url(#grad)"/></g>
+      </defs>
+      <g id="instance"><use xlink:href="#tpl" style="--glaze: red"/></g>
+   ]])
+   assert(leafOf('instance').fill is 'url(#grad)', f"No instance gradient expected: got {leafOf('instance').fill}")
+   local _, gradient:obj = scene.mtFindDef('grad')
+   local stop = gradient.stops[0].rgb
+   assert((stop.red < 0.6) and (stop.red is stop.green), f'Expected gray: {stop.red},{stop.green},{stop.blue}')
+end
+
+@Test function UseInstancesRenderDifferently()
+   local scene, svg <close> = loadParams(USE_STYLE .. [[
+      <defs><symbol id="sym"><rect class="tile" width="10" height="10"/></symbol></defs>
+      <use xlink:href="#sym" x="0" width="10" height="10" style="--glaze: #ff0000"/>
+      <use xlink:href="#sym" x="20" width="10" height="10" style="--glaze: #0000ff"/>
+   ]])
+   local bmp <close> = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   scene.acDraw()
+   local left, right = pixel(bmp, 5, 5), pixel(bmp, 25, 5)
+   assert((left.red is 255) and (left.blue is 0), f'Left instance: {left.red},{left.green},{left.blue}')
+   assert((right.red is 0) and (right.blue is 255), f'Right instance: {right.red},{right.green},{right.blue}')
+end

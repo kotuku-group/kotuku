@@ -7,7 +7,7 @@ void anim_base::activate(bool Reset)
    // Reset the variables that control time management and the animation will start from scratch.
 
    if (Reset) {
-      begin_offset = (double(PreciseTime()) / 1000000.0) - svg->AnimEpoch; // Seeks to position zero
+      begin_offset = svg->anim_clock() - svg->AnimEpoch; // Seeks to position zero
       repeat_index = 0;
    }
 
@@ -113,8 +113,8 @@ static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime
       matrix.second.transforms.clear();
    }
 
-   if (!SVG->AnimEpoch) SVG->AnimEpoch = double(CurrentTime) / 1000000.0;
-   double current_time = double(CurrentTime) / 1000000.0;
+   const double current_time = (double(CurrentTime) / 1000000.0) - SVG->PausedTime;
+   if (!SVG->AnimEpoch) SVG->AnimEpoch = current_time;
 
    for (auto &record : SVG->Animations) {
       std::visit([ current_time ](auto &&anim) {
