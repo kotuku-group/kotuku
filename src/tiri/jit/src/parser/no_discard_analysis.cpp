@@ -74,8 +74,6 @@ private:
             reason = " Immediate member or index access does not store this result."; break;
          case FreshResultUse::Conversion: reason = " Converting this result does not establish storage."; break;
          case FreshResultUse::Control: reason = " A control-flow path consumes this result without storing it."; break;
-         case FreshResultUse::Return: reason = " Forward it at a protected result position of an @NoDiscard function.";
-            break;
          default: break;
       }
 
@@ -84,8 +82,7 @@ private:
       diagnostic.file_index = this->file_index_;
       diagnostic.token = Token::from_span(Expression.span, TokenKind::Identifier);
       diagnostic.message = std::format(
-         "Result {} of '{}' is marked @NoDiscard; store it in a non-blank variable or container, "
-         "or pass it to a function.{}",
+         "Result {} of '{}' is marked @NoDiscard; the value must be used in order to pass this check.{}",
          Position + 1, name, reason);
       this->context_.diagnostics().report(diagnostic);
    }
@@ -137,10 +134,7 @@ private:
    void function(const FunctionExprPayload &Function)
    {
       this->consume(Function.context.reference, FreshResultUse::Control);
-      const auto *saved = this->function_;
-      this->function_ = &Function;
       if (Function.body) this->block(*Function.body);
-      this->function_ = saved;
    }
 
    void expression(const ExprNode &Expression, FreshResultUses Uses)
@@ -158,9 +152,10 @@ private:
             if (Expression.static_results) {
                obligations |= this->context_.descriptors().results(Expression.static_results).no_discard;
             }
+            // Returning a result hands it to the caller, which satisfies the contract like storage or argument passing.
             for (size_t i = 0; i < Uses.size(); ++i) {
-               if ((obligations & (1u << i)) and
-                   Uses[i] != FreshResultUse::Storage and Uses[i] != FreshResultUse::Argument) {
+               if ((obligations & (1u << i)) and Uses[i] != FreshResultUse::Storage and
+                   Uses[i] != FreshResultUse::Argument and Uses[i] != FreshResultUse::Return) {
                   this->report(Expression, call, i, Uses[i]);
                }
             }
@@ -256,14 +251,10 @@ private:
          case AstNodeKind::FunctionExpr:
             this->function(std::get<FunctionExprPayload>(Expression.data));
             break;
-         case AstNodeKind::DeferredExpr: {
-            // A lazy expression runs as a synthetic thunk, whose caller has no published forwarding contract.
-            const auto *saved = this->function_;
-            this->function_ = nullptr;
+         case AstNodeKind::DeferredExpr:
+            // A lazy expression runs as a synthetic thunk that returns its value to the consumer.
             this->consume(std::get<DeferredExprPayload>(Expression.data).inner, FreshResultUse::Return);
-            this->function_ = saved;
             break;
-         }
          case AstNodeKind::MemberExpr:
             this->consume(std::get<MemberExprPayload>(Expression.data).table, FreshResultUse::Projection);
             break;
@@ -378,9 +369,8 @@ private:
             break;
          }
          case AstNodeKind::ReturnStmt:
-            this->expression_list(std::get<ReturnStmtPayload>(Statement.data).values, [&](size_t Position) {
-               return this->function_ and this->function_->no_discard_at(Position) ?
-                  FreshResultUse::Storage : FreshResultUse::Return;
+            this->expression_list(std::get<ReturnStmtPayload>(Statement.data).values, [](size_t) {
+               return FreshResultUse::Return;
             });
             break;
          case AstNodeKind::IfStmt:
@@ -469,12 +459,9 @@ private:
                   file = entry.module_unit->file_source_idx;
                }
                uint8_t saved_file = this->file_index_;
-               const auto *saved_function = this->function_;
                this->file_index_ = file;
-               this->function_ = nullptr;
                if (body) this->block(*body);
                this->file_index_ = saved_file;
-               this->function_ = saved_function;
             }
             break;
          case AstNodeKind::NamespaceStmt:
@@ -502,7 +489,6 @@ private:
 
    ParserContext &context_;
    ConstantEvaluator constants_;
-   const FunctionExprPayload *function_ = nullptr;
    uint8_t file_index_;
    std::unordered_set<const ImportedModuleUnit *> modules_;
 };

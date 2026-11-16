@@ -436,11 +436,13 @@ function formatDocumentSymbolHover(Symbol:table):str
 
    md = f'**{signature}**'
    if Symbol.noDiscard then
-      md ..= '\n\n`@NoDiscard`: store the first result in a non-blank variable or container, or pass it to a function.'
+      md ..= '\n\n`@NoDiscard`: use the first result without discarding it.'
    end
+
    if hoverTextHasContent(Symbol.binding) then
       md ..= f'\n\nContext binding: `function{Symbol.binding}`'
    end
+
    if hoverTextHasContent(doc_text) then
       md ..= '\n\n' .. doc_text
    end

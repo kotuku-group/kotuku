@@ -525,8 +525,7 @@ end
 @Test function NoDiscardContractAppearsInHover()
    local hover = hoverAt('@NoDiscard function create():table return {} end\nlocal value = cre|ate()\n')
    assertContains(hover, '`@NoDiscard`', 'Function hover must expose the storage contract')
-   assertContains(hover, 'store the first result', 'Function hover must explain what the annotation requires')
-   assertContains(hover, 'or pass it to a function', 'Function hover must describe accepted argument passing')
+   assertContains(hover, 'use the first result', 'Function hover must describe accepted uses')
 
    hover = hoverAt('function create():table return {} end\nlocal value = cre|ate()\n')
    assert(not hover.find('@NoDiscard'), 'Unannotated functions must not acquire a contract in hover')
