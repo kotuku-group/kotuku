@@ -579,6 +579,46 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
    end
 
+   -- Calls a client render or cleanup hook with the structural guard set, and restores the guard on all exit paths.
+   -- The empty binding keeps the hook in the caller's context rather than the view's.  Not for client use.
+
+   vw._dispatch = function[](Hook:func!, ...)
+      local previous = vw._dispatching
+      vw._dispatching = true
+      defer vw._dispatching = previous end
+      Hook(...)
+   end
+
+   -- Recomputes Item.viewState in place from the view's selection, highlight, keyboard and focus state.  Returns true
+   -- if any value changed.  Not for client use.
+
+   vw._updateViewState = function(Item:table!):bool
+      local st          = Item.viewState
+      local selected    = Item._selected is true
+      local highlighted = Item is vw.hItem
+      local focused     = (vw.hasFocus is true) and (Item is vw.kItem)
+      local disabled    = vw.disabled is true
+
+      if (st.selected is selected) and (st.highlighted is highlighted) and (st.focused is focused) and
+         (st.disabled is disabled) then return false end
+
+      st.{
+         selected    = selected,
+         highlighted = highlighted,
+         focused     = focused,
+         disabled    = disabled
+      }
+
+      return true
+   end
+
+   -- True for item fields that are maintained by the view and cannot be changed through setItem().  Not for client
+   -- use.
+
+   vw._isReservedField = function(Key:any):bool
+      return Key is <str> and (Key.startsWith('_') or Key is 'viewState')
+   end
+
    -- Shift replaces the visible range; Ctrl+Shift adds it to the existing selection.
    function selectUserItem(Item:table!, Qualifiers:num!, Toggle:bool)
       if not selectionEligible(vw, Item) then return end

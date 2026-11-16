@@ -26,12 +26,6 @@ function raiseFailure(Exception)
    raise(Exception.code ?? ERR_Failed, Exception.message)
 end
 
--- Fields that are maintained by the list and cannot be changed through setItem().
-
-function isReservedField(Key:any):bool
-   return Key is <str> and (Key.startsWith('_') or Key is 'viewState')
-end
-
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.listView = function(Options:table!):table
@@ -61,15 +55,6 @@ gui.listView = function(Options:table!):table
    function validateItems(Items)
       if not Items then return end
       for item in values(Items) do validateRowHeight(item.rowHeight) end
-   end
-
-   -- Client callbacks are dispatched with the view's structural guard set, which is restored on all exit paths.
-
-   function dispatch(View:table!, Hook:func!, Item:table!, Viewport:obj!, Reason:str)
-      local previous = View._dispatching
-      View._dispatching = true
-      defer View._dispatching = previous end
-      Hook(Item, Viewport, Reason)
    end
 
    -- Row and font metrics are stored per view instance.
@@ -244,32 +229,10 @@ gui.listView = function(Options:table!):table
 
    function applyHighlight(View:table!, Item:table!)
       if lHighlightHook then
-         dispatch(View, lHighlightHook, Item, Item._vectors.viewport, highlightReason(Item))
+         View._dispatch(lHighlightHook, Item, Item._vectors.viewport, highlightReason(Item))
       else
          renderDefaultHighlight(View, Item, highlightReason(Item))
       end
-   end
-
-   -- Recomputes Item.viewState in place.  Returns true if any value changed.
-
-   function updateState(View:table!, Item:table!):bool
-      st          = Item.viewState
-      selected    = Item._selected is true
-      highlighted = Item is View.hItem
-      focused     = (View.hasFocus is true) and (Item is View.kItem)
-      disabled    = View.disabled is true
-
-      if (st.selected is selected) and (st.highlighted is highlighted) and (st.focused is focused) and
-         (st.disabled is disabled) then return false end
-
-      st.{
-         selected    = selected,
-         highlighted = highlighted,
-         focused     = focused,
-         disabled    = disabled
-      }
-
-      return true
    end
 
    -- Notifies a row of a change to its state.  Force re-applies the highlight when the state is unchanged.
@@ -277,9 +240,9 @@ gui.listView = function(Options:table!):table
    function syncState(View:table!, Item:table!, Force:bool)
       if not Item._rowReady then return end
 
-      changed = updateState(View, Item)
+      changed = View._updateViewState(Item)
       if changed and lContentHook then
-         dispatch(View, lContentHook, Item, Item._vectors.viewport, 'state')
+         View._dispatch(lContentHook, Item, Item._vectors.viewport, 'state')
       end
 
       if changed or Force then applyHighlight(View, Item) end
@@ -299,7 +262,7 @@ gui.listView = function(Options:table!):table
          if (width != item._rowWidth) or (height != item._rowHeight) then
             item.{ _rowWidth  = width, _rowHeight = height }
             if lContentHook then
-               dispatch(View, lContentHook, item, vp, 'layout')
+               View._dispatch(lContentHook, item, vp, 'layout')
             end
             applyHighlight(View, item)
          end
@@ -402,12 +365,12 @@ gui.listView = function(Options:table!):table
 
    function finishRow(View:table!, Item:table!)
       vp = Item._vectors.viewport
-      updateState(View, Item)
+      View._updateViewState(Item)
       Item._rowWidth  = vp.width
       Item._rowHeight = vp.height
 
       if lContentHook then
-         dispatch(View, lContentHook, Item, vp, 'create')
+         View._dispatch(lContentHook, Item, vp, 'create')
          Item._contentCreated = true
       end
 
@@ -474,7 +437,7 @@ gui.listView = function(Options:table!):table
       vp = Item._vectors.viewport
 
       if lContentHook then
-         dispatch(View, lContentHook, Item, vp, 'update')
+         View._dispatch(lContentHook, Item, vp, 'update')
       else
          renderDefaultContent(View, Item)
       end
@@ -525,7 +488,7 @@ gui.listView = function(Options:table!):table
          if Item._contentCreated then
             Item._contentCreated = nil
             try
-               dispatch(View, lContentHook, Item, Viewport, 'destroy')
+               View._dispatch(lContentHook, Item, Viewport, 'destroy')
             except e
                failure = e
             end
@@ -533,7 +496,7 @@ gui.listView = function(Options:table!):table
 
          if lDestroyHook then
             try
-               dispatch(View, lDestroyHook, Item, Viewport)
+               View._dispatch(lDestroyHook, Item, Viewport)
             except e
                failure ?= e
             end
@@ -607,7 +570,7 @@ gui.listView = function(Options:table!):table
       for item in values(vw.items) do
          if not item._rowReady then continue end
          if lContentHook then
-            dispatch(vw, lContentHook, item, item._vectors.viewport, 'update')
+            vw._dispatch(lContentHook, item, item._vectors.viewport, 'update')
          else
             renderDefaultContent(vw, item)
          end
@@ -637,7 +600,7 @@ gui.listView = function(Options:table!):table
       assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       assert(vw.lookup[Item._id] is Item, 'Item does not belong to this view')
       for k in pairs(KV) do
-         assert(not isReservedField(k), f'Item field "{k}" is reserved by the view')
+         assert(not vw._isReservedField(k), f'Item field "{k}" is reserved by the view')
       end
       validateRowHeight(KV.rowHeight is nil ? Item.rowHeight : KV.rowHeight)
 
