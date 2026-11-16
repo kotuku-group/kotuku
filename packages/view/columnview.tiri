@@ -14,14 +14,23 @@ rx_datetime <const> = <{ regex.new([[^(\d{4}-\d{1,2}-\d{1,2})[\sT]?(.*)$]]) }>
 rx_date <const> = <{ regex.new([[^(\d+)-(\d+)-(\d+)$]]) }>
 rx_time <const> = <{ regex.new([[^(\d{2}):(\d{2}):?(\d{0,2})$]]) }>
 
-local LINE_HEIGHT:num, FONT_HEIGHT:num, MARGIN:num, ICON_OFFSET:num, LINE_OFFSET:num, EDGE:num
+----------------------------------------------------------------------------------------------------------------------
+-- Row and font metrics are stored per view instance, so that views with different fonts do not affect each other.
 
-glIconSize = 16
-glCounter = 1
+function computeMetrics(View:table!)
+   line_height, font_height, ascent = gui.getFontHeight(View.theme.list.text)
+   row_height = math.round(line_height * 1.2)
 
-lColours = {
-   strokeButton = 'rgb(255,255,255,0.3)'
-}
+   View._metrics = {
+      lineHeight = row_height,                              -- Height of the banner and of each row
+      fontHeight = font_height,
+      iconSize   = font_height,
+      margin     = math.round(line_height * 0.3),           -- Min space between graphics elements
+      iconOffset = math.round((row_height - font_height) * 0.5),
+      lineOffset = math.round((row_height + ascent) * 0.5), -- Baseline that centres capitals in the line
+      edge       = math.round(row_height * .15)
+   }
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -172,10 +181,11 @@ end
 
 -- The x position of a cell's text within its column viewport.  Right-aligned text is anchored at its right edge.
 
-function cellTextX(Col:table!):num
-   if Col.align is 'right' then return Col.px_width - MARGIN end
-   if Col.showIcons then return (MARGIN * 2) + glIconSize + (MARGIN * 2) end
-   return MARGIN
+function cellTextX(View:table!, Col:table!):num
+   local m = View._metrics
+   if Col.align is 'right' then return Col.px_width - m.margin end
+   if Col.showIcons then return (m.margin * 2) + m.iconSize + (m.margin * 2) end
+   return m.margin
 end
 
 -- Creates or updates the text vector of a cell from the item's value.
@@ -184,21 +194,22 @@ function updateCellText(View:table!, Item:table!, Col:table!)
    local attrib = Col.attrib
    local cell = Item._col[attrib]
    local vis = (Item.hidden or cellEdited(View, Item, attrib)) ? VIS_HIDDEN : VIS_VISIBLE
+   local y = Item._y + View._metrics.lineOffset
 
    if not cell.text then
       cell.text = Col.vecViewport.new('VectorText', table.merge({
          name       = f'text_{attrib}',
          align      = Col.align ?? 'left',
-         y          = Item._y + LINE_OFFSET,
+         y          = y,
          visibility = vis
       }, View.theme.list.text))
       Item._vectors['_a_' .. attrib] = cell.text -- Referenced for future termination
    else
-      cell.text.y = Item._y + LINE_OFFSET
+      cell.text.y = y
       cell.text.visibility = vis
    end
 
-   cell.text.x = cellTextX(Col)
+   cell.text.x = cellTextX(View, Col)
    cell.text.string = columnText(Item[attrib], Col.type)
 end
 
@@ -208,9 +219,10 @@ function highlightItem(View:table!, Item:table, Highlighted:bool)
    end
 
    if not Item._vectors.highlight and (Highlighted or Item._selected) then
+      local radius = View._metrics.lineHeight * 0.2
       Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {
          name = 'item_highlight',
-         roundX = LINE_HEIGHT * 0.2, roundY = LINE_HEIGHT * 0.2,
+         roundX = radius, roundY = radius,
          x = 0, y = 0, width = '100%', height = '100%'
       })
       Item._vectors.highlight.acMoveToBack()
@@ -273,12 +285,21 @@ function highlightItem(View:table!, Item:table, Highlighted:bool)
    end
 end
 
+-- The sort icon sits at the opposite end of the banner to the column's title.
+
+function positionSortIcon(View:table!)
+   local m = View._metrics
+   local col = View._sort.col
+   View._sort.icon.x = (col.align is 'right' ? m.margin : col.px_width - m.margin - m.iconSize) - View._sort.margin
+end
+
 function arrangeColumns(View:table!)
+   local m = View._metrics
    View.banner.lines.acClear()
 
    pc = struct<PathCommand>
    for col in values(View.columns) do
-      col.vecTitle.x = col.align is 'right' ? col.px_width - MARGIN : MARGIN
+      col.vecTitle.x = col.align is 'right' ? col.px_width - m.margin : m.margin
 
       pc.type = PE_Move
       pc.x    = col.x + col.px_width
@@ -287,7 +308,7 @@ function arrangeColumns(View:table!)
 
       pc.type = PE_Line
       pc.x    = col.x + col.px_width
-      pc.y    = LINE_HEIGHT
+      pc.y    = m.lineHeight
       View.banner.lines.mtAddCommand(pc)
 
       col.bannerVP.x = col.x
@@ -300,15 +321,12 @@ function arrangeColumns(View:table!)
       col.fillItemSelect = View.theme.list.textHighlight
    end
 
-   if View._sort then
-      col = View._sort.col
-      View._sort.icon.x = (col.align is 'right' ? MARGIN : col.px_width - MARGIN - glIconSize) - View._sort.margin
-   end
+   if View._sort?.icon then positionSortIcon(View) end
 
    if View.scrollbar then
       page_width = 0
       for col in values(View.columns) do
-         page_width = col.x + col.px_width + EDGE
+         page_width = col.x + col.px_width + m.edge
       end
       View.scrollbar.setDynamicPageSize(page_width, page_width, View.page.height)
    end
@@ -318,14 +336,15 @@ end
 -- theme change creates new patterns.
 
 function styleSortIcon(View:table!)
+   local m = View._metrics
    path = View._sort.ascending ? 'layout/sort_alpha_asc' : 'layout/sort_alpha_desc'
-   sort_icon = gui.createIcon(View.scene, path, glIconSize, View.theme.window.icon)
+   sort_icon = gui.createIcon(View.scene, path, m.iconSize, View.theme.window.icon)
    View._sort.margin = sort_icon.margin
    View._sort.icon.{
       fill   = sort_icon.fill,
-      y      = math.round((LINE_HEIGHT - glIconSize) * 0.5) - sort_icon.margin,
-      width  = glIconSize + (sort_icon.margin * 2),
-      height = glIconSize + (sort_icon.margin * 2)
+      y      = math.round((m.lineHeight - m.iconSize) * 0.5) - sort_icon.margin,
+      width  = m.iconSize + (sort_icon.margin * 2),
+      height = m.iconSize + (sort_icon.margin * 2)
    }
 end
 
@@ -333,8 +352,9 @@ end
 
 function itemIconStyle(View:table!, Item:table!)
    local theme = Item.iconTheme ?? View.theme.page.icon
+   local size  = View._metrics.iconSize
    local uid   = f'{gui.parseFill(theme).key}+{Item.icon}'
-   local info  = gui.createIcon(View.scene, Item.icon, glIconSize, theme, uid)
+   local info  = gui.createIcon(View.scene, Item.icon, size, theme, uid)
    Item._iconFill      = info.fill
    Item._iconMargin    = info.margin
    Item._iconHighlight = nil
@@ -342,8 +362,21 @@ function itemIconStyle(View:table!, Item:table!)
    if View.theme.page.iconHighlight and View.theme.page.iconHighlight != theme then
       theme = View.theme.page.iconHighlight
       uid   = f'{gui.parseFill(theme).key}+{Item.icon}'
-      Item._iconHighlight = gui.createIcon(View.scene, Item.icon, glIconSize, theme, uid).fill
+      Item._iconHighlight = gui.createIcon(View.scene, Item.icon, size, theme, uid).fill
    end
+end
+
+-- Applies the item's icon style to its icon image and positions the image in the item's row.
+
+function placeItemIcon(View:table!, Item:table!)
+   local m = View._metrics
+   Item._vectors.iconImage.{
+      fill   = Item._iconFill,
+      x      = (m.margin * 2) - Item._iconMargin,
+      y      = Item._y + m.iconOffset - Item._iconMargin,
+      width  = m.iconSize + (Item._iconMargin * 2),
+      height = m.iconSize + (Item._iconMargin * 2)
+   }
 end
 
 -- Creates or updates the icon, checkboxes and text of every cell of an item.  Text is created for cells that have a
@@ -351,7 +384,6 @@ end
 
 function updateCells(View:table!, Item:table!)
    local vis = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
-   local y = Item._y
 
    for col in values(View.columns) do
       local attrib = col.attrib
@@ -361,19 +393,11 @@ function updateCells(View:table!, Item:table!)
          if Item.icon then
             try
                itemIconStyle(View, Item)
-               local image = Item._vectors.iconImage
-               if not image then
-                  image = col.vecViewport.new('VectorRectangle', { name = 'item_icon' })
-                  Item._vectors.iconImage = image
+               if not Item._vectors.iconImage then
+                  Item._vectors.iconImage = col.vecViewport.new('VectorRectangle', { name = 'item_icon' })
                end
-               image.{
-                  fill       = Item._iconFill,
-                  x          = (MARGIN * 2) - Item._iconMargin,
-                  y          = y + ICON_OFFSET - Item._iconMargin,
-                  width      = glIconSize + (Item._iconMargin * 2),
-                  height     = glIconSize + (Item._iconMargin * 2),
-                  visibility = vis
-               }
+               placeItemIcon(View, Item)
+               Item._vectors.iconImage.visibility = vis
             end
          elseif Item._vectors.iconImage then
             Item._vectors.iconImage.free()
@@ -427,9 +451,7 @@ function bannerZoneClick(View, Col, X, Y, Value)
       end
    end
 
-   if View._sort.icon then
-      View._sort.icon.x = (Col.align is 'right' ? MARGIN : Col.px_width - MARGIN - glIconSize) - View._sort.margin
-   end
+   if View._sort.icon then positionSortIcon(View) end
 
    View.sortColumn(View, Col, View._sort.ascending)
    View.viewport.acDraw()
@@ -439,9 +461,10 @@ end
 
 function rearrangeItems(View)
    VSPACING <const> = gui.rpixel('2dp')
+   local m = View._metrics
    View.zones = { }
-   View._last_y = EDGE
-   y = EDGE
+   View._last_y = m.edge
+   y = m.edge
    for item in values(View.items) do
       item._y = y
       if item._vectors.viewport then
@@ -460,21 +483,21 @@ function rearrangeItems(View)
       end
 
       if item._vectors.iconImage then
-         item._vectors.iconImage.y = y + ICON_OFFSET - item._iconMargin
+         item._vectors.iconImage.y = y + m.iconOffset - item._iconMargin
       end
 
       for col in values(View.columns) do
-         item._col?[col.attrib]?.text?.y = y + LINE_OFFSET
+         item._col?[col.attrib]?.text?.y = y + m.lineOffset
       end
 
       if not item.hidden then
-         View.addZone(0, item._y, nil, LINE_HEIGHT, item)
-         y += LINE_HEIGHT + VSPACING
+         View.addZone(0, item._y, nil, m.lineHeight, item)
+         y += m.lineHeight + VSPACING
       end
    end
 
    View._last_y = y
-   View.page.height = y + EDGE
+   View.page.height = y + m.edge
    if View._updateEdit then View._updateEdit() end -- The edited item may have moved
    View.scene.surface.mtScheduleRedraw()
 end
@@ -502,6 +525,7 @@ gui.columnView = function(Options):table
 
       if View._cancelEdit then View._cancelEdit() end
 
+      local m = View._metrics
       sort = View._sort
       View._sort = nil
       c = 0
@@ -513,9 +537,9 @@ gui.columnView = function(Options):table
          new_col = { _index=c, width=8, title='Untitled' }
          for k, v in pairs(col) do new_col[k] = v end
          if new_col.checkBoxes then
-            new_col._checkboxSize = math.max(4, math.round(View._fontHeight))
-            new_col._checkboxMargin = View._columnMargin
-            new_col._checkboxOffset = math.round((View._lineHeight - new_col._checkboxSize) * 0.5)
+            new_col._checkboxSize = math.max(4, math.round(m.fontHeight))
+            new_col._checkboxMargin = m.margin
+            new_col._checkboxOffset = math.round((m.lineHeight - new_col._checkboxSize) * 0.5)
             new_col._checkboxFills = checkboxPatterns(View, new_col._checkboxSize)
          end
          set.insert(new_col)
@@ -549,7 +573,7 @@ gui.columnView = function(Options):table
          end
       end
 
-      View.reserveTop('ViewUI', LINE_HEIGHT)
+      View.reserveTop('ViewUI', m.lineHeight)
 
       if View.banner then View.banner.clip.free() end
 
@@ -559,11 +583,11 @@ gui.columnView = function(Options):table
 
       View.banner.clip = View.viewport.new('VectorViewport', {
          name = 'banner_clip',
-         x = 0, y = View.frame.y - LINE_HEIGHT, width = '100%', height = LINE_HEIGHT, overflow = VOF_HIDDEN
+         x = 0, y = View.frame.y - m.lineHeight, width = '100%', height = m.lineHeight, overflow = VOF_HIDDEN
       })
 
       View.banner.viewport = View.banner.clip.new('VectorViewport', {
-         name = 'banner_vp', x = 0, y = 0, width = '100%', height = LINE_HEIGHT, overflow = VOF_HIDDEN
+         name = 'banner_vp', x = 0, y = 0, width = '100%', height = m.lineHeight, overflow = VOF_HIDDEN
       })
 
       View.banner.lines = View.banner.viewport.new('VectorPath', table.merge({
@@ -598,7 +622,7 @@ gui.columnView = function(Options):table
          end
 
          col.x = x
-         col.minWidth = x + MARGIN
+         col.minWidth = x + m.margin
          col.px_width = math.round(col.width * gui.pixel(tostring(View.theme.list.text.fontSize), 96))
 
          if not col.bannerVP then
@@ -618,29 +642,30 @@ gui.columnView = function(Options):table
             col.vecTitle = col.bannerVP.new('VectorText', table.merge({
                name  = 'col_title',
                align = col.align ?? 'left',
-               y     = LINE_OFFSET,
+               y     = m.lineOffset,
             }, View.theme.list.text))
 
             -- Support for resize management
 
             col.resizeVP = View.banner.viewport.new('VectorViewport', {
                name = 'col_resize_zone',
-               x = x + col.px_width - (MARGIN * 0.5), y = 0,
-               width = MARGIN, height = '100%', cursor = PTC_SPLIT_HORIZONTAL
+               x = x + col.px_width - (m.margin * 0.5), y = 0,
+               width = m.margin, height = '100%', cursor = PTC_SPLIT_HORIZONTAL
             })
 
             col.resizeVP.dragCallback = function(SizeVP, X, Y)
                -- Rearrange layout
+               local margin = View._metrics.margin
                delta_x = X - SizeVP.x
                col.px_width += delta_x
-               if col.px_width < MARGIN then col.px_width = MARGIN end
+               if col.px_width < margin then col.px_width = margin end
                col.vecViewport.width = col.px_width
 
                scan = col.next
                new_x = col.x + col.px_width
                while scan do
                   scan.x = new_x
-                  scan.resizeVP.x = new_x + scan.px_width - (MARGIN * 0.5)
+                  scan.resizeVP.x = new_x + scan.px_width - (margin * 0.5)
                   scan.vecViewport.x = new_x
                   new_x += scan.px_width
                   scan = scan.next
@@ -649,12 +674,12 @@ gui.columnView = function(Options):table
                arrangeColumns(View)
 
                if View.scrollbar then
-                  page_width = new_x + EDGE + EDGE
+                  page_width = new_x + (View._metrics.edge * 2)
                   View.scrollbar.setDynamicPageSize(page_width, page_width, View.page.height)
                end
 
                if col.align is 'right' then -- Realign all text in this column
-                  align_x = col.px_width - MARGIN
+                  align_x = col.px_width - margin
                   for item in values(View.items) do
                      item._col?[col.attrib]?.text?.x = align_x
                   end
@@ -662,7 +687,7 @@ gui.columnView = function(Options):table
 
                if View._updateEdit then View._updateEdit() end
 
-               SizeVP.x = col.x + col.px_width - (MARGIN * 0.5)
+               SizeVP.x = col.x + col.px_width - (margin * 0.5)
                SizeVP.acDraw()
             end
          else
@@ -692,7 +717,7 @@ gui.columnView = function(Options):table
 
          View.frame.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport, Event)
             if not View.banner?.clip then return end
-            View.banner.clip.y = View.frame.y - LINE_HEIGHT
+            View.banner.clip.y = View.frame.y - View._metrics.lineHeight
          end)
       end
 
@@ -711,8 +736,9 @@ gui.columnView = function(Options):table
       Items ?! return
 
       VSPACING <const> = gui.rpixel('2dp')
+      local m = View._metrics
 
-      width = View.frame.width - EDGE - EDGE
+      width = View.frame.width - (m.edge * 2)
       y = View._last_y
 
       for item in values(Items) do
@@ -727,7 +753,7 @@ gui.columnView = function(Options):table
 
          if not item._vectors.viewport then
             item._vectors.viewport = View.page.new('VectorViewport', {
-               name = 'item_vp', x = EDGE, y = y, xOffset = EDGE, height = LINE_HEIGHT, visibility = vis
+               name = 'item_vp', x = m.edge, y = y, xOffset = m.edge, height = m.lineHeight, visibility = vis
             })
          else
             item._vectors.viewport.{ y = y, width = width, visibility = vis }
@@ -743,13 +769,13 @@ gui.columnView = function(Options):table
 
          item._highlightEvent(View, item, item is View.hItem)
          if not item.hidden then
-            View.addZone(0, item._y, nil, LINE_HEIGHT, item)
-            y += LINE_HEIGHT + VSPACING
+            View.addZone(0, item._y, nil, m.lineHeight, item)
+            y += m.lineHeight + VSPACING
          end
       end
 
       View._last_y = y
-      View.page.height = y + EDGE
+      View.page.height = y + m.edge
 
       for col in values(View.columns) do
          col.vecViewport.acMoveToFront()
@@ -759,21 +785,11 @@ gui.columnView = function(Options):table
    -- Callback function for constructing the view from scratch.  Can be called multiple times
 
    function constructColumnView(View)
-      LINE_HEIGHT, FONT_HEIGHT, ascent = gui.getFontHeight(View.theme.list.text)
-      glIconSize  = FONT_HEIGHT
-      MARGIN      = math.round(LINE_HEIGHT * 0.3) -- Min space between graphics elements
-      LINE_HEIGHT = math.round(LINE_HEIGHT * 1.2)
-      ICON_OFFSET = math.round((LINE_HEIGHT - glIconSize) * 0.5)
-      LINE_OFFSET = math.round((LINE_HEIGHT + ascent) * 0.5) -- Baseline that centres capitals in the line
-      EDGE        = math.round(LINE_HEIGHT * .15)
-
-      View._fontHeight = FONT_HEIGHT
-      View._lineHeight = LINE_HEIGHT
-      View._columnMargin = MARGIN
+      computeMetrics(View)
       setColumns(View, Options.columns ?? { })
       View.zones = { }
 
-      View._last_y = EDGE
+      View._last_y = View._metrics.edge
       if #View.items > 0 then newItems(View, View.items) end
 
       processing.collect()
@@ -833,22 +849,14 @@ gui.columnView = function(Options):table
 
       if vw._sort?.icon then
          styleSortIcon(vw)
-         col = vw._sort.col
-         vw._sort.icon.x = (col.align is 'right' ? MARGIN : col.px_width - MARGIN - glIconSize) - vw._sort.margin
+         positionSortIcon(vw)
       end
 
       for item in values(vw.items) do
-         image = item._vectors?.iconImage
-         if image then
+         if item._vectors?.iconImage then
             try
                itemIconStyle(vw, item)
-               image.{
-                  fill   = item._iconFill,
-                  x      = (MARGIN * 2) - item._iconMargin,
-                  y      = item._y + ICON_OFFSET - item._iconMargin,
-                  width  = glIconSize + (item._iconMargin * 2),
-                  height = glIconSize + (item._iconMargin * 2)
-               }
+               placeItemIcon(vw, item)
             except e
                msg(f'Failed to restyle view icon "{item.icon}": {e.message}')
             end
@@ -868,12 +876,13 @@ gui.columnView = function(Options):table
       if not col or col.checkBoxes or not col.vecViewport or not Item._vectors?.viewport or (Item._y is nil) then
          return
       end
+      local m = vw._metrics
       return {
          host     = col.vecViewport,
-         textX    = col.showIcons ? (MARGIN * 2) + glIconSize + (MARGIN * 2) : MARGIN,
-         baseline = Item._y + LINE_OFFSET,
+         textX    = col.showIcons ? (m.margin * 2) + m.iconSize + (m.margin * 2) : m.margin,
+         baseline = Item._y + m.lineOffset,
          y        = Item._y,
-         height   = LINE_HEIGHT,
+         height   = m.lineHeight,
          span     = { x = col.x, width = col.px_width },
          theme    = { text = vw.theme.list.text }
       }
@@ -915,7 +924,7 @@ gui.columnView = function(Options):table
          local _, _, _, width = text.mtGetBoundary(0)
          local left = col.x + text.x - ((col.align is 'right') ? width : 0)
          if (Input.x < left) or (Input.x >= left + width) then return end
-         if (Input.y < Item._y) or (Input.y >= Item._y + LINE_HEIGHT) then return end
+         if (Input.y < Item._y) or (Input.y >= Item._y + vw._metrics.lineHeight) then return end
 
          return vw._beginEdit(Item, col.attrib, 'user')
       end
@@ -1052,7 +1061,7 @@ gui.columnView = function(Options):table
       Options.columns = Columns
       setColumns(View, Columns)
       View.zones = { }
-      View._last_y = EDGE
+      View._last_y = View._metrics.edge
       newItems(View, View.items)
       View.scene.surface.mtScheduleRedraw()
    end
