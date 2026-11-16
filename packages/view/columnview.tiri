@@ -90,6 +90,10 @@ function columnText(Value:any, Type:str):any
    return Value
 end
 
+function raiseFailure(Exception)
+   raise(Exception.code ?? ERR_Failed, Exception.message)
+end
+
 function setListTextFill(Item:table, Fill)
    if Item._vectors.text then
       Item._vectors.text.fill = Fill
@@ -285,6 +289,80 @@ function highlightItem(View:table!, Item:table, Highlighted:bool)
    end
 end
 
+-- Calls the constructCell() hook of every custom cell of an item that has been created, in column order.  Cells
+-- that were never created, e.g. after a failed 'create', are skipped.  Every cell is attempted, and the first failure
+-- is raised afterwards.
+
+function dispatchCells(View:table!, Item:table!, Reason:str!)
+   local failure:any = nil
+   for col in values(View.columns) do
+      if not col.constructCell then continue end
+      local cell = Item._col?[col.attrib]
+      if not cell?.created then continue end
+      try
+         View._dispatch(col.constructCell, Item, cell.cellViewport, Reason, col)
+      except e
+         failure ?= e
+      end
+   end
+   if failure then raiseFailure(failure) end
+end
+
+-- Notifies custom cells whose size has changed since they were last notified with 'layout'.  The cell viewports are
+-- already resized by the caller; this only informs the client.  Every cell is attempted, and the first failure is
+-- raised afterwards.
+
+function notifyCellGeometry(View:table!)
+   local height = View._metrics.lineHeight
+   local failure:any = nil
+   for item in values(View.items) do
+      for col in values(View.columns) do
+         if not col.constructCell then continue end
+         local cell = item._col?[col.attrib]
+         if not cell?.created then continue end
+         if (cell._cellWidth is col.px_width) and (cell._cellHeight is height) then continue end
+         cell.{ _cellWidth = col.px_width, _cellHeight = height }
+         try
+            View._dispatch(col.constructCell, item, cell.cellViewport, 'layout', col)
+         except e
+            failure ?= e
+         end
+      end
+   end
+   if failure then raiseFailure(failure) end
+end
+
+-- Schedules notifyCellGeometry() for the next message cycle, so that a column drag sends one 'layout' per cell.
+
+function scheduleCellGeometry(View:table!)
+   if View._geometryPending then return end
+   View._geometryPending = true
+   processing.delayedCall(function()
+      View._geometryPending = false
+      if not View.viewport or not View.columns then return end
+      notifyCellGeometry(View)
+   end)
+end
+
+-- Brings Item.viewState up to date and notifies the item's custom cells of a change with 'state'.  The highlight and
+-- checkboxes are redrawn if the state changed, or if Force is set.  Otherwise only the checkboxes are refreshed,
+-- because their focus also depends on the active checkbox column, which is not part of viewState.
+
+function syncState(View:table!, Item:table!, Force:bool)
+   if Item.viewState is nil then return end -- The item has not been built yet
+
+   local changed = View._updateViewState(Item)
+   if changed then dispatchCells(View, Item, 'state') end
+
+   if changed or Force then
+      highlightItem(View, Item, Item is View.hItem)
+   else
+      for col in values(View.columns) do
+         if col.checkBoxes then refreshCheckbox(View, Item, col) end
+      end
+   end
+end
+
 -- The sort icon sits at the opposite end of the banner to the column's title.
 
 function positionSortIcon(View:table!)
@@ -379,8 +457,53 @@ function placeItemIcon(View:table!, Item:table!)
    }
 end
 
+-- Creates the viewport of a custom cell on first use and notifies the client with 'create', or with 'update' if the
+-- cell exists.  The viewport is registered in Item._vectors so that Item._free() releases it.  The cell is marked as
+-- created only once 'create' succeeds, so that a failed cell does not receive 'destroy'.
+
+function updateCustomCell(View:table!, Item:table!, Col:table!)
+   local cell = Item._col[Col.attrib]
+   if cell.cellViewport then
+      if cell.created then View._dispatch(Col.constructCell, Item, cell.cellViewport, 'update', Col) end
+      return
+   end
+
+   cell.cellViewport = Col.vecViewport.new('VectorViewport', {
+      name       = '_cell_' .. Col.attrib,
+      x          = 0,
+      y          = Item._y,
+      width      = Col.px_width,
+      height     = View._metrics.lineHeight,
+      overflow   = VOF_HIDDEN,
+      visibility = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
+   })
+   Item._vectors['_cell_' .. Col.attrib] = cell.cellViewport
+   cell.{ _cellWidth = Col.px_width, _cellHeight = View._metrics.lineHeight }
+
+   View._dispatch(Col.constructCell, Item, cell.cellViewport, 'create', Col)
+   cell.created = true
+end
+
+-- Notifies every created custom cell of an item with 'destroy', in column order, while the cell viewports are still
+-- valid.  Every cell is notified even if one fails; the first failure is returned.
+
+function destroyCells(View:table!, Item:table!):any
+   local failure:any = nil
+   for col in values(View.columns ?? { }) do
+      local cell = Item._col?[col.attrib]
+      if not cell?.created then continue end
+      cell.created = nil
+      try
+         View._dispatch(col.constructCell, Item, cell.cellViewport, 'destroy', col)
+      except e
+         failure ?= e
+      end
+   end
+   return failure
+end
+
 -- Creates or updates the icon, checkboxes and text of every cell of an item.  Text is created for cells that have a
--- value; a cell that already has text keeps it when its value is removed.
+-- value; a cell that already has text keeps it when its value is removed.  Custom cells replace the icon and text.
 
 function updateCells(View:table!, Item:table!)
    local vis = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
@@ -388,6 +511,11 @@ function updateCells(View:table!, Item:table!)
    for col in values(View.columns) do
       local attrib = col.attrib
       if not Item._col[attrib] then Item._col[attrib] = { } end
+
+      if col.constructCell then
+         updateCustomCell(View, Item, col)
+         continue
+      end
 
       if not col.checkBoxes and col.showIcons then
          if Item.icon then
@@ -474,8 +602,9 @@ function rearrangeItems(View)
          item._vectors.iconImage?.visibility = vis
 
          for col in values(View.columns) do
-            local text = item._col?[col.attrib]?.text
-            if text then text.visibility = cellEdited(View, item, col.attrib) ? VIS_HIDDEN : vis end
+            local cell = item._col?[col.attrib]
+            if cell?.text then cell.text.visibility = cellEdited(View, item, col.attrib) ? VIS_HIDDEN : vis end
+            if cell?.cellViewport then cell.cellViewport.{ y = y, visibility = vis } end
             if col.checkBoxes then refreshCheckbox(View, item, col) end
          end
 
@@ -505,21 +634,34 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.columnView = function(Options):table
-   -- Checkbox columns are toggled rather than edited.  The check is repeated by setColumns().
+   lDestroyHook = Options.destroyItem
+   assert(lDestroyHook is nil or lDestroyHook is <func>, 'destroyItem must be a function')
 
-   function assertEditableColumns(Columns:any, Editable:any)
-      if not (Editable is <array str>) or not Columns then return end
+   -- Custom cells are drawn by the client, and checkbox columns are toggled; neither can be edited in place.  The
+   -- check is repeated by setColumns(), and must pass before the view is changed.
+
+   function validateColumns(Columns:any, Editable:any)
+      if not Columns then return end
       for col in values(Columns) do
-         if col.checkBoxes and (Editable.indexOf(col.attrib) != nil) then
-            raise f'editable attribute "{col.attrib}" names a checkbox column'
+         if col.constructCell != nil then
+            assert(col.constructCell is <func>, f'constructCell of column "{col.attrib}" must be a function')
+            assert(not col.checkBoxes, f'constructCell cannot be combined with checkBoxes in column "{col.attrib}"')
+         end
+
+         if (Editable is <array str>) and (Editable.indexOf(col.attrib) != nil) then
+            if col.checkBoxes then raise f'editable attribute "{col.attrib}" names a checkbox column' end
+            if col.constructCell then raise f'editable attribute "{col.attrib}" names a custom cell column' end
          end
       end
    end
 
-   assertEditableColumns(Options.columns, Options.editable)
+   validateColumns(Options.columns, Options.editable)
 
-   function setColumns(View:table!, Columns)
-      assertEditableColumns(Columns, View.editable)
+   -- Replaces the columns.  Custom cells receive 'destroy' while the old column viewports are valid.  The first
+   -- cleanup failure is returned for the caller to raise once the new columns have been populated.
+
+   function setColumns(View:table!, Columns):any
+      validateColumns(Columns, View.editable)
 
       -- The column viewports host the editor, and are replaced below.
 
@@ -547,12 +689,17 @@ gui.columnView = function(Options):table
          c++
       end
 
+      failure:any = nil
       if View.columns then -- Clear cell references before freeing their owning column viewports.
          for item in values(View.items) do
+            local err = destroyCells(View, item)
+            failure ?= err
+
             for col in values(View.columns) do
                item._col?[col.attrib] = nil
                item._vectors['_a_' .. col.attrib] = nil
                item._vectors['_check_' .. col.attrib] = nil
+               item._vectors['_cell_' .. col.attrib] = nil
             end
             item._vectors.iconImage = nil
          end
@@ -661,6 +808,15 @@ gui.columnView = function(Options):table
                if col.px_width < margin then col.px_width = margin end
                col.vecViewport.width = col.px_width
 
+               -- Custom cells are resized now so that they clip correctly, but the client is told once per cycle.
+
+               if col.constructCell then
+                  for item in values(View.items) do
+                     item._col?[col.attrib]?.cellViewport?.width = col.px_width
+                  end
+                  scheduleCellGeometry(View)
+               end
+
                scan = col.next
                new_x = col.x + col.px_width
                while scan do
@@ -727,9 +883,48 @@ gui.columnView = function(Options):table
          View._sort = { col=col, ascending=not sort.ascending }
          bannerZoneClick(View, col, 0, 0, 0)
       end
+
+      return failure
    end
 
-   -- Process new items that have been added to the view
+   -- Builds the row viewport, state and cells of an item at row position Y.
+
+   function buildItem(View:table!, Item:table!, Y:num!, Width:num!)
+      local m = View._metrics
+      local vis = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
+
+      Item._y = Y
+
+      -- Each item gets a viewport within the page
+
+      if not Item._vectors.viewport then
+         Item._vectors.viewport = View.page.new('VectorViewport', {
+            name = 'item_vp', x = m.edge, y = Y, xOffset = m.edge, height = m.lineHeight, visibility = vis
+         })
+      else
+         Item._vectors.viewport.{ y = Y, width = Width, visibility = vis }
+      end
+
+      -- The state is current before any cell is built, so that custom cells can read it in 'create'.
+
+      Item.viewState = { selected=false, highlighted=false, focused=false, disabled=false }
+      View._updateViewState(Item)
+
+      Item._highlightEvent = function(View, Item, Highlighted)
+         syncState(View, Item, true)
+      end
+
+      Item._selectEvent = function(View, Item)
+         syncState(View, Item, true)
+      end
+
+      updateCells(View, Item)
+      highlightItem(View, Item, Item is View.hItem)
+   end
+
+   -- Process new items that have been added to the view.  An item whose cells cannot be built is removed from the
+   -- view, which releases its created cells with 'destroy' and calls destroyItem().  The other items are built and laid
+   -- out, then the first failure is raised.
 
    function newItems(View:table!, Items)
       View.columns ?! return
@@ -741,34 +936,23 @@ gui.columnView = function(Options):table
       width = View.frame.width - (m.edge * 2)
       y = View._last_y
 
+      local failure:any = nil
+      local failed = array<table>
+
       for item in values(Items) do
          item._vectors ?= { }
          item._col ?= { }
 
-         vis = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
-
-         item._y = y
-
-         -- Each item gets a viewport within the page
-
-         if not item._vectors.viewport then
-            item._vectors.viewport = View.page.new('VectorViewport', {
-               name = 'item_vp', x = m.edge, y = y, xOffset = m.edge, height = m.lineHeight, visibility = vis
-            })
-         else
-            item._vectors.viewport.{ y = y, width = width, visibility = vis }
+         local built = true
+         try
+            buildItem(View, item, y, width)
+         except e
+            failure ?= e
+            failed.push(item)
+            built = false
          end
 
-         item._highlightEvent = highlightItem
-
-         item._selectEvent = function(View, Item)
-            Item._highlightEvent(View, Item, Item is View.hItem)
-         end
-
-         updateCells(View, item)
-
-         item._highlightEvent(View, item, item is View.hItem)
-         if not item.hidden then
+         if built and not item.hidden then
             View.addZone(0, item._y, nil, m.lineHeight, item)
             y += m.lineHeight + VSPACING
          end
@@ -780,22 +964,76 @@ gui.columnView = function(Options):table
       for col in values(View.columns) do
          col.vecViewport.acMoveToFront()
       end
+
+      -- removeItem() keeps the selection, keyboard target and zones consistent, and lays out the remaining rows.  A
+      -- cleanup failure for a failed item is reported, but the creation failure takes precedence.
+
+      for item in values(failed) do
+         try
+            View.removeItem(item)
+         except e
+            msg(f'Cleanup of a column view item that failed to build has also failed: {e.message}')
+         end
+      end
+
+      if failure then raiseFailure(failure) end
    end
 
-   -- Callback function for constructing the view from scratch.  Can be called multiple times
+   -- Callback function for constructing the view from scratch.  Can be called multiple times.  Custom cells receive
+   -- 'destroy' and then 'create', because the column viewports are replaced.  A creation failure is raised in
+   -- preference to a cleanup failure.
 
    function constructColumnView(View)
       computeMetrics(View)
-      setColumns(View, Options.columns ?? { })
+      local failure:any = setColumns(View, Options.columns ?? { })
       View.zones = { }
 
       View._last_y = View._metrics.edge
-      if #View.items > 0 then newItems(View, View.items) end
+      if #View.items > 0 then
+         try
+            newItems(View, View.items)
+         except e
+            failure = e
+         end
+      end
 
       processing.collect()
+
+      if failure then
+         if View._afterLayout then View._afterLayout() end -- rebuild() does not complete the layout if this raises
+         raiseFailure(failure)
+      end
    end
 
-   vw = gui.initView(Options, constructColumnView, newItems)
+   -- Lifecycle hooks are installed before any initial items are built.
+
+   function prepareView(View:table!)
+      -- Rows are laid out again in place after a structural change, e.g. removeItem(), so that the scroll position and
+      -- an open edit are kept.
+
+      View._relayout = function()
+         if View.columns then rearrangeItems(View) end
+      end
+
+      -- Client cleanup: 'destroy' for each created custom cell, then destroyItem(), while the viewports are still
+      -- valid.  Every hook is attempted, and the first failure is returned to the caller for reporting.
+
+      View._releaseItem = function(Item:table!, Viewport:obj!):any
+         local failure:any = destroyCells(View, Item)
+
+         if lDestroyHook then
+            try
+               View._dispatch(lDestroyHook, Item, Viewport)
+            except e
+               failure ?= e
+            end
+         end
+
+         return failure
+      end
+   end
+
+   vw = gui.initView(Options, constructColumnView, newItems, prepareView)
 
    function resolveColumn(Column:any!):table
       if Column is <str> then return vw.namedCol[Column] end
@@ -817,26 +1055,28 @@ gui.columnView = function(Options):table
 
    -- Change a checkbox programmatically.  Column accepts an attrib, zero-based index or column reference.
    vw.setChecked = function(Item:table!, Column:any!, Checked:bool!):bool
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       col = resolveColumn(Column)
       assert(col?.checkBoxes, 'Column is not a checkbox column')
       assert(vw.lookup[Item._id] is Item, 'Item does not belong to this view')
       return setCheckbox(Item, col, Checked, 'manual')
    end
 
+   -- Focus, enable and disable change the state of every item.
+
    vw._stateChanged = function()
-      for item in values(vw.items) do
-         for col in values(vw.columns) do
-            if col.checkBoxes then refreshCheckbox(vw, item, col) end
-         end
-      end
+      for item in values(vw.items) do syncState(vw, item) end
       vw.scene.surface.mtScheduleRedraw()
    end
 
    -- Recolours the banner, the column titles, the item text, highlights and checkboxes, and rebuilds the icons for the
-   -- current theme.  Fonts, the line height and the column widths are not changed.
+   -- current theme.  Custom cells receive 'update' before the highlight is redrawn.  Fonts, the line height and the
+   -- column widths are not changed.  Every item is restyled even if a custom cell fails; the first failure is raised
+   -- afterwards.
 
    vw._restyle = function()
       vw.columns ?! return
+      local failure:any = nil
 
       gui.applyStyle(vw.banner.lines, vw.theme.window.stroke)
 
@@ -862,8 +1102,18 @@ gui.columnView = function(Options):table
             end
          end
 
-         if item._highlightEvent then item._highlightEvent(vw, item, item is vw.hItem) end
+         if item.viewState != nil then
+            try
+               dispatchCells(vw, item, 'update')
+            except e
+               failure ?= e
+            end
+         end
+
+         syncState(vw, item, true)
       end
+
+      if failure then raiseFailure(failure) end
    end
 
    ----------------------------------------------------------------------------------------------------------------
@@ -896,7 +1146,7 @@ gui.columnView = function(Options):table
       local col = vw.namedCol?[Attrib]
       if not col or not Item._col?[Attrib] then return end
       updateCellText(vw, Item, col) -- Also creates the text of a cell that had no value
-      if Item._highlightEvent then Item._highlightEvent(vw, Item, Item is vw.hItem) end
+      syncState(vw, Item, true)
       vw.scene.surface.mtScheduleRedraw()
    end
 
@@ -1013,13 +1263,6 @@ gui.columnView = function(Options):table
       return false
    end
 
-   -- Rows are laid out again in place after a structural change, e.g. removeItem(), so that the scroll position and an
-   -- open edit are kept.
-
-   vw._relayout = function()
-      rearrangeItems(vw)
-   end
-
    -- Lays out the existing rows again after the client has changed the hidden field of items directly, e.g. to filter
    -- a long list with one layout rather than one per item.  Cell content is not refreshed; see setItem().
 
@@ -1033,6 +1276,9 @@ gui.columnView = function(Options):table
    vw.setItem = function(Item:table!, KV:table!)
       assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       assert(vw.lookup[Item._id] is Item, 'Item does not belong to this view')
+      for k in pairs(KV) do
+         assert(not vw._isReservedField(k), f'Item field "{k}" is reserved by the view')
+      end
 
       -- An external change to the edited value takes precedence over the user's edit.
 
@@ -1047,7 +1293,7 @@ gui.columnView = function(Options):table
       if not vw.columns or not Item._vectors?.viewport then return end -- The row has not been built yet
 
       updateCells(vw, Item)
-      Item._highlightEvent(vw, Item, Item is vw.hItem)
+      syncState(vw, Item, true)
       if (Item.hidden is true) != was_hidden then
          vw._refreshLayout()
          return -- Layout schedules the redraw; deselection callbacks may have freed the view.
@@ -1055,21 +1301,44 @@ gui.columnView = function(Options):table
       vw.scene.surface.mtScheduleRedraw()
    end
 
+   -- Refreshes the cells and highlight of an item in place, after the client has changed its fields directly.  The
+   -- row, the selection, the keyboard target and the scroll position are preserved.  Rows are not laid out again; use
+   -- relayout() after changing hidden.
+
+   vw.refreshItem = function(Item:table!)
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
+      assert(vw.lookup[Item._id] is Item, 'Item does not belong to this view')
+      vw._checkEdit() -- The client may have made the edited item ineligible, e.g. insensitive
+      if not vw.columns or not Item._vectors?.viewport then return end -- The row has not been built yet
+      updateCells(vw, Item)
+      syncState(vw, Item, true)
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
    vw.setColumns = function(View:table!, Columns:any!)
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       assert(View is vw, 'View does not match this columnview')
-      assertEditableColumns(Columns, View.editable)
+      validateColumns(Columns, View.editable)
       Options.columns = Columns
-      setColumns(View, Columns)
+      local failure:any = setColumns(View, Columns)
       View.zones = { }
       View._last_y = View._metrics.edge
-      newItems(View, View.items)
+
+      try
+         newItems(View, View.items)
+      except e
+         failure = e -- A creation failure takes precedence over a cleanup failure
+      end
+
       View.scene.surface.mtScheduleRedraw()
+      if failure then raiseFailure(failure) end
    end
 
    -- Sorts the view by column (named or index).
    -- NB: Attrib values that evaluate to nil are not permitted/supported.
 
    vw.sortColumn = function(View:table!, Column:any!, Ascending:bool!)
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       if Column is <str> then
          for col in values(View.columns) do
             if col['attrib'] is Column then
@@ -1119,6 +1388,7 @@ gui.columnView = function(Options):table
    end
 
    vw.sortView = function(Attrib, Ascending:bool)
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
       vw.sortItems(Attrib, Ascending)
       rearrangeItems(vw)
    end
