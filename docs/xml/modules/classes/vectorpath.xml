@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>VectorPath provides support for parsing SVG styled path strings.</p></description>
+<p>VectorPath provides support for parsing SVG styled path strings.</p>
+<p>The generated path can be placed with the <fl>X</fl> and <fl>Y</fl> fields and sized with the <fl>Width</fl> and <fl>Height</fl> fields.  These are applied as a post-transform, so the authored path commands are never modified.</p></description>
     <source>
       <file path="vectors/">path.cpp</file>
     </source>
@@ -59,6 +60,21 @@
       </input>
       <description>
 <p>This action updates the <fl>X</fl> and <fl>Y</fl> placement fields.  The path commands remain unchanged.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Resize</name>
+      <comment>Scales the path to fixed dimensions.</comment>
+      <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Width">The new width of the object.</param>
+        <param type="DOUBLE" name="Height">The new height of the object.</param>
+        <param type="DOUBLE" name="Depth">The new depth of the object.</param>
+      </input>
+      <description>
+<p>This action sets the <fl>Width</fl> and <fl>Height</fl> fields to fixed values.  The path commands remain unchanged.</p>
       </description>
     </action>
 
@@ -154,12 +170,24 @@
     </field>
 
     <field>
+      <name>Height</name>
+      <comment>Scales the path to a fixed or scaled height.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>Setting Height scales the computed path on the vertical axis so that its bounding box matches the supplied height. Scaled values are relative to the height of the parent viewport.  The path is scaled about its top edge, after which <fl>Y</fl> placement is applied.  If Height is not set, the path keeps its natural height.</p>
+<p>Height behaves in the same way as <fl>Width</fl> on the vertical axis.  Negative values flip the path, so that it spans from <code>Y + Height</code> to <fl>Y</fl>.  Refer to <fl>Width</fl> for further details.</p>
+      </description>
+    </field>
+
+    <field>
       <name>PathLength</name>
       <comment>Calibrates the user agent's distance-along-a-path calculations with that of the author.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
 <p>The author's computation of the total length of the path, in user units. This value is used to calibrate the user agent's own distance-along-a-path calculations with that of the author. The user agent will scale all distance-along-a-path computations by the ratio of PathLength to the user agent's own computed value for total path length.  This feature potentially affects calculations for text on a path, motion animation and various stroke operations.</p>
+<p>PathLength is always relative to the authored path.  It is not adjusted when the path is sized by the <fl>Width</fl> and <fl>Height</fl> fields.</p>
       </description>
     </field>
 
@@ -199,12 +227,28 @@ Z: Close Path
     </field>
 
     <field>
+      <name>Width</name>
+      <comment>Scales the path to a fixed or scaled width.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>Setting Width scales the computed path on the horizontal axis so that its bounding box matches the supplied width. Scaled values are relative to the width of the parent viewport.  The path is scaled about its left edge, after which <fl>X</fl> placement is applied.  If Width is not set, the path keeps its natural width.</p>
+<p>Width and <fl>Height</fl> are independent: if only one is set, the other axis keeps its natural size and the aspect ratio is not preserved.  A width of zero collapses the path to a vertical line.  Negative values are permitted and will flip the path on the horizontal axis, so that it spans from <code>X + Width</code> to <fl>X</fl>.</p>
+<p>If the natural width of the path is close to zero (for example, a vertical line) then the path cannot be scaled horizontally and Width has no effect.</p>
+<p>Only the path geometry is scaled.  The stroke width, dash pattern and markers keep their sizes, and the fit is applied to the geometric bounds rather than the stroked bounds.  Transforms applied to the vector take effect after the Width is applied.</p>
+<p>The path commands remain unchanged, so reading <fl>Commands</fl> or calling <method>GetCommand</method> returns the authored path.  The <fl>Sequence</fl> field returns the scaled geometry.</p>
+<p>When Width is not set, reading it returns the natural width of the path.  To return the path to its natural width, set an undefined value (NaN).</p>
+      </description>
+    </field>
+
+    <field>
       <name>X</name>
       <comment>The left-side of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
 <p>Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
+<p>If the path is sized by <fl>Width</fl>, X places the left edge of the sized path.  A negative <fl>Width</fl> extends the path to the left of X.</p>
       </description>
     </field>
 
@@ -215,6 +259,7 @@ Z: Close Path
       <type>UNIT</type>
       <description>
 <p>Setting Y moves the computed path so that its top-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
+<p>If the path is sized by <fl>Height</fl>, Y places the top edge of the sized path.  A negative <fl>Height</fl> extends the path above Y.</p>
       </description>
     </field>
 

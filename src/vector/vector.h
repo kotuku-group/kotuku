@@ -1121,6 +1121,7 @@ class extVectorPath : public extVector, public SceneDef {
    agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
    TClipRectangle<double> UnplacedBounds;
    Unit pX, pY;
+   Unit pWidth, pHeight; // Optional size constraint applied to the generated path, prior to (X,Y) placement
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 
    extVectorPath(objMetaClass *ClassPtr, OBJECTID ObjectID);

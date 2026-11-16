@@ -155,7 +155,10 @@ void anim_value::set_value(objVector &Vector)
          switch (hash) {
             case SVF_x:       path.setX(Unit(get_dimension(Vector, strhash("x")))); return;
             case SVF_y:       path.setY(Unit(get_dimension(Vector, strhash("y")))); return;
+            case SVF_width:   path.setWidth(Unit(get_dimension(Vector, strhash("width")))); return;
+            case SVF_height:  path.setHeight(Unit(get_dimension(Vector, strhash("height")))); return;
          }
+         break;
       }
 
       default: break;

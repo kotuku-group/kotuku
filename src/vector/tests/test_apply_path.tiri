@@ -1,5 +1,6 @@
    include 'vector'
 
+module display as mGfx
 module vector as mVec
 
 function assertNear(Actual, Expected, Message)
@@ -117,6 +118,296 @@ end
 
    assertNear(path.x, 50, 'path X read after replacing the sequence')
    assertNear(path.y, 60, 'path Y read after replacing the sequence')
+end
+
+-- Scene helpers for the Width/Height tests.  The page and viewport are sized so that scaled units resolve to known
+-- values.
+
+function newSizedPath(Size:num!):<obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=Size, pageHeight=Size })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width=Size, height=Size })
+   local path = viewport.new('VectorPath')
+   path.init()
+   return scene, viewport, path
+end
+
+function assertBoundary(Path:obj!, X:num, Y:num, Width:num, Height:num, Message:str)
+   local err, bx, by, bw, bh = Path.mtGetBoundary(VBF_NO_TRANSFORM)
+   assert(err is ERR_Okay, f'{Message}: GetBoundary failed with {mSys.GetErrorMsg(err)}')
+   if X != nil then assertNear(bx, X, f'{Message}: boundary X') end
+   if Y != nil then assertNear(by, Y, f'{Message}: boundary Y') end
+   if Width != nil then assertNear(bw, Width, f'{Message}: boundary width') end
+   if Height != nil then assertNear(bh, Height, f'{Message}: boundary height') end
+end
+
+-- Draws the scene to a black bitmap and returns it.  Read channels with pixelLevel() because ReadRGBPixel() results
+-- share a buffer.
+
+function drawScene(Scene:obj!, Size:num!):obj
+   local bitmap = obj.new('bitmap', { width=Size, height=Size, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bitmap.acClear()
+   Scene.bitmap = bitmap
+   check Scene.acDraw()
+   return bitmap
+end
+
+function pixelLevel(Bitmap:obj!, X:num!, Y:num!):num
+   local rgb = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return rgb.red
+end
+
+@Test function PathWidthHeightFixed()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = 60
+   path.height = 90
+
+   assertBoundary(path, 10, 20, 60, 90, 'fixed Width/Height')
+   assertCommand(path, 0, PE_Move, 10, 20, 'move command unchanged by Width/Height')
+   assertCommand(path, 2, PE_Line, 40, 50, 'line command unchanged by Width/Height')
+end
+
+@Test function PathWidthHeightWithXY()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = 60
+   path.height = 90
+   path.x = 100
+   path.y = 200
+   assertBoundary(path, 100, 200, 60, 90, 'Width/Height set before X/Y')
+
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.x = 100
+   path.y = 200
+   path.width = 60
+   path.height = 90
+   assertBoundary(path, 100, 200, 60, 90, 'X/Y set before Width/Height')
+
+   assertNear(path.x, 100, 'X reads back unchanged by sizing')
+   assertNear(path.y, 200, 'Y reads back unchanged by sizing')
+end
+
+@Test function PathWidthOnly()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = 120
+
+   assertBoundary(path, 10, 20, 120, 30, 'Width without Height')
+   assertNear(path.height, 30, 'Height reads the natural extent when only Width is set')
+end
+
+@Test function PathWidthHeightScaled()
+   scene, viewport, path = newSizedPath(400)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = '50%'
+   path.height = '25%'
+
+   assertBoundary(path, 10, 20, 200, 100, 'scaled Width/Height in a 400 px viewport')
+
+   viewport.width = 200
+   viewport.height = 200
+   assertBoundary(path, 10, 20, 100, 50, 'scaled Width/Height after resizing the viewport')
+end
+
+@Test function PathWidthHeightReadback()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 70 L 10 70 Z'
+
+   assertNear(path.width, 30, 'undefined Width reads the natural width without a draw')
+   assertNear(path.height, 50, 'undefined Height reads the natural height without a draw')
+
+   path.width = 80
+   assertNear(path.width, 80, 'fixed Width reads back the stored value')
+
+   path.width = '25%'
+   assertNear(path.width, 0.25, 'scaled Width reads back as a scaled value')
+
+   path.width = 0/0
+   assertNear(path.width, 30, 'clearing Width restores the natural width')
+   assertBoundary(path, 10, 20, 30, 50, 'cleared Width')
+
+   path.sequence = 'M 0 0 L 5 0 L 5 5 Z'
+   assertNear(path.width, 5, 'natural width follows a replaced sequence')
+end
+
+@Test function PathDegenerateAxis()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 0 0 V 100'
+   path.width = 50
+   path.height = 40
+
+   local err, bx, by, bw, bh = path.mtGetBoundary(VBF_NO_TRANSFORM)
+   assert(err is ERR_Okay, f'GetBoundary failed with {mSys.GetErrorMsg(err)}')
+   assert((bw is bw) and (bh is bh), 'A vertical line must not produce NaN bounds')
+   assert(bw < 1.0e-6, f'A vertical line cannot be scaled horizontally, width is {bw}')
+   assertNear(bh, 40, 'Height still applies to a vertical line')
+
+   -- A zero-length segment with a round cap is nudged by 1.0e-10 so that it is stroked as a dot.
+
+   scene, viewport, path = newTargetPath()
+   path.lineCap = VLC_ROUND
+   path.sequence = 'M 10 10 L 10 10'
+   path.width = 50
+
+   local err, bx, by, bw, bh = path.mtGetBoundary(VBF_NO_TRANSFORM)
+   assert(err is ERR_Okay, f'GetBoundary failed with {mSys.GetErrorMsg(err)}')
+   assert(bw < 1.0e-6, f'A round-cap dot must not be scaled, width is {bw}')
+   assertNear(bx, 10, 'round-cap dot X')
+end
+
+@Test function PathWidthZero()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = 0
+
+   assertBoundary(path, 10, 20, 0, 30, 'zero Width collapses to a vertical line')
+end
+
+@Test function PathNegativeWidth()
+   local SIZE <const> = 100
+
+   -- The right angle of the triangle starts at the top-left and moves to the top-right when flipped.
+
+   local scene:obj, viewport:obj, path:obj = newSizedPath(SIZE)
+   path.sequence = 'M 0 0 L 40 0 L 0 40 Z'
+   path.fill = 'rgb(255,255,255)'
+   path.x = 80
+   path.width = -40
+
+   assertBoundary(path, 40, 0, 40, 40, 'negative Width spans from X + Width to X')
+   assertNear(path.width, -40, 'negative Width reads back unchanged')
+
+   local bitmap = drawScene(scene, SIZE)
+   assert(pixelLevel(bitmap, 75, 30) > 200, 'Flipped triangle should cover the right side of its box')
+   assert(pixelLevel(bitmap, 45, 30) < 50, 'Flipped triangle should leave the left side of its box empty')
+
+   path.width = 40
+   path.x = 40
+   bitmap = drawScene(scene, SIZE)
+   assert(pixelLevel(bitmap, 45, 30) > 200, 'Unflipped triangle should cover the left side of its box')
+   assert(pixelLevel(bitmap, 75, 30) < 50, 'Unflipped triangle should leave the right side of its box empty')
+
+   path.width = 40
+   path.height = -40
+   path.y = 80
+   assertBoundary(path, 40, 40, 40, 40, 'negative Height spans from Y + Height to Y')
+end
+
+@Test function PathWidthCurveFit()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 0 0 C 0 -100 100 -100 100 0'
+   path.height = 100
+   path.y = 0
+
+   local err, bx, by, bw, bh = path.mtGetBoundary(VBF_NO_TRANSFORM)
+   assert(err is ERR_Okay, f'GetBoundary failed with {mSys.GetErrorMsg(err)}')
+   assert(math.abs(bh - 100) < 0.1, f'Curve should fit Height within 0.1, got {bh}')
+   assert(math.abs(by) < 0.1, f'Curve should be placed at Y within 0.1, got {by}')
+
+   -- Tracing the scaled path must stay inside the fitted box.
+
+   local min_y, max_y = 1000, -1000
+   function trace(Vector, Index, Command, X, Y)
+      if Y < min_y then min_y = Y end
+      if Y > max_y then max_y = Y end
+      return ERR_Okay
+   end
+   check path.mtTrace(trace, 1.0, false)
+   assert(min_y > -0.5 and max_y < 100.5, f'Traced curve should stay within the fitted box, got {min_y} to {max_y}')
+   assert(max_y - min_y > 99, f'Traced curve should span the fitted height, got {max_y - min_y}')
+end
+
+@Test function PathEnlargedCurvesFit()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(400)
+
+   for _, size in ipairs({0.01, 0.1, 1, 10, 100}) do
+      for _, kind in ipairs({'cubic', 'quadratic'}) do
+         if kind is 'cubic' then
+            path.sequence = f'M 0 0 C 0 {-size} {size} {-size} {size} 0'
+         else
+            path.sequence = f'M 0 0 Q {size/2} {-size} {size} 0'
+         end
+         path.width = 100
+         path.height = 100
+         path.x = 20
+         path.y = 30
+         assertBoundary(path, 20, 30, 100, 100, f'{kind} fit from size {size}')
+
+         local min_x, min_y, max_x, max_y = math.huge, math.huge, -math.huge, -math.huge
+         function trace(Vector, Index, Command, X, Y)
+            min_x = math.min(min_x, X)
+            min_y = math.min(min_y, Y)
+            max_x = math.max(max_x, X)
+            max_y = math.max(max_y, Y)
+            return ERR_Okay
+         end
+         check path.mtTrace(trace, 10, false)
+         assert(math.abs(min_x - 20) < 0.1 and math.abs(max_x - 120) < 0.1,
+            f'{kind} size {size}: traced X bounds {min_x}..{max_x} should fit 20..120')
+         assert(math.abs(min_y - 30) < 0.1 and math.abs(max_y - 130) < 0.1,
+            f'{kind} size {size}: traced Y bounds {min_y}..{max_y} should fit 30..130')
+      end
+   end
+end
+
+@Test function PathCurveNaturalExtrema()
+   local scene:obj, viewport:obj, path:obj = newTargetPath()
+   path.sequence = 'M 0 0 C 0 1 1 -1 1 0'
+   local extent = math.sqrt(3) / 6
+   assertNear(path.width, 1, 'cubic natural width')
+   assertNear(path.height, 2 * extent, 'cubic height includes both interior extrema')
+   assertBoundary(path, 0, -extent, 1, 2 * extent, 'cubic natural bounds')
+
+   path.sequence = 'M 0 0 Q 0.5 -1 1 0'
+   assertNear(path.height, 0.5, 'quadratic natural height')
+   assertBoundary(path, 0, -0.5, 1, 0.5, 'quadratic natural bounds')
+end
+
+@Test function PathWidthKeepsStroke()
+   local SIZE <const> = 100
+
+   -- A 4 px stroke on the left edge at X=10 covers 8 to 12, whether or not the path is scaled.
+
+   local scene:obj, viewport:obj, path:obj = newSizedPath(SIZE)
+   path.sequence = 'M 10 10 L 30 10 L 30 30 L 10 30 Z'
+   path.stroke = 'rgb(255,255,255)'
+   path.strokeWidth = 4
+   path.width = 80
+   path.height = 80
+
+   assertBoundary(path, 10, 10, 80, 80, 'stroked path geometry')
+
+   local bitmap = drawScene(scene, SIZE)
+   assert(pixelLevel(bitmap, 9, 50) > 200, 'Stroke should cover the inside of its 4 px width')
+   assert(pixelLevel(bitmap, 11, 50) > 200, 'Stroke should cover the inside of its 4 px width')
+   assert(pixelLevel(bitmap, 6, 50) < 50, 'Stroke should not extend outside its 4 px width')
+   assert(pixelLevel(bitmap, 14, 50) < 50, 'Stroke should not be scaled with the path')
+   assert(pixelLevel(bitmap, 50, 50) < 50, 'An unfilled path should leave its interior empty')
+end
+
+@Test function PathResize()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = '50%'
+
+   check path.acResize(60, 90, 0)
+
+   assertBoundary(path, 10, 20, 60, 90, 'Resize sets fixed dimensions')
+   assertNear(path.width, 60, 'Resize replaces a scaled Width with a fixed value')
+   assertNear(path.height, 90, 'Resize sets Height')
+   assertCommand(path, 0, PE_Move, 10, 20, 'Resize leaves the path commands unchanged')
+end
+
+@Test function PathMoveWithWidth()
+   scene, viewport, path = newTargetPath()
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = 60
+   path.height = 90
+
+   check path.acMove(5, 7, 0)
+
+   assertBoundary(path, 15, 27, 60, 90, 'Move shifts the sized path without changing its size')
 end
 
 @Test function GeneratedCurvesApplyAndTrace()
