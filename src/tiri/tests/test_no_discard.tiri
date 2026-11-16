@@ -77,6 +77,7 @@ end
       'local value = { widget=make() }',
       'local value = { make() }',
       'local value = { nested={ widget=make() } }',
+      'local value = { widget=make() }.widget',
       'local value = { [make()]=3 }',
       'local value = { make(), 3 }',
       'local value = array<table> { (make()) }',
@@ -97,8 +98,7 @@ end
       '_ = { nested={ make() } }',
       '_ = { [make()]=3 }',
       '_ = array<table> { (make()) }',
-      '_ = array<table, 4> { (make()) }',
-      'local value = { widget=make() }.widget'
+      '_ = array<table, 4> { (make()) }'
    }) do
       expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
    end
@@ -289,17 +289,90 @@ assert(value is 42, 'Comparison conditions must use the protected result')
 ]])
 end
 
-@Test function ProjectionsAndRemovedResultsAreRejected()
+@Test function BuiltinMethodReceiversConsumeFreshResults()
+   local source = [[
+@NoDiscard function text():str! return 'value' end
+@NoDiscard function nullable():str return 'value' end
+@NoDiscard function variant():any return 'value' end
+]]
+   for expression in values(array<str> {
+      "assert(not text().find('secret'))",
+      "assert(not nullable().find('secret'))",
+      "assert(not variant().find('secret'))",
+      "assert(not text()?.find('secret'))",
+      "assert(not nullable()?.find('secret'))",
+      "assert(not variant()?.find('secret'))",
+      "text().find('secret')",
+      "local value = text().trim().find('value')"
+   }) do
+      expect_valid(source .. expression, expression)
+   end
+   exec(source .. "assert(not text().find('secret'))\nassert(nullable().trim() is 'value')")
+   expect_valid(constructor_source .. 'local value = make().size()', 'table built-in receiver')
+   expect_valid(source .. 'local value = text().find', 'stored method extraction')
+   expect_no_discard_error(source .. "local value = ([_*]text()).find('value')", 'result filter',
+      'method dispatch cannot restore a filtered protected result')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ImportedJsonMethodReceiverConsumesFreshResult()
+   exec([[import 'json'
+assert(not json.encode({ k='v' }).find('secret'), 'Invalid token must not leak response data')]])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ProjectionsFollowTheirValueDestination()
    for source in values(array<str> {
       'local value = make().value',
       'local value = make()[0]',
       'local value = make()?.value',
-      'make().value = 3'
+      'local value = make()?[0]',
+      'print(make().value)',
+      'assert(make().value is 1)',
+      'if make().value then end',
+      'function wrapper() return make().value end',
+      'local value = (false ? {} : make()).value'
    }) do
-      expect_no_discard_error(constructor_source .. source, 'Immediate member', source)
+      expect_valid(constructor_source .. source, source)
    end
    for source in values(array<str> {
-      'print(make().value)',
+      '_ = make().value',
+      '_ = make()[0]',
+      '_ = make()?.value',
+      '_ = make()?[0]'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'blank assignment', source)
+   end
+   expect_no_discard_error(constructor_source .. 'make().value = 3', 'Immediate member',
+      'writing a temporary receiver does not use its result')
+end
+
+@Test function ImportedJsonProjectionsConsumeFreshResults()
+   exec([[import 'json'
+local retained = '{"connection":{"sentBytes":"0"},"selectedRoute":{"id":"route"}}'
+local before = json.decode(retained)
+assert(json.decode(retained).connection.sentBytes is '0', 'Retained snapshot changed')
+assert(json.decode(retained).selectedRoute.id is before.selectedRoute.id, 'Snapshot ownership changed')
+assert(json.decode(retained)['connection']['sentBytes'] is '0', 'Indexed snapshot changed')
+assert(json.decode(retained)?.connection?.sentBytes is '0', 'Safe member snapshot changed')
+assert(json.decode(retained)?['connection']?['sentBytes'] is '0', 'Safe indexed snapshot changed')
+]])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RemovedResultsAreRejected()
+   for source in values(array<str> {
+      'print(([_*]make()).value)',
+      'print(([_*]make())[0])',
+      'print(([_*]make())?.value)',
+      'print(([_*]make())?[0])'
+   }) do
+      expect_no_discard_error(constructor_source .. source, 'result filter', source)
+   end
+   for source in values(array<str> {
       'print([_*]make())',
       'print(make() or {})'
    }) do
@@ -333,7 +406,6 @@ end
    -- Returning does not excuse operations that remove the result before it leaves the function.
    for source in values(array<str> {
       'function wrapper() return [_*]make() end',
-      'function wrapper() return make().value end',
       'return make() or {}'
    }) do
       expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
@@ -368,7 +440,6 @@ end
       'local value = { make() } and {}',
       'local value = { make() } ?? {}',
       '_ = true ? make() : {}',
-      'local value = (false ? {} : make()).value',
       'if make() then end',
       'local value = choose make() from _ -> 1 end'
    }) do
@@ -427,7 +498,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function EachOriginatingCallIsReportedOnce()
-   local result = debug.validate(constructor_source .. 'print({ widget=make() }.widget)\nmake()')
+   local result = debug.validate(constructor_source .. '_ = { widget=make() }.widget\nmake()')
    assert(result.success is false, 'Both fresh calls should fail validation')
    assert(#result.diagnostics is 2, f'Expected one diagnostic per call, got {#result.diagnostics}')
    assert(result.diagnostics[0].line is 5 and result.diagnostics[1].line is 6,

@@ -164,7 +164,18 @@ private:
                }
             }
             if (const auto *direct = std::get_if<DirectCallTarget>(&call.target)) {
-               this->consume(direct->callable, FreshResultUse::Projection);
+               // Built-in dot methods pass the receiver as their first argument, rather than just reading a field.
+               // Only one receiver result is passed; any additional protected results are still truncated.
+               if ((call.builtin_method or call.runtime_builtin_method) and direct->callable and
+                   direct->callable->kind IS AstNodeKind::MemberExpr) {
+                  this->operand(std::get<MemberExprPayload>(direct->callable->data).table, FreshResultUse::Argument);
+               }
+               else if ((call.builtin_method or call.runtime_builtin_method) and direct->callable and
+                        direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+                  this->operand(std::get<SafeMemberExprPayload>(direct->callable->data).table,
+                     FreshResultUse::Argument);
+               }
+               else this->consume(direct->callable, FreshResultUse::Projection);
             }
             this->expression_list(call.arguments, [&](size_t Position) {
                // Array literals lower to calls, but their elements must still reach the literal's destination.
@@ -260,20 +271,20 @@ private:
             this->consume(std::get<DeferredExprPayload>(Expression.data).inner, FreshResultUse::Return);
             break;
          case AstNodeKind::MemberExpr:
-            this->consume(std::get<MemberExprPayload>(Expression.data).table, FreshResultUse::Projection);
+            this->operand(std::get<MemberExprPayload>(Expression.data).table, Uses[0]);
             break;
          case AstNodeKind::SafeMemberExpr:
-            this->consume(std::get<SafeMemberExprPayload>(Expression.data).table, FreshResultUse::Projection);
+            this->operand(std::get<SafeMemberExprPayload>(Expression.data).table, Uses[0]);
             break;
          case AstNodeKind::IndexExpr: {
             const auto &index = std::get<IndexExprPayload>(Expression.data);
-            this->consume(index.table, FreshResultUse::Projection);
+            this->operand(index.table, Uses[0]);
             this->operand(index.index, FreshResultUse::Operation);
             break;
          }
          case AstNodeKind::SafeIndexExpr: {
             const auto &index = std::get<SafeIndexExprPayload>(Expression.data);
-            this->consume(index.table, FreshResultUse::Projection);
+            this->operand(index.table, Uses[0]);
             this->operand(index.index, FreshResultUse::Operation);
             break;
          }
