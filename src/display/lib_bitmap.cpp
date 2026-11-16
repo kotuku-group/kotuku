@@ -196,6 +196,19 @@ inline void blend_linear32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, ui
 // SIMD helpers for the 32-bit blitting routines.  All arithmetic is performed on 16-bit lanes so that the
 // scalar formulae are reproduced exactly; callers handle trailing pixels with the original scalar loops.
 
+// Returns true if a row cannot use the 16-byte SIMD loops because the copy overlaps itself.  CopyArea() permits
+// copying within a bitmap, and CopyRawBitmap() can be given a surface over the destination's memory.  The scalar
+// loops process each row from left to right, so a destination that starts after its source reads source bytes that
+// the same row has already rewritten.  A SIMD iteration loads 16 source bytes before storing any, which gives the
+// same result only when the destination starts at least 16 bytes after the source or anywhere before it.  The
+// destination loads are not affected, because each iteration reads its own destination bytes before storing them.
+
+inline bool simd_overlap(const void *Src, const void *Dest)
+{
+   const auto s = uintptr_t(Src), d = uintptr_t(Dest);
+   return (d > s) and (d - s < 16);
+}
+
 inline __m128i simd_select(__m128i Mask, __m128i A, __m128i B) // Mask ? A : B, per bit
 {
    return _mm_or_si128(_mm_and_si128(Mask, A), _mm_andnot_si128(Mask, B));
@@ -926,7 +939,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
                         int x = 0;
 #ifdef KOTUKU_SSE2
-                        if (simd_ok) {
+                        if (simd_ok and (not simd_overlap(sp, dp))) {
                            const auto zero = _mm_setzero_si128();
                            const auto op = _mm_set1_epi16(255);
                            for (; x + 4 <= Width; x += 4, sp += 16, dp += 16) {
@@ -972,7 +985,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
                            i = 0;
 #ifdef KOTUKU_SSE2
-                           if (simd_ok) {
+                           if (simd_ok and (not simd_overlap(sp, dp))) {
                               const auto zero = _mm_setzero_si128();
                               const auto op = _mm_set1_epi16(255);
                               for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
@@ -1012,7 +1025,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
                         i = 0;
 #ifdef KOTUKU_SSE2
-                        if (simd_ok) {
+                        if (simd_ok and (not simd_overlap(sp, dp))) {
                            const auto zero = _mm_setzero_si128();
                            const auto op = _mm_set1_epi16(src->Opacity);
                            for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
@@ -1126,7 +1139,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      i = 0;
 #ifdef KOTUKU_SSE2
                      const auto key = _mm_set1_epi32(int(colour));
-                     for (; i + 4 <= Width; i += 4) {
+                     const int simd_width = simd_overlap(sdata, ddata) ? 0 : Width;
+                     for (; i + 4 <= simd_width; i += 4) {
                         auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
                         auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
                         _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
@@ -1148,7 +1162,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   while (Height > 0) {
                      i = 0;
 #ifdef KOTUKU_SSE2
-                     if (colour <= 0xffff) { // The 16-bit lane comparison cannot represent larger keys
+                     // The 16-bit lane comparison cannot represent larger keys
+                     if ((colour <= 0xffff) and (not simd_overlap(sdata, ddata))) {
                         const auto key = _mm_set1_epi16(int16_t(colour));
                         for (; i + 8 <= Width; i += 8) {
                            auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
@@ -1236,7 +1251,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   while (Height > 0) {
                      i = 0;
 #ifdef KOTUKU_SSE2
-                     if (simd_ok) {
+                     if (simd_ok and (not simd_overlap(sdata, ddata))) {
                         const auto zero = _mm_setzero_si128();
                         const auto op   = _mm_set1_epi16(src->Opacity);
                         const auto cop  = _mm_set1_epi16(255 - src->Opacity);
@@ -1555,7 +1570,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
             while (Height > 0) {
                int i = 0;
 #ifdef KOTUKU_SSE2
-               if (simd_ok) {
+               if (simd_ok and (not simd_overlap(sdata, ddata))) {
                   const auto zero  = _mm_setzero_si128();
                   const auto max16 = _mm_set1_epi16(255);
                   const auto op    = _mm_set1_epi16(Surface->Opacity);
@@ -1683,7 +1698,8 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   i = 0;
 #ifdef KOTUKU_SSE2
                   const auto key = _mm_set1_epi32(int(colour));
-                  for (; i + 4 <= Width; i += 4) {
+                  const int simd_width = simd_overlap(sdata, ddata) ? 0 : Width;
+                  for (; i + 4 <= simd_width; i += 4) {
                      auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
                      auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
                      _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
@@ -1704,7 +1720,8 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                while (Height > 0) {
                   i = 0;
 #ifdef KOTUKU_SSE2
-                  if (colour <= 0xffff) { // The 16-bit lane comparison cannot represent larger keys
+                  // The 16-bit lane comparison cannot represent larger keys
+                  if ((colour <= 0xffff) and (not simd_overlap(sdata, ddata))) {
                      const auto key = _mm_set1_epi16(int16_t(colour));
                      for (; i + 8 <= Width; i += 8) {
                         auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
@@ -1768,7 +1785,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                while (Height > 0) {
                   int i = 0;
 #ifdef KOTUKU_SSE2
-                  if (simd_ok) {
+                  if (simd_ok and (not simd_overlap(sdata, ddata))) {
                      const auto zero = _mm_setzero_si128();
                      const auto op   = _mm_set1_epi16(Surface->Opacity);
                      const auto cop  = _mm_set1_epi16(255 - Surface->Opacity);
