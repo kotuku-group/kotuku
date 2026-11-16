@@ -661,6 +661,98 @@ end
    end
 end
 
+-- A client format replaces the numeric text everywhere: on creation, on value changes and when measuring the space
+-- for outside text.  refreshValue() redraws text whose source changed while the value did not.
+
+@Test function ValueFormatReplacesNumericText()
+   local suffix = 's'
+   local calls = 0
+   local surface <close>, slider = newSlider({ width=300, min=0, max=10, value=2, step=1, valuePos='out-max',
+      valueFormat = function(Value:num):str
+         calls++
+         return f'{Value * 10}{suffix}'
+      end
+   })
+   assert(slider.valueText.string is '20s',
+      f'The initial text must come from valueFormat, got {slider.valueText.string}')
+   slider.setValue(7, true)
+   assert(slider.valueText.string is '70s', f'Value changes must use valueFormat, got {slider.valueText.string}')
+
+   local narrow <close>, plain = newSlider({ width=300, min=0, max=10, value=2, step=1, valuePos='out-max' })
+   assert(slider.trackVP.width < plain.trackVP.width,
+      'Outside space must be measured from the formatted range, which is wider than the numeric text')
+
+   suffix = ' sec'
+   slider.setValue(7, true)
+   assert(slider.valueText.string is '70s', 'An unchanged value must not redraw the text')
+   slider.refreshValue()
+   assert(slider.valueText.string is '70 sec', f'refreshValue() must redraw the text, got {slider.valueText.string}')
+
+   local before = calls
+   local bare <close>, unformatted = newSlider({ value=0.5 })
+   unformatted.refreshValue() -- No value text, so nothing to do
+   assert(calls is before, 'Other sliders must not call the format')
+
+   try
+      gui.slider({ target=slider.viewport.parent, valuePos='in-max', valueFormat='%d' })
+      assert(false, 'A non-function valueFormat must be rejected')
+   except e
+      assert(e.message.find('valueFormat') != nil, f'Unexpected error: {e.message}')
+   end
+end
+
+@Test function RefreshValueRescalesVerticalText()
+   local suffix = ''
+   local surface <close>, slider = newSlider({ orientation='vertical', height=200, thickness=40,
+      min=0, max=10, value=2, step=1, valuePos='in-centre',
+      valueFormat = function(Value:num):str return f'{Value}{suffix}' end
+   })
+   local font_size = slider.valueText.fontSize
+
+   suffix = ' seconds remaining'
+   slider.refreshValue()
+   assert(slider.valueText.string is '2 seconds remaining', 'Refresh must update the formatted text')
+   assert(slider.valueText.textWidth <= slider.thickness - 4,
+      'Refreshed vertical text must fit within the track insets')
+
+   suffix = ''
+   slider.refreshValue()
+   assert(slider.valueText.fontSize is font_size, 'Shorter text must restore the original font size')
+   assert(slider.value is 2, 'Refreshing text must preserve the value')
+end
+
+@Test function RefreshValueUpdatesOutsideReservation()
+   for explicit in {0 to 2} do
+      local suffix = ''
+      local surface <close>, slider = newSlider({ width=explicit != 0 ? 300 : nil,
+         min=0, max=10, value=10, step=1, valuePos='out-max', style='track', ticks=2,
+         label='Time:', labelPos='top',
+         valueFormat = function(Value:num):str return f'{Value}{suffix}' end
+      })
+      local width = slider.viewport.width
+      local track_width = slider.trackVP.width
+
+      suffix = ' seconds remaining'
+      slider.refreshValue()
+      assert(slider.valueText.x + slider.valueText.textWidth <= slider.viewport.width,
+         'Refreshing outside text must reserve enough space within the widget')
+      assert(near(slider.thumbVP.x + slider.prvThumbLength, slider.trackVP.width),
+         'Refreshing outside text must keep the maximum thumb at the track end')
+      if explicit != 0 then
+         assert(slider.viewport.width is width and slider.trackVP.width < track_width,
+            'An explicit width must stay fixed while the track makes room for longer text')
+      else
+         assert(slider.viewport.width > width and near(slider.trackVP.width, track_width),
+            'An automatic width must grow while preserving the track width')
+      end
+
+      suffix = ''
+      slider.refreshValue()
+      assert(near(slider.viewport.width, width) and near(slider.trackVP.width, track_width),
+         'Shorter outside text must release the additional space')
+   end
+end
+
 @Test function ValuePositionsFollowRangeDirectionAndReserveOutsideSpace()
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       for position in values(array<str> { 'in-min', 'in-centre', 'in-max', 'out-min', 'out-centre', 'out-max' }) do
@@ -1217,6 +1309,45 @@ end
    })
    local stops = explicit.prvTickStops
    assert(stops[0] is 0 and stops.last() is 1 and #stops < 11, 'Dense explicit ticks must be thinned to the ends')
+end
+
+-- press reports that the user took hold of the slider: before a track click moves the value, and on the thumb
+-- before a drag.  A disabled slider reports nothing.
+
+@Test function PressPrecedesTrackClicksAndThumbDrags()
+   for style in values(array<str> { 'slide', 'track' }) do
+      local events = array<str>
+      local surface <close>, slider = newSlider({ width=300, min=0, max=100, value=0, style=style,
+         events={
+            press = function() events.push('press') end,
+            activate = function(Value) events.push('activate') end
+         }
+      })
+      local host = slider.trackVP
+      local track_y = surface.absY + slider.viewport.y + host.y + (slider.thickness * 0.5)
+
+      feed(JET_ABS_XY, surface.absX + slider.viewport.x + host.x + host.width - 5, track_y)
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      assert(events.concat(',') is 'press,activate',
+         f'{style}: a track click must press first, got {events.concat(",")}')
+      assert(slider.value > 90, f'{style}: the track click must still move the value, got {slider.value}')
+
+      events.clear()
+      pointAtSlider(surface, slider, true)
+      feed(JET_LMB, 1, 0)
+      assert(events[0] is 'press', f'{style}: a thumb press must be reported first, got {events.concat(",")}')
+      feed(JET_LMB, 0, 0)
+
+      events.clear()
+      slider.disable()
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      feed(JET_ABS_XY, surface.absX + slider.viewport.x + host.x + 5, track_y)
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      assert(#events is 0, f'{style}: a disabled slider must not report presses, got {events.concat(",")}')
+   end
 end
 
 @Test function TicksDoNotInterceptInput()

@@ -83,6 +83,7 @@ gui.slider = function(Options:table!)
       label      = Options.label,
       valuePos   = Options.valuePos,
       valueWidth = Options.valueWidth, -- Fixed breadth for value text beside the track; defaults to the widest value
+      valueFormat = Options.valueFormat, -- function(Value):str for the value text; nil for the step's precision
       labelPos   = Options.labelPos ?? 'left',
       labelAlign = Options.labelAlign ?? 'left',
       labelWidth = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
@@ -356,6 +357,16 @@ gui.slider = function(Options:table!)
          &setValue((Direction > 0) ? &max : &min)
       end,
 
+      -- Redraw the value text from valueFormat() when the text changes without a change of value.
+
+      refreshValue = function()
+         if not &valueText then return end
+         &prvMeasureValue()
+         if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
+         &prvPlaceSlider()
+         &viewport.scene.surface.mtScheduleRedraw()
+      end,
+
       -- Silent updates do not call the activate event, so that a client can reflect external state in the slider.
 
       setValue = function(Value:num, Silent:bool)
@@ -435,15 +446,21 @@ gui.slider = function(Options:table!)
          return f'%.{places}f'
       end,
 
+      -- The value text for Value, from the client's valueFormat() if there is one.
+
+      prvValueString = function(Value:num):str
+         if &valueFormat then return tostring(&valueFormat(Value)) end
+         return string.format(&prvValueFormat(), Value)
+      end,
+
       -- Reserve a stable width for all digits in the range, so value changes do not resize the track.  Vertical
       -- values in line with the track are scaled down until the widest value fits across it.
 
       prvMeasureValue = function()
          -- The widest values are the range ends with every digit drawn as 8, e.g. 8.88 for 0.00
 
-         format = &prvValueFormat()
          samples = array<str> {
-            DIGITS.replace(string.format(format, &min), '8'), DIGITS.replace(string.format(format, &max), '8')
+            DIGITS.replace(&prvValueString(&min), '8'), DIGITS.replace(&prvValueString(&max), '8')
          }
 
          function widest():num
@@ -480,7 +497,7 @@ gui.slider = function(Options:table!)
 
          &prvValueHeight, ascent = gui.layout.textMetrics(&valueText)
          &prvValueBaseline = (&prvValueHeight + ascent) * 0.5
-         &valueText.string = string.format(format, &value)
+         &valueText.string = &prvValueString(&value)
 
          if &prvValueSide and &trackVP then
             space = &prvValueReserve()
@@ -513,7 +530,7 @@ gui.slider = function(Options:table!)
       end,
 
       prvPlaceValue = function(Width:num!, Height:num!)
-         &valueText.string = string.format(&prvValueFormat(), &value)
+         &valueText.string = &prvValueString(&value)
          x = &trackVP.x
          y = &trackVP.y
          text_width = &valueText.textWidth
@@ -696,6 +713,7 @@ gui.slider = function(Options:table!)
          or (&valuePos is 'out-max'), f"Invalid valuePos '{&valuePos}'")
       assert((&valueWidth is nil) or ((&valueWidth is <num>) and (&valueWidth > 0)),
          f"Invalid valueWidth '{&valueWidth}'")
+      assert((&valueFormat is nil) or (&valueFormat is <func>), 'valueFormat must be a function')
       assert((&tickPos is 'start') or (&tickPos is 'end') or (&tickPos is 'both'), f"Invalid tickPos '{&tickPos}'")
 
       &prvCheckTicks(&ticks)
@@ -888,16 +906,20 @@ gui.slider = function(Options:table!)
          end
       end
 
-      if &style is 'slide' then
-         function[<weak> &&] anchoredPress(Viewport:obj!, Msg)
-            repeat
-               if (Msg.type is JET_LMB) and (Msg.value > 0) then &prvDragPosition = &prvThumbPosition() end
-               Msg = Msg.next
-            until Msg is nil
-         end
+      -- A press on the thumb tells the client that the user has taken hold of the slider, before any drag changes
+      -- the value.  Presses on the thumb are not passed to the track.
 
-         &thumbVP.mtSubscribeInput(JTYPE_BUTTON, anchoredPress)
+      function[<weak> &&] thumbPress(Viewport:obj!, Msg)
+         repeat
+            if (Msg.type is JET_LMB) and (Msg.value > 0) then
+               if &style is 'slide' then &prvDragPosition = &prvThumbPosition() end
+               if not &disabled then &events.press?() end
+            end
+            Msg = Msg.next
+         until Msg is nil
       end
+
+      &thumbVP.mtSubscribeInput(JTYPE_BUTTON, thumbPress)
 
       &prvPlaceSlider()
 
@@ -1007,6 +1029,8 @@ gui.slider = function(Options:table!)
       function[<weak> &&] trackInput(Viewport:obj!, Msg)
          repeat
             if (Msg.type is JET_LMB) and (Msg.value > 0) and (not &disabled) then
+               &events.press?() -- Before the value moves to the pointer
+
                -- Centre the slider on the click position.
                position = ((&orientation is 'V') ? Msg.y : Msg.x) - (&prvThumbLength * 0.5)
                &setValue(&prvTrackValue(position))
