@@ -213,25 +213,32 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test function OnlyAnnotatedReturnPositionsForwardFreshResults()
+@Test function ReturningFreshResultsSatisfiesTheContract()
    for source in values(array<str> {
       '@NoDiscard function wrapper():table return make() end',
       '@NoDiscard function wrapper():table return (make()) end',
       '@NoDiscard function wrapper():table return [*_]make() end',
       '@NoDiscard function wrapper():<table, num> return make(), 3 end',
       '@NoDiscard function wrapper():table return { widget=make() } end',
-      'function wrapper() local value = make() return value end'
+      '@NoDiscard function wrapper():<num, table> return 3, make() end',
+      '@NoDiscard function wrapper():table local inner = function() return make() end return {} end',
+      'function wrapper() local value = make() return value end',
+      'function wrapper() return make() end',
+      'function wrapper() return { widget=make() } end',
+      'function wrapper(Value) Value ?! return make() end',
+      'local lazy = <{ make() }>',
+      'return make()'
    }) do
       expect_valid(constructor_source .. source, source)
    end
+   -- Returning does not excuse operations that remove the result before it leaves the function.
    for source in values(array<str> {
-      'function wrapper() return make() end',
-      'function wrapper() return { widget=make() } end',
-      '@NoDiscard function wrapper():<num, table> return 3, make() end',
-      '@NoDiscard function wrapper():table local inner = function() return make() end return {} end',
-      'local lazy = <{ make() }>'
+      'function wrapper() return [_*]make() end',
+      'function wrapper() return make().value end',
+      'function wrapper() return not make() end',
+      'return make() or {}'
    }) do
-      expect_no_discard_error(constructor_source .. source, 'protected result position', source)
+      expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
    end
 end
 
@@ -351,9 +358,7 @@ end
       'local flag = true\nif flag then make() end',
       'local flag = false\nif flag then else make() end',
       'check make()',
-      'local value = false\nvalue ?! check make()',
-      'function wrapper(Value) Value ?! return make() end',
-      'return make()'
+      'local value = false\nvalue ?! check make()'
    }) do
       expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
    end
