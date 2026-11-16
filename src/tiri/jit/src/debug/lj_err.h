@@ -71,6 +71,8 @@ extern "C" void lj_err_prepare_rethrow(lua_State *L, GCtab *Exception);
 extern "C" LJ_NORET void lj_rethrow(lua_State *L, TValue *Exception);
 
 extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Message);
+extern "C" void lj_err_clear_pending(lua_State *L);
+extern "C" void lj_err_record_assert(lua_State *L, const char *Message, int Line);
 
 #if LJ_UNWIND_JIT and not LJ_ABI_WIN
 LJ_FUNC uint8_t *lj_err_register_mcode(void *base, size_t sz, uint8_t *info);

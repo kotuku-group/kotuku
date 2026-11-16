@@ -131,6 +131,36 @@ static void err_record_pending_exception(lua_State *L, CSTRING Message, cTValue 
    L->pending_exception_valid = true;
 }
 
+// Discard pending exception metadata.  Metadata is consumed only when a try handler catches the error, so an error
+// that escapes to a native protected call (e.g. an uncaught error in a callback) leaves its record behind.  A throw
+// that does not record its own metadata must call this first, otherwise the next try handler attributes the stale
+// message, source and line to the new error.
+
+extern "C" void lj_err_clear_pending(lua_State *L)
+{
+   err_clear_pending_exception(L);
+}
+
+// Assert's fast-function frame belongs to the native implementation.  Resolve its Tiri caller without changing
+// the already formatted message, which may include the first-error traceback.
+
+extern "C" void lj_err_record_assert(lua_State *L, const char *Message, int Line)
+{
+   TValue *frame = L->base - 1;
+   TValue *caller = nullptr;
+   if (frame_islua(frame)) caller = frame_prevl(frame);
+   else if (frame_iscont(frame)) {
+      if (frame_iscont_fficb(frame)) {
+         caller = frame;
+         frame = nullptr;
+      }
+      else caller = frame_prevd(frame);
+   }
+
+   err_record_pending_exception(L, Message, caller, frame);
+   if (Line > 0) L->pending_exception_line = Line;
+}
+
 extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Message)
 {
    err_clear_pending_exception(L);

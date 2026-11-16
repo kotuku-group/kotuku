@@ -176,6 +176,10 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
       luaL_error(L, ErrMsg::ASSERT);
    }
    else {
+      // Discard metadata from an earlier uncaught error before resolving the lazy message, which may itself throw.
+
+      lj_err_clear_pending(L);
+
       // Check for line/column arguments (args 3 and 4) added by optimise_assert()
 
       int32_t line = 0, column = 0;
@@ -229,6 +233,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
       else { // No location info and message is nil or non-string - use default error
          luaL_error(L, ErrMsg::ASSERT);
       }
+      lj_err_record_assert(L, strVdata(L->top - 1), line);
       lj_err_run(L);
    }
    return FFH_UNREACHABLE;

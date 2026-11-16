@@ -106,7 +106,7 @@ end
 
 @Test function EncodeFailureCallbacks()
    try
-      json.encode({}, nil, true)
+      result = json.encode({}, nil, true)
    except e
       assert(e.code is ERR_Exception, 'The default encoder callback should raise a generic exception.')
       assert(e.message is "Can't encode table as key.", 'The default callback should preserve the encoder message.')
