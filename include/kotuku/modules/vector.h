@@ -4311,6 +4311,10 @@ class objVectorPath : public objVector {
       struct acMoveToPoint moveto = { X, Y, Z, Flags };
       return Action(AC::MoveToPoint, this, &moveto);
    }
+   inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
+      struct acResize args = { Width, Height, Depth };
+      return Action(AC::Resize, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR addCommand(std::span<const struct PathCommand> Commands) noexcept {
       struct vp::AddCommand args = { Commands };
@@ -4360,8 +4364,18 @@ class objVectorPath : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getTotalCommands(int &Value) noexcept {
+   inline ERR getWidth(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[49];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getTotalCommands(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
       return field->GetValue(this, &Value);
    }
 
@@ -4393,8 +4407,18 @@ class objVectorPath : public objVector {
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setTotalCommands(const int Value) noexcept {
+   inline ERR setWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[49];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setTotalCommands(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

@@ -5,45 +5,174 @@ VectorPath: Extends the Vector class with support for generating custom paths.
 
 VectorPath provides support for parsing SVG styled path strings.
 
+The generated path can be placed with the #X and #Y fields and sized with the #Width and #Height fields.  These are
+applied as a post-transform, so the authored path commands are never modified.
+
 -END-
 
 *********************************************************************************************************************/
 
+// Include the exact extrema of one cubic Bezier axis, independent of the renderer's tessellation tolerance.
+
+static void include_curve_bounds(double P0, double P1, double P2, double P3, double &Minimum, double &Maximum)
+{
+   Minimum = std::min(Minimum, P3);
+   Maximum = std::max(Maximum, P3);
+
+   auto include_root = [&](double T) {
+      if ((T <= 0) or (T >= 1)) return;
+      const double p01 = std::lerp(P0, P1, T);
+      const double p12 = std::lerp(P1, P2, T);
+      const double p23 = std::lerp(P2, P3, T);
+      const double value = std::lerp(std::lerp(p01, p12, T), std::lerp(p12, p23, T), T);
+      Minimum = std::min(Minimum, value);
+      Maximum = std::max(Maximum, value);
+   };
+
+   // The derivative divided by three is a*t*t + b*t + c.  Use a stable quadratic solution to avoid cancellation.
+
+   const double a = (P3 - P0) + 3 * (P1 - P2);
+   const double b = 2 * ((P0 - P1) + (P2 - P1));
+   const double c = P1 - P0;
+   if (a IS 0) {
+      if (b != 0) include_root(-c / b);
+   }
+   else {
+      const double discriminant = b * b - 4 * a * c;
+      if (discriminant < 0) return;
+      const double q = -0.5 * (b + std::copysign(std::sqrt(discriminant), b));
+      if (q IS 0) include_root(-b / (2 * a));
+      else {
+         include_root(q / a);
+         include_root(c / q);
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+static TClipRectangle<double> get_authored_path_bounds(const agg::path_storage &Path)
+{
+   TClipRectangle<double> bounds(1, 1, 0, 0); // Preserve the empty-path bounds used by get_bounds().
+   bool first = true;
+   double last_x = 0, last_y = 0;
+
+   for (unsigned i=0; i < Path.total_vertices(); i++) {
+      double x, y;
+      const auto command = Path.vertex(i, &x, &y);
+      if (not agg::is_vertex(command)) continue;
+
+      if (first) {
+         bounds = { x, y, x, y };
+         first = false;
+      }
+
+      if (agg::is_curve3(command) and (i + 1 < Path.total_vertices())) {
+         double end_x, end_y;
+         Path.vertex(++i, &end_x, &end_y);
+
+         // Elevate a quadratic to a cubic so both kinds share the same extrema calculation.
+
+         include_curve_bounds(last_x, std::lerp(last_x, x, 2.0/3.0), std::lerp(end_x, x, 2.0/3.0),
+            end_x, bounds.left, bounds.right);
+         include_curve_bounds(last_y, std::lerp(last_y, y, 2.0/3.0), std::lerp(end_y, y, 2.0/3.0),
+            end_y, bounds.top, bounds.bottom);
+         last_x = end_x;
+         last_y = end_y;
+      }
+      else if (agg::is_curve4(command) and (i + 2 < Path.total_vertices())) {
+         double control_x, control_y, end_x, end_y;
+         Path.vertex(++i, &control_x, &control_y);
+         Path.vertex(++i, &end_x, &end_y);
+         include_curve_bounds(last_x, x, control_x, end_x, bounds.left, bounds.right);
+         include_curve_bounds(last_y, y, control_y, end_y, bounds.top, bounds.bottom);
+         last_x = end_x;
+         last_y = end_y;
+      }
+      else {
+         bounds.left = std::min(bounds.left, x);
+         bounds.right = std::max(bounds.right, x);
+         bounds.top = std::min(bounds.top, y);
+         bounds.bottom = std::max(bounds.bottom, y);
+         last_x = x;
+         last_y = y;
+      }
+   }
+
+   return bounds;
+}
+
+//********************************************************************************************************************
+
 // Refreshes the cached AGG conversion of the command list if it has been invalidated.  Placement-only changes
-// (e.g. the X/Y fields, Move actions) leave the cache intact because generate_path() applies placement as a
-// post-transform.
+// (e.g. the X/Y/Width/Height fields, Move and Resize actions) leave the cache intact because generate_path() applies
+// sizing and placement as a post-transform.
 
 static void refresh_unplaced_path(extVectorPath *Vector)
 {
    if (not Vector->CommandsChanged) return;
    Vector->UnplacedPath.free_all();
    convert_to_aggpath(Vector, Vector->Commands, Vector->UnplacedPath);
-   Vector->UnplacedBounds = get_bounds(Vector->UnplacedPath);
+   Vector->UnplacedBounds = get_authored_path_bounds(Vector->UnplacedPath);
    Vector->CommandsChanged = false;
 }
+
+// Axes with a natural extent below this threshold are never scaled.  This covers straight vertical/horizontal lines
+// and the 1.0e-10 nudge that check_point() applies to zero-length segments.
+
+static constexpr double MIN_SCALABLE_EXTENT = 1.0e-6;
 
 static void generate_path(extVectorPath *Vector, agg::path_storage &Path)
 {
    refresh_unplaced_path(Vector);
    Path.copy_path(Vector->UnplacedPath);
-   Vector->Bounds = Vector->UnplacedBounds;
 
-   double tx = 0, ty = 0;
-   if (Vector->pX.defined()) {
-      if (Vector->pX.scaled()) tx = (Vector->pX * get_parent_width(Vector)) - Vector->Bounds.left;
-      else tx = Vector->pX - Vector->Bounds.left;
+   auto &bounds = Vector->UnplacedBounds;
+   Vector->Bounds = bounds;
+
+   // Width and Height scale the path about its left/top bound, then X and Y place that bound.  Both are combined
+   // into a single transform: x' = (x - left) * sx + dest_left
+
+   double sx = 1.0, sy = 1.0;
+   if (Vector->pWidth.defined()) {
+      const double extent = bounds.right - bounds.left;
+      if (extent >= MIN_SCALABLE_EXTENT) {
+         double target = Vector->pWidth;
+         if (Vector->pWidth.scaled()) target *= get_parent_width(Vector);
+         sx = target / extent;
+      }
    }
 
-   if (Vector->pY.scaled()) ty = (Vector->pY * get_parent_height(Vector)) - Vector->Bounds.top;
-   else if (Vector->pY.defined()) ty = Vector->pY - Vector->Bounds.top;
-
-   if ((tx != 0) or (ty != 0)) {
-      Path.transform(agg::trans_affine_translation(tx, ty));
-      Vector->Bounds.left   += tx;
-      Vector->Bounds.right  += tx;
-      Vector->Bounds.top    += ty;
-      Vector->Bounds.bottom += ty;
+   if (Vector->pHeight.defined()) {
+      const double extent = bounds.bottom - bounds.top;
+      if (extent >= MIN_SCALABLE_EXTENT) {
+         double target = Vector->pHeight;
+         if (Vector->pHeight.scaled()) target *= get_parent_height(Vector);
+         sy = target / extent;
+      }
    }
+
+   double dest_left = bounds.left, dest_top = bounds.top;
+   if (Vector->pX.scaled()) dest_left = Vector->pX * get_parent_width(Vector);
+   else if (Vector->pX.defined()) dest_left = Vector->pX;
+
+   if (Vector->pY.scaled()) dest_top = Vector->pY * get_parent_height(Vector);
+   else if (Vector->pY.defined()) dest_top = Vector->pY;
+
+   if ((sx IS 1.0) and (sy IS 1.0) and (dest_left IS bounds.left) and (dest_top IS bounds.top)) return;
+
+   const double tx = dest_left - (bounds.left * sx);
+   const double ty = dest_top - (bounds.top * sy);
+   Path.transform(agg::trans_affine(sx, 0, 0, sy, tx, ty));
+
+   // A negative scale flips the path, so the transformed bounds are normalised.
+
+   Vector->Bounds.left   = bounds.left * sx + tx;
+   Vector->Bounds.right  = bounds.right * sx + tx;
+   Vector->Bounds.top    = bounds.top * sy + ty;
+   Vector->Bounds.bottom = bounds.bottom * sy + ty;
+   if (Vector->Bounds.left > Vector->Bounds.right) std::swap(Vector->Bounds.left, Vector->Bounds.right);
+   if (Vector->Bounds.top > Vector->Bounds.bottom) std::swap(Vector->Bounds.top, Vector->Bounds.bottom);
 }
 
 //********************************************************************************************************************
@@ -336,6 +465,24 @@ static ERR VECTORPATH_MoveToPoint(extVectorPath *Self, struct acMoveToPoint *Arg
 }
 
 /*********************************************************************************************************************
+-ACTION-
+Resize: Scales the path to fixed dimensions.
+
+This action sets the #Width and #Height fields to fixed values.  The path commands remain unchanged.
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORPATH_Resize(extVectorPath *Self, struct acResize *Args)
+{
+   if (not Args) return ERR::NullArgs;
+
+   Self->pWidth = Unit(Args->Width);
+   Self->pHeight = Unit(Args->Height);
+   reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -METHOD-
 AddCommand: Add one or more commands to the end of the path sequence.
@@ -576,6 +723,9 @@ distance-along-a-path computations by the ratio of PathLength to the user agent'
 length.  This feature potentially affects calculations for text on a path, motion animation and various stroke
 operations.
 
+PathLength is always relative to the authored path.  It is not adjusted when the path is sized by the #Width and
+#Height fields.
+
 *********************************************************************************************************************/
 
 static ERR VECTORPATH_GET_PathLength(extVectorPath *Self, int *Value)
@@ -600,6 +750,9 @@ X: The left-side of the path.  Can be expressed as a fixed or scaled coordinate.
 
 Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path
 commands remain unchanged.
+
+If the path is sized by #Width, X places the left edge of the sized path.  A negative #Width extends the path to the
+left of X.
 -END-
 *********************************************************************************************************************/
 
@@ -625,6 +778,9 @@ Y: The top of the path.  Can be expressed as a fixed or scaled coordinate.
 
 Setting Y moves the computed path so that its top-most boundary aligns with the supplied coordinate.  The path
 commands remain unchanged.
+
+If the path is sized by #Height, Y places the top edge of the sized path.  A negative #Height extends the path above
+Y.
 -END-
 *********************************************************************************************************************/
 
@@ -638,6 +794,80 @@ static ERR VECTORPATH_GET_Y(extVectorPath *Self, Unit &Value)
 static ERR VECTORPATH_SET_Y(extVectorPath *Self, Unit &Value)
 {
    Self->pY = Value;
+   reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+Width: Scales the path to a fixed or scaled width.
+
+Setting Width scales the computed path on the horizontal axis so that its bounding box matches the supplied width.
+Scaled values are relative to the width of the parent viewport.  The path is scaled about its left edge, after which
+#X placement is applied.  If Width is not set, the path keeps its natural width.
+
+Width and #Height are independent: if only one is set, the other axis keeps its natural size and the aspect ratio
+is not preserved.  A width of zero collapses the path to a vertical line.  Negative values are permitted and will
+flip the path on the horizontal axis, so that it spans from `X + Width` to #X.
+
+If the natural width of the path is close to zero (for example, a vertical line) then the path cannot be scaled
+horizontally and Width has no effect.
+
+Only the path geometry is scaled.  The stroke width, dash pattern and markers keep their sizes, and the fit is
+applied to the geometric bounds rather than the stroked bounds.  Transforms applied to the vector take effect after
+the Width is applied.
+
+The path commands remain unchanged, so reading #Commands or calling #GetCommand() returns the authored path.  The
+#Sequence field returns the scaled geometry.
+
+When Width is not set, reading it returns the natural width of the path.  To return the path to its natural width,
+set an undefined value (NaN).
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORPATH_GET_Width(extVectorPath *Self, Unit &Value)
+{
+   if (Self->pWidth.defined()) Value = Self->pWidth;
+   else {
+      auto bounds = get_unplaced_path_bounds(Self);
+      Value = Unit(bounds.right - bounds.left);
+   }
+   return ERR::Okay;
+}
+
+static ERR VECTORPATH_SET_Width(extVectorPath *Self, Unit &Value)
+{
+   Self->pWidth = Value;
+   reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+Height: Scales the path to a fixed or scaled height.
+
+Setting Height scales the computed path on the vertical axis so that its bounding box matches the supplied height.
+Scaled values are relative to the height of the parent viewport.  The path is scaled about its top edge, after which
+#Y placement is applied.  If Height is not set, the path keeps its natural height.
+
+Height behaves in the same way as #Width on the vertical axis.  Negative values flip the path, so that it spans from
+`Y + Height` to #Y.  Refer to #Width for further details.
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORPATH_GET_Height(extVectorPath *Self, Unit &Value)
+{
+   if (Self->pHeight.defined()) Value = Self->pHeight;
+   else {
+      auto bounds = get_unplaced_path_bounds(Self);
+      Value = Unit(bounds.bottom - bounds.top);
+   }
+   return ERR::Okay;
+}
+
+static ERR VECTORPATH_SET_Height(extVectorPath *Self, Unit &Value)
+{
+   Self->pHeight = Value;
    reset_path(Self);
    return ERR::Okay;
 }
@@ -721,6 +951,8 @@ static const FieldArray clPathFields[] = {
    { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
    { "X",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_X, VECTORPATH_SET_X },
    { "Y",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Y, VECTORPATH_SET_Y },
+   { "Width",         FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Width, VECTORPATH_SET_Width },
+   { "Height",        FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Height, VECTORPATH_SET_Height },
    { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },
    { "PathLength",    FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_PathLength, VECTORPATH_SET_PathLength },
    { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, VECTORPATH_GET_Commands, VECTORPATH_SET_Commands, "PathCommand" },

@@ -246,17 +246,14 @@ end
 
    TEXT_SAMPLE <const> = 'Kōtuku interfaces are drawn using real-time vector graphics'
 
-   textRow = viewport.new('VectorViewport', {
-      x = win.margins.left, xOffset = win.margins.right, y = y, height = 1, overflow = VOF_VISIBLE
-   })
-
-   text = textRow.new('vectortext', table.merge({
-      x=0, y=0, string=TEXT_SAMPLE,
+   text = viewport.new('vectortext', table.merge({
+      x=win.margins.left, y=y, string=TEXT_SAMPLE,
       face='Noto Sans', fontSize=20, textFlags='!editable'
    }, win.theme.window.text, false))
+
    font_size = tonumber(text.fontSize)
-   text.y = font_size
-   textRow.height = font_size * 1.5
+   text.y = y + font_size
+
    y += font_size + gui.rpixel('12pt')
 
    msgButton = gui.button({
