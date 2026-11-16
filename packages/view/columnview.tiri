@@ -33,6 +33,23 @@ function computeMetrics(View:table!)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Column widths are defined in units that scale with the list font.  Both conversions use the same factor, so that a
+-- width reported to the client reproduces the same pixel width when passed back in a column definition.  Unit widths
+-- are rounded to 2 decimal places to keep round trips stable.
+
+function columnScale(View:table!):num
+   return gui.pixel(tostring(View.theme.list.text.fontSize), 96)
+end
+
+function columnPixels(View:table!, Width:num!):num
+   return math.round(Width * columnScale(View))
+end
+
+function columnUnits(View:table!, Pixels:num!):num
+   return math.round((Pixels / columnScale(View)) * 100) / 100
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function columnText(Value:any, Type:str):any
    if Value is <table> then
@@ -636,6 +653,7 @@ end
 gui.columnView = function(Options):table
    lDestroyHook = Options.destroyItem
    assert(lDestroyHook is nil or lDestroyHook is <func>, 'destroyItem must be a function')
+   assert(Options.columnResized is nil or Options.columnResized is <func>, 'columnResized must be a function')
 
    -- Custom cells are drawn by the client, and checkbox columns are toggled; neither can be edited in place.  The
    -- check is repeated by setColumns(), and must pass before the view is changed.
@@ -656,6 +674,15 @@ gui.columnView = function(Options):table
    end
 
    validateColumns(Options.columns, Options.editable)
+
+   -- Records the width of a column that the user has resized, in definition units, and reports it to the client.
+   -- The entry is keyed by attrib and survives setColumns(), rebuild() and clearView().
+
+   function userResized(View:table!, Col:table!)
+      local width = columnUnits(View, Col.px_width)
+      View._userWidths[Col.attrib] = { width = width, base = Col.width }
+      if Options.columnResized then View._dispatch(Options.columnResized, View, Col.attrib, width) end
+   end
 
    -- Replaces the columns.  Custom cells receive 'destroy' while the old column viewports are valid.  The first
    -- cleanup failure is returned for the caller to raise once the new columns have been populated.
@@ -770,7 +797,17 @@ gui.columnView = function(Options):table
 
          col.x = x
          col.minWidth = x + m.margin
-         col.px_width = math.round(col.width * gui.pixel(tostring(View.theme.list.text.fontSize), 96))
+
+         -- A width set by the user is kept while the definition's width is unchanged.  A new width in the definition
+         -- is a deliberate reset by the client, and replaces the user's width.
+
+         local width = col.width
+         local user = View._userWidths[col.attrib]
+         if user then
+            if user.base is col.width then width = user.width
+            else View._userWidths[col.attrib] = nil end
+         end
+         col.px_width = columnPixels(View, width)
 
          if not col.bannerVP then
             -- Each banner viewport hosts the title and sorting icon
@@ -846,6 +883,26 @@ gui.columnView = function(Options):table
                SizeVP.x = col.x + col.px_width - (margin * 0.5)
                SizeVP.acDraw()
             end
+
+            -- dragCallback reports movement only.  The zone also receives the button release that ends the drag, so
+            -- the user's width is recorded once per completed resize.  This subscription follows the one installed
+            -- by dragCallback, so the drag's final movement has been applied before the release is seen here.
+
+            col.resizeVP.mtSubscribeInput(JTYPE_BUTTON, function(Viewport, Events)
+               local ev:any = Events
+               while ev do
+                  if (ev.type is JET_LMB) and not (ev.flags has JTYPE_REPEATED) then
+                     if ev.value > 0 then
+                        col._dragStartWidth = col.px_width
+                     elseif col._dragStartWidth != nil then
+                        local start = col._dragStartWidth
+                        col._dragStartWidth = nil
+                        if col.px_width != start then userResized(View, col) end
+                     end
+                  end
+                  ev = ev.next
+               end
+            end)
          else
             col.bannerVP.{ x = x, width = col.px_width }
             col.vecViewport.{ x = x, width = col.px_width }
@@ -1008,6 +1065,8 @@ gui.columnView = function(Options):table
    -- Lifecycle hooks are installed before any initial items are built.
 
    function prepareView(View:table!)
+      View._userWidths = { } -- Column widths set by the user, keyed by attrib.  Never reset by a rebuild.
+
       -- Rows are laid out again in place after a structural change, e.g. removeItem(), so that the scroll position and
       -- an open edit are kept.
 
@@ -1332,6 +1391,21 @@ gui.columnView = function(Options):table
 
       View.scene.surface.mtScheduleRedraw()
       if failure then raiseFailure(failure) end
+   end
+
+   -- Forgets the width that the user set for a column, or for every column if Attrib is nil, and applies the widths
+   -- in the column definitions again.  The columns are rebuilt as for setColumns(), only if a user width was removed.
+
+   vw.resetColumnWidths = function(Attrib:str)
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
+      if Attrib then
+         if vw._userWidths[Attrib] is nil then return end
+         vw._userWidths[Attrib] = nil
+      else
+         if table.empty(vw._userWidths) then return end
+         vw._userWidths = { }
+      end
+      if vw.columns then vw.setColumns(vw, Options.columns ?? { }) end
    end
 
    -- Sorts the view by column (named or index).
