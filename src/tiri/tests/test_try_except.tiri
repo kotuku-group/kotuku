@@ -306,6 +306,29 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Exception table fields
 
+-- Run before other error tests so the first assert exercises traceback insertion.
+@Test(priority=0.1,hotpath=false) function AssertExceptionLocationAndMessage()
+   for iteration in {1 into 2} do
+      local expected_line = @SourceLine + 3
+      local caught = false
+      try
+         assert(false, 'assert location payload')
+      except e
+         caught = true
+         assert(e.source.find('test_try_except.tiri'), 'Assert must retain its caller source, got ' .. e.source)
+         assert(e.line is expected_line, f'Assert must retain line {expected_line}, got {e.line}')
+         local prefix = f'[{expected_line}:17] assert location payload'
+         if iteration is 1 then
+            assert(e.message.startsWith(prefix), 'First assert must retain its formatted message')
+            assert(e.message.count('stack traceback:') is 1, 'First assert must have exactly one traceback')
+         else
+            assert(e.message is prefix, 'Later assert must retain its message without adding a traceback')
+         end
+      end
+      assert(caught, 'The failing assert must be caught')
+   end
+end
+
 @Test(priority=6) function ExceptionTableFields()
    try
       raise "Test message"
@@ -330,6 +353,39 @@ end
    end
 end
 
+@Test(priority=6) function AssertExceptionLocationAfterWarmup()
+   local expected_line
+   function verify(Value)
+      expected_line = @SourceLine + 1
+      assert(Value, 'warmed assert payload')
+   end
+
+   for _ in {0 to 300} do verify(true) end
+   try
+      verify(false)
+   except e
+      assert(e.source.find('test_try_except.tiri'), 'Warmed assert must retain the defining source')
+      assert(e.line is expected_line, f'Warmed assert must retain line {expected_line}, got {e.line}')
+      assert(e.message.find('warmed assert payload'), 'Warmed assert must retain its message')
+   success
+      assert(false, 'The failing warmed assert must be caught')
+   end
+end
+
+@Test(priority=6) function IndirectAssertExceptionLocation()
+   local indirect = assert
+   local expected_line = @SourceLine + 2
+   try
+      indirect(false, 'indirect assert payload')
+   except e
+      assert(e.source.find('test_try_except.tiri'), 'Indirect assert must retain the caller source')
+      assert(e.line is expected_line, f'Indirect assert must retain line {expected_line}, got {e.line}')
+      assert(e.message.find('indirect assert payload'), 'Indirect assert must retain its message')
+   success
+      assert(false, 'The failing indirect assert must be caught')
+   end
+end
+
 @Test(priority=7) function ExceptionMessageLocationTextIsNotParsed()
    local message = "fake.tiri:99999: payload"
 
@@ -340,6 +396,24 @@ end
       assert(e.line != 99999, "Line should come from debug metadata, got " .. tostring(e.line))
       assert(e.source.find("test_try_except.tiri"), "Should have real source filename, got " .. tostring(e.source))
    end
+end
+
+-- An error that escapes a native callback is not consumed by a try handler.  Its exception record must not be
+-- attributed to the next caught assert().  ERR_Cancelled is used because
+-- uncaught callback errors at or below ERR_Terminate do not become the script's result, which would fail the run.
+
+@Test(priority=7) function AssertAfterUncaughtCallbackErrorReportsItsOwnMessage()
+   processing.delayedCall(function() raise ERR_Cancelled, 'uncaught callback error' end)
+   processing.sleep(0.05)
+
+   local message = 'no exception'
+   try
+      assert(false, 'fresh assert message')
+   except e
+      message = tostring(e.message)
+   end
+   assert(message.find('fresh assert message') != nil, 'The assert must report its own message, got: ' .. message)
+   assert(message.find('uncaught callback error') is nil, 'The callback error must not leak into the assert')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
