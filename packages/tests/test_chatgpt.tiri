@@ -7,7 +7,10 @@ module crypto as mCrypto
 function memoryStore(Initial:table):table
    saved:any = Initial
    self = {}
-   self.loadState = function():table return saved and json.decode(json.encode(saved)) or nil end
+   self.loadState = function():table
+      roundtrip = json.decode(json.encode(saved))
+      return saved and roundtrip or nil
+   end
    self.saveState = function(State:table):bool saved = json.decode(json.encode(State)); return true end
    self.value = function():table return saved end
    return self
