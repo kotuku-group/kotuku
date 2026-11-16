@@ -140,6 +140,7 @@ ErrorCallback: Optional callback invoked when the value cannot be encoded
 -RESULTS-
 string: JSON text
 ]])
+@NoDiscard
 json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
    ErrorCallback ?= function(Message:str) raise Message end
    if Value is <array> then
@@ -205,6 +206,7 @@ EndToken: Optional character that indicates the end of the current object or arr
 any: Decoded value
 num: position after the final parsed character
 ]])
+@NoDiscard
 json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
    Pos ?= 0
    if Pos >= #String then raise ERR_Syntax, 'Reached unexpected end of input.' end

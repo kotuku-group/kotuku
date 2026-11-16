@@ -282,7 +282,7 @@ gui.window = function(Options:table!)
       -- the user can't interact with it
 
       if &surface.modal is 0 then
-         if mGfx.GetModalSurface() != 0 then
+         if mGfx.GetModalSurface() then
             &surface.modal = true
          end
       end

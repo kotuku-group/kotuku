@@ -459,11 +459,14 @@ gui.menu = function(Options:table!)
          &_preparing = true
          defer &_preparing = false end
          &prepare(&items)
+
          if not &surface then return end
+
          if &parentItem then
             &parentItem.config.items = &items
             &parentItem.submenuConfig = &items
          end
+
          &currentMenu?.hide()
          for item in values(&_rows) do item.submenu?.surface?.free() end
          &currentMenu = nil
@@ -784,21 +787,25 @@ gui.menu = function(Options:table!)
 
    using self do
       &surface = obj.new('surface')
-      &surface.name     = 'menu'
-      &surface.width    = Options.width ?? 400
-      &surface.parent   = Options.target
-      &surface.flags    = RNF_STICK_TO_FRONT | RNF_COMPOSITE
-      &surface.x        = -10000
-      &surface.y        = -10000
-      &surface.presence = SPT_NONE
-      &surface.height   = 400
+      &surface.{
+         name     = 'menu',
+         width    = Options.width ?? 400,
+         parent   = Options.target,
+         flags    = RNF_STICK_TO_FRONT | RNF_COMPOSITE,
+         x        = -10000,
+         y        = -10000,
+         presence = SPT_NONE,
+         height   = 400
+      }
 
       -- Desktop menus pop over the surface that opened them, which also places them within the scope of a modal
       -- window.
 
       if not Options.target or Options.target is 0 then
-         anchor = Options.parentMenu?.surface ?? Options.relative?.scene?.surface ?? Options.hostScene?.surface ??
-            Options.client?.scene?.surface
+         anchor = Options.parentMenu?.surface ??
+                  Options.relative?.scene?.surface ??
+                  Options.hostScene?.surface ??
+                  Options.client?.scene?.surface
          if anchor then &surface.popOver = anchor end
       end
 
@@ -826,9 +833,9 @@ gui.menu = function(Options:table!)
             item.submenu?.surface?.free()
          end
 
-         &currentMenu = nil
+         &currentMenu   = nil
          &_keyboardMenu = nil
-         &surface = nil
+         &surface       = nil
       end)
 
       if &popup then
