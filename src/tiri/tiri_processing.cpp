@@ -244,12 +244,35 @@ static int processing_sleep(lua_State *Lua)
 //********************************************************************************************************************
 // Usage: proc.signal() or processing.signal()
 //
-// Signals the Tiri object.  Note that this is ineffective if the user provided a list of objects to monitor for signaling.
+// processing.signal() signals the Tiri object.  proc.signal() signals every object monitored by the processing object,
+// or the Tiri object if no signal objects were listed.  All monitored objects are signalled so that a sleep in 'all'
+// mode is woken in the same way as 'any' mode.
 
 static int processing_signal(lua_State *Lua)
 {
    kt::Log log("processing.signal");
-   log.msg("Signaling Tiri object #%d.", Lua->script->UID);
+
+   auto fp = (fprocessing *)get_meta(Lua, lua_upvalueindex(1), "Tiri.processing");
+   if ((fp) and (fp->SignalRefs) and (not fp->SignalRefs->empty())) {
+      log.msg("Signalling %d monitored objects.", int(fp->SignalRefs->size()));
+      for (auto ref : *fp->SignalRefs) {
+         lua_rawgeti(Lua, LUA_REGISTRYINDEX, ref);
+         if (lua_type(Lua, -1) IS LUA_TOBJECT) {
+            auto object = lua_toobject(Lua, -1);
+            OBJECTPTR obj;
+            if (access_object(object, obj) IS ERR::Okay) {
+               auto error = Action(AC::Signal, obj, nullptr);
+               release_object(object);
+               if (error != ERR::Okay) log.warning("Failed to signal object #%d: %s", obj->UID, GetErrorMsg(error));
+            }
+            // An object that cannot be accessed is likely terminated, which wakes the sleep regardless.
+         }
+         lua_pop(Lua, 1);
+      }
+      return 0;
+   }
+
+   log.msg("Signalling Tiri object #%d.", Lua->script->UID);
    if (auto error = Action(AC::Signal, Lua->script, nullptr); error != ERR::Okay) luaL_error(Lua, error);
    return 0;
 }
