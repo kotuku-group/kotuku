@@ -6,6 +6,7 @@ that is distributed with this package.  Please refer to it for further informati
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include "blit_stats.h"
 #include <kotuku/modules/module.h>
 
 JUMPTABLE_REGEX
@@ -746,6 +747,7 @@ static ERR MODOpen(OBJECTPTR Module)
 
 static ERR MODExpunge(void)
 {
+   BLIT_STATS_REPORT();
    free_keyboard();
    ERR error = release_driver(true);
 

@@ -8,15 +8,31 @@ Name: Bitmap
 
 #include "defs.h"
 #include "../link/simd.h"
+#include "blit_stats.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
+
+//********************************************************************************************************************
+// Exact reciprocals for the divisor 255 * a of the translucent destination blend, for a >= 1.  For any numerator
+// n < 2^24, (n * glTranslucentRecip[a]) >> 40 IS n / (255 * a), because each entry is ceil(2^40 / d) with d < 2^16.
+// This is the table used by glTranslucent in the Vector module.
+
+static constexpr auto glTranslucentRecip = []() {
+   std::array<uint64_t, 256> table{};
+   for (uint64_t a=1; a < 256; a++) table[a] = ((uint64_t(1)<<40) + (0xff * a) - 1) / (0xff * a);
+   return table;
+}();
 
 //********************************************************************************************************************
 // Blends a source colour onto a 32-bit destination pixel with the sRGB formula used by CopyArea().  A translucent
 // destination (0 < alpha < 255) uses straight-alpha source-over, which weights each colour by its alpha.  The result
 // is identical to srgb_blend32 in the Vector module, which relies on this for its CopyArea() fast path.  An empty
 // destination retains the opaque formula; BAF::COPY replaces such pixels instead.
+//
+// The translucent numerators are below 2^24 (src_weight + dest_weight <= divisor), so the divisions are performed
+// exactly with glTranslucentRecip.  simd_blend_translucent4() computes the same quotients.
 
 inline void blend_srgb32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, uint8_t dA,
    uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha)
@@ -34,11 +50,14 @@ inline void blend_srgb32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, uint
       const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8); // Always >= 1
       const uint32_t src_weight  = 0xff * Alpha;
       const uint32_t dest_weight = alpha_inv * dest_alpha;
-      const uint32_t divisor     = 0xff * final_alpha;
-      const uint32_t round       = divisor>>1;
-      Dest[dR] = uint8_t(std::min<uint32_t>(0xff, (Red * src_weight + Dest[dR] * dest_weight + round) / divisor));
-      Dest[dG] = uint8_t(std::min<uint32_t>(0xff, (Green * src_weight + Dest[dG] * dest_weight + round) / divisor));
-      Dest[dB] = uint8_t(std::min<uint32_t>(0xff, (Blue * src_weight + Dest[dB] * dest_weight + round) / divisor));
+      const uint32_t round       = (0xff * final_alpha)>>1;
+      const uint64_t recip       = glTranslucentRecip[final_alpha];
+      auto channel = [&](uint32_t Src, uint32_t Dst) {
+         return uint8_t(std::min<uint64_t>(0xff, ((Src * src_weight + Dst * dest_weight + round) * recip)>>40));
+      };
+      Dest[dR] = channel(Red, Dest[dR]);
+      Dest[dG] = channel(Green, Dest[dG]);
+      Dest[dB] = channel(Blue, Dest[dB]);
       Dest[dA] = uint8_t(final_alpha);
    }
 }
@@ -141,14 +160,93 @@ inline __m128i simd_blend4(__m128i S, __m128i D, int AlphaPos, __m128i AlphaLane
    return _mm_packus_epi16(blo, bhi);
 }
 
-// True if any of four destination pixels is translucent (0 < alpha < 255).  simd_blend4() implements the opaque
-// formula only, so such groups must be blended with blend_srgb32().
+// Per-pixel mask of the destination pixels that are translucent (0 < alpha < 255).  simd_blend4() implements the
+// opaque formula only, so these pixels take their result from simd_blend_translucent4().
 
-inline bool simd_translucent4(__m128i D, __m128i AlphaMask)
+inline __m128i simd_translucent_mask(__m128i D, __m128i AlphaMask)
 {
    const auto a = _mm_and_si128(D, AlphaMask);
    const auto edge = _mm_or_si128(_mm_cmpeq_epi32(a, _mm_setzero_si128()), _mm_cmpeq_epi32(a, AlphaMask));
-   return _mm_movemask_epi8(edge) != 0xffff;
+   return _mm_xor_si128(edge, _mm_set1_epi32(-1));
+}
+
+// Blend one pixel's channels, held in 32-bit lanes, with the translucent destination formula.  The weights are
+// broadcast from lane N of the per-pixel weight vectors.
+
+template <int N>
+inline __m128i simd_translucent_pixel(__m128i S, __m128i D, __m128 SrcWeight, __m128 DestWeight, __m128 Round,
+   __m128 Divisor)
+{
+   constexpr int lane = _MM_SHUFFLE(N, N, N, N);
+   auto num = _mm_add_ps(_mm_add_ps(_mm_mul_ps(_mm_cvtepi32_ps(S), _mm_shuffle_ps(SrcWeight, SrcWeight, lane)),
+      _mm_mul_ps(_mm_cvtepi32_ps(D), _mm_shuffle_ps(DestWeight, DestWeight, lane))),
+      _mm_shuffle_ps(Round, Round, lane));
+   return _mm_cvttps_epi32(_mm_div_ps(num, _mm_shuffle_ps(Divisor, Divisor, lane)));
+}
+
+// Blend four 32-bit source pixels onto four destination pixels with the translucent destination formula of
+// blend_srgb32(), with the source alpha scaled by Opacity as in simd_blend4().  The result is exact for every pixel,
+// including opaque and empty destinations, but only translucent destinations use this formula.
+//
+// Exactness: every numerator, weight and divisor is an integer below 2^24, so each is held exactly in a float and
+// the products and sums are exact.  The divisor d is at most 65025, so a quotient that is not an integer lies at least
+// 1/d (> 2^-16) below the next integer.  For quotients below 256 that exceeds half an ulp (at most 2^-17), so the
+// correctly rounded division never rounds up to the next integer and truncation yields floor(n / d).  The final
+// alpha is at least 1, so no lane divides by zero.
+
+inline __m128i simd_blend_translucent4(__m128i S, __m128i D, int AlphaPos, __m128i AlphaMask, __m128i Opacity)
+{
+   const auto zero  = _mm_setzero_si128();
+   const auto max   = _mm_set1_epi32(255);
+   const auto shift = _mm_cvtsi32_si128(AlphaPos);
+
+   // Per-pixel alphas and weights in 32-bit lanes.  Each product is at most 65025, so the 16-bit multiplies of
+   // values with a zero upper half produce the full 32-bit result.
+
+   auto sa = _mm_and_si128(_mm_srl_epi32(S, shift), max);
+   auto da = _mm_and_si128(_mm_srl_epi32(D, shift), max);
+   sa = _mm_srli_epi32(_mm_add_epi32(_mm_mullo_epi16(sa, Opacity), max), 8);
+   const auto inv = _mm_sub_epi32(max, sa);
+   const auto final_alpha = _mm_sub_epi32(max, _mm_srli_epi32(_mm_mullo_epi16(inv, _mm_sub_epi32(max, da)), 8));
+   const auto divisor = _mm_mullo_epi16(final_alpha, max);
+
+   const auto src_weight  = _mm_cvtepi32_ps(_mm_mullo_epi16(sa, max));
+   const auto dest_weight = _mm_cvtepi32_ps(_mm_mullo_epi16(inv, da));
+   const auto round       = _mm_cvtepi32_ps(_mm_srli_epi32(divisor, 1));
+   const auto div         = _mm_cvtepi32_ps(divisor);
+
+   const auto slo = _mm_unpacklo_epi8(S, zero), shi = _mm_unpackhi_epi8(S, zero);
+   const auto dlo = _mm_unpacklo_epi8(D, zero), dhi = _mm_unpackhi_epi8(D, zero);
+
+   auto p0 = simd_translucent_pixel<0>(_mm_unpacklo_epi16(slo, zero), _mm_unpacklo_epi16(dlo, zero),
+      src_weight, dest_weight, round, div);
+   auto p1 = simd_translucent_pixel<1>(_mm_unpackhi_epi16(slo, zero), _mm_unpackhi_epi16(dlo, zero),
+      src_weight, dest_weight, round, div);
+   auto p2 = simd_translucent_pixel<2>(_mm_unpacklo_epi16(shi, zero), _mm_unpacklo_epi16(dhi, zero),
+      src_weight, dest_weight, round, div);
+   auto p3 = simd_translucent_pixel<3>(_mm_unpackhi_epi16(shi, zero), _mm_unpackhi_epi16(dhi, zero),
+      src_weight, dest_weight, round, div);
+
+   // Saturating packs clamp channels that exceed 255 by rounding, as std::min() does in blend_srgb32().
+
+   auto colour = _mm_packus_epi16(_mm_packs_epi32(p0, p1), _mm_packs_epi32(p2, p3));
+   return simd_select(AlphaMask, _mm_sll_epi32(final_alpha, shift), colour);
+}
+
+// Blend four pixels as blend_srgb32() does for any destination alpha: simd_blend4() for opaque and empty
+// destinations, and simd_blend_translucent4() for translucent ones.  The translucent kernel only runs when at least
+// one of the four destination pixels needs it.  Callers still select the source or destination for zero alphas.
+
+inline __m128i simd_blend4_any(__m128i S, __m128i D, int AlphaPos, __m128i AlphaLane, __m128i AlphaMask,
+   __m128i Opacity)
+{
+   auto blended = simd_blend4(S, D, AlphaPos, AlphaLane, Opacity);
+   const auto translucent = simd_translucent_mask(D, AlphaMask);
+   if (_mm_movemask_epi8(translucent)) {
+      BLIT_STAT_PIXELS(BLEND32_TRANSLUCENT, 4);
+      blended = simd_select(translucent, simd_blend_translucent4(S, D, AlphaPos, AlphaMask, Opacity), blended);
+   }
+   return blended;
 }
 
 #endif // KOTUKU_SSE2
@@ -663,7 +761,10 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
    if (glDriver) {
       if (auto error = glDriver->blitBitmap(dest, src, Flags, X, Y, Width, Height, DestX, DestY);
-            error != ERR::NoSupport) return error;
+            error != ERR::NoSupport) {
+         if (error IS ERR::Okay) BLIT_STAT(DRIVER, int64_t(Width) * Height);
+         return error;
+      }
    }
 
    // GENERIC SOFTWARE BLITTING ROUTINES
@@ -696,6 +797,19 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                const bool simd_ok = (sR IS dR) and (sG IS dG) and (sB IS dB) and (sA IS dA);
                const auto simd_amask = _mm_set1_epi32(int(uint32_t(0xff) << (sA<<3)));
                const auto simd_alpha_lane = _mm_cmpeq_epi16(_mm_unpacklo_epi8(simd_amask, _mm_setzero_si128()), _mm_set1_epi16(0xff));
+#endif
+
+#ifdef DISPLAY_BLIT_STATS
+               {
+                  const int64_t pixels = int64_t(Width) * Height;
+                  if ((Flags & BAF::LINEAR) != BAF::NIL) BLIT_STAT(BLEND32_LINEAR, pixels);
+                  else {
+                     if ((Flags & BAF::COPY) != BAF::NIL) BLIT_STAT(BLEND32_COPY, pixels);
+                     else if (src->Opacity IS 0xff) BLIT_STAT(BLEND32, pixels);
+                     else BLIT_STAT(BLEND32_OPACITY, pixels);
+                     if ((sR != dR) or (sG != dG) or (sB != dB) or (sA != dA)) BLIT_STAT(BLEND32_NO_SIMD, pixels);
+                  }
+               }
 #endif
 
                if ((Flags & BAF::COPY) != BAF::NIL) { // Avoids blending in cases where the destination pixel is zero alpha.
@@ -732,13 +846,9 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            for (; x + 4 <= Width; x += 4, sp += 16, dp += 16) {
                               auto s = _mm_loadu_si128((const __m128i *)sp);
                               auto d = _mm_loadu_si128((const __m128i *)dp);
-                              if (simd_translucent4(d, simd_amask)) {
-                                 for (int i=0; i < 16; i += 4) copy_pixel(sp + i, dp + i);
-                                 continue;
-                              }
                               auto src_zero  = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
                               auto dest_zero = _mm_cmpeq_epi32(_mm_and_si128(d, simd_amask), zero);
-                              auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                              auto blended = simd_blend4_any(s, d, sA<<3, simd_alpha_lane, simd_amask, op);
                               _mm_storeu_si128((__m128i *)dp, simd_select(dest_zero, s, simd_select(src_zero, d, blended)));
                            }
                         }
@@ -782,12 +892,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                               for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
                                  auto s = _mm_loadu_si128((const __m128i *)sp);
                                  auto d = _mm_loadu_si128((const __m128i *)dp);
-                                 if (simd_translucent4(d, simd_amask)) {
-                                    for (int j=0; j < 16; j += 4) blend_pixel(sp + j, dp + j);
-                                    continue;
-                                 }
                                  auto src_zero = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
-                                 auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                                 auto blended = simd_blend4_any(s, d, sA<<3, simd_alpha_lane, simd_amask, op);
                                  _mm_storeu_si128((__m128i *)dp, simd_select(src_zero, d, blended));
                               }
                            }
@@ -826,12 +932,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
                               auto s = _mm_loadu_si128((const __m128i *)sp);
                               auto d = _mm_loadu_si128((const __m128i *)dp);
-                              if (simd_translucent4(d, simd_amask)) {
-                                 for (int j=0; j < 16; j += 4) blend_pixel(sp + j, dp + j);
-                                 continue;
-                              }
                               auto src_zero = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
-                              auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                              auto blended = simd_blend4_any(s, d, sA<<3, simd_alpha_lane, simd_amask, op);
                               _mm_storeu_si128((__m128i *)dp, simd_select(src_zero, d, blended));
                            }
                         }
@@ -849,6 +951,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
             }
             else if (dest->BytesPerPixel IS 2) {
+               BLIT_STAT(BLEND_TO16, int64_t(Width) * Height);
                uint16_t *ddata;
                uint32_t *sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
                ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
@@ -880,6 +983,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
             }
             else {
+               BLIT_STAT(BLEND_TO_OTHER, int64_t(Width) * Height);
                uint32_t *sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
                while (Height > 0) {
                   for (i=0; i < Width; i++) {
@@ -927,6 +1031,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
       if (!lock_surface(src, SURFACE_READ)) {
          if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Transparent mask with translucent pixels (consistent blend level)
+               BLIT_STAT(KEY_OPACITY, int64_t(Width) * Height);
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
                while (Height > 0) {
@@ -948,6 +1053,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
             }
             else if (src->BitsPerPixel IS dest->BitsPerPixel) {
                if (src->BytesPerPixel IS 4) {
+                  BLIT_STAT(KEY_32, int64_t(Width) * Height);
                   uint32_t *ddata, *sdata;
 
                   sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
@@ -970,6 +1076,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   }
                }
                else if (src->BytesPerPixel IS 2) {
+                  BLIT_STAT(KEY_16, int64_t(Width) * Height);
                   uint16_t *ddata, *sdata;
 
                   sdata = (uint16_t *)(src->Data + (Y * src->LineWidth) + (X<<1));
@@ -994,6 +1101,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   }
                }
                else {
+                  BLIT_STAT(KEY_SAME_OTHER, int64_t(Width) * Height);
                   while (Height > 0) {
                      for (int i=0; i < Width; i++) {
                         colour = src->ReadUCPixel(src, X + i, Y);
@@ -1005,6 +1113,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
             }
             else if (src->BitsPerPixel IS 8) {
+               BLIT_STAT(KEY_8, int64_t(Width) * Height);
                while (Height > 0) {
                   for (int i=0; i < Width; i++) {
                      colour = src->ReadUCPixel(src, X + i, Y);
@@ -1016,15 +1125,18 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   Height--;
                }
             }
-            else while (Height > 0) {
-               for (int i=0; i < Width; i++) {
-                  src->ReadUCRPixel(src, X + i, Y, &pixel);
-                  if ((pixel.Red != src->TransColour.Red) or (pixel.Green != src->TransColour.Green) or (pixel.Blue != src->TransColour.Blue)) {
-                     dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
+            else {
+               BLIT_STAT(KEY_GENERIC, int64_t(Width) * Height);
+               while (Height > 0) {
+                  for (int i=0; i < Width; i++) {
+                     src->ReadUCRPixel(src, X + i, Y, &pixel);
+                     if ((pixel.Red != src->TransColour.Red) or (pixel.Green != src->TransColour.Green) or (pixel.Blue != src->TransColour.Blue)) {
+                        dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
+                     }
                   }
+                  Y++; DestY++;
+                  Height--;
                }
-               Y++; DestY++;
-               Height--;
             }
 
             unlock_surface(dest);
@@ -1042,6 +1154,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
 
                if ((src->BytesPerPixel IS 4) and (dest->BytesPerPixel IS 4)) {
+                  BLIT_STAT(OPACITY32, int64_t(Width) * Height);
                   uint32_t *ddata, *sdata;
                   uint32_t cmp_alpha;
 
@@ -1056,6 +1169,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      (src->prvColourFormat.GreenPos IS dest->prvColourFormat.GreenPos) and
                      (src->prvColourFormat.BluePos IS dest->prvColourFormat.BluePos) and
                      (((src->prvColourFormat.RedPos | src->prvColourFormat.GreenPos | src->prvColourFormat.BluePos) & 7) IS 0);
+                  if (not simd_ok) BLIT_STAT(OPACITY32_NO_SIMD, int64_t(Width) * Height);
 #endif
                   while (Height > 0) {
                      i = 0;
@@ -1089,6 +1203,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   }
                }
                else if ((src->BytesPerPixel IS 2) and (dest->BytesPerPixel IS 2)) {
+                  BLIT_STAT(OPACITY16, int64_t(Width) * Height);
                   uint16_t *ddata, *sdata;
 
                   sdata = (uint16_t *)(src->Data + (Y * src->LineWidth) + (X<<1));
@@ -1104,24 +1219,28 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      Height--;
                   }
                }
-               else while (Height > 0) {
-                  for (i=0; i < Width; i++) {
-                     src->ReadUCRPixel(src, X + i, Y, &srgb);
-                     dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
+               else {
+                  BLIT_STAT(OPACITY_GENERIC, int64_t(Width) * Height);
+                  while (Height > 0) {
+                     for (i=0; i < Width; i++) {
+                        src->ReadUCRPixel(src, X + i, Y, &srgb);
+                        dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
 
-                     pixel.Red   = srctable[srgb.Red]   + desttable[pixel.Red];
-                     pixel.Green = srctable[srgb.Green] + desttable[pixel.Green];
-                     pixel.Blue  = srctable[srgb.Blue]  + desttable[pixel.Blue];
+                        pixel.Red   = srctable[srgb.Red]   + desttable[pixel.Red];
+                        pixel.Green = srctable[srgb.Green] + desttable[pixel.Green];
+                        pixel.Blue  = srctable[srgb.Blue]  + desttable[pixel.Blue];
 
-                     dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
+                        dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
+                     }
+                     Y++; DestY++;
+                     Height--;
                   }
-                  Y++; DestY++;
-                  Height--;
                }
             }
             else if (src->BitsPerPixel IS dest->BitsPerPixel) {
                // Use this fast routine for identical bitmaps
 
+               BLIT_STAT(COPY_SAME, int64_t(Width) * Height);
                srcdata = src->Data + (X * src->BytesPerPixel) + (Y * src->LineWidth);
                data    = dest->Data + (DestX  * dest->BytesPerPixel) + (DestY * dest->LineWidth);
                Width   = Width * src->BytesPerPixel;
@@ -1158,6 +1277,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                        ((src->BitsPerPixel <= 8) and (dest->BitsPerPixel > 8)))) {
                      if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL);
                      else {
+                        BLIT_STAT(COPY_DITHER, int64_t(Width) * Height);
                         dither(src, dest, nullptr, Width, Height, X, Y, DestX, DestY);
                         dithered = TRUE;
                      }
@@ -1165,6 +1285,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
 
                if (dithered IS false) {
+                  BLIT_STAT(COPY_CONVERT, int64_t(Width) * Height);
+                  BLIT_STAT_CONVERT(src->BitsPerPixel, dest->BitsPerPixel, int64_t(Width) * Height);
                   if ((src IS dest) and (DestY >= Y) and (DestY < Y+Height)) {
                      while (Height > 0) {
                         Y += Height - 1;
@@ -1358,6 +1480,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
          uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
 
          if (Bitmap->BitsPerPixel IS 32) {
+            BLIT_STAT(RAW_BLEND32, int64_t(Width) * Height);
             uint32_t *ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
 
 #ifdef KOTUKU_SSE2
@@ -1367,6 +1490,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                (Surface->Format.GreenPos IS dest->prvColourFormat.GreenPos) and
                (Surface->Format.BluePos IS dest->prvColourFormat.BluePos) and
                (((Surface->Format.RedPos | Surface->Format.GreenPos | Surface->Format.BluePos | Surface->Format.AlphaPos) & 7) IS 0);
+            if (not simd_ok) BLIT_STAT(RAW_BLEND32_NO_SIMD, int64_t(Width) * Height);
 #endif
             while (Height > 0) {
                int i = 0;
@@ -1431,40 +1555,45 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                Height--;
             }
          }
-         else while (Height > 0) {
-            for (int i=0; i < Width; i++) {
-               colour = sdata[i];
-               uint8_t alpha = ((uint8_t)(colour >> Surface->Format.AlphaPos));
-               alpha = (glAlphaLookup.data() + (alpha<<8))[Surface->Opacity]; // Multiply the source pixel by overall translucency level
+         else {
+            BLIT_STAT(RAW_BLEND_OTHER, int64_t(Width) * Height);
+            while (Height > 0) {
+               for (int i=0; i < Width; i++) {
+                  colour = sdata[i];
+                  uint8_t alpha = ((uint8_t)(colour >> Surface->Format.AlphaPos));
+                  alpha = (glAlphaLookup.data() + (alpha<<8))[Surface->Opacity]; // Multiply the source pixel by overall translucency level
 
-               if (alpha >= BLEND_MAX_THRESHOLD) {
-                  pixel.Red   = colour >> Surface->Format.RedPos;
-                  pixel.Green = colour >> Surface->Format.GreenPos;
-                  pixel.Blue  = colour >> Surface->Format.BluePos;
-                  Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                  if (alpha >= BLEND_MAX_THRESHOLD) {
+                     pixel.Red   = colour >> Surface->Format.RedPos;
+                     pixel.Green = colour >> Surface->Format.GreenPos;
+                     pixel.Blue  = colour >> Surface->Format.BluePos;
+                     Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                  }
+                  else if (alpha >= BLEND_MIN_THRESHOLD) {
+                     uint8_t red   = colour >> Surface->Format.RedPos;
+                     uint8_t green = colour >> Surface->Format.GreenPos;
+                     uint8_t blue  = colour >> Surface->Format.BluePos;
+
+                     srctable  = glAlphaLookup.data() + (alpha<<8);
+                     desttable = glAlphaLookup.data() + ((255-alpha)<<8);
+
+                     Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                     pixel.Red   = srctable[red]   + desttable[pixel.Red];
+                     pixel.Green = srctable[green] + desttable[pixel.Green];
+                     pixel.Blue  = srctable[blue]  + desttable[pixel.Blue];
+                     Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                  }
                }
-               else if (alpha >= BLEND_MIN_THRESHOLD) {
-                  uint8_t red   = colour >> Surface->Format.RedPos;
-                  uint8_t green = colour >> Surface->Format.GreenPos;
-                  uint8_t blue  = colour >> Surface->Format.BluePos;
-
-                  srctable  = glAlphaLookup.data() + (alpha<<8);
-                  desttable = glAlphaLookup.data() + ((255-alpha)<<8);
-
-                  Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
-                  pixel.Red   = srctable[red]   + desttable[pixel.Red];
-                  pixel.Green = srctable[green] + desttable[pixel.Green];
-                  pixel.Blue  = srctable[blue]  + desttable[pixel.Blue];
-                  Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
-               }
+               sdata = (uint32_t *)(((uint8_t *)sdata) + Surface->LineWidth);
+               YDest++;
+               Height--;
             }
-            sdata = (uint32_t *)(((uint8_t *)sdata) + Surface->LineWidth);
-            YDest++;
-            Height--;
          }
       }
       else if ((Flags & CSRF::TRANSPARENT) != CSRF::NIL) {
          // Transparent colour blitting
+
+         BLIT_STAT(RAW_KEY, int64_t(Width) * Height);
 
          if (((Flags & CSRF::TRANSLUCENT) != CSRF::NIL) and (Surface->Opacity < 255)) {
             // Transparent mask with translucent pixels
@@ -1567,6 +1696,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
             desttable = glAlphaLookup.data() + ((255-Surface->Opacity)<<8);
 
             if ((Surface->BytesPerPixel IS 4) and (Bitmap->BytesPerPixel IS 4)) {
+               BLIT_STAT(RAW_OPACITY32, int64_t(Width) * Height);
                uint32_t *ddata, *sdata;
 
                sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
@@ -1609,6 +1739,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                }
             }
             else if ((Surface->BytesPerPixel IS 2) and (Bitmap->BytesPerPixel IS 2)) {
+               BLIT_STAT(RAW_OPACITY_OTHER, int64_t(Width) * Height);
                uint16_t *ddata, *sdata;
 
                sdata = (uint16_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<1));
@@ -1624,28 +1755,32 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   Height--;
                }
             }
-            else while (Height > 0) {
-               for (int i=0; i < Width; i++) {
-                  colour = read_surface(Surface, X + i, Y);
-                  src.Red   = UnpackSRed(Surface, colour);
-                  src.Green = UnpackSGreen(Surface, colour);
-                  src.Blue  = UnpackSBlue(Surface, colour);
+            else {
+               BLIT_STAT(RAW_OPACITY_OTHER, int64_t(Width) * Height);
+               while (Height > 0) {
+                  for (int i=0; i < Width; i++) {
+                     colour = read_surface(Surface, X + i, Y);
+                     src.Red   = UnpackSRed(Surface, colour);
+                     src.Green = UnpackSGreen(Surface, colour);
+                     src.Blue  = UnpackSBlue(Surface, colour);
 
-                  Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                     Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
 
-                  pixel.Red   = srctable[src.Red]   + desttable[pixel.Red];
-                  pixel.Green = srctable[src.Green] + desttable[pixel.Green];
-                  pixel.Blue  = srctable[src.Blue]  + desttable[pixel.Blue];
+                     pixel.Red   = srctable[src.Red]   + desttable[pixel.Red];
+                     pixel.Green = srctable[src.Green] + desttable[pixel.Green];
+                     pixel.Blue  = srctable[src.Blue]  + desttable[pixel.Blue];
 
-                  Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                     Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                  }
+                  Y++; YDest++;
+                  Height--;
                }
-               Y++; YDest++;
-               Height--;
             }
          }
          else if (Surface->BitsPerPixel IS Bitmap->BitsPerPixel) {
             // Use this fast routine for identical bitmaps
 
+            BLIT_STAT(RAW_COPY_SAME, int64_t(Width) * Height);
             srcdata = (uint8_t *)Surface->Data + (X * Surface->BytesPerPixel) + (Y * Surface->LineWidth);
             data    = Bitmap->Data + (XDest  * Bitmap->BytesPerPixel) + (YDest * Bitmap->LineWidth);
             Width   = Width * Surface->BytesPerPixel;
@@ -1660,6 +1795,8 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
          else {
             // If the bitmaps do not match then we need to use this slower RGB translation subroutine.
 
+            BLIT_STAT(RAW_COPY_CONVERT, int64_t(Width) * Height);
+            BLIT_STAT_CONVERT(Surface->BitsPerPixel, Bitmap->BitsPerPixel, int64_t(Width) * Height);
             while (Height > 0) {
                for (int i=0; i < Width; i++) {
                   colour = read_surface(Surface, X + i, Y);
