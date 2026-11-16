@@ -26,6 +26,95 @@ static constexpr auto glTranslucentRecip = []() {
 }();
 
 //********************************************************************************************************************
+// round((Value * Alpha) / 255) for Value and Alpha in the range 0 - 255.  The result is exact for every input pair,
+// and simd_mul_div255() computes the same result on 16-bit lanes.
+
+inline uint32_t mul_div255(uint32_t Value, uint32_t Alpha)
+{
+   const uint32_t t = (Value * Alpha) + 128;
+   return (t + (t >> 8)) >> 8;
+}
+
+// Mixes a source and destination channel with the weight Alpha.  The result never exceeds 255, because neither
+// term exceeds its weight: round(S * A / 255) <= A and round(D * (255 - A) / 255) <= 255 - A.  An Alpha of 255
+// returns Src and an Alpha of 0 returns Dest.
+
+inline uint32_t mix255(uint32_t Src, uint32_t Dest, uint32_t Alpha)
+{
+   return mul_div255(Src, Alpha) + mul_div255(Dest, 0xff - Alpha);
+}
+
+// A local copy of a packed colour format, so that 15/16-bit loops hold the shifts and masks in registers.  Reading
+// them through a ColourFormat pointer forces a reload after every pixel store, which prevents vectorisation.  The
+// unpack and pack functions match objBitmap's unpackRed() and packPixel().
+
+struct PackedFormat {
+   uint32_t RedPos, GreenPos, BluePos, RedShift, GreenShift, BlueShift, RedMask, GreenMask, BlueMask, AlphaBits;
+
+   PackedFormat(const ColourFormat &Format) :
+      RedPos(Format.RedPos), GreenPos(Format.GreenPos), BluePos(Format.BluePos),
+      RedShift(Format.RedShift), GreenShift(Format.GreenShift), BlueShift(Format.BlueShift),
+      RedMask(Format.RedMask), GreenMask(Format.GreenMask), BlueMask(Format.BlueMask),
+      AlphaBits(((255u >> Format.AlphaShift) & Format.AlphaMask) << Format.AlphaPos) { }
+
+   inline uint32_t red(uint32_t Packed) const   { return uint8_t(((Packed >> RedPos) & RedMask) << RedShift); }
+   inline uint32_t green(uint32_t Packed) const { return uint8_t(((Packed >> GreenPos) & GreenMask) << GreenShift); }
+   inline uint32_t blue(uint32_t Packed) const  { return uint8_t(((Packed >> BluePos) & BlueMask) << BlueShift); }
+
+   inline uint32_t pack(uint32_t Red, uint32_t Green, uint32_t Blue) const {
+      return (((Red >> RedShift) & RedMask) << RedPos) | (((Green >> GreenShift) & GreenMask) << GreenPos) |
+         (((Blue >> BlueShift) & BlueMask) << BluePos) | AlphaBits;
+   }
+};
+
+// The row functions below are kept out of line.  When GCC inlines them into CopyArea(), it does not vectorise the
+// row loop.
+
+#if defined(_MSC_VER)
+#define ROW_NOINLINE __declspec(noinline)
+#else
+#define ROW_NOINLINE __attribute__((noinline))
+#endif
+
+// The row pointers are not declared __restrict.  CopyArea() permits copying within a bitmap, including overlapping
+// regions, and the rows must then be processed in order: a copy one pixel to the right reads pixels that the same
+// row has already written.  Without __restrict, GCC checks for overlap at run time and takes the scalar loop when
+// the ranges overlap, so that such copies keep the results of the original sequential loop.
+
+// Mixes a row of 15/16-bit pixels at a constant weight.  Shared by the constant-opacity paths of CopyArea() and
+// CopyRawBitmap().
+
+ROW_NOINLINE static void mix_row16(const uint16_t *Src, uint16_t *Dest, int Width,
+   const PackedFormat &SrcFormat, const PackedFormat &DestFormat, uint32_t Alpha)
+{
+   const PackedFormat sf = SrcFormat, df = DestFormat;
+   for (int i=0; i < Width; i++) {
+      const uint32_t s = Src[i], d = Dest[i];
+      Dest[i] = uint16_t(df.pack(mix255(sf.red(s), df.red(d), Alpha), mix255(sf.green(s), df.green(d), Alpha),
+         mix255(sf.blue(s), df.blue(d), Alpha)));
+   }
+}
+
+// Blends a row of 32-bit source pixels onto 15/16-bit pixels, weighting each by its alpha scaled by Opacity.  There
+// are no special cases for alpha 0 and 255, because mix255() returns the destination and source values exactly for
+// those weights.  An alpha of 0 therefore rewrites the destination pixel with its own colour bits.  Bits outside the
+// colour masks, such as the unused top bit of a 15-bit pixel, are cleared, as the translucent case always did.
+
+ROW_NOINLINE static void blend_row32to16(const uint32_t *Src, uint16_t *Dest, int Width,
+   const ColourFormat &SrcFormat, const PackedFormat &DestFormat, uint32_t Opacity)
+{
+   const PackedFormat df = DestFormat;
+   const uint32_t r_pos = SrcFormat.RedPos, g_pos = SrcFormat.GreenPos, b_pos = SrcFormat.BluePos;
+   const uint32_t a_pos = SrcFormat.AlphaPos;
+   for (int i=0; i < Width; i++) {
+      const uint32_t s = Src[i], d = Dest[i];
+      const uint32_t alpha = mul_div255((s >> a_pos) & 0xff, Opacity);
+      Dest[i] = uint16_t(df.pack(mix255((s >> r_pos) & 0xff, df.red(d), alpha),
+         mix255((s >> g_pos) & 0xff, df.green(d), alpha), mix255((s >> b_pos) & 0xff, df.blue(d), alpha)));
+   }
+}
+
+//********************************************************************************************************************
 // Blends a source colour onto a 32-bit destination pixel with the sRGB formula used by CopyArea().  A translucent
 // destination (0 < alpha < 255) uses straight-alpha source-over, which weights each colour by its alpha.  The result
 // is identical to srgb_blend32 in the Vector module, which relies on this for its CopyArea() fast path.  An empty
@@ -121,7 +210,7 @@ inline __m128i simd_broadcast_alpha(__m128i Pixels, int AlphaPos)
    return _mm_or_si128(a, _mm_slli_epi32(a, 16));
 }
 
-// Exact equivalent of a glAlphaLookup table read: round((Value * Alpha) / 255) on 16-bit lanes.
+// round((Value * Alpha) / 255) on 16-bit lanes, matching the scalar mul_div255().
 
 inline __m128i simd_mul_div255(__m128i Value, __m128i Alpha)
 {
@@ -630,7 +719,6 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 {
    kt::Log log(__FUNCTION__);
    RGB8 pixel, srgb;
-   uint8_t *srctable, *desttable;
    int i;
    uint32_t colour;
    uint8_t *data, *srcdata;
@@ -774,10 +862,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
       if (!lock_surface(src, SURFACE_READ)) {
          if (!lock_surface(dest, SURFACE_WRITE)) {
-            uint8_t red, green, blue, *dest_lookup;
+            uint8_t red, green, blue;
             uint16_t alpha;
-
-            dest_lookup = glAlphaLookup.data() + (255<<8);
 
             if (dest->BitsPerPixel IS 32) { // Both bitmaps are 32 bit
                const uint8_t sA = src->ColourFormat->AlphaPos>>3;
@@ -955,28 +1041,9 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                uint16_t *ddata;
                uint32_t *sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
                ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
+               const PackedFormat dest_format(dest->prvColourFormat);
                while (Height > 0) {
-                  for (i=0; i < Width; i++) {
-                     colour = sdata[i];
-                     alpha = ((uint8_t)(colour >> src->prvColourFormat.AlphaPos));
-                     alpha = (glAlphaLookup.data() + (alpha<<8))[src->Opacity]<<8; // Multiply the source pixel by overall translucency level
-
-                     if (alpha >= BLEND_MAX_THRESHOLD<<8) {
-                        ddata[i] = dest->packPixel((uint8_t)(colour >> src->prvColourFormat.RedPos),
-                                                   (uint8_t)(colour >> src->prvColourFormat.GreenPos),
-                                                   (uint8_t)(colour >> src->prvColourFormat.BluePos));
-                     }
-                     else if (alpha >= BLEND_MIN_THRESHOLD<<8) {
-                        red   = colour >> src->prvColourFormat.RedPos;
-                        green = colour >> src->prvColourFormat.GreenPos;
-                        blue  = colour >> src->prvColourFormat.BluePos;
-                        srctable  = glAlphaLookup.data() + (alpha);
-                        desttable = dest_lookup - (alpha);
-                        ddata[i] = dest->packPixel((uint8_t)(srctable[red]   + desttable[dest->unpackRed(ddata[i])]),
-                                                   (uint8_t)(srctable[green] + desttable[dest->unpackGreen(ddata[i])]),
-                                                   (uint8_t)(srctable[blue]  + desttable[dest->unpackBlue(ddata[i])]));
-                     }
-                  }
+                  blend_row32to16(sdata, ddata, Width, src->prvColourFormat, dest_format, src->Opacity);
                   sdata = (uint32_t *)(((uint8_t *)sdata) + src->LineWidth);
                   ddata = (uint16_t *)(((uint8_t *)ddata) + dest->LineWidth);
                   Height--;
@@ -989,7 +1056,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   for (i=0; i < Width; i++) {
                      colour = sdata[i];
                      alpha = ((uint8_t)(colour >> src->prvColourFormat.AlphaPos));
-                     alpha = (glAlphaLookup.data() + (alpha<<8))[src->Opacity]; // Multiply the source pixel by overall translucency level
+                     alpha = mul_div255(alpha, src->Opacity); // Scale the source alpha by the overall opacity
 
                      if (alpha >= BLEND_MAX_THRESHOLD) {
                         pixel.Red   = colour >> src->prvColourFormat.RedPos;
@@ -997,18 +1064,15 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         pixel.Blue  = colour >> src->prvColourFormat.BluePos;
                         dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
                      }
-                     else if (alpha >= BLEND_MIN_THRESHOLD) {
+                     else if (alpha >= BLEND_MIN_THRESHOLD) { // Skipping alpha 0 avoids a pixel read and write
                         red   = colour >> src->prvColourFormat.RedPos;
                         green = colour >> src->prvColourFormat.GreenPos;
                         blue  = colour >> src->prvColourFormat.BluePos;
 
-                        srctable  = glAlphaLookup.data() + (alpha<<8);
-                        desttable = glAlphaLookup.data() + ((255-alpha)<<8);
-
                         dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
-                        pixel.Red   = srctable[red]   + desttable[pixel.Red];
-                        pixel.Green = srctable[green] + desttable[pixel.Green];
-                        pixel.Blue  = srctable[blue]  + desttable[pixel.Blue];
+                        pixel.Red   = mix255(red, pixel.Red, alpha);
+                        pixel.Green = mix255(green, pixel.Green, alpha);
+                        pixel.Blue  = mix255(blue, pixel.Blue, alpha);
                         dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
                      }
                   }
@@ -1032,17 +1096,16 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
          if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Transparent mask with translucent pixels (consistent blend level)
                BLIT_STAT(KEY_OPACITY, int64_t(Width) * Height);
-               srctable  = glAlphaLookup.data() + (src->Opacity<<8);
-               desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
+               const uint32_t opacity = src->Opacity;
                while (Height > 0) {
                   for (i=0; i < Width; i++) {
                      colour = src->ReadUCPixel(src, X + i, Y);
                      if (colour != (uint32_t)src->TransIndex) {
                         dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
 
-                        pixel.Red   = srctable[src->unpackRed(colour)]   + desttable[pixel.Red];
-                        pixel.Green = srctable[src->unpackGreen(colour)] + desttable[pixel.Green];
-                        pixel.Blue  = srctable[src->unpackBlue(colour)]  + desttable[pixel.Blue];
+                        pixel.Red   = mix255(src->unpackRed(colour), pixel.Red, opacity);
+                        pixel.Green = mix255(src->unpackGreen(colour), pixel.Green, opacity);
+                        pixel.Blue  = mix255(src->unpackBlue(colour), pixel.Blue, opacity);
 
                         dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
                      }
@@ -1150,8 +1213,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
       if (!lock_surface(src, SURFACE_READ)) {
          if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Translucent draw
-               srctable  = glAlphaLookup.data() + (src->Opacity<<8);
-               desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
+               const uint32_t opacity = src->Opacity;
 
                if ((src->BytesPerPixel IS 4) and (dest->BytesPerPixel IS 4)) {
                   BLIT_STAT(OPACITY32, int64_t(Width) * Height);
@@ -1192,10 +1254,12 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      }
 #endif
                      for (; i < Width; i++) {
-                        ddata[i] = ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.RedPos)]   + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.RedPos)]) << dest->prvColourFormat.RedPos) |
-                                   ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.GreenPos)] + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.GreenPos)]) << dest->prvColourFormat.GreenPos) |
-                                   ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.BluePos)]  + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.BluePos)]) << dest->prvColourFormat.BluePos) |
-                                   cmp_alpha;
+                        const auto &sf = src->prvColourFormat, &df = dest->prvColourFormat;
+                        const uint32_t s = sdata[i], d = ddata[i];
+                        ddata[i] = (mix255((uint8_t)(s>>sf.RedPos), (uint8_t)(d>>df.RedPos), opacity) << df.RedPos) |
+                           (mix255((uint8_t)(s>>sf.GreenPos), (uint8_t)(d>>df.GreenPos), opacity) << df.GreenPos) |
+                           (mix255((uint8_t)(s>>sf.BluePos), (uint8_t)(d>>df.BluePos), opacity) << df.BluePos) |
+                           cmp_alpha;
                      }
                      ddata = (uint32_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint32_t *)(((int8_t *)sdata) + src->LineWidth);
@@ -1208,12 +1272,9 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
                   sdata = (uint16_t *)(src->Data + (Y * src->LineWidth) + (X<<1));
                   ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
+                  const PackedFormat src_format(src->prvColourFormat), dest_format(dest->prvColourFormat);
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) {
-                        ddata[i] = dest->packPixel(srctable[src->unpackRed(sdata[i])]   + desttable[dest->unpackRed(ddata[i])],
-                                                   srctable[src->unpackGreen(sdata[i])] + desttable[dest->unpackGreen(ddata[i])],
-                                                   srctable[src->unpackBlue(sdata[i])]  + desttable[dest->unpackBlue(ddata[i])]);
-                     }
+                     mix_row16(sdata, ddata, Width, src_format, dest_format, opacity);
                      ddata = (uint16_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint16_t *)(((int8_t *)sdata) + src->LineWidth);
                      Height--;
@@ -1226,9 +1287,9 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         src->ReadUCRPixel(src, X + i, Y, &srgb);
                         dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
 
-                        pixel.Red   = srctable[srgb.Red]   + desttable[pixel.Red];
-                        pixel.Green = srctable[srgb.Green] + desttable[pixel.Green];
-                        pixel.Blue  = srctable[srgb.Blue]  + desttable[pixel.Blue];
+                        pixel.Red   = mix255(srgb.Red, pixel.Red, opacity);
+                        pixel.Green = mix255(srgb.Green, pixel.Green, opacity);
+                        pixel.Blue  = mix255(srgb.Blue, pixel.Blue, opacity);
 
                         dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
                      }
@@ -1392,7 +1453,6 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 {
    kt::Log log(__FUNCTION__);
    RGB8 pixel, src;
-   uint8_t *srctable, *desttable;
    int i;
    int16_t srcwidth;
    uint32_t colour;
@@ -1529,7 +1589,10 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   colour = sdata[i];
 
                   uint8_t alpha = ((uint8_t)(colour >> Surface->Format.AlphaPos));
-                  alpha = (glAlphaLookup.data() + (alpha<<8))[Surface->Opacity]; // Multiply the source pixel by overall translucency level
+                  alpha = mul_div255(alpha, Surface->Opacity); // Scale the source alpha by the overall opacity
+
+                  // The thresholds are kept: an opaque pixel is copied with its own alpha, and an empty one leaves
+                  // the destination alpha intact, whereas a blended pixel is written with alpha 255.
 
                   if (alpha >= BLEND_MAX_THRESHOLD) ddata[i] = colour;
                   else if (alpha >= BLEND_MIN_THRESHOLD) {
@@ -1543,11 +1606,8 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                      uint8_t destgreen = colour >> ((extBitmap *)Bitmap)->prvColourFormat.GreenPos;
                      uint8_t destblue  = colour >> ((extBitmap *)Bitmap)->prvColourFormat.BluePos;
 
-                     srctable  = glAlphaLookup.data() + (alpha<<8);
-                     desttable = glAlphaLookup.data() + ((255-alpha)<<8);
-                     ddata[i] = ((extBitmap *)Bitmap)->packPixelWB(srctable[red] + desttable[destred],
-                                                  srctable[green] + desttable[destgreen],
-                                                  srctable[blue] + desttable[destblue]);
+                     ddata[i] = ((extBitmap *)Bitmap)->packPixelWB(mix255(red, destred, alpha),
+                        mix255(green, destgreen, alpha), mix255(blue, destblue, alpha));
                   }
                }
                sdata = (uint32_t *)(((uint8_t *)sdata) + Surface->LineWidth);
@@ -1561,7 +1621,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                for (int i=0; i < Width; i++) {
                   colour = sdata[i];
                   uint8_t alpha = ((uint8_t)(colour >> Surface->Format.AlphaPos));
-                  alpha = (glAlphaLookup.data() + (alpha<<8))[Surface->Opacity]; // Multiply the source pixel by overall translucency level
+                  alpha = mul_div255(alpha, Surface->Opacity); // Scale the source alpha by the overall opacity
 
                   if (alpha >= BLEND_MAX_THRESHOLD) {
                      pixel.Red   = colour >> Surface->Format.RedPos;
@@ -1569,18 +1629,15 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                      pixel.Blue  = colour >> Surface->Format.BluePos;
                      Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
                   }
-                  else if (alpha >= BLEND_MIN_THRESHOLD) {
+                  else if (alpha >= BLEND_MIN_THRESHOLD) { // Skipping alpha 0 avoids a pixel read and write
                      uint8_t red   = colour >> Surface->Format.RedPos;
                      uint8_t green = colour >> Surface->Format.GreenPos;
                      uint8_t blue  = colour >> Surface->Format.BluePos;
 
-                     srctable  = glAlphaLookup.data() + (alpha<<8);
-                     desttable = glAlphaLookup.data() + ((255-alpha)<<8);
-
                      Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
-                     pixel.Red   = srctable[red]   + desttable[pixel.Red];
-                     pixel.Green = srctable[green] + desttable[pixel.Green];
-                     pixel.Blue  = srctable[blue]  + desttable[pixel.Blue];
+                     pixel.Red   = mix255(red, pixel.Red, alpha);
+                     pixel.Green = mix255(green, pixel.Green, alpha);
+                     pixel.Blue  = mix255(blue, pixel.Blue, alpha);
                      Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
                   }
                }
@@ -1598,8 +1655,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
          if (((Flags & CSRF::TRANSLUCENT) != CSRF::NIL) and (Surface->Opacity < 255)) {
             // Transparent mask with translucent pixels
 
-            srctable  = glAlphaLookup.data() + (Surface->Opacity<<8);
-            desttable = glAlphaLookup.data() + ((255-Surface->Opacity)<<8);
+            const uint32_t opacity = Surface->Opacity;
 
             while (Height > 0) {
                for (int i=0; i < Width; i++) {
@@ -1607,9 +1663,9 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   if (colour != (uint32_t)Surface->Colour) {
                      Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
 
-                     pixel.Red   = srctable[UnpackSRed(Surface, colour)]   + desttable[pixel.Red];
-                     pixel.Green = srctable[UnpackSGreen(Surface, colour)] + desttable[pixel.Green];
-                     pixel.Blue  = srctable[UnpackSBlue(Surface, colour)]  + desttable[pixel.Blue];
+                     pixel.Red   = mix255(UnpackSRed(Surface, colour), pixel.Red, opacity);
+                     pixel.Green = mix255(UnpackSGreen(Surface, colour), pixel.Green, opacity);
+                     pixel.Blue  = mix255(UnpackSBlue(Surface, colour), pixel.Blue, opacity);
 
                      Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
                   }
@@ -1692,8 +1748,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
       }
       else { // Straight copy operation
          if (((Flags & CSRF::TRANSLUCENT) != CSRF::NIL) and (Surface->Opacity < 255)) { // Straight translucent blit
-            srctable  = glAlphaLookup.data() + (Surface->Opacity<<8);
-            desttable = glAlphaLookup.data() + ((255-Surface->Opacity)<<8);
+            const uint32_t opacity = Surface->Opacity;
 
             if ((Surface->BytesPerPixel IS 4) and (Bitmap->BytesPerPixel IS 4)) {
                BLIT_STAT(RAW_OPACITY32, int64_t(Width) * Height);
@@ -1729,9 +1784,11 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   }
 #endif
                   for (; i < Width; i++) {
-                     ddata[i] = ((srctable[(uint8_t)(sdata[i]>>Surface->Format.RedPos)]   + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.RedPos)]) << dest->prvColourFormat.RedPos) |
-                                ((srctable[(uint8_t)(sdata[i]>>Surface->Format.GreenPos)] + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.GreenPos)]) << dest->prvColourFormat.GreenPos) |
-                                ((srctable[(uint8_t)(sdata[i]>>Surface->Format.BluePos)]  + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.BluePos)]) << dest->prvColourFormat.BluePos);
+                     const auto &sf = Surface->Format, &df = dest->prvColourFormat;
+                     const uint32_t s = sdata[i], d = ddata[i];
+                     ddata[i] = (mix255((uint8_t)(s>>sf.RedPos), (uint8_t)(d>>df.RedPos), opacity) << df.RedPos) |
+                        (mix255((uint8_t)(s>>sf.GreenPos), (uint8_t)(d>>df.GreenPos), opacity) << df.GreenPos) |
+                        (mix255((uint8_t)(s>>sf.BluePos), (uint8_t)(d>>df.BluePos), opacity) << df.BluePos);
                   }
                   ddata = (uint32_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
                   sdata = (uint32_t *)(((int8_t *)sdata) + Surface->LineWidth);
@@ -1744,12 +1801,9 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
                sdata = (uint16_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<1));
                ddata = (uint16_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<1));
+               const PackedFormat src_format(Surface->Format), dest_format(*Bitmap->ColourFormat);
                while (Height > 0) {
-                  for (i=0; i < Width; i++) {
-                     ddata[i] = Bitmap->packPixel(srctable[UnpackSRed(Surface, sdata[i])] + desttable[Bitmap->unpackRed(ddata[i])],
-                                                  srctable[UnpackSGreen(Surface, sdata[i])] + desttable[Bitmap->unpackGreen(ddata[i])],
-                                                  srctable[UnpackSBlue(Surface, sdata[i])] + desttable[Bitmap->unpackBlue(ddata[i])]);
-                  }
+                  mix_row16(sdata, ddata, Width, src_format, dest_format, opacity);
                   ddata = (uint16_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
                   sdata = (uint16_t *)(((int8_t *)sdata) + Surface->LineWidth);
                   Height--;
@@ -1766,9 +1820,9 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
                      Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
 
-                     pixel.Red   = srctable[src.Red]   + desttable[pixel.Red];
-                     pixel.Green = srctable[src.Green] + desttable[pixel.Green];
-                     pixel.Blue  = srctable[src.Blue]  + desttable[pixel.Blue];
+                     pixel.Red   = mix255(src.Red, pixel.Red, opacity);
+                     pixel.Green = mix255(src.Green, pixel.Green, opacity);
+                     pixel.Blue  = mix255(src.Blue, pixel.Blue, opacity);
 
                      Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
                   }

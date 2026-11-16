@@ -468,34 +468,48 @@ Okay
 NothingDone: The content is already normalised.
 InvalidState: The Bitmap is not in the expected state (32-bit with an alpha channel).
 InvalidDimension: The clipping region is invalid.
-AllocMemory
 
 -TAGS-
 mutates-object
 
 *********************************************************************************************************************/
 
+// Demultiplies one channel of a packed pixel, returning the result at its original position.  The quotient
+// (V * 255) / Alpha is computed with a float division and truncated, which is exact: the numerator and divisor are
+// integers below 2^24, so both convert exactly, and the division is correctly rounded.  A quotient that is not an
+// integer lies at least 1/255 below the next integer, which exceeds half an ulp (2^-17) for quotients below 256, so
+// rounding never reaches the next integer.  Larger quotients are clamped to 255 regardless.
+
+static inline uint32_t demultiply_channel(uint32_t Pixel, int Shift, float Divisor, uint32_t Keep)
+{
+   const int v = int((Pixel >> Shift) & 0xff);
+   int q = int(float(v * 0xff) / Divisor);
+   q = (q > 0xff) ? 0xff : q;
+   return (uint32_t(q) & Keep) << Shift;
+}
+
+// Demultiplies a row of 32-bit pixels.  The loop is branch-free so that it vectorises.  A pixel with zero alpha
+// has its colour channels zeroed.  The divisor for that pixel is set to 1 using integer arithmetic so that GCC does
+// not move the int-to-float conversion into a branch, because with -ftrapping-math it cannot if-convert one there.
+// Alpha 255 leaves the colour channels unchanged.
+
+static void demultiply_row(uint32_t * __restrict Pixels, int Width, int AShift, int RShift, int GShift,
+   int BShift)
+{
+   const uint32_t alpha_mask = 0xffu << AShift;
+   for (int x=0; x < Width; x++) {
+      const uint32_t p = Pixels[x];
+      const uint32_t a = (p >> AShift) & 0xff;
+      const float divisor = float(int(a | uint32_t(a IS 0)));
+      const uint32_t keep = 0u - uint32_t(a != 0);
+      Pixels[x] = (p & alpha_mask) | demultiply_channel(p, RShift, divisor, keep) |
+         demultiply_channel(p, GShift, divisor, keep) | demultiply_channel(p, BShift, divisor, keep);
+   }
+}
+
 static ERR BITMAP_Demultiply(extBitmap *Self)
 {
    kt::Log log;
-
-   static std::mutex mutex;
-   {
-      const std::lock_guard<std::mutex> lock(mutex);
-      if (not glDemultiply) {
-         auto demultiply = std::unique_ptr<std::array<uint16_t, 256 * 256>>(
-            new (std::nothrow) std::array<uint16_t, 256 * 256>());
-         if (not demultiply) return ERR::AllocMemory;
-
-         for (int a=1; a <= 255; a++) {
-            for (int i=0; i <= 255; i++) {
-               (*demultiply)[(a<<8) + i] = uint16_t((i * 0xff) / a);
-            }
-         }
-
-         glDemultiply = std::move(demultiply);
-      }
-   }
 
    if ((Self->Flags & BMF::PREMUL) IS BMF::NIL) return log.warning(ERR::NothingDone);
    if (Self->BitsPerPixel != 32) return log.warning(ERR::InvalidState);
@@ -507,32 +521,18 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    if (Self->Clip.Left + w > Self->Width) return log.warning(ERR::InvalidDimension);
    if (Self->Clip.Top + h > Self->Height) return log.warning(ERR::InvalidDimension);
 
-   const uint8_t A = Self->ColourFormat->AlphaPos>>3;
-   const uint8_t R = Self->ColourFormat->RedPos>>3;
-   const uint8_t G = Self->ColourFormat->GreenPos>>3;
-   const uint8_t B = Self->ColourFormat->BluePos>>3;
+   const int a_shift = Self->ColourFormat->AlphaPos;
+   const int r_shift = Self->ColourFormat->RedPos;
+   const int g_shift = Self->ColourFormat->GreenPos;
+   const int b_shift = Self->ColourFormat->BluePos;
+   const int line_width = Self->LineWidth;
 
    BLIT_STAT(DEMULTIPLY, int64_t(w) * h);
 
-   uint8_t *data = Self->Data + (Self->Clip.Left * Self->BytesPerPixel) + (Self->Clip.Top * Self->LineWidth);
+   uint8_t *data = Self->Data + (Self->Clip.Left * Self->BytesPerPixel) + (Self->Clip.Top * line_width);
    for (int y=0; y < h; y++) {
-      uint8_t *pixel = data;
-      for (int x=0; x < w; x++) {
-         const uint8_t a = pixel[A];
-         if (a < 0xff) {
-            if (a == 0) pixel[R] = pixel[G] = pixel[B] = 0;
-            else {
-               uint32_t r = (*glDemultiply)[(a<<8) + pixel[R]]; //(uint32_t(pixel[R]) * 0xff) / a;
-               uint32_t g = (*glDemultiply)[(a<<8) + pixel[G]]; //(uint32_t(pixel[G]) * 0xff) / a;
-               uint32_t b = (*glDemultiply)[(a<<8) + pixel[B]]; //(uint32_t(pixel[B]) * 0xff) / a;
-               pixel[R] = uint8_t((r > 0xff) ? 0xff : r);
-               pixel[G] = uint8_t((g > 0xff) ? 0xff : g);
-               pixel[B] = uint8_t((b > 0xff) ? 0xff : b);
-            }
-         }
-         pixel += 4;
-      }
-      data += Self->LineWidth;
+      demultiply_row((uint32_t *)data, w, a_shift, r_shift, g_shift, b_shift);
+      data += line_width;
    }
 
    Self->Flags &= ~BMF::PREMUL;
@@ -829,6 +829,23 @@ mutates-object
 
 *********************************************************************************************************************/
 
+// Premultiplies a row of 32-bit pixels.  The two byte pairs of each pixel are multiplied in 16-bit lanes, which
+// cannot overflow because (255 * 255 + 255) < 65536.  No branches are needed: (V * 255 + 255)>>8 is V and
+// (V * 0 + 255)>>8 is 0 for every byte V, so opaque and empty pixels come out as they would with special cases.  The
+// alpha byte is restored from the source.
+
+static void premultiply_row(uint32_t * __restrict Pixels, int Width, int AShift)
+{
+   const uint32_t alpha_mask = 0xffu << AShift;
+   for (int x=0; x < Width; x++) {
+      const uint32_t p = Pixels[x];
+      const uint32_t a = (p >> AShift) & 0xff;
+      const uint32_t even = ((((p & 0x00ff00ff) * a) + 0x00ff00ff) >> 8) & 0x00ff00ff;
+      const uint32_t odd  = ((((p >> 8) & 0x00ff00ff) * a) + 0x00ff00ff) & 0xff00ff00;
+      Pixels[x] = ((even | odd) & ~alpha_mask) | (p & alpha_mask);
+   }
+}
+
 static ERR BITMAP_Premultiply(extBitmap *Self)
 {
    kt::Log log;
@@ -846,29 +863,15 @@ static ERR BITMAP_Premultiply(extBitmap *Self)
    if (Self->Clip.Left + w > Self->Width) return log.warning(ERR::InvalidDimension);
    if (Self->Clip.Top + h > Self->Height) return log.warning(ERR::InvalidDimension);
 
-   const uint8_t A = Self->ColourFormat->AlphaPos>>3;
-   const uint8_t R = Self->ColourFormat->RedPos>>3;
-   const uint8_t G = Self->ColourFormat->GreenPos>>3;
-   const uint8_t B = Self->ColourFormat->BluePos>>3;
+   const int a_shift = Self->ColourFormat->AlphaPos;
+   const int line_width = Self->LineWidth;
 
    BLIT_STAT(PREMULTIPLY, int64_t(w) * h);
 
-   uint8_t *data = Self->Data + (Self->Clip.Left * Self->BytesPerPixel) + (Self->Clip.Top * Self->LineWidth);
+   uint8_t *data = Self->Data + (Self->Clip.Left * Self->BytesPerPixel) + (Self->Clip.Top * line_width);
    for (int y=0; y < h; y++) {
-      uint8_t *pixel = data;
-      for (int x=0; x < w; x++) {
-         const uint8_t a = pixel[A];
-         if (a < 0xff) {
-             if (a == 0) pixel[R] = pixel[G] = pixel[B] = 0;
-             else {
-                pixel[R] = uint8_t((pixel[R] * a + 0xff) >> 8);
-                pixel[G] = uint8_t((pixel[G] * a + 0xff) >> 8);
-                pixel[B] = uint8_t((pixel[B] * a + 0xff) >> 8);
-             }
-         }
-         pixel += 4;
-      }
-      data += Self->LineWidth;
+      premultiply_row((uint32_t *)data, w, a_shift);
+      data += line_width;
    }
 
    Self->Flags |= BMF::PREMUL;

@@ -20,7 +20,6 @@ ERR GET_VDensity(extDisplay *Self, int *Value);
 
 //********************************************************************************************************************
 
-std::array<uint8_t, 256 * 256> glAlphaLookup;
 
 #include "module_def.c"
 
@@ -120,7 +119,6 @@ int glpDisplayDepth = 0; // If zero, the display depth will be based on the host
 int glpMaximise = FALSE, glpFullScreen = FALSE;
 SPT glpPresence = SPT::HOST;
 char glpDPMS[20] = "Standby";
-std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 std::atomic<int> glLastPort = -1;
 std::vector<OBJECTID> glFocusList;
 std::recursive_mutex glFocusLock;
@@ -215,16 +213,6 @@ struct DriverCandidate {
    DestroyDisplayDriver Destroy;
 #endif
 };
-
-//********************************************************************************************************************
-// Alpha blending data.
-
-inline uint8_t clipByte(int value)
-{
-   value = (0 & (-(int16_t)(value < 0))) | (value & (-(int16_t)!(value < 0)));
-   value = (255 & (-(int16_t)(value > 255))) | (value & (-(int16_t)!(value > 255)));
-   return value;
-}
 
 //********************************************************************************************************************
 // Build a list of valid resolutions.
@@ -646,16 +634,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (create_surface_class() != ERR::Okay) return log.warning(ERR::AddClass);
    if (create_controller_class() != ERR::Okay) return log.warning(ERR::AddClass);
 
-   // Initialise 64K alpha blending table, for cutting down on multiplications.
-
-   int i = 0;
-   for (int16_t iAlpha=0; iAlpha < 256; iAlpha++) {
-      double fAlpha = (double)iAlpha * (1.0 / 255.0);
-      for (int16_t iValue=0; iValue < 256; iValue++) {
-         glAlphaLookup[i++] = clipByte(std::lrint((double)iValue * fAlpha));
-      }
-   }
-
    glDisplayType = gfx::GetDisplayType();
 
    if ((glDriver) and (glDriver->displayType() IS DT::GLES)) {
@@ -762,7 +740,6 @@ static ERR MODExpunge(void)
    if (glComposite)           { FreeResource(glComposite); glComposite = nullptr; }
    if (glIconArchive) { FreeResource(glIconArchive); glIconArchive = nullptr; }
    if (glCompress)    { FreeResource(glCompress); glCompress = nullptr; }
-   glDemultiply.reset();
 
    DeregisterFD((HOSTHANDLE)-2); // Disable input_event_loop()
 
