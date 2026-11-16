@@ -32,6 +32,7 @@ data to a destination object that supports writing.
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include "blit_stats.h"
 
 static ERR calc_pixel_routines(extBitmap *);
 
@@ -511,6 +512,8 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    const uint8_t G = Self->ColourFormat->GreenPos>>3;
    const uint8_t B = Self->ColourFormat->BluePos>>3;
 
+   BLIT_STAT(DEMULTIPLY, int64_t(w) * h);
+
    uint8_t *data = Self->Data + (Self->Clip.Left * Self->BytesPerPixel) + (Self->Clip.Top * Self->LineWidth);
    for (int y=0; y < h; y++) {
       uint8_t *pixel = data;
@@ -847,6 +850,8 @@ static ERR BITMAP_Premultiply(extBitmap *Self)
    const uint8_t R = Self->ColourFormat->RedPos>>3;
    const uint8_t G = Self->ColourFormat->GreenPos>>3;
    const uint8_t B = Self->ColourFormat->BluePos>>3;
+
+   BLIT_STAT(PREMULTIPLY, int64_t(w) * h);
 
    uint8_t *data = Self->Data + (Self->Clip.Left * Self->BytesPerPixel) + (Self->Clip.Top * Self->LineWidth);
    for (int y=0; y < h; y++) {

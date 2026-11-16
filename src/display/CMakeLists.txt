@@ -89,6 +89,15 @@ if (UNIT_TESTS)
    set_tests_properties (display_headless_driver PROPERTIES LABELS display)
 endif ()
 
+# Usage counters for the software blitting paths, printed to stderr when the module is expunged.  Diagnostic only;
+# the counters add atomic increments to the blitting loops.
+
+option (DISPLAY_BLIT_STATS "Count the software blitting paths used by the Display module" OFF)
+if (DISPLAY_BLIT_STATS)
+   target_compile_definitions (${MOD} PRIVATE DISPLAY_BLIT_STATS)
+endif ()
+
+
 flute_test (display_keyboard_routing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_keyboard_routing.tiri")
 flute_test (display_surface_focus "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_surface_focus.tiri")
 flute_test (display_capture "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_capture_display.tiri")
