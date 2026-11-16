@@ -121,8 +121,6 @@ end
    local surplus = debug.validate(constructor_source .. 'local first = 3\nfirst = 3, make()')
    assert(not surplus.success and surplus.diagnostics[0].code is 'InvalidAssignment',
       'An excess first result must not bypass the existing assignment-arity check')
-   expect_no_discard_error(constructor_source .. 'local value = {}\nvalue ..= make()', 'Converting',
-      'compound assignment converts the result')
    expect_no_discard_error(constructor_source .. 'make().{ field=1 }', 'Immediate member',
       'field-block receiver temporary is not client storage')
 end
@@ -186,7 +184,112 @@ assert(owner.widget.value is 42, 'A piped constructor result must reach its call
 ]])
 end
 
-@Test function ProjectionsAndConversionsStillRejectFreshResults()
+@Test function ConcatenatedResultsFollowTheStringDestination()
+   local source = '@NoDiscard function text():str return "value" end\n'
+   for expression in values(array<str> {
+      'text() .. ":"',
+      '":" .. text()',
+      'text() .. ":" .. text()',
+      '(text()) .. (":" .. text())'
+   }) do
+      expect_valid(source .. 'local value = ' .. expression, 'stored ' .. expression)
+      expect_valid(source .. 'print(' .. expression .. ')', 'passed ' .. expression)
+      expect_valid(source .. 'return ' .. expression, 'returned ' .. expression)
+      local discarded = debug.validate(source .. '_ = ' .. expression)
+      assert(not discarded.success, 'Discarding a concatenated protected result must fail: ' .. expression)
+      for diagnostic in values(discarded.diagnostics) do
+         assert(diagnostic.code is 'NoDiscard' and diagnostic.message.find('blank assignment') != nil,
+            'Each discarded operand should report its blank destination: ' .. diagnostic.message)
+      end
+   end
+   expect_no_discard_error(source .. 'local value = [_*]text() .. ":"', 'result filter',
+      'concatenation must not hide a filtered protected result')
+   expect_no_discard_error(source .. 'local _ = { text() .. ":" }', 'blank assignment',
+      'a discarded aggregate must not retain its concatenated elements')
+
+   exec([[
+import 'json'
+local parts = array<str>
+parts.push(json.encode({ key='value' }) .. ':')
+assert(#parts is 1 and parts[0] is '{"key":"value"}:', 'The concatenated JSON must reach array.push')
+]])
+end
+
+@Test function OperatorsFollowTheirComputedValueDestination()
+   local source = [[
+@NoDiscard function numb():<num, num> return 6, 99 end
+@NoDiscard function text():str return 'value' end
+@NoDiscard function keys():table return { [6]=true } end
+]]
+   for expression in values(array<str> {
+      'numb() + 2', '2 + numb()', 'numb() - 2', '12 - numb()',
+      'numb() * 2', '12 / numb()', 'numb() % 4', 'numb() ** 2',
+      'numb() & 3', 'numb() | 1', 'numb() ^ 3', 'numb() << 1', 'numb() >> 1',
+      '-numb()', '~numb()', '#text()', 'not numb()',
+      'numb() is 6', 'numb() != 6', 'numb() < 7', 'numb() <= 6',
+      'numb() > 5', 'numb() >= 6', 'numb() has 2',
+      'numb() in { [6]=true }', '6 in keys()', 'numb() is <num>', 'numb()??',
+      '0 < numb() < 10', '(numb() + 2) * -numb()',
+      'text() .. ":"', '{numb() to 10}', '{0 to numb()}', '{0 to 10 by numb()}'
+   }) do
+      expect_valid(source .. 'local value = ' .. expression, 'stored ' .. expression)
+      expect_valid(source .. 'print(' .. expression .. ')', 'passed ' .. expression)
+      expect_valid(source .. 'return ' .. expression, 'returned ' .. expression)
+      expect_valid(source .. 'if ' .. expression .. ' then end', 'tested ' .. expression)
+      exec(source .. 'local value = ' .. expression)
+
+      local discarded = debug.validate(source .. '_ = ' .. expression)
+      assert(not discarded.success and #discarded.diagnostics > 0,
+         'Discarded computations must retain their operands\' obligations: ' .. expression)
+      for diagnostic in values(discarded.diagnostics) do
+         assert(diagnostic.code is 'NoDiscard', 'Expected NoDiscard for ' .. expression)
+      end
+   end
+   expect_no_discard_error(source .. 'local value = [_*]numb() + 2', 'result filter',
+      'arithmetic must not hide removal of the original first result')
+   expect_no_discard_error(source .. 'local _ = { numb() * 2 }', 'blank assignment',
+      'aggregate computations must reach an accepted destination')
+   expect_valid(constructor_source .. 'local value = not make()', 'stored negation')
+   expect_valid(constructor_source .. 'print(make() is nil)', 'passed comparison')
+   expect_valid(constructor_source .. 'return make()??', 'returned presence test')
+end
+
+@Test function CompoundAssignmentsAndIndexOperandsUseFreshResults()
+   local source = '@NoDiscard function numb():num return 2 end\n'
+   for operator in values(array<str> { '+=', '-=', '*=', '/=', '%=' }) do
+      expect_valid(source .. 'local value = 12\nvalue ' .. operator .. ' numb()', operator)
+      expect_valid(source .. 'local owner = { value=12 }\nowner.value ' .. operator .. ' numb()',
+         'member ' .. operator)
+   end
+   expect_valid(source .. 'local owner = {}\nowner[numb()] = 1', 'computed assignment key')
+   expect_valid(source .. 'local owner = {}\nlocal value = owner[numb()]', 'computed lookup key')
+   expect_valid(source .. 'local owner = {}\nlocal value = owner?[numb()]', 'safe computed lookup key')
+   expect_valid(source .. 'for index in {0 to numb()} do end', 'range loop bound')
+   exec([[
+@NoDiscard function numb():num return 2 end
+@NoDiscard function text():str return 'value' end
+local parts = array<int>
+parts.push(numb() + 2)
+assert(#parts is 1 and parts[0] is 4, 'Arithmetic must reach array.push')
+local value = 12
+value += numb()
+value -= numb()
+value *= numb()
+value /= numb()
+value %= numb()
+assert(value is 0, 'Compound arithmetic must use the protected result')
+local owner = { value=1 }
+owner.value += numb()
+assert(owner.value is 3, 'Compound member assignment must use the protected result')
+local label = 'prefix:'
+label ..= text()
+assert(label is 'prefix:value', 'Compound concatenation must use the protected result')
+if numb() > 1 then value = 42 end
+assert(value is 42, 'Comparison conditions must use the protected result')
+]])
+end
+
+@Test function ProjectionsAndRemovedResultsAreRejected()
    for source in values(array<str> {
       'local value = make().value',
       'local value = make()[0]',
@@ -196,12 +299,8 @@ end
       expect_no_discard_error(constructor_source .. source, 'Immediate member', source)
    end
    for source in values(array<str> {
-      'local value = not make()',
-      'local value = make() is nil',
-      'local value = make()??',
       'print(make().value)',
       'print([_*]make())',
-      'print(not make())',
       'print(make() or {})'
    }) do
       expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)
@@ -235,7 +334,6 @@ end
    for source in values(array<str> {
       'function wrapper() return [_*]make() end',
       'function wrapper() return make().value end',
-      'function wrapper() return not make() end',
       'return make() or {}'
    }) do
       expect_no_discard_error(constructor_source .. source, 'marked @NoDiscard', source)

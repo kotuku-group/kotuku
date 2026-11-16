@@ -20,6 +20,7 @@ enum class FreshResultUse : uint8_t {
    Truncated,
    Filtered,
    Argument,
+   Operation,
    Projection,
    Conversion,
    Control,
@@ -40,12 +41,6 @@ using FreshResultUses = std::array<FreshResultUse, MAX_RETURN_TYPES>;
    auto uses = result_uses(FreshResultUse::Truncated);
    uses[0] = Use;
    return uses;
-}
-
-[[nodiscard]] bool retains_assignment_value(AssignmentOperator Operator)
-{
-   return Operator IS AssignmentOperator::Plain or Operator IS AssignmentOperator::IfEmpty or
-      Operator IS AssignmentOperator::IfNil;
 }
 
 class NoDiscardValidator {
@@ -106,6 +101,14 @@ private:
       if (Value) this->expression(*Value, result_uses(Use));
    }
 
+   // Eager operators consume one result per operand.  A condition uses the computed value, while discarded,
+   // filtered and projected computations retain their original destination for diagnostics.
+   void operand(const ExprNodePtr &Value, FreshResultUse Use)
+   {
+      if (Value) this->expression(*Value, scalar_result_use(
+         Use IS FreshResultUse::Control ? FreshResultUse::Operation : Use));
+   }
+
    // Branch folding uses only side-effect-free constants and syntax that is unconditionally truthy.  In particular,
    // an optional type annotation is not proof of truthiness: nil results are permitted by @NoDiscard.
    [[nodiscard]] std::optional<bool> truth(const ExprNode &Value, bool Extended)
@@ -155,7 +158,8 @@ private:
             // Returning a result hands it to the caller, which satisfies the contract like storage or argument passing.
             for (size_t i = 0; i < Uses.size(); ++i) {
                if ((obligations & (1u << i)) and Uses[i] != FreshResultUse::Storage and
-                   Uses[i] != FreshResultUse::Argument and Uses[i] != FreshResultUse::Return) {
+                   Uses[i] != FreshResultUse::Argument and Uses[i] != FreshResultUse::Operation and
+                   Uses[i] != FreshResultUse::Return) {
                   this->report(Expression, call, i, Uses[i]);
                }
             }
@@ -217,8 +221,8 @@ private:
                }
             }
             else {
-               this->consume(binary.left, FreshResultUse::Conversion);
-               this->consume(binary.right, FreshResultUse::Conversion);
+               this->operand(binary.left, Uses[0]);
+               this->operand(binary.right, Uses[0]);
             }
             break;
          }
@@ -264,37 +268,37 @@ private:
          case AstNodeKind::IndexExpr: {
             const auto &index = std::get<IndexExprPayload>(Expression.data);
             this->consume(index.table, FreshResultUse::Projection);
-            this->consume(index.index, FreshResultUse::Conversion);
+            this->operand(index.index, FreshResultUse::Operation);
             break;
          }
          case AstNodeKind::SafeIndexExpr: {
             const auto &index = std::get<SafeIndexExprPayload>(Expression.data);
             this->consume(index.table, FreshResultUse::Projection);
-            this->consume(index.index, FreshResultUse::Conversion);
+            this->operand(index.index, FreshResultUse::Operation);
             break;
          }
          case AstNodeKind::UnaryExpr:
-            this->consume(std::get<UnaryExprPayload>(Expression.data).operand, FreshResultUse::Conversion);
+            this->operand(std::get<UnaryExprPayload>(Expression.data).operand, Uses[0]);
             break;
          case AstNodeKind::UpdateExpr:
             this->consume(std::get<UpdateExprPayload>(Expression.data).target, FreshResultUse::Conversion);
             break;
          case AstNodeKind::TypeTestExpr:
-            this->consume(std::get<TypeTestExprPayload>(Expression.data).value, FreshResultUse::Conversion);
+            this->operand(std::get<TypeTestExprPayload>(Expression.data).value, Uses[0]);
             break;
          case AstNodeKind::PresenceExpr:
-            this->consume(std::get<PresenceExprPayload>(Expression.data).value, FreshResultUse::Conversion);
+            this->operand(std::get<PresenceExprPayload>(Expression.data).value, Uses[0]);
             break;
          case AstNodeKind::ComparisonChainExpr:
             for (const auto &value : std::get<ComparisonChainExprPayload>(Expression.data).operands) {
-               this->consume(value, FreshResultUse::Conversion);
+               this->operand(value, Uses[0]);
             }
             break;
          case AstNodeKind::RangeExpr: {
             const auto &range = std::get<RangeExprPayload>(Expression.data);
-            this->consume(range.start, FreshResultUse::Conversion);
-            this->consume(range.stop, FreshResultUse::Conversion);
-            this->consume(range.step, FreshResultUse::Conversion);
+            this->operand(range.start, Uses[0]);
+            this->operand(range.stop, Uses[0]);
+            this->operand(range.step, Uses[0]);
             break;
          }
          case AstNodeKind::RaiseExpr: {
@@ -327,7 +331,6 @@ private:
    void declaration(const Declaration &Payload)
    {
       this->expression_list(Payload.values, [&](size_t Position) {
-         if (not retains_assignment_value(Payload.op)) return FreshResultUse::Conversion;
          if (Position >= Payload.names.size()) return FreshResultUse::Truncated;
          const auto &name = Payload.names[Position];
          // Field assignment blocks hold their receiver in a compiler temporary, not in client-owned storage.
@@ -352,7 +355,6 @@ private:
             const auto &assignment = std::get<AssignmentStmtPayload>(Statement.data);
             for (const auto &target : assignment.targets) this->consume(target, FreshResultUse::Projection);
             this->expression_list(assignment.values, [&](size_t Position) {
-               if (not retains_assignment_value(assignment.op)) return FreshResultUse::Conversion;
                if (Position >= assignment.targets.size()) return FreshResultUse::Truncated;
                return this->assignment_use(*assignment.targets[Position]);
             });
@@ -390,17 +392,17 @@ private:
          }
          case AstNodeKind::NumericForStmt: {
             const auto &loop = std::get<NumericForStmtPayload>(Statement.data);
-            this->consume(loop.start, FreshResultUse::Conversion);
-            this->consume(loop.stop, FreshResultUse::Conversion);
-            this->consume(loop.step, FreshResultUse::Conversion);
+            this->operand(loop.start, FreshResultUse::Operation);
+            this->operand(loop.stop, FreshResultUse::Operation);
+            this->operand(loop.step, FreshResultUse::Operation);
             this->nested_block(loop.body);
             break;
          }
          case AstNodeKind::RangeForStmt: {
             const auto &loop = std::get<RangeForStmtPayload>(Statement.data);
-            this->consume(loop.start, FreshResultUse::Conversion);
-            this->consume(loop.stop, FreshResultUse::Conversion);
-            this->consume(loop.step, FreshResultUse::Conversion);
+            this->operand(loop.start, FreshResultUse::Operation);
+            this->operand(loop.stop, FreshResultUse::Operation);
+            this->operand(loop.step, FreshResultUse::Operation);
             this->nested_block(loop.body);
             break;
          }
