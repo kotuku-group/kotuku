@@ -1,0 +1,1074 @@
+-- $TIRI
+-- Flute tests for SVG animation playback control.
+
+   include 'vector', 'display'
+
+glWhite = struct<RGB8> { red = 255, green = 255, blue = 255, alpha = 255 }
+
+function seekDocument(Body:str!):obj
+   local svg = obj.new('svg', { statement=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">' .. Body .. '</svg>' })
+   svg.scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   return svg
+end
+
+function nearValue(Actual:num, Expected:num, Description:str)
+   assert(math.abs(Actual - Expected) < 0.00001, f'{Description}: expected {Expected}, got {Actual}')
+end
+
+@Test global function ToOnlyAnimationsComposeUnderlyingEffects()
+   local svg <close> = seekDocument([[
+      <rect id="composed_to" width="1" height="1" opacity="0.1" fill="green">
+         <animate attributeName="x" from="20" to="40" dur="10s"/>
+         <animate attributeName="x" to="100" begin="2s" dur="4s"/>
+         <animate attributeName="opacity" from="0.2" to="0.6" dur="10s"/>
+         <animate attributeName="opacity" to="1" begin="2s" dur="4s"/>
+         <animate attributeName="fill" from="red" to="red" dur="10s"/>
+         <animate attributeName="fill" to="blue" begin="2s" dur="4s"/>
+      </rect>
+      <rect id="reference_to_colour" width="1" height="1" fill="red">
+         <animate attributeName="fill" from="red" to="blue" begin="2s" dur="4s"/>
+      </rect>
+      <rect id="chained_to" width="1" height="1">
+         <animate attributeName="x" from="20" to="40" dur="10s"/>
+         <animate attributeName="x" to="100" begin="2s" dur="4s"/>
+         <animate attributeName="x" to="160" begin="3s" dur="4s"/>
+      </rect>
+   ]])
+   for time in values(array<double> { 3, 5, 1, 6, 4, 12, 0, 3 }) do
+      check svg.acSeek(time, SEEK_START)
+      local x = time < 10 ? 20 + time * 2 : 0
+      local opacity = time < 10 ? 0.2 + time * 0.04 : 0.1
+      if time >= 2 and time < 6 then
+         local progress = (time - 2) / 4
+         x += (100 - x) * progress
+         opacity += (1 - opacity) * progress
+         local colour = obj.find('composed_to').fillColour
+         local reference = obj.find('reference_to_colour').fillColour
+         for channel in values(array<str> { 'red', 'green', 'blue', 'alpha' }) do
+            nearValue(colour[channel], reference[channel], f'To-only colour {channel} at {time}')
+         end
+      end
+      nearValue(obj.find('composed_to').x, x, f'To-only dimension at {time}')
+      nearValue(obj.find('composed_to').opacity, opacity, f'To-only number at {time}')
+      if time >= 3 and time < 7 then x += (160 - x) * (time - 3) / 4 end
+      nearValue(obj.find('chained_to').x, x, f'Chained to-only effects at {time}')
+   end
+end
+
+@Test global function FrozenToOnlyAnimationsSampleUnderlyingEndpoints()
+   local svg <close> = seekDocument([[
+      <rect id="frozen_to" width="1" height="1">
+         <animate attributeName="x" from="0" to="100" dur="10s"/>
+         <animate attributeName="x" to="100" begin="1s" dur="4s" max="2s" fill="freeze"/>
+      </rect>
+      <rect id="frozen_to_chain" width="1" height="1">
+         <animate attributeName="x" from="0" to="100" dur="10s"/>
+         <animate attributeName="x" to="100" begin="1s" dur="4s" max="2s" fill="freeze"/>
+         <animate attributeName="x" to="200" begin="3s" dur="4s" max="1s" fill="freeze"/>
+      </rect>
+   ]])
+   for time in values(array<double> { 8, 2, 3, 4, 1, 12, 3.5, 0, 8 }) do
+      check svg.acSeek(time, SEEK_START)
+      local sample = math.min(time, 3)
+      local expected = sample * 10
+      if sample >= 1 then expected += (100 - expected) * (sample - 1) / 4 end
+      nearValue(obj.find('frozen_to').x, expected, f'Frozen to-only endpoint at {time}')
+      if time >= 3 then expected += (200 - expected) * math.min(time - 3, 1) / 4 end
+      nearValue(obj.find('frozen_to_chain').x, expected, f'Frozen to-only chain at {time}')
+   end
+end
+
+@Test global function MinimumDurationDoesNotAddRepeats()
+   local svg <close> = seekDocument([[
+      <rect id="min_freeze" x="7" width="1" height="1">
+         <animate id="min_anchor" attributeName="x" from="0" to="10" dur="2s" min="4s" fill="freeze"/>
+      </rect>
+      <rect id="min_remove" x="7" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" dur="2s" min="4s"/>
+      </rect>
+      <rect id="min_repeat" x="7" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" dur="2s" repeatCount="2.5" min="8s"
+            accumulate="sum" fill="freeze"/>
+      </rect>
+      <rect id="min_repeat_remove" x="7" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" dur="2s" repeatDur="5s" min="8s"/>
+      </rect>
+      <rect id="min_restart" x="7" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" begin="0s; 3s; 5s" dur="2s" min="4s"
+            restart="whenNotActive" fill="freeze"/>
+      </rect>
+      <rect id="min_dependent" x="7" width="1" height="1">
+         <animate attributeName="x" from="20" to="20" begin="min_anchor.end" dur="2s"/>
+      </rect>
+      <rect id="min_transform" width="1" height="1">
+         <animateTransform attributeName="transform" type="translate" from="0 0" to="10 0"
+            dur="2s" min="4s" fill="freeze"/>
+      </rect>
+      <rect id="min_motion" width="1" height="1">
+         <animateMotion from="0 0" to="10 0" dur="2s" min="4s"/>
+      </rect>
+   ]])
+   for time in values(array<double> { 3, 1, 2, 5.5, 4, 8, 0, 4.5, 7, 3 }) do
+      check svg.acSeek(time, SEEK_START)
+      local frozen = math.min(time, 2) * 5
+      nearValue(obj.find('min_freeze').x, frozen, f'Minimum duration freeze at {time}')
+      nearValue(obj.find('min_remove').x, time < 2 ? time * 5 : 7, f'Minimum duration remove at {time}')
+      nearValue(obj.find('min_repeat').x, math.min(time, 5) * 5, f'Minimum duration accumulation at {time}')
+      local repeated = time < 5 ? (time % 2) * 5 : 7
+      nearValue(obj.find('min_repeat_remove').x, repeated, f'Minimum repeat duration removal at {time}')
+      local restarted = time < 5 ? frozen : math.min(time - 5, 2) * 5
+      nearValue(obj.find('min_restart').x, restarted, f'Minimum duration restart filtering at {time}')
+      nearValue(obj.find('min_dependent').x, time >= 4 and time < 6 ? 20 : 7,
+         f'Minimum duration syncbase end at {time}')
+      local _, transform_x = check obj.find('min_transform').mtGetBoundary(0)
+      local _, motion_x = check obj.find('min_motion').mtGetBoundary(0)
+      nearValue(transform_x, frozen, f'Minimum duration transform at {time}')
+      nearValue(motion_x, time < 2 ? time * 5 : 0, f'Minimum duration motion removal at {time}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Seek before activation and in arbitrary order must evaluate the same timeline on each visit.
+
+@Test global function SeekEvaluatesIntervalsAndDependencies()
+   local svg <close> = seekDocument([[
+      <rect id="seek_remove" x="7" width="1" height="1">
+         <animate id="seek_anchor" attributeName="x" from="10" to="30" begin="1s" dur="2s" repeatCount="2"/>
+      </rect>
+      <rect id="seek_freeze" x="7" width="1" height="1">
+         <animate attributeName="x" from="10" to="30" begin="1s" dur="2s" repeatCount="2" fill="freeze"/>
+      </rect>
+      <rect id="seek_loop" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" dur="0.1s" repeatCount="100" accumulate="sum" fill="freeze"/>
+      </rect>
+      <rect id="seek_series" x="7" width="1" height="1">
+         <animate attributeName="x" from="10" to="30" begin="8s; 2s; 5s" dur="1s"/>
+      </rect>
+      <rect id="seek_dependent" x="7" width="1" height="1">
+         <animate id="seek_middle" attributeName="x" from="20" to="40" begin="seek_anchor.end+1s"
+            dur="2s" fill="freeze"/>
+      </rect>
+      <rect id="seek_chain" x="7" width="1" height="1">
+         <animate attributeName="x" from="50" to="80" begin="seek_middle.end-0.5s" dur="1.5s" fill="freeze"/>
+      </rect>
+      <rect id="seek_to" x="7" width="1" height="1">
+         <animate attributeName="x" to="27" dur="4s" fill="freeze"/>
+      </rect>
+      <rect id="seek_by" x="7" width="1" height="1">
+         <animate attributeName="x" by="20" dur="4s" fill="freeze"/>
+      </rect>
+      <rect id="seek_priority" x="5" width="1" height="1">
+         <animate attributeName="x" from="100" to="200" dur="10s"/>
+         <animate attributeName="x" from="300" to="400" begin="2s" dur="2s"/>
+      </rect>
+   ]])
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   local visits = array<double> { 0, 9.95, 1.5, 3, 6.5, 8.5, 2, 10, 100, 5.5, 0.15, 1.5, 0 }
+   for time in values(visits) do
+      local before_frames = frames
+      check svg.acSeek(time, SEEK_START)
+      assert(frames is before_frames + 1, 'Each Seek must synchronously invoke the frame callback once')
+      local active = time >= 1 and time < 5
+      local interval_value = 10 + ((time - 1) % 2) * 10
+      nearValue(obj.find('seek_remove').x, active ? interval_value : 7, f'Removal at {time}')
+      nearValue(obj.find('seek_freeze').x, time < 1 ? 7 : (active ? interval_value : 30), f'Freeze at {time}')
+      nearValue(obj.find('seek_loop').x, math.min(time, 10) * 100, f'Accumulation at {time}')
+      local series_value = 7
+      for begin in values(array<double> { 2, 5, 8 }) do
+         if time >= begin and time < begin + 1 then series_value = 10 + (time - begin) * 20 end
+      end
+      nearValue(obj.find('seek_series').x, series_value, f'Begin list at {time}')
+      local dependent = time < 6 ? 7 : 20 + math.min(2, time - 6) * 10
+      local chain = time < 7.5 ? 7 : 50 + math.min(1.5, time - 7.5) * 20
+      nearValue(obj.find('seek_dependent').x, dependent, f'Syncbase end offset at {time}')
+      nearValue(obj.find('seek_chain').x, chain, f'Chained negative offset at {time}')
+      nearValue(obj.find('seek_to').x, 7 + math.min(4, time) * 5, f'To-only base at {time}')
+      nearValue(obj.find('seek_by').x, 7 + math.min(4, time) * 5, f'By-only base at {time}')
+      local priority = time >= 10 ? 5 : (time >= 2 and time < 4 ? 300 + (time - 2) * 50 : 100 + time * 10)
+      nearValue(obj.find('seek_priority').x, priority, f'Attribute priority at {time}')
+   end
+   processing.sleep(0.04)
+   assert(frames is #visits, 'Seeking before activation must leave playback paused')
+end
+
+@Test global function SeekPositionsUseResolvedDocumentDuration()
+   local svg <close> = seekDocument([[
+      <rect id="seek_clock" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" dur="10s" fill="freeze"/>
+      </rect>
+      <rect width="1" height="1">
+         <animate id="duration_anchor" attributeName="x" from="0" to="1" begin="2s; 8s" dur="1s"/>
+         <animate attributeName="y" from="0" to="1" begin="duration_anchor.end+1s" dur="2s"/>
+      </rect>
+   ]]) -- Latest end is 12s, including the final syncbase instance.
+   local clock = obj.find('seek_clock')
+   check svg.acSeek(3.25, SEEK_CURRENT) -- Current time before the first Activate is zero.
+   nearValue(clock.x, 3.25, 'Initial current seek')
+   check svg.acSeek(-1, SEEK_CURRENT)
+   nearValue(clock.x, 2.25, 'Relative current seek')
+   check svg.acSeek(3, SEEK_END)
+   nearValue(clock.x, 9, 'Offset from latest document end')
+   check svg.acSeek(0.5, SEEK_RELATIVE)
+   nearValue(clock.x, 6, 'Fraction of resolved document duration')
+   check svg.acSeek(15, SEEK_END)
+   nearValue(clock.x, 0, 'End seek clamps below zero')
+   check svg.acSeek(-5, SEEK_CURRENT)
+   nearValue(clock.x, 0, 'Current seek clamps below zero')
+   check svg.acSeek(-2, SEEK_START)
+   nearValue(clock.x, 0, 'Start seek clamps below zero')
+   check svg.acSeek(2, SEEK_RELATIVE)
+   nearValue(clock.x, 10, 'Seeking beyond the document end is allowed')
+
+   -- Replacing the document invalidates the cached duration.
+   check svg.acDataFeed(nil, DATA_XML, [[<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+      <rect id="seek_new_clock" width="1" height="1">
+         <animate attributeName="x" from="0" to="4" dur="4s" fill="freeze"/>
+      </rect></svg>]])
+   check svg.acSeek(0.5, SEEK_RELATIVE)
+   nearValue(obj.find('seek_new_clock').x, 2, 'Reparsed document duration')
+end
+
+@Test global function SeekRejectsIndefiniteDurationAndInvalidArguments()
+   for timing in values(array<str> {
+      'dur="1s" repeatCount="indefinite"', 'dur="indefinite"', 'dur="1s" begin="indefinite"',
+      'dur="1s" begin="missing.end"', 'dur="1s" id="seek_cycle" begin="seek_cycle.end"' }) do
+      local svg <close> = seekDocument(f'<rect id="seek_indefinite" x="7" width="1" height="1">' ..
+         f'<animate attributeName="x" from="0" to="10" {timing}/></rect>')
+      local frames = 0
+      svg.frameCallback = function(SVG) frames += 1 end
+      check svg.acSeek(0.25, SEEK_START)
+      local original = obj.find('seek_indefinite').x
+      assert(svg.acSeek(0, SEEK_END) is ERR_NoSupport, f'End requires finite duration: {timing}')
+      assert(svg.acSeek(0.5, SEEK_RELATIVE) is ERR_NoSupport, f'Relative requires finite duration: {timing}')
+      assert(frames is 1 and obj.find('seek_indefinite').x is original, 'Rejected seeks must not render')
+      check svg.acSeek(-0.25, SEEK_CURRENT)
+      assert(frames is 2, 'Current seeks must remain supported with indefinite duration')
+   end
+
+   local svg <close> = seekDocument('<rect width="1" height="1">' ..
+      '<animate attributeName="x" from="0" to="10" dur="2s"/></rect>')
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   for offset in values(array<double> { math.huge, -math.huge, 0/0 }) do
+      assert(svg.acSeek(offset, SEEK_START) is ERR_Args, 'Non-finite offsets must be rejected')
+   end
+   assert(svg.acSeek(1, 9999) is ERR_Args, 'Unknown Seek positions must be rejected')
+   assert(frames is 0, 'Invalid seeks must not invoke the callback')
+
+   local empty <close> = seekDocument('<rect width="1" height="1"/>')
+   empty.frameCallback = function(SVG) frames += 1 end
+   for position in values(array<int> { SEEK_START, SEEK_CURRENT, SEEK_END, SEEK_RELATIVE }) do
+      check empty.acSeek(2, position)
+   end
+   assert(frames is 0, 'Documents without animations must accept Seek without rendering')
+end
+
+@Test global function SeekRebuildsTransformAndMotionMatrices()
+   local svg <close> = seekDocument([[
+      <rect id="seek_transform" x="1" width="1" height="1" transform="translate(5 0)">
+         <animateTransform attributeName="transform" type="translate" from="0 0" to="20 0" begin="2s" dur="4s"/>
+      </rect>
+      <rect id="seek_motion" x="2" width="1" height="1" transform="translate(5 0)">
+         <animateMotion from="0 0" to="20 0" begin="2s" dur="4s" fill="freeze"/>
+      </rect>
+   ]])
+   for time in values(array<double> { 3, 5, 0, 6, 4, 1, 3 }) do
+      check svg.acSeek(time, SEEK_START)
+      local _, transform_x = check obj.find('seek_transform').mtGetBoundary(0)
+      local _, motion_x = check obj.find('seek_motion').mtGetBoundary(0)
+      nearValue(transform_x, time >= 2 and time < 6 ? 1 + (time - 2) * 5 : 6, f'Transform at {time}')
+      nearValue(motion_x, 7 + math.max(0, math.min(4, time - 2)) * 5, f'Motion at {time}')
+   end
+end
+
+@Test global function SeekPreservesPlaybackState()
+   local svg <close> = seekDocument([[
+      <rect id="seek_playing" width="1" height="1">
+         <animate attributeName="x" from="0" to="100" dur="100s" fill="freeze"/>
+      </rect>
+   ]])
+   local clock = obj.find('seek_playing')
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acSeek(20, SEEK_START)
+   processing.sleep(0.04)
+   nearValue(clock.x, 20, 'Initial seek stays paused')
+   assert(frames is 1, 'Initial seek must not start a timer')
+
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames >= 3 then break end
+      processing.sleep(0.01)
+   end
+   assert(clock.x > 20 and clock.x < 21, 'First Activate must continue from the seeked position')
+   check svg.acSeek(50, SEEK_START)
+   nearValue(clock.x, 50, 'Playing seek is immediate')
+   local seek_frames = frames
+   for attempt in {0 to 100} do
+      if frames >= seek_frames + 2 then break end
+      processing.sleep(0.01)
+   end
+   assert(clock.x > 50 and clock.x < 51, 'Playing Seek must retain its timer and continue from the new time')
+   check svg.acDeactivate()
+   check svg.acSeek(5, SEEK_START)
+   nearValue(clock.x, 5, 'Paused seek is immediate')
+   seek_frames = frames
+   processing.sleep(0.04)
+   assert(frames is seek_frames and clock.x is 5, 'Paused Seek must leave the clock and timer paused')
+   check svg.acSeek(0.5, SEEK_CURRENT)
+   nearValue(clock.x, 5.5, 'Current seek excludes the paused interval')
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames >= seek_frames + 3 then break end
+      processing.sleep(0.01)
+   end
+   check svg.acDeactivate()
+   assert(clock.x > 5.5 and clock.x < 6.5, 'Resuming must retain the paused seek position')
+end
+
+-- A linear animation of x from 0 to 1000 over 10 seconds, i.e. 100 units per second.
+
+local ANIMATED_SVG = [[<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  <rect id="anim_box" x="0" y="0" width="10" height="10">
+    <animate attributeName="x" from="0" to="1000" dur="10s"/>
+  </rect>
+</svg>]]
+
+----------------------------------------------------------------------------------------------------------------------
+-- Deactivate must pause the animation clock, so that Activate resumes from the paused position rather than jumping
+-- ahead by the time spent deactivated.
+
+@Test global function DeactivatePausesAnimation()
+   local scene = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local svg = obj.new('svg', { target=scene, statement=ANIMATED_SVG })
+   local rect = obj.find('anim_box')
+   assert(rect, 'Failed to find the animated rectangle')
+
+   svg.acActivate()
+   processing.sleep(0.3)
+   svg.acDeactivate()
+
+   local paused_x = rect.x
+   assert(paused_x > 0, 'Expected the animation to have advanced before pausing, got ' .. paused_x)
+
+   processing.sleep(0.6)
+   assert(rect.x is paused_x, 'Expected x to remain at ' .. paused_x .. ' while deactivated, got ' .. rect.x)
+
+   svg.acActivate()
+   processing.sleep(0.1)
+   svg.acDeactivate()
+
+   -- Approximately 10 units are expected after resuming.  Without pausing, x would jump by at least 60 units.
+
+   local resumed_x = rect.x
+   assert(resumed_x > paused_x, 'Expected the animation to advance after reactivation, got ' .. resumed_x)
+   assert(resumed_x - paused_x < 40,
+      'Animation jumped by ' .. (resumed_x - paused_x) .. ' units after reactivation; paused time was not excluded')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A reference animation exposes document time as x.  Compare every observed frame against that time, so delayed
+-- timer delivery cannot change the expected repeats, syncbase offsets or attribute priority.
+
+@Test global function PlaybackUsesDeterministicTiming()
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local svg <close> = obj.new('svg', { target=scene, statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+         <defs><linearGradient id="base_paint"><stop stop-color="green"/></linearGradient></defs>
+         <rect id="clock" width="1" height="1">
+            <animate attributeName="x" from="0" to="100" dur="100s"/>
+         </rect>
+         <rect id="loop" width="1" height="1">
+            <animate attributeName="x" from="0" to="10" dur="0.01s" repeatCount="indefinite" accumulate="sum"/>
+         </rect>
+         <rect id="dependent" width="1" height="1" x="7">
+            <animate attributeName="x" from="20" to="24" begin="anchor.end+0.01s" dur="0.04s" fill="freeze"/>
+         </rect>
+         <rect id="negative_offset" width="1" height="1" x="7">
+            <animate attributeName="x" from="0" to="10" begin="anchor.begin-0.01s" dur="0.1s" fill="freeze"/>
+         </rect>
+         <rect width="1" height="1">
+            <animate id="anchor" attributeName="x" from="0" to="4" begin="0.02s" dur="0.04s"/>
+         </rect>
+         <rect id="series" x="7" width="1" height="1">
+            <animate attributeName="x" from="10" to="30" begin="0.12s; 0.02s; 0.08s" dur="0.02s"/>
+         </rect>
+         <rect id="priority" x="5" width="1" height="1">
+            <animate attributeName="x" from="100" to="200" dur="1s"/>
+            <animate attributeName="x" from="300" to="400" begin="0.03s" dur="0.05s"/>
+         </rect>
+         <rect id="fractional" width="1" height="1">
+            <animate attributeName="x" from="0" to="10" dur="0.02s" repeatCount="2.5"
+               accumulate="sum" fill="freeze"/>
+         </rect>
+         <rect id="repeat_duration" width="1" height="1">
+            <animate attributeName="x" from="0" to="10" dur="0.02s" repeatDur="0.05s"
+               accumulate="sum" fill="freeze"/>
+         </rect>
+         <rect id="transform_remove" x="1" width="1" height="1" transform="translate(5 0)">
+            <animateTransform attributeName="transform" type="translate" from="0 0" to="20 0" dur="0.02s"/>
+         </rect>
+         <rect id="motion_remove" x="2" width="1" height="1" transform="translate(5 0)">
+            <animateMotion from="0 0" to="20 0" dur="0.02s"/>
+         </rect>
+         <rect id="transform_frozen" x="1" width="1" height="1">
+            <animateTransform attributeName="transform" type="translate" from="0 0" to="20 0" dur="0.02s"
+               max="0.01s" fill="freeze"/>
+         </rect>
+         <rect id="motion_frozen" x="2" width="1" height="1">
+            <animateMotion from="0 0" to="20 0" dur="0.02s" max="0.01s" fill="freeze"/>
+         </rect>
+         <g opacity="0.25">
+            <animate attributeName="opacity" from="0.4" to="0.9" dur="0.03s"/>
+            <rect id="group_child" width="1" height="1"/>
+            <rect id="group_override" width="1" height="1" opacity="0.6"/>
+         </g>
+         <rect id="paint_restore" width="1" height="1" fill="url(#base_paint)">
+            <animate attributeName="fill" from="red" to="blue" dur="0.02s"/>
+         </rect>
+         <rect id="cycle_target" x="9" width="1" height="1">
+            <animate id="cycle_a" attributeName="x" from="0" to="10" begin="cycle_b.end" dur="0.01s"/>
+            <animate id="cycle_b" attributeName="x" from="0" to="10" begin="cycle_a.end" dur="0.01s"/>
+         </rect>
+      </svg>
+   ]] })
+   local clock = obj.find('clock')
+   local loop = obj.find('loop')
+   local dependent = obj.find('dependent')
+   local negative = obj.find('negative_offset')
+   local series = obj.find('series')
+   local priority = obj.find('priority')
+   local child = obj.find('group_child')
+   local override = obj.find('group_override')
+   local paint = obj.find('paint_restore')
+   local original_paint = paint.fill
+   local cycle = obj.find('cycle_target')
+   local max_error = 0
+   local frame_count = 0
+   svg.frameCallback = function(SVG)
+      local time = clock.x
+      local expected_dependent = time < 0.07 ? 7 : 20 + math.min(1, (time - 0.07) / 0.04) * 4
+      local expected_negative = time < 0.01 ? 7 : math.min(10, (time - 0.01) * 100)
+      local expected_series = 7
+      for begin in values({ 0.02, 0.08, 0.12 }) do
+         if time >= begin and time < begin + 0.02 then expected_series = 10 + (time - begin) * 1000 end
+      end
+      local expected_priority = time >= 0.03 and time < 0.08 ? 300 + (time - 0.03) * 2000 : 100 + time * 100
+      local expected_child = time < 0.03 ? 0.4 + time / 0.03 * 0.5 : 1
+      max_error = math.max(max_error, math.abs(loop.x - time * 1000),
+         math.abs(dependent.x - expected_dependent), math.abs(negative.x - expected_negative),
+         math.abs(series.x - expected_series), math.abs(priority.x - expected_priority),
+         math.abs(child.opacity - expected_child))
+      frame_count += 1
+   end
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if clock.x >= 0.25 then break end
+      processing.sleep(0.02)
+   end
+   check svg.acDeactivate()
+   assert(clock.x >= 0.25 and frame_count >= 3, 'Expected document time and frame callbacks to advance')
+   assert(max_error < 0.00001, f'Playback diverged from the analytical timeline by {max_error}')
+   assert(child.opacity is 1, f'A group effect must restore its child base value, got {child.opacity}')
+   assert(math.abs(override.opacity - 0.6) < 0.00001, 'Group animation must respect child-defined attributes')
+   assert(paint.fill is original_paint, 'Removing a colour animation must restore its original paint server')
+   assert(cycle.x is 9, 'A syncbase cycle must remain unresolved')
+   assert(math.abs(obj.find('fractional').x - 25) < 0.00001, 'A fractional repeat must freeze at its partial end')
+   assert(math.abs(obj.find('repeat_duration').x - 25) < 0.00001,
+      'repeatDur must repeat and accumulate without a count')
+   for name, expected in { transform_remove=6, motion_remove=7, transform_frozen=11, motion_frozen=12 } do
+      local _, x = check obj.find(name).mtGetBoundary(0)
+      assert(math.abs(x - expected) < 0.00001, f'{name}: expected boundary x={expected}, got {x}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test global function RemovedEffectsRestoreAttributeTypes()
+   local svg <close> = obj.new('svg', { statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+         <rect id="typed_rect" width="50%" height="10" stroke-linejoin="bevel" stroke-dasharray="3 5">
+            <animate attributeName="width" from="10" to="20" dur="0.001s"/>
+            <set attributeName="stroke-linejoin" to="round" dur="0.001s"/>
+            <set attributeName="stroke-dasharray" to="7 9" dur="0.001s"/>
+         </rect>
+         <text id="typed_text" x="20" y="30" font-size="16px" text-anchor="end" font-family="Noto Sans">Text
+            <set attributeName="font-size" to="30px" dur="0.001s"/>
+            <set attributeName="font-family" to="Noto Serif" dur="0.001s"/>
+            <set attributeName="text-anchor" to="start" dur="0.001s"/>
+         </text>
+      </svg>
+   ]] })
+   svg.scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local rect = obj.find('typed_rect')
+   local text = obj.find('typed_text')
+   local original_width, original_join = rect.width, rect.lineJoin
+   local original_face, original_size, original_align = text.face, text.fontSize, text.align
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames >= 3 then break end
+      processing.sleep(0.02)
+   end
+   check svg.acDeactivate()
+   assert(frames >= 3, 'Expected the short animations to finish')
+   assert(rect.width is original_width, 'Removal must preserve a relative dimension')
+   assert(rect.lineJoin is original_join, 'Removal must restore an SVG enumeration')
+   assert(rect.dashArray[0] is 3 and rect.dashArray[1] is 5, 'Removal must restore a numeric array')
+   assert(text.face is original_face, 'Removal must restore the font family')
+   assert(text.fontSize is original_size, 'Removal must restore the font size')
+   assert(text.align is original_align, 'Removal must restore the text anchor')
+
+   -- Inactive effects restore once, then leave subsequent client edits alone.
+   rect.width = 33
+   frames = 0
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames >= 3 then break end
+      processing.sleep(0.02)
+   end
+   check svg.acDeactivate()
+   assert(rect.width is 33, 'An inactive animation must not continually overwrite client values')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test global function ReplacingAnimationDocumentRestartsTimer()
+   local svg <close> = obj.new('svg', { statement=ANIMATED_SVG })
+   svg.scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acActivate()
+   processing.sleep(0.08)
+   assert(frames > 0, 'The initial animation must run')
+
+   check svg.acDataFeed(nil, DATA_XML, '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"/>')
+   processing.sleep(0.06) -- The now-empty timer terminates itself.
+   local stopped_frames = frames
+   processing.sleep(0.04)
+   assert(frames is stopped_frames, 'Replacing the document must discard its old animations')
+
+   check svg.acDataFeed(nil, DATA_XML, [[<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+      <rect id="replacement" width="10" height="10">
+         <animate attributeName="x" from="0" to="100" dur="1s"/>
+      </rect>
+   </svg>]])
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames >= stopped_frames + 3 then break end
+      processing.sleep(0.02)
+   end
+   check svg.acDeactivate()
+   assert(frames >= stopped_frames + 3, 'Activation must create a new timer after the old one terminates')
+   assert(obj.find('replacement').x > 0, 'The replacement document must animate')
+end
+
+@Test global function ParsingSymbolPreservesAnimationBases()
+   local svg <close> = obj.new('svg', { statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+         <defs><symbol id="animated_symbol">
+            <rect width="1" height="1"><animate attributeName="x" from="0" to="10" dur="0.1s"/></rect>
+         </symbol></defs>
+         <rect id="symbol_base" x="7" width="1" height="1">
+            <animate attributeName="x" from="100" to="200" dur="0.1s"/>
+         </rect>
+      </svg>
+   ]] })
+   svg.scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames > 0 then break end
+      processing.sleep(0.01)
+   end
+   assert(obj.find('symbol_base').x >= 100, 'Expected the original animation to be active')
+   check svg.mtParseSymbol('animated_symbol', svg.viewport)
+   processing.sleep(0.15)
+   check svg.acDeactivate()
+   assert(obj.find('symbol_base').x is 7, 'Adding an animated symbol must retain the original attribute base')
+end
+
+@Test global function DeletedAnimationTargetsAreSkipped()
+   local svg <close> = obj.new('svg', { statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+         <rect id="deleted_transform" width="1" height="1">
+            <animateTransform attributeName="transform" type="translate" from="0 0" to="20 0" dur="1s"/>
+         </rect>
+         <rect id="deleted_motion" width="1" height="1">
+            <animateMotion from="0 0" to="20 0" dur="1s"/>
+         </rect>
+      </svg>
+   ]] })
+   svg.scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frames >= 3 then break end
+      processing.sleep(0.02)
+   end
+   assert(frames >= 3, 'Expected the animation matrices to be created')
+   obj.find('deleted_transform').free()
+   obj.find('deleted_motion').free()
+   local previous_frames = frames
+   for attempt in {0 to 100} do
+      if frames >= previous_frames + 3 then break end
+      processing.sleep(0.02)
+   end
+   check svg.acDeactivate()
+   assert(frames >= previous_frames + 3, 'Frame rendering must continue after the animation targets are deleted')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Short animations finish on the second timer frame.  Wait for frame callbacks rather than assuming a fixed sleep
+-- is enough, so the assertions also exercise frame rendering and callback dispatch on a busy machine.
+
+@Test global function AnimationFillModesRestoreBaseValues()
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   scene.bitmap = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd=glWhite })
+   local svg <close> = obj.new('svg', { target=scene, statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+         <rect id="removed" width="10" height="10" opacity="0.25" fill-opacity="0.3">
+            <animate attributeName="opacity" from="0.5" to="0.75" dur="0.001s" fill="remove"/>
+            <animate attributeName="fill-opacity" from="0.5" to="0.75" dur="0.001s" fill="remove"/>
+         </rect>
+         <rect id="default_remove" width="10" height="10" opacity="0.4">
+            <animate attributeName="opacity" from="0.5" to="0.75" dur="0.001s"/>
+            <animate attributeName="fill-opacity" from="0.5" to="0.75" dur="0.001s"/>
+         </rect>
+         <g fill-opacity="0.35">
+            <rect id="inherited" width="10" height="10">
+               <animate attributeName="fill-opacity" from="0.5" to="0.75" dur="0.001s" fill="remove"/>
+            </rect>
+         </g>
+         <rect id="frozen" width="10" height="10" opacity="0.25">
+            <animate attributeName="opacity" from="0.5" to="0.75" dur="0.001s" fill="freeze"/>
+         </rect>
+         <rect id="set_removed" width="10" height="10">
+            <set attributeName="display" to="none" dur="0.001s" fill="remove"/>
+         </rect>
+      </svg>
+   ]] })
+   local removed = obj.find('removed')
+   local default_remove = obj.find('default_remove')
+   local inherited = obj.find('inherited')
+   local frozen = obj.find('frozen')
+   local set_removed = obj.find('set_removed')
+   local base_visibility = set_removed.visibility
+   local frame_count = 0
+   local first_opacity, first_visibility
+   svg.frameCallback = function(SVG)
+      frame_count += 1
+      if frame_count is 1 then
+         first_opacity = removed.opacity
+         first_visibility = set_removed.visibility
+      end
+   end
+
+   check svg.acActivate()
+   for attempt in {0 to 100} do
+      if frame_count >= 3 then break end
+      processing.sleep(0.02)
+   end
+   check svg.acDeactivate()
+
+   assert(frame_count >= 3, f'Expected at least three frame callbacks, got {frame_count}')
+   assert(first_opacity is 0.5, f'First callback must see the animated value, got {first_opacity}')
+   assert(first_visibility != base_visibility, 'The set animation must change display during its active interval')
+   assert(math.abs(removed.opacity - 0.25) < 0.00001,
+      f'fill="remove" must restore the original opacity, got {removed.opacity}')
+   assert(math.abs(removed.fillOpacity - 0.3) < 0.00001,
+      f'fill="remove" must restore the original fill opacity, got {removed.fillOpacity}')
+   assert(math.abs(default_remove.opacity - 0.4) < 0.00001,
+      f'The default fill mode must restore the original opacity, got {default_remove.opacity}')
+   assert(default_remove.fillOpacity is 1,
+      f'The default fill opacity must be restored to one, got {default_remove.fillOpacity}')
+   assert(math.abs(inherited.fillOpacity - 0.35) < 0.00001,
+      f'The inherited fill opacity must be restored, got {inherited.fillOpacity}')
+   assert(frozen.opacity is 0.75, f'fill="freeze" must keep the final opacity, got {frozen.opacity}')
+   assert(set_removed.visibility is base_visibility, 'fill="remove" must restore display after the set animation')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Position and Duration fields.  Paused reads after an exact Seek are deterministic; playback checks use bounds
+-- measured with PreciseTime() rather than relying on timer delivery.
+
+function elapsedSince(Start:num!):num
+   return (mSys.PreciseTime() - Start) / 1000000
+end
+
+function waitFrames(Count:func!, Target:num!)
+   for attempt in {0 to 100} do
+      if Count() >= Target then break end
+      processing.sleep(0.01)
+   end
+end
+
+@Test global function AnimationFieldsAreZeroWithoutAnimations()
+   local svg <close> = seekDocument('<rect id="static_rect" x="7" width="1" height="1"/>')
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   for attempt in {0 to 3} do
+      assert(svg.position is 0 and svg.duration is 0, 'A static document must report zero position and duration')
+   end
+   check svg.acSeek(5, SEEK_START)
+   check svg.acActivate()
+   processing.sleep(0.04)
+   check svg.acDeactivate()
+   assert(svg.position is 0 and svg.duration is 0, 'Seek and playback must not move a static document clock')
+   assert(frames is 0, 'A static document must not render animation frames')
+end
+
+@Test global function AnimationFieldsDoNotStartPlayback()
+   local svg <close> = seekDocument([[<rect id="unstarted" x="7" width="1" height="1">
+      <animate attributeName="x" from="10" to="20" begin="1s" dur="4s"/></rect>]])
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   for attempt in {0 to 5} do
+      assert(svg.position is 0, f'An unactivated document must report time 0, got {svg.position}')
+      assert(svg.duration is 5, f'Expected the resolved duration 5, got {svg.duration}')
+   end
+   processing.sleep(0.05)
+   assert(frames is 0, 'Reading the fields must not render or invoke FrameCallback')
+   assert(obj.find('unstarted').x is 7, 'Reading the fields must not apply animation values')
+   assert(svg.position is 0, 'The position must not advance before playback')
+
+   -- If a read had established the epoch, the current time would now include the sleep above.
+   check svg.acSeek(0, SEEK_CURRENT)
+   nearValue(svg.position, 0, 'Field reads must leave the animation epoch unset')
+   assert(frames is 1, 'Only the Seek must render')
+end
+
+@Test global function PositionReportsExactSeekTimes()
+   local svg <close> = seekDocument([[
+      <rect id="field_clock" width="1" height="1">
+         <animate attributeName="x" from="0" to="10" dur="10s" fill="freeze"/>
+      </rect>
+      <rect width="1" height="1">
+         <animate id="field_anchor" attributeName="x" from="0" to="1" begin="2s; 8s" dur="1s"/>
+         <animate attributeName="y" from="0" to="1" begin="field_anchor.end+1s" dur="2s"/>
+      </rect>
+   ]]) -- Latest end is 12s, including the final syncbase instance.
+   assert(svg.duration is 12, f'Expected the duration 12, got {svg.duration}')
+   local steps = {
+      { 3.25, SEEK_START, 3.25 }, { 1.5, SEEK_CURRENT, 4.75 }, { -2, SEEK_CURRENT, 2.75 }, { 3, SEEK_END, 9 },
+      { 0, SEEK_END, 12 }, { 0.25, SEEK_RELATIVE, 3 }, { 1, SEEK_START, 1 }, { 15, SEEK_END, 0 },
+      { -5, SEEK_CURRENT, 0 }, { -2, SEEK_START, 0 }, { 2, SEEK_RELATIVE, 24 }, { 30, SEEK_CURRENT, 54 },
+      { 0.5, SEEK_RELATIVE, 6 } }
+   for _, step in steps do
+      check svg.acSeek(step[0], step[1])
+      nearValue(svg.position, step[2], f'Position after Seek({step[0]}, {step[1]})')
+      nearValue(obj.find('field_clock').x, math.min(10, step[2]), f'Scene after Seek({step[0]}, {step[1]})')
+      assert(svg.duration is 12, 'Seeking must not change a duration without event instances')
+   end
+   processing.sleep(0.03)
+   nearValue(svg.position, 6, 'A seek before activation must remain paused')
+
+   -- Reading the duration first must not change the time selected by end-relative seeks.
+   local quiet <close> = seekDocument('<rect width="1" height="1">' ..
+      '<animate attributeName="x" from="0" to="1" begin="1s; 3s" dur="2.5s"/></rect>')
+   local reader <close> = seekDocument('<rect width="1" height="1">' ..
+      '<animate attributeName="x" from="0" to="1" begin="1s; 3s" dur="2.5s"/></rect>')
+   for attempt in {0 to 3} do assert(reader.duration is 5.5, 'Expected a restarted interval to end at 5.5') end
+   for step in values({ { 1, SEEK_END }, { 0.5, SEEK_RELATIVE } }) do
+      check quiet.acSeek(step[0], step[1])
+      check reader.acSeek(step[0], step[1])
+      assert(quiet.position is reader.position, 'A Duration read must not affect subsequent Seek results')
+   end
+end
+
+@Test global function PositionFollowsPlaybackClock()
+   local svg <close> = seekDocument([[<rect id="playing_clock" width="1" height="1">
+      <animate attributeName="x" from="0" to="100" dur="100s" fill="freeze"/></rect>]])
+   local clock = obj.find('playing_clock')
+   local frames = 0
+   local lag = 0 -- The largest amount by which Position trailed the delivered frame.
+   svg.frameCallback = function(SVG)
+      frames += 1
+      lag = math.max(lag, clock.x - SVG.position)
+   end
+   local count = () => frames
+
+   check svg.acActivate()
+   waitFrames(count, 3)
+   local playing = svg.position
+   assert(frames >= 3 and playing > 0, f'Expected the clock to advance during playback, got {playing}')
+   processing.sleep(0.05)
+   local later = svg.position
+   assert(later > playing, 'Position must advance between reads while playing')
+
+   check svg.acDeactivate()
+   local paused = svg.position
+   assert(paused >= later, 'Pausing must not move the clock backwards')
+   processing.sleep(0.06)
+   assert(svg.position is paused, f'Position must remain constant while paused, {paused} became {svg.position}')
+
+   local resume_start = mSys.PreciseTime()
+   check svg.acActivate()
+   waitFrames(count, frames + 2)
+   check svg.acDeactivate()
+   local resumed = svg.position
+   local resume_wall = elapsedSince(resume_start)
+   assert(resumed > paused, 'Activate must resume the clock')
+   assert(resumed - paused <= resume_wall + 0.000001,
+      f'Resuming advanced {resumed - paused}s in {resume_wall}s of playback; the paused interval was included')
+   assert(lag < 0.000001, f'Position must not trail the delivered frame, lagged by {lag}')
+   assert(svg.duration is 100, 'Duration must not count down during playback')
+
+   check svg.acSeek(20, SEEK_START)
+   nearValue(svg.position, 20, 'Paused Seek')
+   processing.sleep(0.03)
+   assert(svg.position is 20 or math.abs(svg.position - 20) < 0.00001, 'A paused Seek must remain constant')
+
+   check svg.acActivate()
+   local seek_start = mSys.PreciseTime()
+   check svg.acSeek(50, SEEK_START)
+   local selected = svg.position
+   assert(selected >= 50 - 0.00001 and selected - 50 <= elapsedSince(seek_start) + 0.00001,
+      f'A playing Seek must report the selected time, got {selected}')
+   waitFrames(count, frames + 2)
+   assert(svg.position > selected, 'Playback must continue after a playing Seek')
+   check svg.acDeactivate()
+
+   check svg.acSeek(250, SEEK_START)
+   nearValue(svg.position, 250, 'Seeking beyond the duration must not clamp the position')
+   assert(svg.duration is 100, 'Duration must remain constant when timing inputs do not change')
+
+   -- Activate after an initial Seek continues from the selected time.
+   local fresh <close> = seekDocument([[<rect id="initial_clock" width="1" height="1">
+      <animate attributeName="x" from="0" to="100" dur="100s"/></rect>]])
+   local fresh_frames = 0
+   fresh.frameCallback = function(SVG) fresh_frames += 1 end
+   check fresh.acSeek(30, SEEK_START)
+   processing.sleep(0.03)
+   nearValue(fresh.position, 30, 'An initial Seek must hold its position until activation')
+   local fresh_start = mSys.PreciseTime()
+   check fresh.acActivate()
+   waitFrames(() => fresh_frames, 3)
+   check fresh.acDeactivate()
+   assert(fresh.position > 30 and fresh.position - 30 <= elapsedSince(fresh_start) + 0.000001,
+      f'The first Activate must continue from the initial Seek, got {fresh.position}')
+end
+
+@Test global function DurationResolvesFiniteTiming()
+   local cases = {
+      { 'begin="1s; 4s" dur="2s"', 6 },
+      { 'begin="1s" dur="2s" repeatCount="3"', 7 },
+      { 'dur="2s" repeatCount="2.5"', 5 },
+      { 'dur="1s" repeatDur="3.5s"', 3.5 },
+      { 'dur="2s" min="4s"', 4 },
+      { 'dur="5s" max="2s"', 2 },
+      { 'begin="0s; 1s" dur="3s"', 4 },
+      { 'begin="0s; 1s" dur="3s" restart="whenNotActive"', 3 },
+      { 'begin="0s; 5s" dur="1s" restart="never"', 1 },
+      { 'dur="1s" repeatCount="indefinite" repeatDur="2.5s"', 2.5 },
+      { 'dur="1s" repeatCount="indefinite" max="4s"', 4 },
+      { 'begin="-5s" dur="2s"', 0 },
+      { 'dur="1s" max="0s"', 0 }
+   }
+   for _, case in cases do
+      local svg <close> = seekDocument('<rect width="1" height="1">' ..
+         f'<animate attributeName="x" from="0" to="10" {case[0]}/></rect>')
+      local expected = case[1]
+      assert(svg.duration is expected, f'{case[0]}: expected duration {expected}, got {svg.duration}')
+      check svg.acSeek(0, SEEK_END)
+      nearValue(svg.position, expected, f'{case[0]}: SEEK_END agrees with Duration')
+      check svg.acSeek(0.5, SEEK_RELATIVE)
+      nearValue(svg.position, expected / 2, f'{case[0]}: SEEK_RELATIVE agrees with Duration')
+      check svg.acSeek(1, SEEK_END)
+      nearValue(svg.position, math.max(0, expected - 1), f'{case[0]}: SEEK_END offset')
+   end
+
+   local chain <close> = seekDocument([[
+      <rect width="1" height="1">
+         <animate id="chain_a" attributeName="x" from="0" to="1" begin="1s" dur="2s"/>
+         <animate id="chain_b" attributeName="y" from="0" to="1" begin="chain_a.end+1s" dur="2s"/>
+         <animate attributeName="width" from="1" to="2" begin="chain_b.end-1s" dur="3s"/>
+      </rect>
+   ]]) -- chain_a ends at 3, chain_b runs 4-6 and the final animation runs 5-8.
+   assert(chain.duration is 8, f'Expected the syncbase chain to end at 8, got {chain.duration}')
+   check chain.acSeek(0, SEEK_END)
+   nearValue(chain.position, 8, 'SEEK_END follows the syncbase chain')
+end
+
+@Test global function DurationReportsIndefiniteTiming()
+   for timing in values(array<str> {
+      'dur="1s" repeatCount="indefinite"', 'dur="indefinite"', 'dur="1s" begin="indefinite"',
+      'dur="1s" begin="missing.end"', 'dur="1s" id="field_cycle" begin="field_cycle.end"' }) do
+      local svg <close> = seekDocument('<rect width="1" height="1">' ..
+         f'<animate attributeName="x" from="0" to="10" {timing}/></rect>' ..
+         '<rect width="1" height="1"><animate attributeName="x" from="0" to="1" dur="3s"/></rect>')
+      assert(svg.duration is -1, f'{timing}: expected an indefinite duration, got {svg.duration}')
+      check svg.acSeek(3, SEEK_START)
+      assert(svg.acSeek(0, SEEK_END) is ERR_NoSupport, f'{timing}: SEEK_END requires a finite duration')
+      assert(svg.acSeek(0.5, SEEK_RELATIVE) is ERR_NoSupport, f'{timing}: SEEK_RELATIVE requires a finite duration')
+      nearValue(svg.position, 3, f'{timing}: a failed Seek must not move the position')
+      check svg.acSeek(-1, SEEK_CURRENT)
+      nearValue(svg.position, 2, f'{timing}: current seeking remains available')
+      assert(svg.duration is -1, f'{timing}: the duration must remain indefinite')
+   end
+end
+
+@Test global function AnimationFieldsFollowDocumentChanges()
+   local svg <close> = seekDocument('<rect width="1" height="1">' ..
+      '<animate attributeName="x" from="0" to="1" dur="4s"/></rect>')
+   check svg.acSeek(3, SEEK_START)
+   nearValue(svg.position, 3, 'Initial position')
+   assert(svg.duration is 4, 'Initial duration')
+
+   local replacements = {
+      { '<animate attributeName="x" from="0" to="1" dur="2s"/>', 2 },
+      { '<animate attributeName="x" from="0" to="1" begin="1s" dur="9s"/>', 10 },
+      { '', 0 },
+      { '<animate attributeName="x" from="0" to="1" dur="1s" repeatCount="indefinite"/>', -1 }
+   }
+   for _, replacement in replacements do
+      check svg.acSeek(1.5, SEEK_START)
+      check svg.acDataFeed(nil, DATA_XML, '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">' ..
+         f'<rect width="1" height="1">{replacement[0]}</rect></svg>')
+      assert(svg.position is 0, f'Reparsing must reset the position, got {svg.position}')
+      assert(svg.duration is replacement[1], f'Expected a fresh duration {replacement[1]}, got {svg.duration}')
+   end
+
+   -- Replacing a playing document resets the clock immediately; the timer then restarts it from zero.
+   check svg.acDataFeed(nil, DATA_XML, ANIMATED_SVG)
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acActivate()
+   waitFrames(() => frames, 3)
+   local replace_start = mSys.PreciseTime()
+   check svg.acDataFeed(nil, DATA_XML, ANIMATED_SVG)
+   assert(svg.position is 0, 'Replacing a playing document must reset the position')
+   waitFrames(() => frames, frames + 2)
+   check svg.acDeactivate()
+   assert(svg.position > 0 and svg.position <= elapsedSince(replace_start) + 0.000001,
+      f'Playback must restart from zero after replacement, got {svg.position}')
+
+   -- A document loaded from Path reports the same initial state.
+   local path = 'temp:svg_animation_fields.svg'
+   local file = obj.new('file', { path=path, flags=FL_WRITE|FL_NEW })
+   check file.acWrite(ANIMATED_SVG)
+   file.free()
+   defer mSys.DeleteFile(path) end
+   local loaded <close> = obj.new('svg', { path=path })
+   assert(loaded.position is 0 and loaded.duration is 10, 'A Path document must report time 0 and duration 10')
+end
+
+@Test global function ParsingSymbolRefreshesDuration()
+   local svg <close> = seekDocument([[
+      <defs><symbol id="long_symbol">
+         <rect width="1" height="1"><animate attributeName="x" from="0" to="10" begin="1s" dur="19s"/></rect>
+      </symbol></defs>
+      <rect width="1" height="1"><animate attributeName="x" from="0" to="1" dur="2s"/></rect>
+   ]])
+   assert(svg.duration is 2, f'Expected the symbol to be excluded until instantiated, got {svg.duration}')
+   check svg.acSeek(1.5, SEEK_START)
+   check svg.mtParseSymbol('long_symbol', svg.viewport)
+   nearValue(svg.position, 1.5, 'Instantiating a symbol must keep the document clock')
+   assert(svg.duration is 20, f'Instantiating a symbol must refresh the duration, got {svg.duration}')
+   check svg.acSeek(0, SEEK_END)
+   nearValue(svg.position, 20, 'SEEK_END must include the symbol animation')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A hyperlink to an animation records an event-triggered begin at the current document time.  Pointer input is
+-- injected through the SystemPointer, as in src/vector/tests/test_input_free.tiri.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576 -- The top 20 bits of the mantissa occupy the high word
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feedPointer(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+@Test global function DurationFollowsEventInstances()
+   local surface <close> = obj.new('Surface', { x=50, y=50, width=200, height=200 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local svg <close> = obj.new('svg', { target=scene, statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+         <a href="#event_anim"><rect id="event_button" width="50" height="50" fill="blue"/></a>
+         <rect id="event_target" x="7" y="100" width="10" height="10">
+            <animate id="event_anim" attributeName="x" from="20" to="50" begin="indefinite" dur="3s"/>
+         </rect>
+         <rect y="150" width="10" height="10"><animate attributeName="x" from="0" to="1" dur="1s"/></rect>
+      </svg>
+   ]] })
+   surface.acShow()
+   surface.acDraw()
+   processing.sleep(0)
+   local pointer = obj.find('SystemPointer')
+   assert(pointer, 'The SystemPointer must exist once a surface is shown')
+   pointer.surface = surface.id -- Hit-testing must start at this surface even if other tests leaked surfaces.
+   defer
+      feedPointer(JET_LMB, 0, 0)
+      pointer.surface = 0
+   end
+
+   assert(svg.duration is -1, 'An event-only begin must leave the duration indefinite')
+   check svg.acSeek(2, SEEK_START)
+   feedPointer(JET_ABS_XY, surface.absX + 25, surface.absY + 25)
+   feedPointer(JET_LMB, 1, 0)
+   feedPointer(JET_LMB, 0, 0)
+
+   nearValue(svg.position, 2, 'Recording an event must not move the paused clock')
+   for attempt in {0 to 3} do
+      assert(svg.duration is 5, f'A recorded begin at 2s must resolve the duration to 5, got {svg.duration}')
+   end
+   check svg.acSeek(0, SEEK_END)
+   nearValue(svg.position, 5, 'SEEK_END must use the recorded begin')
+   nearValue(obj.find('event_target').x, 7, 'The unfrozen animation must have ended at the document end')
+   check svg.acSeek(3.5, SEEK_START)
+   nearValue(obj.find('event_target').x, 35, 'The recorded begin must drive the animation')
+   assert(svg.duration is 5, 'Seeking forwards must retain the recorded begin')
+
+   check svg.acSeek(1, SEEK_START) -- Discards the instance recorded at 2s.
+   assert(svg.duration is -1, f'Discarding the recorded begin must restore an indefinite duration, got {svg.duration}')
+   assert(svg.acSeek(0, SEEK_END) is ERR_NoSupport, 'SEEK_END must be unavailable once the begin is discarded')
+   nearValue(svg.position, 1, 'A rejected Seek must leave the position unchanged')
+end
+
+@Test global function AnimationFieldsRejectWrites()
+   local svg <close> = seekDocument('<rect width="1" height="1">' ..
+      '<animate attributeName="x" from="0" to="1" dur="4s"/></rect>')
+   local frames = 0
+   svg.frameCallback = function(SVG) frames += 1 end
+   check svg.acSeek(2, SEEK_START)
+   assert(svg.set('position', 3) is ERR_NoFieldAccess, 'Position must be read-only')
+   assert(svg.set('duration', 3) is ERR_NoFieldAccess, 'Duration must be read-only')
+   for name in values(array<str> { 'position', 'duration' }) do
+      try
+         svg[name] = 1
+         assert(false, f'Assigning {name} must raise')
+      except e when ERR_ImmutableField
+      end
+   end
+   nearValue(svg.position, 2, 'A rejected write must not change the position')
+   assert(svg.duration is 4, 'A rejected write must not change the duration')
+   for attempt in {0 to 10} do
+      local _ = svg.position + svg.duration
+   end
+   processing.sleep(0.03)
+   assert(frames is 1, 'Field reads must not render or invoke FrameCallback')
+end

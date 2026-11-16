@@ -36,6 +36,7 @@ static const struct ActionArray clSVGActions[] = {
    { AC::New, SVG_New },
    { AC::SaveImage, SVG_SaveImage },
    { AC::SaveToObject, SVG_SaveToObject },
+   { AC::Seek, SVG_Seek },
    { AC::SetKey, SVG_SetKey },
    { AC::NIL, nullptr }
 };

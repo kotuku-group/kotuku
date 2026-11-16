@@ -20,6 +20,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <format>
 #include <sstream>
 #include <list>
+#include <map>
 #include <variant>
 #include <cfloat>
 #include <cmath>
@@ -150,6 +151,15 @@ struct svgState;
 
 #include "anim.h"
 
+struct svgValueAnimation {
+   OBJECTID target;
+   uint32_t field;
+   std::string attribute;
+   std::string original;
+   std::vector<anim_value *> animations;
+   bool applied = false;
+};
+
 //********************************************************************************************************************
 
 class extSVG : public objSVG {
@@ -168,8 +178,10 @@ class extSVG : public objSVG {
    std::vector<std::unique_ptr<svgLink>> Links;
    std::vector<svgInherit> Inherit;
    std::vector<OBJECTID> Resources; // Resources to terminate if ENFORCE_TRACKING was enabled.
-   ankerl::unordered_dense::map<uint32_t, std::vector<anim_base *>> StartOnBegin; // When the animation indicated by uint32_t begins, it must activate() the referenced anim_base
-   ankerl::unordered_dense::map<uint32_t, std::vector<anim_base *>> StartOnEnd; // When the animation indicated by uint32_t ends, it must activate() the referenced anim_base
+   std::vector<svgValueAnimation> ValueAnimations;
+   double LastAnimTime = 0;
+   double AnimationDuration = 0; // Latest resolved end, or infinity if an end is unresolved or indefinite.
+   bool AnimTimingDirty = true;
    SVGStringLookupMap<std::string> Params;      // Client values from SetKey(); highest document-level priority
    SVGStringLookupMap<std::string> QueryParams; // Parsed from the Path query string; rebuilt on each parse
    SVGStringLookupMap<std::string> ParsedParams; // Document values used by the original paint definitions
@@ -249,6 +261,7 @@ public:
 
    void process_children(XTag &, OBJECTPTR) noexcept;
    void proc_svg(XTag &, OBJECTPTR, objVector *&) noexcept;
+   ERR  set_property(objVector *, uint32_t, XTag &, const std::string) noexcept;
 
 private:
    ERR resolve_text_property(uint32_t, std::string_view, const svgState &) noexcept;
@@ -258,7 +271,6 @@ private:
    void applyStateToVector(objVector *) const noexcept;
    const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
    FRGB resolve_stop_colour(const XTag &) noexcept;
-   ERR  set_property(objVector *, uint32_t, XTag &, const std::string) noexcept;
    ERR  process_tag(XTag &, XTag &, OBJECTPTR, objVector * &) noexcept;
 
    ERR  proc_defs(XTag &, OBJECTPTR) noexcept;
@@ -756,6 +768,10 @@ static constexpr auto glKotukuSVGNamespace = strhash("http://www.kotuku.dev/xmln
 //********************************************************************************************************************
 
 static ERR  animation_timer(extSVG *, int64_t, int64_t);
+static void prepare_value_animations(extSVG *);
+static void resolve_animations(extSVG *);
+static void reset_animation_matrices(extSVG *);
+static void render_frame(extSVG *, double);
 static double read_unit(std::string_view &);
 
 static ERR  init_svg(void);

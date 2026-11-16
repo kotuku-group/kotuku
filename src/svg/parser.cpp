@@ -3746,8 +3746,12 @@ static ERR link_event(objVector *Vector, const InputEvent *Events, svgLink *Link
             // The link activates a document node, like an animation.
             if (find_href_tag(Self, Link->ref)) {
                for (auto &record : Self->Animations) {
-                  std::visit([ Link, Self ](auto &&anim) {
-                     if (anim.id IS Link->ref.substr(1)) anim.activate(true);
+                  std::visit([ Link, Self ](auto &Anim) {
+                     if (Anim.id IS Link->ref.substr(1)) {
+                        const double time = Self->AnimEpoch ? Self->anim_clock() - Self->AnimEpoch : 0;
+                        Anim.record_event(time);
+                        Self->AnimTimingDirty = true;
+                     }
                   }, record);
                }
             }
@@ -4118,7 +4122,6 @@ ERR svgState::proc_animate_transform(XTag &Tag, OBJECTPTR Parent) noexcept
    }
 
    if (!anim.is_valid()) {
-      remove_animation_triggers(anim);
       Self->Animations.pop_back();
    }
    return ERR::Okay;
@@ -4153,7 +4156,6 @@ ERR svgState::proc_animate(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcep
    anim.set_orig_value(*this);
 
    if (!anim.is_valid()) {
-      remove_animation_triggers(anim);
       Self->Animations.pop_back();
    }
    return ERR::Okay;
@@ -4187,7 +4189,6 @@ ERR svgState::proc_set(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
    anim.non_interpolating = true;
 
    if (!anim.is_valid()) {
-      remove_animation_triggers(anim);
       Self->Animations.pop_back();
    }
    return ERR::Okay;
@@ -4217,8 +4218,9 @@ ERR svgState::proc_animate_colour(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) 
       }
    }
 
+   anim.set_orig_value(*this);
+
    if (!anim.is_valid()) {
-      remove_animation_triggers(anim);
       Self->Animations.pop_back();
    }
    return ERR::Okay;
@@ -4296,7 +4298,6 @@ ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
    }
 
    if (!anim.is_valid()) {
-      remove_animation_triggers(anim);
       Self->Animations.pop_back();
    }
    return ERR::Okay;

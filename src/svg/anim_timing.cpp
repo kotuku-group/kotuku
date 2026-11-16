@@ -1,136 +1,223 @@
-
 //********************************************************************************************************************
-// Manually activate the animation.  If Reset is true, the animation is guaranteed to start from seek position zero.
+// Only rebuild timing when parsing or an event changes the instance lists.
 
-void anim_base::activate(bool Reset)
+static void resolve_animations(extSVG *SVG)
 {
-   // Reset the variables that control time management and the animation will start from scratch.
+   if (!SVG->AnimTimingDirty) return;
 
-   if (Reset) {
-      begin_offset = svg->anim_clock() - svg->AnimEpoch; // Seeks to position zero
-      repeat_index = 0;
+   std::vector<anim_timeline *> timelines;
+   for (auto &record : SVG->Animations) {
+      std::visit([&timelines](auto &Anim) { timelines.push_back(&Anim); }, record);
    }
 
-   start_time = svg->AnimEpoch + begin_offset; // Directly affects the calculated seek value
-
-   end_time   = 0;
-
-   // Test: w3-animate-elem-21-t.svg
-
-   if (auto others = svg->StartOnBegin.find(hash_id()); others != svg->StartOnBegin.end()) {
-      for (auto &other : others->second) {
-         other->activate(true);
-         other->start_time = start_time; // Ensure that times match exactly
+   resolve_animation_times(timelines);
+   SVG->AnimationDuration = 0;
+   kt::Log log(__FUNCTION__);
+   for (auto anim : timelines) {
+      if (anim->cyclic) log.warning("Cyclic animation timing for '%s'; begin remains unresolved.", anim->id.c_str());
+      if (anim->resolved_end.empty()) SVG->AnimationDuration = std::numeric_limits<double>::infinity();
+      for (double end : anim->resolved_end) {
+         SVG->AnimationDuration = std::max(SVG->AnimationDuration, end);
       }
+   }
+
+   SVG->AnimTimingDirty = false;
+}
+
+//********************************************************************************************************************
+// Bind value animations to their actual targets after all children have been parsed.  Each attribute has one base
+// value and an ordered list of effects, including group effects on children without client-defined attributes.
+
+static void prepare_value_animations(extSVG *SVG)
+{
+   auto previous = std::move(SVG->ValueAnimations);
+   SVG->ValueAnimations.clear();
+   using key_type = std::pair<OBJECTID, uint32_t>;
+   std::map<key_type, size_t> attributes, originals;
+
+   for (size_t i=0; i < previous.size(); i++) originals.emplace(key_type(previous[i].target, previous[i].field), i);
+
+   for (auto &record : SVG->Animations) {
+      auto anim = std::get_if<anim_value>(&record);
+      if (!anim) continue;
+      auto bind = [&](OBJECTID Target) {
+         kt::ScopedObjectLock<objVector> vector(Target, 1000);
+         if (!vector.granted()) return;
+         const auto field = animation_field(anim->target_attrib, **vector);
+         auto key = std::make_pair(Target, field);
+         const auto [entry, inserted] = attributes.emplace(key, SVG->ValueAnimations.size());
+
+         if (inserted) {
+            if (auto old = originals.find(key); old != originals.end()) {
+               auto &value = SVG->ValueAnimations.emplace_back(std::move(previous[old->second]));
+               value.animations.clear();
+            }
+            else SVG->ValueAnimations.push_back({ Target, field, anim->target_attrib,
+               anim->read_orig_value(**vector, anim->target_attrib_orig), {} });
+         }
+         SVG->ValueAnimations[entry->second].animations.push_back(anim);
+      };
+
+      kt::ScopedObjectLock<objVector> target(anim->target_vector, 1000);
+
+      if (!target.granted()) continue;
+
+      if (target->classID() IS CLASSID::VECTORGROUP) {
+         for (auto &child : anim->tag->Children) {
+            if (!child.isTag() or child.attrib(anim->target_attrib)) continue;
+            if (auto id = child.attrib("_id")) bind(std::stoi(*id));
+         }
+      }
+      else bind(anim->target_vector);
    }
 }
 
 //********************************************************************************************************************
-// Return true if the animation has started.  For absolute consistency, animations start 'at the time they should have
-// started', which we can strictly calculate from begin and duration timing values.
+// Matrix storage belongs to the target vector.  Lock the owner before touching a cached matrix pointer.
 
-bool anim_base::started(double CurrentTime)
+static void reset_animation_matrices(extSVG *SVG)
 {
-   if (end_time) return false;
-   if (start_time) return true;
-   if (repeat_index > 0) return true;
-   if (CurrentTime < svg->AnimEpoch + begin_offset) return false;
-   activate(false);
-   return true;
-}
-
-//********************************************************************************************************************
-// Advance the seek position to represent the next frame.
-
-bool anim_base::next_frame(double CurrentTime)
-{
-   if (end_time) return false;
-
-   const double elapsed = CurrentTime - start_time;
-
-   if (!duration) seek = 0;
-   else seek = elapsed / duration; // A value between 0 and 1.0
-
-   if (seek >= 1.0) { // Check if the sequence has ended.
-      if ((repeat_count < 0) or (repeat_index+1 < repeat_count)) {
-         repeat_index++;
-         start_time = CurrentTime;
-         seek = 0;
-         return false;
-      }
-      else {
-         if (seek > 1.0) seek = 1.0;
-         return true;
+   for (auto &[id, record] : SVG->Animatrix) {
+      record.transforms.clear();
+      kt::ScopedObjectLock<objVector> vector(id, 1000);
+      if (vector.granted() and record.matrix) {
+         vec::ResetMatrix(record.matrix);
+         vec::FlushMatrix(record.matrix);
       }
    }
 
-   // repeat_duration prevents the animation from running past a fixed number of seconds since it started.
-   if ((repeat_duration > 0) and (elapsed > repeat_duration)) return true;
-
-   return false;
-}
-
-//********************************************************************************************************************
-
-void anim_base::stop(double Time)
-{
-   if (!begin_series.empty()) {
-      // Check if there's a serialised begin offset following the one that's completed.
-      int i;
-      for (i=0; i < std::ssize(begin_series)-1; i++) {
-         if (begin_offset IS begin_series[i]) {
-            begin_offset = begin_series[i+1];
-            start_time = 0;
-            return;
+   for (auto &record : SVG->Animations) {
+      if (auto motion = std::get_if<anim_motion>(&record); motion and motion->matrix) {
+         kt::ScopedObjectLock<objVector> vector(motion->target_vector, 1000);
+         if (vector.granted()) {
+            vec::ResetMatrix(motion->matrix);
+            vec::FlushMatrix(motion->matrix);
          }
       }
    }
-
-   end_time = Time;
-   seek = 1.0; // Necessary in case the seek range calculation has overflowed
-
-   // Start animations that are to be triggered from our ending.
-   if (auto others = svg->StartOnEnd.find(hash_id()); others != svg->StartOnEnd.end()) {
-      for (auto &other : others->second) {
-         other->activate(true);
-         other->start_time = Time;
-      }
-   }
 }
 
 //********************************************************************************************************************
+// Follow the underlying effects required by a to-only animation.  Frozen effects sample the lower layers at their
+// endpoint, so their value does not depend on the order in which document times are visited.
 
-static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime)
+static void apply_value_animation(svgValueAnimation &Value, objVector &Vector, anim_value &Selected, double Time)
 {
-   kt::Log log(__FUNCTION__);
-
-   if (SVG->Animations.empty()) {
-      log.msg("All animations processed, timer suspended.");
-      return ERR::Terminate;
+   if (Selected.non_interpolating or !Selected.from.empty() or !Selected.values.empty() or Selected.to.empty()) {
+      std::swap(Selected.target_attrib_orig, Value.original);
+      Selected.set_value(Vector);
+      std::swap(Selected.target_attrib_orig, Value.original);
+      return;
    }
 
-   for (auto &matrix : SVG->Animatrix) {
-      matrix.second.transforms.clear();
+   std::vector<anim_value *> effects;
+   double sample_time = Time;
+   for (size_t i=Value.animations.size(); i > 0; ) {
+      auto anim = Value.animations[--i];
+      anim->evaluate(sample_time);
+      if (!anim->contributes()) continue;
+      effects.push_back(anim);
+      if (anim->non_interpolating or !anim->from.empty() or !anim->values.empty() or anim->to.empty()) break;
+      if (anim->effect_ended) sample_time = anim->start_time + anim->effect_duration();
    }
 
-   const double current_time = (double(CurrentTime) / 1000000.0) - SVG->PausedTime;
-   if (!SVG->AnimEpoch) SVG->AnimEpoch = current_time;
+   bool underlying = false;
+   for (auto it=effects.rbegin(); it != effects.rend(); ++it) {
+      auto anim = *it;
+      std::string original = Value.original;
+      if (underlying) {
+         const auto attribute = strhash(anim->target_attrib);
+         if ((attribute IS SVF_fill) or (attribute IS SVF_stroke) or
+             (attribute IS SVF_color) or (attribute IS SVF_colour)) {
+            FRGB *colour = nullptr;
+            const auto field = (attribute IS SVF_stroke) ? strhash("strokeColour") : strhash("fillColour");
+            if (!Vector.get(field, colour) and colour) {
+               original = std::format("rgba({},{},{},{})", colour->Red * 255, colour->Green * 255,
+                  colour->Blue * 255, colour->Alpha);
+            }
+         }
+         else original = anim->read_orig_value(Vector, original);
+      }
+      std::swap(anim->target_attrib_orig, original);
+      anim->set_value(Vector);
+      std::swap(anim->target_attrib_orig, original);
+      underlying = true;
+   }
+
+   // Group animations can be shared by several targets.  Leave their timeline at the requested document time.
+   for (auto anim : Value.animations) anim->evaluate(Time);
+}
+
+//********************************************************************************************************************
+// Render a frame at the given document time in seconds, relative to AnimEpoch.
+
+static void render_frame(extSVG *SVG, double Time)
+{
+   if (Time < SVG->LastAnimTime) {
+      for (auto &record : SVG->Animations) {
+         std::visit([SVG, Time](auto &Anim) {
+            if (Anim.discard_events_after(Time)) SVG->AnimTimingDirty = true;
+         }, record);
+      }
+   }
+
+   SVG->LastAnimTime = Time;
+   resolve_animations(SVG);
+
+   reset_animation_matrices(SVG);
+   for (auto &record : SVG->Animations) {
+      std::visit([Time](auto &Anim) { Anim.evaluate(Time); }, record);
+   }
+
+   svgState state(SVG);
+   for (auto &value : SVG->ValueAnimations) {
+      anim_value *selected = nullptr;
+      for (auto anim : value.animations) {
+         if (anim->contributes()) selected = anim;
+      }
+
+      if (!selected and !value.applied) continue;
+
+      kt::ScopedObjectLock<objVector> vector(value.target, 1000);
+
+      if (!vector.granted()) continue;
+
+      if (selected) {
+         apply_value_animation(value, **vector, *selected, Time);
+      }
+      else {
+         const auto attribute = strhash(value.attribute);
+         if (vector->classID() IS CLASSID::VECTORTEXT) {
+            auto text = (objVectorText *)*vector;
+            switch (attribute) {
+               case SVF_font_family: text->setFace(value.original); break;
+               case SVF_font_size: text->setFontSize(value.original); break;
+               case SVF_text_anchor:
+                  text->setAlign(value.original IS "end" ? ALIGN::RIGHT :
+                     (value.original IS "middle" ? ALIGN::HORIZONTAL : ALIGN::LEFT));
+                  break;
+               default: state.set_property(*vector, attribute, *value.animations.front()->tag, value.original); break;
+            }
+         }
+         else state.set_property(*vector, attribute, *value.animations.front()->tag, value.original);
+      }
+      value.applied = selected != nullptr;
+   }
 
    for (auto &record : SVG->Animations) {
-      std::visit([ current_time ](auto &&anim) {
-         if (not anim.started(current_time)) return;
-
-         bool stop = anim.next_frame(current_time);
-         anim.perform();
-         if (stop) anim.stop(current_time);
-      }, record);
+      if (auto motion = std::get_if<anim_motion>(&record)) {
+         if (motion->contributes()) motion->perform();
+      }
+      else if (auto transform = std::get_if<anim_transform>(&record)) {
+         if (transform->contributes()) transform->perform();
+      }
    }
 
    // Apply transforms
 
    for (auto &record : SVG->Animatrix) {
       kt::ScopedObjectLock<objVector> vector(record.first, 1000);
-      if (record.second.transforms.empty()) continue;
+      if (!vector.granted() or record.second.transforms.empty()) continue;
 
       auto &vt = record.second;
 
@@ -140,7 +227,7 @@ static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime
       // attribute.
 
       if (not vt.matrix) {
-         vector->newMatrix(&vt.matrix, false);
+         if (vector->newMatrix(&vt.matrix, false) != ERR::Okay) continue;
          vt.matrix->Tag = MTAG_ANIMATE_TRANSFORM;
       }
 
@@ -200,6 +287,24 @@ static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime
          sc::Call(SVG->FrameCallback, std::to_array<ScriptArg>({ { "SVG", SVG, FD_OBJECTPTR } }));
       }
    }
+}
+
+//********************************************************************************************************************
+
+static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (SVG->Animations.empty()) {
+      log.msg("All animations processed, timer suspended.");
+      SVG->AnimationTimer = nullptr;
+      if (SVG->Scene) UnsubscribeAction(SVG->Scene, AC::Free);
+      return ERR::Terminate;
+   }
+
+   const double current_time = (double(CurrentTime) / 1000000.0) - SVG->PausedTime;
+   if (!SVG->AnimEpoch) SVG->AnimEpoch = current_time;
+   render_frame(SVG, current_time - SVG->AnimEpoch);
 
    return ERR::Okay;
 }

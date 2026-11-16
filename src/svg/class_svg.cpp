@@ -216,6 +216,63 @@ static ERR SVG_Deactivate(extSVG *Self)
 
 /*********************************************************************************************************************
 -ACTION-
+Seek: Moves SVG animation playback to a document time in seconds.
+
+Seek updates the scene immediately and invokes #FrameCallback, including while playback is paused or before the first
+#Activate().  It preserves the playing or paused state.  Seeking before activation leaves playback paused at the new
+position until #Activate() is called.
+
+`SEEK::START` uses `Offset` as the document time.  `SEEK::CURRENT` adds `Offset` to the current document time.
+`SEEK::END` subtracts `Offset` from the document duration, and `SEEK::RELATIVE` multiplies that duration by `Offset`
+(e.g. `0.5` selects the midpoint).  Negative results are clamped to zero; positions beyond the end are allowed.
+
+The document duration is the latest resolved animation end, as reported by #Duration.  If any animation has an
+unresolved or indefinite end, `SEEK::END` and `SEEK::RELATIVE` return `ERR::NoSupport`.  Start and current positions
+remain available.  Seeking backwards discards recorded event-triggered begins after the new position.  Documents
+without animations return success without rendering or invoking the callback.  The selected time can be read back
+from #Position.
+
+-ERRORS-
+Okay
+NullArgs
+Args: The position is invalid, the offset is not finite, or the resulting time is not finite.
+NoSupport: The document duration is indefinite and the position requires a finite duration.
+-TAGS-
+mutates-object, callback-inlines
+-END-
+*********************************************************************************************************************/
+
+static ERR SVG_Seek(extSVG *Self, struct acSeek *Args)
+{
+   if (!Args) return ERR::NullArgs;
+   if (!std::isfinite(Args->Offset)) return ERR::Args;
+   if ((Args->Position != SEEK::START) and (Args->Position != SEEK::CURRENT) and
+       (Args->Position != SEEK::END) and (Args->Position != SEEK::RELATIVE)) return ERR::Args;
+   if (Self->Animations.empty()) return ERR::Okay;
+
+   const double now = Self->PauseStart ? Self->PauseStart : double(PreciseTime()) / 1000000.0;
+   const double clock = now - Self->PausedTime;
+   double time = Args->Offset;
+   if (Args->Position IS SEEK::CURRENT) {
+      time += Self->AnimEpoch ? std::max(0.0, clock - Self->AnimEpoch) : 0;
+   }
+   else if ((Args->Position IS SEEK::END) or (Args->Position IS SEEK::RELATIVE)) {
+      resolve_animations(Self);
+      if (!std::isfinite(Self->AnimationDuration)) return ERR::NoSupport;
+      time = (Args->Position IS SEEK::END) ? Self->AnimationDuration - time : Self->AnimationDuration * time;
+   }
+   if (!std::isfinite(time)) return ERR::Args;
+   time = std::max(0.0, time);
+
+   if (!Self->AnimEpoch) Self->AnimEpoch = clock;
+   Self->PausedTime = now - Self->AnimEpoch - time;
+   if (!Self->AnimationTimer) Self->PauseStart = now;
+   render_frame(Self, time);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-ACTION-
 DataFeed: Processes SVG data streams for incremental document parsing.
 
 The DataFeed action enables real-time processing of SVG data streams, allowing documents to be parsed incrementally
@@ -363,6 +420,9 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
       svgState state(Self);
       state.m_param_scope = &scope;
       state.process_children(*symbol.tag, Args->Viewport);
+      Self->AnimTimingDirty = true;
+      prepare_value_animations(Self);
+      resolve_animations(Self);
       return ERR::Okay;
    }
    else {
@@ -782,7 +842,38 @@ registered in the top-level @VectorScene object.
 </list>
 
 -FIELD-
-Flags: Configuration flags that modify SVG processing behaviour.
+Duration: The resolved length of the document's animations, measured in seconds.
+
+Duration reports the latest resolved end of all animations in the document.  It is the same duration that #Seek()
+uses for `SEEK::END` and `SEEK::RELATIVE`, accounting for begin offsets, multiple begin instances, repeat counts,
+`repeatDur`, `min` and `max` bounds, restart interruptions and syncbase chains.  Documents without animations, and
+documents whose animations all end at or before zero, report `0`.
+
+A value of `-1` indicates that at least one animation has an indefinite or unresolved end, for instance an indefinite
+repeat without a finite bound, a begin that waits on a user event, a missing syncbase reference or a timing cycle.  In
+this state `SEEK::END` and `SEEK::RELATIVE` are unavailable, while absolute and current seeking remain supported.
+Clients should only enable a proportional scrubber when the duration is greater than zero.
+
+The value is a snapshot of the resolved timing and does not count down during playback.  It can change when a symbol
+is instantiated through #ParseSymbol(), when a user event records a new begin instance, when a seek backwards
+discards a recorded event instance, and when a new document is parsed.  Future event instances are not predicted.
+
+Reading this field does not start playback, render a frame or alter the #Position.
+
+*********************************************************************************************************************/
+
+static ERR GET_Duration(extSVG *Self, double *Value)
+{
+   resolve_animations(Self);
+   if (std::isfinite(Self->AnimationDuration)) *Value = std::max(0.0, Self->AnimationDuration);
+   else *Value = -1;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Flags:Configuration flags that modify SVG processing behaviour.
 Lookup: SVF
 
 -FIELD-
@@ -811,6 +902,9 @@ redrawing, ensuring that custom logic can modify or capture the scene state at t
 
 <b>Animation dependency:</b> Callbacks are only triggered for SVG documents containing SMIL animation features.
 Static documents will not invoke the callback function.
+
+<b>Playback position:</b> Read #Position for the current document time and #Duration for the resolved length of the
+animation.  #Position follows the animation clock and can be marginally ahead of the frame being delivered.
 
 <b>Function prototype:</b> `void Function(*SVG)`
 
@@ -932,6 +1026,34 @@ static ERR SET_Path(extSVG *Self, const std::string_view &Value)
 {
    Self->Folder.clear();
    Self->Path = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Position: The current animation time of the document, measured in seconds.
+
+Position reports the document time of the animation clock.  It is `0` for documents without animations, and for an
+animated document until the first playback frame or a successful #Seek() establishes the clock.  The value is never
+negative.
+
+The Position advances while playback is active and remains constant while playback is paused through #Deactivate().
+Time spent paused is excluded, so #Activate() continues from the paused position.  A successful #Seek() sets the
+Position to the selected time, which is not clamped to the #Duration.  Parsing a new document returns the Position to
+`0`, while instantiating a symbol with #ParseSymbol() leaves it unchanged.
+
+The value describes the document clock rather than the most recently rendered frame.  During playback it advances
+between frames and can be slightly ahead of the scene state observed by #FrameCallback.
+
+Reading this field does not start playback, render a frame or alter the animation state.
+
+*********************************************************************************************************************/
+
+static ERR GET_Position(extSVG *Self, double *Value)
+{
+   if ((Self->Animations.empty()) or (!Self->AnimEpoch)) *Value = 0;
+   else *Value = std::max(0.0, Self->anim_clock() - Self->AnimEpoch);
    return ERR::Okay;
 }
 
@@ -1077,6 +1199,8 @@ static const FieldArray clSVGFields[] = {
    // Virtual Fields
    { "FrameCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FrameCallback, SET_FrameCallback },
    { "ParamNames",    FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_ParamNames },
+   { "Position",      FDF_VIRTUAL|FDF_DOUBLE|FDF_R, GET_Position },
+   { "Duration",      FDF_VIRTUAL|FDF_DOUBLE|FDF_R, GET_Duration },
    END_FIELD
 };
 

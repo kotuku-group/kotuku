@@ -3,8 +3,6 @@ void anim_transform::perform()
 {
    double seek_to = seek;
 
-   if ((end_time) and (!freeze)) return;
-
    kt::ScopedObjectLock<objVector> vector(target_vector, 1000);
    if (vector.granted()) {
       vec::ResetMatrix(&matrix);
@@ -51,7 +49,7 @@ void anim_transform::perform()
 
             const POINT<double> t_offset = t_to;
 
-            if ((accumulate) and (repeat_count)) {
+            if (accumulate) {
                const POINT<double> acc = t_offset * repeat_index;
                t_from += acc;
                t_to   += acc;
@@ -111,7 +109,7 @@ void anim_transform::perform()
 
             const POINT<double> t_offset = t_to;
 
-            if ((accumulate) and (repeat_count)) {
+            if (accumulate) {
                const POINT<double> acc = t_offset * repeat_index;
                t_from += acc;
                t_to   += acc;
@@ -173,7 +171,7 @@ void anim_transform::perform()
 
             const auto r_offset = r_to;
 
-            if ((accumulate) and (repeat_count)) {
+            if (accumulate) {
                r_from += r_offset * repeat_index;
                r_to   += r_offset * repeat_index;
             }
@@ -221,7 +219,7 @@ void anim_transform::perform()
 
             const double t_offset = t_to;
 
-            if ((accumulate) and (repeat_count)) {
+            if (accumulate) {
                const double acc = t_offset * repeat_index;
                t_from += acc;
                t_to   += acc;
@@ -265,7 +263,7 @@ void anim_transform::perform()
 
             const double t_offset = t_to;
 
-            if ((accumulate) and (repeat_count)) {
+            if (accumulate) {
                const double acc = t_offset * repeat_index;
                t_from += acc;
                t_to   += acc;

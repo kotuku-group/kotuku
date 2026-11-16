@@ -1,5 +1,6 @@
 
 #include "../link/linear_rgb.h"
+#include <cctype>
 
 //********************************************************************************************************************
 
@@ -51,56 +52,131 @@ double anim_base::spline_seek(const spline_path &Path, double X) noexcept
 
 //********************************************************************************************************************
 
+static std::string animation_number(double Value)
+{
+   char buffer[64];
+   const auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value);
+   return (error IS std::errc()) ? std::string(buffer, end) : std::string();
+}
+
+//********************************************************************************************************************
+// SVG attribute aliases must share one effect stack when they write the same vector field.
+
+static uint32_t animation_field(std::string_view Attribute, objVector &Vector)
+{
+   switch (strhash(Attribute)) {
+      case SVF_display: return strhash("visibility");
+      case SVF_r: return strhash("radius");
+      case SVF_rx: return strhash(Vector.classID() IS CLASSID::VECTORRECTANGLE ? "roundX" : "radiusX");
+      case SVF_ry: return strhash(Vector.classID() IS CLASSID::VECTORRECTANGLE ? "roundY" : "radiusY");
+      case SVF_font_family: return strhash("face");
+      case SVF_font_size: return strhash("fontSize");
+      case SVF_text_anchor: return strhash("align");
+      case SVF_fill_rule: return strhash("fillRule");
+      case SVF_clip_rule: return strhash("clipRule");
+      case SVF_d: return strhash("sequence");
+      case SVF_stroke_width: return strhash("strokeWidth");
+      case SVF_stroke_opacity: return strhash("strokeOpacity");
+      case SVF_stroke_linejoin: return strhash("lineJoin");
+      case SVF_stroke_innerjoin: return strhash("innerJoin");
+      case SVF_stroke_linecap: return strhash("lineCap");
+      case SVF_stroke_miterlimit: return strhash("miterLimit");
+      case SVF_stroke_inner_miterlimit: return strhash("innerMiterLimit");
+      case SVF_stroke_dasharray: return strhash("dashArray");
+      case SVF_stroke_dashoffset: return strhash("dashOffset");
+      case SVF_frequency_end: return strhash("frequencyEnd");
+      default: return strhash(Attribute);
+   }
+}
+
+//********************************************************************************************************************
+
 void anim_base::set_orig_value(svgState &State)
 {
-   if ((freeze and not from.empty()) or target_attrib.empty()) return;
+   if (target_attrib.empty()) return;
 
-   kt::ScopedObjectLock<objVector> obj(target_vector);
-   if (obj.granted()) {
-      auto fid = strhash(target_attrib);
-      switch(fid) {
-         case SVF_display:
-            if (obj->Visibility IS VIS::HIDDEN) target_attrib_orig = "none";
-            else if (obj->Visibility IS VIS::INHERIT) target_attrib_orig = "inherit";
-            else if (obj->Visibility IS VIS::VISIBLE) target_attrib_orig = "inline";
-            break;
+   std::string fallback;
+   switch (strhash(target_attrib)) {
+      case SVF_fill: fallback = State.m_fill; break;
+      case SVF_stroke: fallback = State.m_stroke; break;
+      case SVF_fill_opacity:
+         fallback = animation_number(State.m_fill_opacity < 0 ? 1.0 : State.m_fill_opacity);
+         break;
+   }
 
-         case SVF_stroke_width:
-            if (Unit stroke_width; !obj->getStrokeWidth(stroke_width)) {
-               target_attrib_orig.assign(std::to_string(double(stroke_width)));
-            }
-            break;
+   kt::ScopedObjectLock<objVector> vector(target_vector);
+   if (vector.granted()) target_attrib_orig = read_orig_value(**vector, fallback);
+}
 
-         case SVF_fill: {
-            std::string_view val;
-            if ((!obj->getFill(val)) and not val.empty()) target_attrib_orig = val;
-            else target_attrib_orig = State.m_fill;
-            break;
-         }
+//********************************************************************************************************************
+// Read the same fields that set_value() writes, using the inherited value for an unset paint or fill opacity.
 
-         case SVF_stroke: {
-            std::string_view val;
-            if ((!obj->getStroke(val)) and not val.empty()) target_attrib_orig = val;
-            else target_attrib_orig = State.m_stroke;
-            break;
-         }
+std::string anim_base::read_orig_value(objVector &Vector, const std::string &Fallback)
+{
+   const auto attribute = strhash(target_attrib);
+   const auto field = animation_field(target_attrib, Vector);
 
-         case SVF_fill_opacity:
-            if (obj->FillOpacity != 1.0) target_attrib_orig = obj->FillOpacity;
-            else if (State.m_fill_opacity != -1) target_attrib_orig = State.m_fill_opacity;
-            else target_attrib_orig = 1.0;
-            break;
+   switch (attribute) {
+      case SVF_display:
+         if (Vector.Visibility IS VIS::HIDDEN) return "none";
+         if (Vector.Visibility IS VIS::INHERIT) return "inherit";
+         return "inline";
+      case SVF_visibility:
+         if (Vector.Visibility IS VIS::HIDDEN) return "hidden";
+         if (Vector.Visibility IS VIS::COLLAPSE) return "collapse";
+         if (Vector.Visibility IS VIS::INHERIT) return "inherit";
+         return "visible";
+      case SVF_fill:
+      case SVF_stroke: {
+         std::string_view value;
+         const auto error = (attribute IS SVF_fill) ? Vector.getFill(value) : Vector.getStroke(value);
+         return (!error and !value.empty()) ? std::string(value) : Fallback;
+      }
+      case SVF_fill_opacity:
+         return (Vector.FillOpacity != 1.0 or Fallback.empty()) ? animation_number(Vector.FillOpacity) : Fallback;
+      case SVF_opacity: return animation_number(Vector.Opacity);
+      case SVF_text_anchor: {
+         const auto align = Vector.get<ALIGN>(field);
+         if ((align & ALIGN::RIGHT) != ALIGN::NIL) return "end";
+         if ((align & ALIGN::HORIZONTAL) != ALIGN::NIL) return "middle";
+         return "start";
+      }
+      default: break;
+   }
 
-         case SVF_opacity:
-            target_attrib_orig = obj->Opacity; // Not inherited, so only the target's own value is relevant
-            break;
+   const auto descriptor = FindField(&Vector, field, nullptr);
 
-         default: {
-            std::string buffer;
-            if (!obj->get(fid, buffer)) target_attrib_orig.assign(buffer);
-         }
+   if (descriptor and (descriptor->Flags & FD_UNIT)) {
+      Unit value;
+      if (!Vector.get(field, value)) {
+         return animation_number(value.scaled() ? value.Value * 100 : value.Value) + (value.scaled() ? "%" : "");
       }
    }
+   else if (descriptor and (descriptor->Flags & (FD_ARRAY|FD_VECTOR))) {
+      std::span<double> values;
+      if (!Vector.get(field, values)) {
+         std::string result;
+         for (double value : values) {
+            if (!result.empty()) result += ',';
+            result += animation_number(value);
+         }
+         return result;
+      }
+   }
+
+   std::string value;
+
+   if (!Vector.get(field, value)) {
+      if (value IS "MiterSmart") return "miter-clip";
+      if (value IS "MiterRound") return "miter-round";
+      if ((attribute IS SVF_stroke_linejoin) or (attribute IS SVF_stroke_linecap) or
+          (attribute IS SVF_stroke_innerjoin) or (attribute IS SVF_close) or (attribute IS SVF_envelope)) {
+         for (auto &c : value) c = std::tolower((unsigned char)c);
+      }
+      return value;
+   }
+
+   return Fallback;
 }
 
 //********************************************************************************************************************
@@ -234,16 +310,12 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
       return svtonum<double>(value);
    }
 
-   if ((seek >= 1.0) and (!freeze)) {
-      return svtonum<double>(target_attrib_orig);
-   }
-
    if (not values.empty()) {
       int i;
       if (timing.size() IS values.size()) {
-         seek *= timing.back(); // In discrete mode the last time doesn't have to be 1.0
-         for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek); i++);
-         seek_to = interval_seek(seek, timing[i], timing[i+1]);
+         seek_to = seek * timing.back(); // In discrete mode the last time doesn't have to be 1.0
+         for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek_to); i++);
+         seek_to = interval_seek(seek_to, timing[i], timing[i+1]);
       }
       else {
          i = std::clamp<int>(int((values.size()-1) * seek), 0, values.size() - 2);
@@ -266,13 +338,13 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
       else return 0;
    }
    else if (not to.empty()) {
-      from_val = Vector.get<double>(Field);
-      from = std::to_string(from_val);
+      const Unit original(target_attrib_orig);
+      from_val = original.defined() ? original.Value : 0;
       read_numseq(to, { &to_val } );
    }
    else if (not by.empty()) {
-      from_val = Vector.get<double>(Field);
-      from = std::to_string(from_val);
+      const Unit original(target_attrib_orig);
+      from_val = original.defined() ? original.Value : 0;
       read_numseq(by, { &to_val } );
       to_val += from_val;
    }
@@ -280,7 +352,7 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
 
    const auto offset = to_val;
 
-   if ((accumulate) and (repeat_count)) {
+   if (accumulate and !(values.empty() and from.empty() and !to.empty())) {
       // Cumulative animation is not permitted for:
       // * The 'to animation' where 'from' is undefined.
 
@@ -307,8 +379,6 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
 
 std::string anim_base::get_string()
 {
-   if ((seek >= 1.0) and (!freeze)) return target_attrib_orig;
-
    if (not from.empty()) {
       if (seek < 0.5) return from;
       else if (not to.empty()) return to;
@@ -340,7 +410,7 @@ double anim_base::get_dimension(objVector &Vector, FIELD Field)
 
          i = 0;
          if (timing.size() IS spline_paths.size()) {
-            for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek); i++);
+            for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek_to); i++);
             i = std::clamp<int>(i, 0, timing.size() - 1);
          }
          else {
@@ -356,17 +426,18 @@ double anim_base::get_dimension(objVector &Vector, FIELD Field)
          // The paired y value then gives us the 'real' seek_to value.
          // The spline points are already sorted by the x value to make this easier.
 
-         const double x = (seek >= 1.0) ? 1.0 : fmod(seek, 1.0 / double(std::ssize(spline_paths))) * std::ssize(spline_paths);
+         const double x = (seek >= 1.0) ? 1.0 :
+            fmod(seek, 1.0 / double(std::ssize(spline_paths))) * std::ssize(spline_paths);
 
          seek_to = spline_seek(sp, x);
       }
       else { // CMODE::LINEAR
          if (timing.size() IS values.size()) {
-            seek *= timing.back(); // In discrete mode the last time doesn't have to be 1.0
+            seek_to = seek * timing.back(); // In discrete mode the last time doesn't have to be 1.0
 
-            for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek); i++);
+            for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek_to); i++);
             i = std::clamp<int>(i, 0, timing.size() - 2);
-            seek_to = interval_seek(seek, timing[i], timing[i+1]);
+            seek_to = interval_seek(seek_to, timing[i], timing[i+1]);
          }
          else {
             i = std::clamp<int>(int((values.size()-1) * seek), 0, values.size() - 2);
@@ -390,13 +461,13 @@ double anim_base::get_dimension(objVector &Vector, FIELD Field)
       else return 0;
    }
    else if (not to.empty()) {
-      from_val = Vector.get<double>(Field);
-      from = std::to_string(from_val);
+      const Unit original(target_attrib_orig);
+      from_val = original.defined() ? original.Value : 0;
       read_numseq(to, { &to_val } );
    }
    else if (not by.empty()) {
-      from_val = Vector.get<double>(Field);
-      from = std::to_string(from_val);
+      const Unit original(target_attrib_orig);
+      from_val = original.defined() ? original.Value : 0;
       read_numseq(by, { &to_val } );
       to_val += from_val;
    }
@@ -404,7 +475,7 @@ double anim_base::get_dimension(objVector &Vector, FIELD Field)
 
    const auto offset = to_val;
 
-   if ((accumulate) and (repeat_count)) {
+   if (accumulate and !(values.empty() and from.empty() and !to.empty())) {
       // Cumulative animation is not permitted for:
       // * The 'to animation' where 'from' is undefined.
       // * Animations that do not repeat
@@ -464,24 +535,14 @@ FRGB anim_base::get_colour_value(objVector &Vector, FIELD Field)
       vec::ReadPainter(nullptr, to, &to_col, nullptr);
    }
    else if (not by.empty()) {
-      FRGB *colour;
-      if (!Vector.get(Field, colour)) {
-         from_col.Colour = *colour;
-         vec::ReadPainter(nullptr, to, &to_col, nullptr);
-         to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + colour->Red, 0.0, 1.0);
-         to_col.Colour.Green = std::clamp<float>(to_col.Colour.Green + colour->Green, 0.0, 1.0);
-         to_col.Colour.Blue  = std::clamp<float>(to_col.Colour.Blue  + colour->Blue, 0.0, 1.0);
-         to_col.Colour.Alpha = std::clamp<float>(to_col.Colour.Alpha + colour->Alpha, 0.0, 1.0);
-      }
-      else return { 0, 0, 0, 0 };
+      vec::ReadPainter(nullptr, target_attrib_orig, &from_col, nullptr);
+      vec::ReadPainter(nullptr, by, &to_col, nullptr);
+      to_col.Colour.Red   = std::clamp<float>(to_col.Colour.Red   + from_col.Colour.Red, 0.0, 1.0);
+      to_col.Colour.Green = std::clamp<float>(to_col.Colour.Green + from_col.Colour.Green, 0.0, 1.0);
+      to_col.Colour.Blue  = std::clamp<float>(to_col.Colour.Blue  + from_col.Colour.Blue, 0.0, 1.0);
+      to_col.Colour.Alpha = std::clamp<float>(to_col.Colour.Alpha + from_col.Colour.Alpha, 0.0, 1.0);
    }
    else return { 0, 0, 0, 0 };
-
-   if ((seek_to >= 1.0) and (!freeze)) {
-      VectorPainter painter;
-      vec::ReadPainter(nullptr, target_attrib_orig, &painter, nullptr);
-      return painter.Colour;
-   }
 
    if (calc_mode IS CMODE::DISCRETE) {
       if (seek_to < 0.5) return from_col.Colour;
