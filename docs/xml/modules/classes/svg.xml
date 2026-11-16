@@ -224,6 +224,29 @@ document, not from the element that references them.</li>
     </action>
 
     <action>
+      <name>Seek</name>
+      <comment>Moves SVG animation playback to a document time in seconds.</comment>
+      <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
+        <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
+      </input>
+      <description>
+<p>Seek updates the scene immediately and invokes <fl>FrameCallback</fl>, including while playback is paused or before the first <action>Activate</action>.  It preserves the playing or paused state.  Seeking before activation leaves playback paused at the new position until <action>Activate</action> is called.</p>
+<p><code>SEEK::START</code> uses <code>Offset</code> as the document time.  <code>SEEK::CURRENT</code> adds <code>Offset</code> to the current document time. <code>SEEK::END</code> subtracts <code>Offset</code> from the document duration, and <code>SEEK::RELATIVE</code> multiplies that duration by <code>Offset</code> (e.g. <code>0.5</code> selects the midpoint).  Negative results are clamped to zero; positions beyond the end are allowed.</p>
+<p>The document duration is the latest resolved animation end, as reported by <fl>Duration</fl>.  If any animation has an unresolved or indefinite end, <code>SEEK::END</code> and <code>SEEK::RELATIVE</code> return <code>ERR::NoSupport</code>.  Start and current positions remain available.  Seeking backwards discards recorded event-triggered begins after the new position.  Documents without animations return success without rendering or invoking the callback.  The selected time can be read back from <fl>Position</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The position is invalid, the offset is not finite, or the resulting time is not finite.</error>
+        <error code="NoSupport">The document duration is indefinite and the position requires a finite duration.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object, callback-inlines</tags>
+    </action>
+
+    <action>
       <name>SetKey</name>
       <comment>Defines a document parameter.</comment>
       <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
@@ -304,6 +327,19 @@ document, not from the element that references them.</li>
     </field>
 
     <field>
+      <name>Duration</name>
+      <comment>The resolved length of the document's animations, measured in seconds.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Duration reports the latest resolved end of all animations in the document.  It is the same duration that <action>Seek</action> uses for <code>SEEK::END</code> and <code>SEEK::RELATIVE</code>, accounting for begin offsets, multiple begin instances, repeat counts, <code>repeatDur</code>, <code>min</code> and <code>max</code> bounds, restart interruptions and syncbase chains.  Documents without animations, and documents whose animations all end at or before zero, report <code>0</code>.</p>
+<p>A value of <code>-1</code> indicates that at least one animation has an indefinite or unresolved end, for instance an indefinite repeat without a finite bound, a begin that waits on a user event, a missing syncbase reference or a timing cycle.  In this state <code>SEEK::END</code> and <code>SEEK::RELATIVE</code> are unavailable, while absolute and current seeking remain supported. Clients should only enable a proportional scrubber when the duration is greater than zero.</p>
+<p>The value is a snapshot of the resolved timing and does not count down during playback.  It can change when a symbol is instantiated through <method>ParseSymbol</method>, when a user event records a new begin instance, when a seek backwards discards a recorded event instance, and when a new document is parsed.  Future event instances are not predicted.</p>
+<p>Reading this field does not start playback, render a frame or alter the <fl>Position</fl>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Flags</name>
       <comment>Configuration flags that modify SVG processing behaviour.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -334,6 +370,7 @@ document, not from the element that references them.</li>
 <p>The callback function receives a pointer to the SVG object, enabling access to the current scene state and rendering control.  This is commonly used for rendering the animated SVG content to target bitmaps, implementing video capture, or synchronising with external animation systems.</p>
 <p><b>Timing behaviour:</b> The callback executes immediately after frame preparation but before automatic scene redrawing, ensuring that custom logic can modify or capture the scene state at the optimal moment.</p>
 <p><b>Animation dependency:</b> Callbacks are only triggered for SVG documents containing SMIL animation features. Static documents will not invoke the callback function.</p>
+<p><b>Playback position:</b> Read <fl>Position</fl> for the current document time and <fl>Duration</fl> for the resolved length of the animation.  <fl>Position</fl> follows the animation clock and can be marginally ahead of the frame being delivered.</p>
 <p><b>Function prototype:</b> <code>void Function(*SVG)</code></p>
       </description>
     </field>
@@ -378,6 +415,19 @@ document, not from the element that references them.</li>
 <p><b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with automatic decompression handling for compressed formats.</p>
 <p><b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.</p>
 <p>When both <fl>Path</fl> and <fl>Statement</fl> are specified, the Path field takes precedence and the Statement content is ignored during initialisation.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Position</name>
+      <comment>The current animation time of the document, measured in seconds.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Position reports the document time of the animation clock.  It is <code>0</code> for documents without animations, and for an animated document until the first playback frame or a successful <action>Seek</action> establishes the clock.  The value is never negative.</p>
+<p>The Position advances while playback is active and remains constant while playback is paused through <action>Deactivate</action>. Time spent paused is excluded, so <action>Activate</action> continues from the paused position.  A successful <action>Seek</action> sets the Position to the selected time, which is not clamped to the <fl>Duration</fl>.  Parsing a new document returns the Position to <code>0</code>, while instantiating a symbol with <method>ParseSymbol</method> leaves it unchanged.</p>
+<p>The value describes the document clock rather than the most recently rendered frame.  During playback it advances between frames and can be slightly ahead of the scene state observed by <fl>FrameCallback</fl>.</p>
+<p>Reading this field does not start playback, render a frame or alter the animation state.</p>
       </description>
     </field>
 

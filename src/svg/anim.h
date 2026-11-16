@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <string>
+#include "anim_timeline.h"
 
 static const double DEG2RAD = 0.01745329251994329576923690768489;  // Multiple any angle by this value to convert to radians
 static const double RAD2DEG = 57.295779513082320876798154814105;
@@ -35,12 +36,6 @@ enum class CMODE : char { // Specifies the interpolation mode for the animation.
    DISCRETE,   // The animation function will jump from one value to the next without any interpolation.
    PACED,      // Defines interpolation to produce an even pace of change across the animation. This is only supported for values that define a linear numeric range, and for which some notion of "distance" between points can be calculated (e.g. position, width, height, etc.).  Any keyTimes or keySplines will be ignored.
    SPLINE      // Interpolates from one value in the values list to the next according to a time function defined by a cubic Bezier spline. The points of the spline are defined in the keyTimes attribute, and the control points for each interval are defined in the keySplines attribute.
-};
-
-enum class RST : char { // Restart
-   ALWAYS = 0,
-   WHEN_NOT_ACTIVE,
-   NEVER
 };
 
 //********************************************************************************************************************
@@ -84,10 +79,7 @@ template <class T = double> double dist(const kt::POINT<T> &A, const kt::POINT<T
 
 //********************************************************************************************************************
 
-class anim_base {
-private:
-   uint32_t _hash_id = 0;
-
+class anim_base : public anim_timeline {
 public:
    struct spline_point {
       kt::POINT<float> point;
@@ -115,29 +107,14 @@ public:
    std::string from;                // Start from this value. Ignored if 'values' is defined.
    std::string to, by;              // Note that 'to' and 'by' are mutually exclusive, with 'to' as the preference.
    std::string target_attrib;       // Name of the target attribute affected by the From and To values.
-   std::string target_attrib_orig;  // Original value of the target attribute (if not freezing)
-   std::string id;                  // Identifier for the animation
+   std::string target_attrib_orig;  // Original value of the target attribute, retained for restoration
    std::vector< std::pair<kt::POINT<double>, kt::POINT<double> > > splines; // Key splines
    std::vector<spline_path> spline_paths;
-   std::vector<double> begin_series; // List of valid start times for the animation
-   double begin_offset = 0;    // Start animating after this much time (in seconds) has elapsed.
-   double repeat_duration = 0; // The animation will be allowed to repeat for up to the number of seconds indicated.  The time includes the initial loop.
-   double min_duration = 0;    // The minimum value of the active duration.  If zero, the active duration is not constrained.
-   double max_duration = 0;    // The maximum value of the active duration.
-   double duration   = 0;      // Measured in seconds, anything < 0 means infinite.
-   double start_time = 0;      // This is time-stamped once the animation has started (the first begin event is hit)
-   double end_time   = 0;      // This is time-stamped once the animation has finished all of its cycles (including repetitions)
-   double end  = 0;
-   double seek = 0;            // Current seek position, between 0 - 1.0
    double total_dist = 0;      // Total distance between all value nodes
    OBJECTID target_vector = 0;
-   int   repeat_count = 0; // Repetition count.  Anything < 0 means infinite.
-   int   repeat_index = 0; // Current index within the repeat cycle.
    CMODE  calc_mode    = CMODE::LINEAR;
-   RST    restart      = RST::ALWAYS;
    ATT    attrib_type  = ATT::AUTO;
    ADD    additive     = ADD::REPLACE;
-   bool   freeze       = false; // True if the animation freezes on the last frame
    bool   accumulate   = false;
    bool   non_interpolating = false; // True for <set>, which applies target values directly.
    bool   begin_on_key = false; // Animation starts if the user hits a key
@@ -156,18 +133,8 @@ public:
    static double spline_seek(const spline_path &, double) noexcept;
    std::string get_string();
    FRGB get_colour_value(objVector &, FIELD);
-   bool started(double);
-   bool next_frame(double);
    void set_orig_value(svgState &);
-   void activate(bool);
-   void stop(double);
-
-   uint32_t hash_id() {
-      _hash_id = strhash(id);
-      return _hash_id;
-   }
-
-   virtual void perform() = 0;
+   std::string read_orig_value(objVector &, const std::string &);
 
    virtual bool is_valid() {
       if (values.size() >= 2) return true;
@@ -236,7 +203,6 @@ public:
    XTag *tag = nullptr;
 
    anim_value(extSVG *pSVG, OBJECTID pTarget, XTag *pTag) : anim_base(pSVG, pTarget), tag(pTag) { }
-   void perform();
    void set_value(objVector &Vector);
 };
 

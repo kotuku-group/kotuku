@@ -1,36 +1,3 @@
-
-//********************************************************************************************************************
-
-void anim_value::perform()
-{
-   kt::Log log;
-
-   if ((end_time) and (!freeze)) return;
-
-   kt::ScopedObjectLock<objVector> vector(target_vector, 1000);
-   if (vector.granted()) {
-      if (vector->classID() IS CLASSID::VECTORGROUP) {
-         // Groups are a special case because they act as a placeholder and aren't guaranteed to propagate all
-         // attributes to their children.
-
-         // Note that group attributes do not override values that are defined by the client.
-
-         for (auto &child : tag->Children) {
-            if (!child.isTag()) continue;
-            // Any tag producing a vector object can theoretically be subject to animation.
-            if (auto si = child.attrib("_id")) {
-               // We can't override attributes that were defined by the client.
-               if (child.attrib(target_attrib)) continue;
-
-               kt::ScopedObjectLock<objVector> cv(std::stoi(*si), 1000);
-               if (cv.granted()) set_value(**cv);
-            }
-         }
-      }
-      else set_value(**vector);
-   }
-}
-
 //********************************************************************************************************************
 // This function is essentially a mirror of set_property() in terms of targeting fields.
 

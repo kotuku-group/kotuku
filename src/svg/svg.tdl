@@ -22,7 +22,7 @@ module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestam
     obj(VectorViewport) Viewport # First viewport (the svg tag) to be created on parsing the SVG document.
     obj(VectorScene) Scene
     int Frame          # Draw the SVG only when this frame number is a match to the target surface frame number.
-    int(SVF) Flags     # Optional flags.
+    int(SVF) Flags     # Configuration flags that modify SVG processing behaviour.
     int FrameRate      # Maximum frame rate to use for animation.
   ]])
 end)

@@ -15,38 +15,45 @@ static ERR parse_spline(APTR Path, int Index, int Command, double X, double Y, a
 
 static double parse_begin(anim_base &Anim, std::string_view Value)
 {
-   if (Value.ends_with(".begin")) {
-      auto ref_id = strhash(std::string(Value.substr(0, Value.size()-6)));
-      Anim.svg->StartOnBegin[ref_id].push_back(&Anim);
-      return std::numeric_limits<double>::max();
-   }
-   else if (Value.ends_with(".end")) {
-      auto ref_id = strhash(std::string(Value.substr(0, Value.size()-4)));
-      Anim.svg->StartOnEnd[ref_id].push_back(&Anim);
-      return std::numeric_limits<double>::max();
-   }
-   else if ("access-key" IS Value) { // Start the animation when the user presses a key.
-      Anim.begin_on_key = true;
-      return std::numeric_limits<double>::max();
-   }
-   else return read_time(Value);
-}
+   while (!Value.empty() and (Value.front() <= 0x20)) Value.remove_prefix(1);
+   while (!Value.empty() and (Value.back() <= 0x20)) Value.remove_suffix(1);
 
-//********************************************************************************************************************
+   const double indefinite = std::numeric_limits<double>::infinity();
+   if (Value.empty() or (Value IS "indefinite")) return indefinite;
 
-static void remove_animation_triggers(anim_base &Anim)
-{
-   auto remove_anim = [&Anim](auto &Map) {
-      for (auto it = Map.begin(); it != Map.end(); ) {
-         auto &list = it->second;
-         list.erase(std::remove(list.begin(), list.end(), &Anim), list.end());
-         if (list.empty()) it = Map.erase(it);
-         else ++it;
+   auto position = Value.rfind(".begin");
+   const auto end_position = Value.rfind(".end");
+   const bool end = (end_position != std::string_view::npos) and
+      ((position IS std::string_view::npos) or (end_position > position));
+
+   if (end) position = end_position;
+
+   if (position != std::string_view::npos) {
+      auto offset = Value.substr(position + (end ? 4 : 6));
+
+      while (!offset.empty() and (offset.front() <= 0x20)) offset.remove_prefix(1);
+      double seconds = 0;
+
+      if (!offset.empty()) {
+         if ((offset.front() != '+') and (offset.front() != '-')) return indefinite;
+         const bool negative = offset.front() IS '-';
+         offset.remove_prefix(1);
+         seconds = read_time(offset) * (negative ? -1 : 1);
       }
-   };
 
-   remove_anim(Anim.svg->StartOnBegin);
-   remove_anim(Anim.svg->StartOnEnd);
+      Anim.begin_refs.push_back({ std::string(Value.substr(0, position)), seconds, end });
+      return indefinite;
+   }
+
+   if (Value.starts_with("access-key")) Anim.begin_on_key = true;
+   else if (Value.ends_with("click")) Anim.begin_on_click = true;
+   else if ((Value.front() >= '0' and Value.front() <= '9') or
+      (Value.front() IS '.') or (Value.front() IS '-') or (Value.front() IS '+')) {
+      if (Value.front() IS '+') Value.remove_prefix(1);
+      return read_time(Value);
+   }
+
+   return indefinite;
 }
 
 //********************************************************************************************************************
@@ -80,8 +87,8 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
          break;
 
       case SVF_fill: // freeze, remove
-         if ("freeze" IS Value) Anim.freeze = true; // Freeze the effect value at the last value of the duration (i.e. keep the last frame).
-         else if ("remove" IS Value) Anim.freeze = true; // The default.  The effect is stopped when the duration is over.
+         if ("freeze" IS Value) Anim.freeze = true; // Keep the last frame after the duration ends.
+         else if ("remove" IS Value) Anim.freeze = false; // The default: remove the effect when the duration ends.
          break;
 
       case SVF_additive: // replace, sum
@@ -109,38 +116,20 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
          Anim.by = Value;
          break;
 
-      case SVF_begin:
-         // Defines when the element should become active.  Specified as a semi-colon list.
-         //   offset: A clock-value that is offset from the moment the animation is activated.
-         //   id.end/begin: Reference to another animation's begin or end to determine when the animation starts.
-         //   event: An event reference like 'focusin' determines that the animation starts when the event is triggered.
-         //   id.repeat(value): Reference to another animation, repeat when the given value is reached.
-         //   access-key: The animation starts when a keyboard key is pressed.
-         //   clock: A real-world clock time (not supported)
-
-         if ("indefinite" IS Value) {
-            Anim.begin_offset = std::numeric_limits<double>::max();
+      case SVF_begin: {
+         // Preserve offset and syncbase instances independently; neither is mutated during playback.
+         Anim.begin_series.clear();
+         Anim.begin_refs.clear();
+         Anim.begin_offset = std::numeric_limits<double>::infinity();
+         for (size_t start=0; start < Value.size(); ) {
+            auto end = Value.find(';', start);
+            if (end IS std::string_view::npos) end = Value.size();
+            const double begin = parse_begin(Anim, Value.substr(start, end - start));
+            if (std::isfinite(begin)) Anim.begin_series.push_back(begin);
+            start = end + 1;
          }
-         else if (Value.find(';') != std::string::npos) {
-            // A series of numbers has likely been provided, but '.begin' and '.end' references are possible also.
-
-            for (unsigned v=0; v < Value.size(); ) {
-                while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
-                auto v_end = Value.find(';', v);
-                if (v_end IS std::string::npos) v_end = Value.size();
-
-                if (auto begin_offset = parse_begin(Anim, Value.substr(v, v_end - v)); begin_offset != std::numeric_limits<double>::max()) {
-                   Anim.begin_series.push_back(begin_offset);
-                }
-                v = v_end + 1;
-            }
-
-            if (not Anim.begin_series.empty()) Anim.begin_offset = Anim.begin_series[0];
-            else Anim.begin_offset = std::numeric_limits<double>::max();
-         }
-         else Anim.begin_offset = parse_begin(Anim, Value);
-
          break;
+      }
 
       case SVF_end:
          // The animation ends when one of the triggers is reached.  A semi-colon list of multiple values is permitted
@@ -148,7 +137,7 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
          break;
 
       case SVF_dur: // 4s, 02:33, 12:10:53, 45min, 4ms, 12.93, 1h, 'media', 'indefinite'
-         if ("media" IS Value) Anim.duration = 0; // Does not apply to animation
+         if ("media" IS Value) Anim.duration = -1; // Does not apply to animation
          else if ("indefinite" IS Value) Anim.duration = -1;
          else Anim.duration = read_time(Value);
          break;
@@ -159,7 +148,8 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
          break;
 
       case SVF_max: // Specifies the maximum value of the active duration.
-         if ("media" IS Value) Anim.max_duration = 0; // Does not apply to animation
+         if (("media" IS Value) or ("indefinite" IS Value))
+            Anim.max_duration = std::numeric_limits<double>::infinity(); // Does not apply to animation
          else Anim.max_duration = read_time(Value);
          break;
 
@@ -181,9 +171,9 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
          else Anim.repeat_duration = read_time(Value);
          break;
 
-      case SVF_repeatCount: // Specifies the number of iterations of the animation function.  Integer, 'indefinite'
+      case SVF_repeatCount: // Specifies the number of iterations of the animation function.  Number, 'indefinite'
          if ("indefinite" IS Value) Anim.repeat_count = -1;
-         else Anim.repeat_count = read_time(Value);
+         else Anim.repeat_count = std::max(0.0, svtonum<double>(Value));
          break;
 
       // Similar to 'from' and 'to', this is a series of values that are interpolated over the time line.

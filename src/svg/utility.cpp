@@ -1276,6 +1276,15 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
    AdjustLogLevel(1);
 #endif
 
+   // Animation records can retain pointers into the XML tree.  Discard them before replacing that tree.
+   reset_animation_matrices(Self);
+   Self->ValueAnimations.clear();
+   Self->Animations.clear();
+   Self->Animatrix.clear();
+   Self->SymbolInstances.clear();
+   Self->AnimEpoch = Self->LastAnimTime = Self->PausedTime = 0;
+   if (Self->PauseStart) Self->PauseStart = double(PreciseTime()) / 1000000.0;
+   Self->AnimTimingDirty = true;
    Self->IDs.clear();
    Self->QueryParams.clear();
    Self->ParamAttribs.clear();
@@ -1355,6 +1364,9 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
                else state.proc_svg(scan, Self->Scene, sibling);
             }
          }
+
+         prepare_value_animations(Self);
+         resolve_animations(Self);
 
          // Support for inheritance
 

@@ -43,8 +43,6 @@ void anim_motion::perform()
    double angle = -1;
    double seek_to = seek;
 
-   if ((end_time) and (!freeze)) return;
-
    kt::ScopedObjectLock<objVector> vector(target_vector, 1000);
    if (!vector.granted()) return;
 
@@ -175,7 +173,7 @@ void anim_motion::perform()
    // intermixed with other transforms.
 
    if (not matrix) {
-      vector->newMatrix(&matrix, true);
+      if (vector->newMatrix(&matrix, true) != ERR::Okay) return;
       matrix->Tag = MTAG_ANIMATE_MOTION;
    }
    vec::ResetMatrix(matrix);
