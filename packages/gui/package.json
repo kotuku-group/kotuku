@@ -28,6 +28,12 @@
   },
   "files": [
     {
+      "path": "colours.tiri",
+      "size": 19980,
+      "sha256": "156f1bed361ef1ca592ca6b3a45b35ec939ca33a3cbe3896fe87c0ca58bba4d7",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
       "path": "effects.tiri",
       "size": 52440,
       "sha256": "c005224c3af0f3725e0b45c7192ebf6c42b922aeb720c00631b5c2b078a9fef8",
@@ -47,8 +53,8 @@
     },
     {
       "path": "gui.tiri",
-      "size": 72929,
-      "sha256": "ae9dcf1674ecf516c0c5320cbeda53d4365e6236f62e05db91ff77f5359dd9fe",
+      "size": 59982,
+      "sha256": "82d20aba82fafd380c0b78e127f45b8b13e94af63e8ed7fa9ea9463cd518c0c6",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
