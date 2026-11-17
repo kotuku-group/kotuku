@@ -1122,6 +1122,8 @@ class extVectorPath : public extVector, public SceneDef {
    TClipRectangle<double> UnplacedBounds;
    Unit pX, pY;
    Unit pWidth, pHeight; // Optional size constraint applied to the generated path, prior to (X,Y) placement
+   PCO CoordinateDependencies = PCO::NIL; // Combined PCO bits; refreshed whenever CommandsChanged is set
+   double ReferenceWidth = 0, ReferenceHeight = 0;
    bool CommandsChanged = true; // Invalidates UnplacedPath whenever Commands is modified
 
    extVectorPath(objMetaClass *ClassPtr, OBJECTID ObjectID);
@@ -1320,14 +1322,15 @@ extern void prepare_pattern(extVectorPattern *, double, double, double);
 extern ERR render_pattern(extVectorPattern *, BLM = BLM::AUTO);
 extern void calc_full_boundary(extVector *, TClipRectangle<double> &, bool IncludeSiblings = true, bool IncludeTransforms = true, bool IncludeStrokes = false);
 extern void calc_local_boundary(extVector *, TClipRectangle<double> &);
-extern void convert_to_aggpath(extVectorPath *, std::vector<PathCommand> &, agg::path_storage &);
+extern ERR convert_to_aggpath(extVectorPath *, std::vector<PathCommand> &, agg::path_storage &);
 extern void debug_tree(extVector *, int &);
 extern void gen_vector_path(extVector *);
 extern void gen_vector_tree(extVector *);
 extern GRADIENT_TABLE * get_fill_gradient_table(extPainter &, double);
 extern GRADIENT_TABLE * get_stroke_gradient_table(extVector &);
 extern objBitmap * get_source_graphic(extVectorFilter *);
-extern ERR read_path(std::vector<PathCommand> &, std::string_view);
+extern ERR read_path(std::vector<PathCommand> &, std::string_view, bool EdgeOffsets);
+extern bool valid_path_commands(std::span<const PathCommand>);
 extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS, objBitmap **, int, int);
 extern ERR scene_input_events(const InputEvent *, int);
 extern void send_feedback(extVector *, FM, OBJECTPTR = nullptr);

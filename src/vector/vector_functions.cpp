@@ -841,6 +841,9 @@ A: Arc
 Z: Close Path
 </pre>
 
+Parent-edge `~` operands are a @VectorPath.Sequence extension and return InvalidValue here because this resource
+has no parent layout context.  Numeric SVG paths retain their ordinary absolute and relative coordinate semantics.
+
 If `Sequence` is empty, an empty path resource will be generated.  This path can be populated with functions such as
 ~MoveTo() and ~LineTo().
 
@@ -874,11 +877,12 @@ ERR GeneratePath(const std::string_view &Sequence, APTR *Path)
    }
    else {
       std::vector<PathCommand> paths;
-      if (!(error = read_path(paths, Sequence))) {
+      if (!(error = read_path(paths, Sequence, false))) {
          auto vector = new_simplevector();
          if (vector) {
-            convert_to_aggpath(nullptr, paths, vector->mPath);
-            *Path = vector;
+            error = convert_to_aggpath(nullptr, paths, vector->mPath);
+            if (error IS ERR::Okay) *Path = vector;
+            else FreeResource(vector);
          }
          else error = ERR::AllocMemory;
       }

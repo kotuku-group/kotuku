@@ -5,7 +5,6 @@ double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
 
 [[maybe_unused]] static HSV rgb_to_hsl(FRGB Colour);
 [[maybe_unused]] static FRGB hsl_to_rgb(HSV Colour);
-static void read_numseq_zero(std::string_view &, std::initializer_list<double *>);
 static bool read_transform_number(std::string_view &Value, double &Result);
 
 //********************************************************************************************************************
@@ -138,18 +137,86 @@ static void update_dpi(void)
 // data specification. This will provide a visual clue to the user or developer about where the error might be in the
 // path data specification.
 
-ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
+ERR read_path(std::vector<PathCommand> &Path, std::string_view Value, bool EdgeOffsets)
 {
    kt::Log log(__FUNCTION__);
 
-   PathCommand path;
+   if ((not EdgeOffsets) and (Value.find('~') != std::string_view::npos)) return ERR::InvalidValue;
+
+   PathCommand path = {};
+
+   // Keep operand roles separate from values: arc radii share X2/Y2 storage with curve controls.
+
+   auto read_operands = [&](std::initializer_list<double *> Operands, bool Absolute, bool Arc = false) {
+      for (auto operand : Operands) {
+         while ((not Value.empty()) and ((Value.front() <= 0x20) or (Value.front() IS ','))) {
+            Value.remove_prefix(1);
+         }
+
+         const bool offset = Value.starts_with('~');
+         PCO mode = PCO::NIL;
+
+         if (operand IS &path.X) mode = PCO::X_OFFSET;
+         else if (operand IS &path.Y) mode = PCO::Y_OFFSET;
+         else if (not Arc) {
+            if (operand IS &path.X2) mode = PCO::X2_OFFSET;
+            else if (operand IS &path.Y2) mode = PCO::Y2_OFFSET;
+            else if (operand IS &path.X3) mode = PCO::X3_OFFSET;
+            else if (operand IS &path.Y3) mode = PCO::Y3_OFFSET;
+         }
+
+         if (offset) {
+            if ((not EdgeOffsets) or (not Absolute) or (mode IS PCO::NIL)) return ERR::InvalidValue;
+            Value.remove_prefix(1);
+            if (Value.empty()) return ERR::Syntax;
+         }
+
+         double result = 0;
+
+         if (offset) {
+            CSTRING start = Value.data();
+            CSTRING number = start;
+            if (*number IS '+') {
+               ++number;
+               if ((number IS start + Value.size()) or (*number IS '-') or (*number IS '+')) return ERR::Syntax;
+            }
+
+            auto [next, error] = std::from_chars(number, start + Value.size(), result);
+            if (error IS std::errc::result_out_of_range) return ERR::InvalidValue;
+            if (error != std::errc()) return ERR::Syntax;
+            Value.remove_prefix(next - start);
+         }
+         else if (not read_transform_number(Value, result)) {
+            // Retain the legacy zero-fill policy for ordinary SVG operands.  Offset commands must be complete.
+            if (path.Options != PCO::NIL) return ERR::Syntax;
+            result = 0;
+         }
+
+         if (not std::isfinite(result)) return ERR::InvalidValue;
+
+         if (offset and (not Value.empty())) {
+            const auto next = Value.front();
+            if ((next > 0x20) and (next != ',') and (next != '~') and (next != '+') and (next != '-') and
+                (next != '.') and (not std::isdigit(uint8_t(next))) and
+                (std::string_view("MLHVQTCSAZmlhvqtcsaz").find(next) IS std::string_view::npos)) {
+               return ERR::Syntax;
+            }
+         }
+
+         *operand = result;
+         if (offset) path.Options |= mode;
+      }
+
+      return ERR::Okay;
+   };
 
    int max_cmds = 8192; // Maximum commands per path - this acts as a safety net in case the parser gets stuck.
    uint8_t cmd = 0;
    while (not Value.empty()) {
       const auto current = Value.front();
       const bool use_previous_cmd = std::isdigit((uint8_t)current) or (current IS '-') or (current IS '+') or
-         (current IS '.');
+         (current IS '.') or (current IS '~');
+
       if (std::isalpha((uint8_t)current)) {
          cmd = current;
          Value.remove_prefix(1);
@@ -160,12 +227,15 @@ ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
       }
       else if (not use_previous_cmd) break;
 
+      path = {};
+      ERR error = ERR::Okay;
+      const bool absolute = std::isupper(cmd);
       switch (cmd) {
          case 'M': case 'm': // MoveTo
-            read_numseq_zero(Value, { &path.X, &path.Y });
+            error = read_operands({ &path.X, &path.Y }, absolute);
             if (cmd IS 'M') {
                path.Type = PE::Move;
-               cmd = 'L'; // This is because the SVG standard requires that uninterrupted coordinate pairs are interpreted as line-to commands.
+               cmd = 'L'; // Uninterrupted move pairs become line-to commands under SVG rules.
             }
             else {
                path.Type = PE::MoveRel;
@@ -174,58 +244,64 @@ ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
             break;
 
          case 'L': case 'l': // LineTo
-            read_numseq_zero(Value, { &path.X, &path.Y });
+            error = read_operands({ &path.X, &path.Y }, absolute);
             if (cmd IS 'L') path.Type = PE::Line;
             else path.Type = PE::LineRel;
             break;
 
          case 'V': case 'v': // Vertical LineTo
             path.X = 0; // Needs to be zero to satisfy any curve instructions that might follow
-            read_numseq_zero(Value, { &path.Y });
+            error = read_operands({ &path.Y }, absolute);
             if (cmd IS 'V') path.Type = PE::VLine;
             else path.Type = PE::VLineRel;
             break;
 
          case 'H': case 'h': // Horizontal LineTo
             path.Y = 0; // Needs to be zero to satisfy any curve instructions that might follow
-            read_numseq_zero(Value, { &path.X });
+            error = read_operands({ &path.X }, absolute);
             if (cmd IS 'H') path.Type = PE::HLine;
             else path.Type = PE::LineRel;
             break;
 
          case 'Q': case 'q': // Quadratic Curve To
-            read_numseq_zero(Value, { &path.X2, &path.Y2, &path.X, &path.Y });
+            error = read_operands({ &path.X2, &path.Y2, &path.X, &path.Y }, absolute);
             if (cmd IS 'Q') path.Type = PE::QuadCurve;
             else path.Type = PE::QuadCurveRel;
             break;
 
          case 'T': case 't': // Quadratic Smooth Curve To
-            read_numseq_zero(Value, { &path.X, &path.Y });
+            error = read_operands({ &path.X, &path.Y }, absolute);
             if (cmd IS 'T') path.Type = PE::QuadSmooth;
             else path.Type = PE::QuadSmoothRel;
-           break;
+            break;
 
          case 'C': case 'c': // Curve To
-            read_numseq_zero(Value, { &path.X2, &path.Y2, &path.X3, &path.Y3, &path.X, &path.Y });
+            error = read_operands({ &path.X2, &path.Y2, &path.X3, &path.Y3, &path.X, &path.Y }, absolute);
             if (cmd IS 'C') path.Type = PE::Curve;
             else path.Type = PE::CurveRel;
             break;
 
          case 'S': case 's': // Smooth Curve To
-            read_numseq_zero(Value, { &path.X2, &path.Y2, &path.X, &path.Y });
+            error = read_operands({ &path.X2, &path.Y2, &path.X, &path.Y }, absolute);
             if (cmd IS 'S') path.Type = PE::Smooth;
             else path.Type = PE::SmoothRel;
             break;
 
          case 'A': case 'a': { // Arc
-            double largearc, sweep;
-            read_numseq_zero(Value, { &path.X2, &path.Y2, &path.Angle, &largearc, &sweep, &path.X, &path.Y });
-            path.LargeArc = int(largearc);
-            path.Sweep = int(sweep);
-            if ((path.LargeArc != 1) and (path.LargeArc != 0)) return ERR::InvalidValue;
-            if ((path.Sweep != 1) and (path.Sweep != 0)) return ERR::InvalidValue;
+            double largearc = 0, sweep = 0;
+            error = read_operands({ &path.X2, &path.Y2, &path.Angle, &largearc, &sweep, &path.X, &path.Y },
+               absolute, true);
+
+            if (error != ERR::Okay) return error;
+            if ((largearc != 1) and (largearc != 0)) return ERR::InvalidValue;
+            if ((sweep != 1) and (sweep != 0)) return ERR::InvalidValue;
+
+            if (largearc) path.Options |= PCO::LARGE_ARC;
+            if (sweep) path.Options |= PCO::SWEEP;
+
             if (cmd IS 'A') path.Type = PE::Arc;
             else path.Type = PE::ArcRel;
+
             break;
          }
 
@@ -239,6 +315,7 @@ ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
 
          case 'Z': case 'z': { // Close Path
             path.Type = PE::ClosePath;
+            cmd = 0; // Close has no operands and cannot be repeated implicitly.
             break;
          }
 
@@ -248,7 +325,23 @@ ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
          }
       }
 
-      if (--max_cmds == 0) {
+      if (error != ERR::Okay) return error;
+
+      if (path.Options != PCO::NIL) {
+         auto remaining = Value;
+         while ((not remaining.empty()) and ((remaining.front() <= 0x20) or (remaining.front() IS ','))) {
+            remaining.remove_prefix(1);
+         }
+
+         if (not remaining.empty()) {
+            const auto next = remaining.front();
+            if ((next != '~') and (next != '+') and (next != '-') and (next != '.') and
+                (not std::isdigit(uint8_t(next))) and
+                (std::string_view("MLHVQTCSAZmlhvqtcsaz").find(next) IS std::string_view::npos)) return ERR::Syntax;
+         }
+      }
+
+      if (--max_cmds IS 0) {
          Path.clear();
          return log.warning(ERR::BufferOverflow);
       }
@@ -897,15 +990,6 @@ ERR read_numseq(std::string_view &String, std::initializer_list<double *> Value)
    }
 
    return ERR::Okay;
-}
-
-void read_numseq_zero(std::string_view &String, std::initializer_list<double *> Value)
-{
-   for (double *v : Value) {
-      double result = 0;
-      if (read_transform_number(String, result)) *v = result;
-      else *v = 0;
-   }
 }
 
 //********************************************************************************************************************

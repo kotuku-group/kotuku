@@ -474,6 +474,22 @@ enum class FM : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(FM)
 
+// PathCommand options.
+
+enum class PCO : uint8_t {
+   NIL = 0,
+   LARGE_ARC = 0x00000001,
+   SWEEP = 0x00000002,
+   X_OFFSET = 0x00000004,
+   Y_OFFSET = 0x00000008,
+   X2_OFFSET = 0x00000010,
+   Y2_OFFSET = 0x00000020,
+   X3_OFFSET = 0x00000040,
+   Y3_OFFSET = 0x00000080,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(PCO)
+
 // Available modes for the GradientMesh class.
 
 enum class GMT : int {
@@ -645,19 +661,17 @@ struct VectorPainter {
 };
 
 struct PathCommand {
-   PE      Type;        // The command type
-   uint8_t LargeArc;    // Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when TRUE.
-   uint8_t Sweep;       // Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.
-   uint8_t Pad1;        // Private
-   double  X;           // The targeted X coordinate (absolute or scaled) for the command
-   double  Y;           // The targeted Y coordinate (absolute or scaled) for the command
-   double  AbsX;        // Private
-   double  AbsY;        // Private
-   double  X2;          // The X2 coordinate for curve commands, or RX for arcs
-   double  Y2;          // The Y2 coordinate for curve commands, or RY for arcs
-   double  X3;          // The X3 coordinate for curve-to or smooth-curve-to
-   double  Y3;          // The Y3 coordinate for curve-to or smooth-curve-to
-   double  Angle;       // Arc angle
+   PE     Type;    // The command type
+   PCO    Options; // Special behavioural options.
+   double X;       // The targeted X coordinate (absolute or scaled) for the command
+   double Y;       // The targeted Y coordinate (absolute or scaled) for the command
+   double AbsX;    // Private
+   double AbsY;    // Private
+   double X2;      // The X2 coordinate for curve commands, or RX for arcs
+   double Y2;      // The Y2 coordinate for curve commands, or RY for arcs
+   double X3;      // The X3 coordinate for curve-to or smooth-curve-to
+   double Y3;      // The Y3 coordinate for curve-to or smooth-curve-to
+   double Angle;   // Arc angle
 };
 
 struct VectorMatrix {
