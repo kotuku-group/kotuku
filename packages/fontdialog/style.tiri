@@ -200,8 +200,12 @@ fontdialog_style.fontStyle = function(State:table!):str
    font = State.font
    if not font.variable then return State.style end
 
+   -- An alias can declare a width, which applies unless the style states one, so the width is stated if it differs
+   -- from the alias's width rather than the normal width.
+
+   neutral_width = font.defaultWidth ?? 100
    weight = math.round(State.axes.wght ?? 400)
-   width  = State.axes.wdth ?? 100
+   width  = State.axes.wdth ?? neutral_width
    name   = WEIGHT_NAMES[weight]
 
    extras = array<str>
@@ -211,14 +215,14 @@ fontdialog_style.fontStyle = function(State:table!):str
       if (value != nil) and (value != axisDef(font, tag).default) then extras.push(f'{tag}={value}') end
    end
 
-   if name and (width is 100) and (#extras is 0) then
+   if name and (width is neutral_width) and (#extras is 0) then
       if not State.italic then return name end
       return (name is 'Regular') ? 'Italic' : name .. ' Italic'
    end
 
    parts = array<str>
    parts.push(f'weight={weight}')
-   if width != 100 then parts.push(f'width={width}%') end
+   if width != neutral_width then parts.push(f'width={width}%') end
    if State.italic then parts.push('italic=yes') end
    for extra in values(extras) do parts.push(extra) end
    return parts.concat(';')

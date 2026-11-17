@@ -16,6 +16,22 @@ dialog is open, each fresh colour change is reported as 'active', at most once p
 is always delivered).  The dialog then reports 'closed' with the applied colour, or 'cancelled' with a nil Colour,
 exactly once.
 
+Palette mode edits a complete palette that the client supplies, instead of the user's palettes:
+
+   gui.dialog.colour({
+      palette = {
+         name = 'Ocean', mode = 'interface', active = 'prime', -- active: a swatch id, name or index to edit first
+         swatches = array<table> { { id = 'neutral', name = 'Surface', colour = 'oklch(0.894 0 89.876)' }, ... }
+      },
+      feedback = function(Colour, Status, Palette) ... end
+   })
+
+The swatches are fixed: their colours can be edited, but they can't be added, removed, renamed, relinked or reordered,
+and the palette mode can't be changed.  The palette database and picker settings are neither changed nor saved, and the
+Palette Manager tab is unavailable.  The third feedback argument is { name, swatches }, where each swatch is
+{ id, name, colour, changed }: colour is a result colour as for the Colour argument, and changed is true if it differs
+from the colour that the client gave.  It is nil for 'cancelled'.
+
 The mode bar switches the window body between two tabs (selectTab(), Ctrl+Tab, Ctrl+1/2):
 
    Picker   The colour editor in three columns: the wheel, sliders, readouts and eyedropper; the scratch row and the
@@ -143,11 +159,11 @@ EXPORT_MIN_H   <const> = 200 -- Includes the panel header, code tabs and scrolla
 -- Each flexible panel receives all space left by its fixed neighbours, without an upper height limit.
 
 function minimumBodyHeight():num
-   rows_h = (MIN_PALETTE_ROWS * ROW_HEIGHT) + ((MIN_PALETTE_ROWS - 1) * ROW_GAP) + (VIEW_EDGE * 2)
+   rows_h    = (MIN_PALETTE_ROWS * ROW_HEIGHT) + ((MIN_PALETTE_ROWS - 1) * ROW_GAP) + (VIEW_EDGE * 2)
    palette_h = colourpicker_theme.PANEL_HEADER_H + LIST_TOP + rows_h + LIST_PAD_BTM + SMALL_BUTTON + LIST_PAD_BTM
-   left_h = (LEFT_PAD * 2) + palette_h + (LEFT_GAP * 2) + EYEDROP_H + PREVIEW_H
-   centre_h = CHANNEL_PANEL_Y + CHANNEL_PANEL_H + CENTRE_PAD_Y
-   right_h = (RIGHT_PAD * 2) + REL_PANEL_H + CONTRAST_H + colourpicker_ramp.HEIGHT + (RIGHT_GAP * 3) + EXPORT_MIN_H
+   left_h    = (LEFT_PAD * 2) + palette_h + (LEFT_GAP * 2) + EYEDROP_H + PREVIEW_H
+   centre_h  = CHANNEL_PANEL_Y + CHANNEL_PANEL_H + CENTRE_PAD_Y
+   right_h   = (RIGHT_PAD * 2) + REL_PANEL_H + CONTRAST_H + colourpicker_ramp.HEIGHT + (RIGHT_GAP * 3) + EXPORT_MIN_H
    return math.max(left_h, centre_h, right_h)
 end
 
@@ -209,6 +225,14 @@ TAB_PALETTE <const> = 1
 MODE_TABS <const> = array<table> {
    { label = 'Picker', glyph = 'picker', enabled = true },
    { label = 'Palette Manager', glyph = 'palette', enabled = true }
+}
+
+-- In palette mode the manager isn't available, because the edited palette isn't part of the database.
+
+FIXED_MODE_TABS <const> = array<table> {
+   { label = 'Picker', glyph = 'picker', enabled = true },
+   { label = 'Palette Manager', glyph = 'palette', enabled = false,
+     tip = 'The palette manager is unavailable while a fixed palette is edited' }
 }
 
 -- Keyboard nudge for each channel; Shift multiplies it by NUDGE_COARSE
@@ -361,6 +385,50 @@ function parseInitial(Value:any):table
    return parsed
 end
 
+-- The palette option, { name, mode, swatches, active }, as a fixed palette (see colourpalette.fixed()).  Also returns
+-- the index of the swatch named by active (an id, a name or an index), or nil to edit the scratch colour first.  An
+-- invalid option raises ERR_Args.
+
+function fixedPalette(Option:any):<table, num>
+   if not (Option is <table>) then raise ERR_Args, 'The palette option must be a table' end
+   name = ((Option.name is <str>) and (#Option.name.trim() > 0)) ? Option.name.trim() : 'Palette'
+   palette, err = colourpalette.fixed(name, Option.swatches, (Option.mode is <str>) ? Option.mode : nil)
+   palette ?! raise ERR_Args, f'Invalid palette option: {err}'
+
+   active = Option.active
+   local index:num
+   if active is <num> then
+      if (active >= 0) and (active < #palette.swatches) and (active % 1 is 0) then index = active end
+   elseif active is <str> then
+      index = palette.swatches.findIndex(S => S.id is active)
+      if index is nil then index = palette.swatches.findIndex(S => S.name is active) end
+   end
+   return palette, index
+end
+
+-- The palette reported to the client in palette mode: its name, and each swatch's client id, name and colour.  The
+-- colour is the result colour for the target gamut, as for the edited colour (see outputColour()).  A swatch is changed
+-- if its colour differs from the colour in Initial, the palette as the client gave it.
+
+PALETTE_EPSILON <const> = 0.000001
+
+function paletteResult(State:table!, Initial:table!):table
+   swatches = array<table>
+   for i, s in State.palette.swatches do
+      colour = { l = s.l, c = s.c, h = s.h, alpha = s.alpha, clamp = State.clamp }
+      deriveState(colour)
+      first = Initial.swatches[i]
+      changed = true
+      if first then
+         changed = (math.abs(first.l - s.l) > PALETTE_EPSILON) or (math.abs(first.c - s.c) > PALETTE_EPSILON) or
+            (math.abs(first.alpha - s.alpha) > PALETTE_EPSILON) or
+            (math.abs(colourmath.normaliseHue(first.h - s.h + 180) - 180) > PALETTE_EPSILON)
+      end
+      swatches.push({ id = s.id, name = s.name, colour = outputColour(colour), changed = changed })
+   end
+   return { name = State.palette.name, swatches = swatches }
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 
 function buildBody()
@@ -373,7 +441,8 @@ function buildBody()
    &modebar.new('VectorRectangle', { x = 0, y = MODEBAR_HEIGHT - 1, width = '100%', height = 1, fill = t.border })
 
    &modeTabs = colourpicker_parts.tabStrip(&modebar, {
-      width = CLIENT_WIDTH, height = MODEBAR_HEIGHT - 1, items = MODE_TABS, active = TAB_PICKER, tokens = t.onWindow,
+      width = CLIENT_WIDTH, height = MODEBAR_HEIGHT - 1, items = &fixed ? FIXED_MODE_TABS : MODE_TABS,
+      active = TAB_PICKER, tokens = t.onWindow,
       onSelect = function[&&](Index:num) &selectTab(Index) end
    })
 
@@ -1317,11 +1386,20 @@ function buildPalette(Target:obj)
    -- palettes in the database are refused, which restores the current name.
 
    &paletteName = valueField(&&, panel.header, {
-      x = LEFT_INNER - LIST_PAD_X - colourpicker_parts.FIELD_PAD, y = 0, width = 100,
-      height = SMALL_BUTTON, size = 14, fill = t.fg2, charLimit = PALETTE_NAME_LIMIT, tokens = t,
+      x      = LEFT_INNER - LIST_PAD_X - colourpicker_parts.FIELD_PAD,
+      y      = 0,
+      width  = 100,
+      height = SMALL_BUTTON,
+      size   = 14,
+      fill   = t.fg2,
+      charLimit = PALETTE_NAME_LIMIT,
+      tokens    = t,
       commit = function[&&](Text)
          if &finished then return true end
+         if &fixed then return false end
+
          renamed, reason = colourpalette.renamePalette(&state.palette, Text, &db.palettes)
+
          if not renamed then
             msg(reason)
             processing.delayedCall(function[&&]()
@@ -1331,11 +1409,13 @@ function buildPalette(Target:obj)
             end)
             return false
          end
+
          &refresh('rename-palette')
          &saveDatabase()
          return true
       end
    })
+
    panel.headerItem('meta', &paletteName)
 
    buildScratchRow(&&, panel.body, list_w)
@@ -1413,6 +1493,10 @@ function buildPalette(Target:obj)
 
             if not Item then
                if (session.index != nil) or not belowPaletteRows(View, Drop.y) then return end
+               if palette.fixed then
+                  &flashPaletteMeta('palette is fixed')
+                  return false
+               end
                if #palette.swatches >= colourpalette.MAX_SWATCHES then
                   &flashPaletteMeta('palette full')
                   return false
@@ -1542,6 +1626,15 @@ function buildPalette(Target:obj)
    &paletteCount = colourpicker_parts.text(panel.body, {
       x = LIST_PAD_X + 2, size = 14, face = colourpicker_parts.FACE_MONO, fill = t.fg2
    })
+
+   -- A fixed palette's structure, mode and name can't be changed.  Copy remains available.
+
+   if &fixed then
+      &paletteModeBox.disable()
+      &paletteName.disable()
+      &paletteName.viewport.cursor = 'default'
+      for btn in values(array<table> { &btnAddSwatch, &btnImport, &btnResetPalette }) do btn.disable() end
+   end
 end
 
 function buildEyedropper(Target:obj)
@@ -1746,7 +1839,8 @@ function updatePalette(self:table)
    self.paletteName.set(palette.name)
    self.paletteCount.string = f'{#palette.swatches} / {colourpalette.MAX_SWATCHES}'
 
-   colourpicker_parts.enableButton(self.btnAddSwatch, #palette.swatches < colourpalette.MAX_SWATCHES)
+   colourpicker_parts.enableButton(self.btnAddSwatch,
+      (not palette.fixed) and (#palette.swatches < colourpalette.MAX_SWATCHES))
    colourpicker_parts.enableButton(self.btnDeleteSwatch, canDeleteSwatch(state))
 end
 
@@ -2468,7 +2562,9 @@ function trackKeyOwners(self:table)
    }
    for row in values(self.relSliders) do widgets.push(row.key.button) end
    for widget in values(self.ramp.widgets()) do widgets.push(widget) end
-   for widget in values(self.manager.widgets()) do widgets.push(widget) end
+   if self.manager then
+      for widget in values(self.manager.widgets()) do widgets.push(widget) end
+   end
    widgets.push({ viewport = self.readoutVP })
 
    for widget in values(widgets) do
@@ -2495,54 +2591,82 @@ gui.dialog.colour = function(Options:table)
    -- editing target.  Otherwise the scratch colour (active = nil) is the editing target.  The scratch colour starts as
    -- the initial colour and is kept while a swatch is being edited, so that the scratch row can return to it.
 
-   settings = colourpalette.load(colourpalette.FILE, initial)
+   settings = colourpalette.load(colourpalette.FILE, initial, Options.palette != nil)
    initial_active = settings.initialActive
+
+   local db:table, database_notice:str, database_error:str, active_index:num, fixed_palette:table
+
+   -- Palette mode edits the client's palette.  The database is neither loaded nor saved, and the initial colour is
+   -- the colour of the swatch that is edited first.
+
+   if Options.palette != nil then
+      fixed_palette, initial_active = fixedPalette(Options.palette)
+      if initial_active != nil then
+         s = fixed_palette.swatches[initial_active]
+         initial = { l = s.l, c = s.c, h = s.h, alpha = s.alpha }
+      end
+
+      db = { palettes = array<table> { fixed_palette }, active = fixed_palette.id }
+      active_index = 0
+      settings.palette = fixed_palette
+   end
 
    -- The database is the only palette store.  Legacy settings seed it only when their palette is absent;
    -- an existing database palette always wins over the old settings copy.
 
-   db, database_notice = colourpalette.loadDatabase(colourpalette.DATABASE)
-   new_database = db is nil
-   local migration_error:str
-   if not db then db = { palettes = array<table> } end
-   if settings.legacy then
-      existing = db.palettes.findIndex(Palette =>
-         (Palette.id is settings.palette.id) or (Palette.name is settings.palette.name))
-      if existing is nil then
-         if #db.palettes >= colourpalette.MAX_PALETTES then
-            migration_error = 'The palette database is full. Legacy settings have been kept for recovery.'
-            database_notice = migration_error
-         else
-            db.palettes.push(settings.palette)
+   if not fixed_palette then
+      db, database_notice = colourpalette.loadDatabase(colourpalette.DATABASE)
+      new_database = db is nil
+      local migration_error:str
+
+      if not db then db = { palettes = array<table> } end
+
+      if settings.legacy then
+         existing = db.palettes.findIndex(Palette =>
+            (Palette.id is settings.palette.id) or (Palette.name is settings.palette.name))
+         if existing is nil then
+            if #db.palettes >= colourpalette.MAX_PALETTES then
+               migration_error = 'The palette database is full. Legacy settings have been kept for recovery.'
+               database_notice = migration_error
+            else
+               db.palettes.push(settings.palette)
+            end
          end
       end
-   end
-   active_index = colourpalette.paletteIndex(db, db.active)
-   if active_index is nil then active_index = colourpalette.paletteIndex(db, settings.activePalette) end
-   if (active_index is nil) and (#db.palettes > 0) then active_index = 0 end
-   if active_index is nil then
-      if not settings.palette then
-         settings.palette = colourpalette.demo(initial.l, initial.c, initial.h, initial.alpha)
-      end
-      db.palettes.push(settings.palette)
-      active_index = 0
-   else
-      initial_active = nil -- The demonstration swatch index belongs only to a newly seeded palette.
-   end
-   settings.palette = db.palettes[active_index]
-   db.active = settings.palette.id
 
-   -- Commit migration before removing the legacy settings section.  On failure it remains available for recovery.
+      active_index = colourpalette.paletteIndex(db, db.active)
 
-   saved, save_error = colourpalette.saveDatabase(colourpalette.DATABASE, db)
-   if saved and (settings.legacy or settings.firstRun or new_database) and not migration_error then
-      settings.activePalette = db.active
-      if not colourpalette.save(colourpalette.FILE, settings) then
-         database_notice = 'The palette was saved, but picker settings could not be migrated.'
+      if active_index is nil then active_index = colourpalette.paletteIndex(db, settings.activePalette) end
+
+      if (active_index is nil) and (#db.palettes > 0) then active_index = 0 end
+
+      if active_index is nil then
+         if not settings.palette then
+            settings.palette = colourpalette.demo(initial.l, initial.c, initial.h, initial.alpha)
+         end
+         db.palettes.push(settings.palette)
+         active_index = 0
+      else
+         initial_active = nil -- The demonstration swatch index belongs only to a newly seeded palette.
       end
-   elseif not saved then
-      database_notice = database_notice ? f'{database_notice}\n{save_error}' : save_error
+
+      settings.palette = db.palettes[active_index]
+      db.active = settings.palette.id
+
+      -- Commit migration before removing the legacy settings section.  On failure it remains available for recovery.
+
+      saved, save_error = colourpalette.saveDatabase(colourpalette.DATABASE, db)
+      if saved and (settings.legacy or settings.firstRun or new_database) and not migration_error then
+         settings.activePalette = db.active
+         if not colourpalette.save(colourpalette.FILE, settings) then
+            database_notice = 'The palette was saved, but picker settings could not be migrated.'
+         end
+      elseif not saved then
+         database_notice = database_notice ? f'{database_notice}\n{save_error}' : save_error
+      end
+      database_error = migration_error ?? (saved ? nil : save_error)
    end
+
    saved_clamp = itemId(CLAMP_ITEMS, settings.clamp, 'srgb')
    option_gamut = Options.gamut
    if option_gamut and ((not (option_gamut is <str>)) or (itemId(CLAMP_ITEMS, option_gamut) is nil)) then
@@ -2573,7 +2697,8 @@ gui.dialog.colour = function(Options:table)
       dbID      = db.active, -- Stable identity of the palette being edited
       dbIndex   = active_index, -- Derived position, kept for the manager's current-row marker
       databaseText = colourpalette.databaseToJSON(db),
-      databaseError = migration_error ?? (saved ? nil : save_error),
+      databaseError = database_error,
+      fixed     = fixed_palette != nil, -- Palette mode: the client's palette is edited and nothing is saved
       tab       = TAB_PICKER,
       state     = {
          l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha,
@@ -2594,7 +2719,6 @@ gui.dialog.colour = function(Options:table)
    end
 
    using self do
-
       &bodyHeight = minimumBodyHeight()
       &clientHeight = MODEBAR_HEIGHT + &bodyHeight + FOOTER_HEIGHT
 
@@ -2607,29 +2731,40 @@ gui.dialog.colour = function(Options:table)
       &setColour = function(L:num!, C:num!, H:num!, Alpha:num, Source:str)
          if Source != 'eyedropper' then &pickedSample = nil end
          state = &state
-         -- ?? would discard an alpha of 0
          state.l, state.c, state.h, state.alpha = clampOklch(L, C, H, (Alpha != nil) ? Alpha : state.alpha)
+
          if state.active != nil then
             colourpalette.setSwatch(state.palette, state.active, state.l, state.c, state.h, state.alpha)
             colourpalette.nameAfterColour(state.palette, state.active)
          else
             state.scratch = { l = state.l, c = state.c, h = state.h, alpha = state.alpha }
          end
+
          deriveState(state)
          &colour = outputColour(state)
          &refresh(Source)
+
          -- Wheel, slider and key edits arrive continuously, so the swatch colour is saved when the window closes
          -- (or with the next palette action) rather than rewriting the database for every pointer movement.
+
          if state.active != nil then &colourUnsaved = true end
          if Source != 'init' then &notifyActive() end
       end
 
       -- Report fresh colour changes to the client with an 'active' status, no faster than the display refreshes.
       -- A change inside the interval is deferred to its end, when the latest colour is sent.  Colours equal to the
-      -- last one reported are skipped.
+      -- last one reported are skipped.  In fixed-palette mode every swatch contributes to the key, because drops
+      -- and Reset can change the palette without changing the editing colour.
 
       function colourKey(Colour:table):str
-         return f'{Colour}|{Colour.css}'
+         key = f'{Colour}|{Colour.css}'
+         if &fixed then
+            key ..= f'|{&state.clamp}'
+            for s in values(&state.palette.swatches) do
+               key ..= f'|{s.l}|{s.c}|{s.h}|{s.alpha}'
+            end
+         end
+         return key
       end
 
       &sendActive = function()
@@ -2638,8 +2773,9 @@ gui.dialog.colour = function(Options:table)
          if key is &feedbackKey then return end
          &feedbackKey = key
          &feedbackTime = colourpicker_parts.now()
+
          try
-            &feedback(&colour, 'active')
+            &feedback(&colour, 'active', &fixed ? paletteResult(&state, &initialPalette) : nil)
          except e
             msg(f'Colour picker feedback failed: {e.message}')
          end
@@ -2708,6 +2844,7 @@ gui.dialog.colour = function(Options:table)
             &namedDist.x = &namedDelta.x
             &namedDist.string = colourpicker_eyedropper.readsDesktop() ? 'Screen not readable' : 'Kōtuku surfaces only'
          end
+
          &viewport.acDraw()
          return sample
       end
@@ -2721,6 +2858,7 @@ gui.dialog.colour = function(Options:table)
          &eyedropTimer = nil
          &eyedropInput = nil
          &eyedropSample = nil
+
          if not &finished then
             &btnPick?.enable()
             if &pickedLabel then &pickedLabel.string = 'Picked' end
@@ -2788,12 +2926,14 @@ gui.dialog.colour = function(Options:table)
       &nudgeChannel = function(Channel:str!, Direction:num!, Coarse:bool)
          slider = &channels[Channel].slider
          value = channelValue(Channel, &state)
+
          nudged = value + (NUDGE[Channel] * Direction * (Coarse ? NUDGE_COARSE : 1))
          if Channel is 'h' then
             nudged = colourmath.normaliseHue(nudged)
          else
             nudged = math.clamp(nudged, slider.min, math.max(slider.max, value))
          end
+
          if nudged != value then &setChannel(Channel, nudged, 'key') end
       end
 
@@ -2809,6 +2949,7 @@ gui.dialog.colour = function(Options:table)
             &colourInput.setText(&inputShown)
             return
          end
+
          &inputFormat = textFormat(text) ?? &inputFormat
          h = (parsed.c < GREY_CHROMA) ? &state.h : parsed.h
          &setColour(parsed.l, parsed.c, h, parsed.alpha, 'input')
@@ -3082,7 +3223,7 @@ gui.dialog.colour = function(Options:table)
          s = &state
          if &finished or &renaming or (s.active is nil) then return end
          if colourpalette.isReserved(s.palette, s.active) then
-            &flashPaletteMeta('role names are fixed')
+            &flashPaletteMeta(&fixed ? 'names are fixed' : 'role names are fixed')
             return
          end
          view  = &paletteView
@@ -3146,7 +3287,7 @@ gui.dialog.colour = function(Options:table)
       -- becomes the editing target.
 
       &resetPalette = function()
-         if &finished or &renaming or &paletteDialog then return end
+         if &finished or &renaming or &paletteDialog or &fixed then return end
          palette = &state.palette
          mode = colourpalette.mode(palette)
          defaults = (mode.id is 'custom') ? 'Black and White swatches' : f'default {mode.label} swatches'
@@ -3188,6 +3329,7 @@ gui.dialog.colour = function(Options:table)
       -- Replace the palette with palette JSON from the clipboard.  The scratch colour becomes the editing target.
 
       &importPalette = function()
+         if &fixed then return end
          palette, err = colourpalette.fromJSON(clipboardText())
          if not palette then
             print(f'Colour picker: palette import failed: {err}')
@@ -3288,6 +3430,7 @@ gui.dialog.colour = function(Options:table)
       end
 
       &saveSettings = function()
+         if &fixed then return true end -- Palette mode saves nothing
          if not &saveDatabase() then return false end
          if not colourpalette.save(colourpalette.FILE, &settingsToSave()) then
             &reportStorageError('Picker settings could not be saved.')
@@ -3300,6 +3443,7 @@ gui.dialog.colour = function(Options:table)
       -- the entry is refreshed before the database is used.
 
       &syncDatabase = function():bool
+         if &fixed then return true end
          index = colourpalette.paletteIndex(&db, &dbID)
          if index is nil then return false end
          &dbIndex = index
@@ -3328,6 +3472,7 @@ gui.dialog.colour = function(Options:table)
 
       &saveDatabase = function():bool
          &colourUnsaved = false
+         if &fixed then return true end -- The client's palette isn't part of the database
          if not &syncDatabase() then
             &reportDatabaseError('The edited palette was removed. Reopen the picker before saving.')
             return false
@@ -3364,7 +3509,7 @@ gui.dialog.colour = function(Options:table)
       -- follows it.
 
       &selectTab = function(Index:num!)
-         if &finished or (Index is &tab) then return end
+         if &finished or (Index is &tab) or (&fixed and (Index != TAB_PICKER)) then return end
          if &renaming then
             &renameRow?.commitEdit()
             processing.delayedCall(function()
@@ -3469,6 +3614,7 @@ gui.dialog.colour = function(Options:table)
 
          feedback = &feedback
          &feedback = nil
+         palette_result = (Colour and &fixed) ? paletteResult(&state, &initialPalette) : nil
          &wheel?.free()
          &manager?.destroy()
          colourpicker_parts.cancelTimer(&copyTimer)
@@ -3486,7 +3632,7 @@ gui.dialog.colour = function(Options:table)
          }
          for field in values(fields) do self[field] = nil end
 
-         if feedback then feedback(Colour, Colour ? 'closed' : 'cancelled') end
+         if feedback then feedback(Colour, Colour ? 'closed' : 'cancelled', palette_result) end
       end
 
       -- Palette edits save immediately in both tabs.  Cancel cancels the colour result and preference changes;
@@ -3682,15 +3828,17 @@ gui.dialog.colour = function(Options:table)
       buildRight()
       buildFooter(Options)
 
-      &manager = colourpicker_manager.build(&&, &viewport, {
-         x = 0, y = MODEBAR_HEIGHT, width = CLIENT_WIDTH, height = &bodyHeight,
-         open  = function[&&](Index:num, Swatch:num) &openPalette(Index, Swatch) end,
-         save  = function[&&]():bool return &saveDatabase() end,
-         removePalette = function[&&](Index:num):bool return &removePalette(Index) end,
-         sync  = function[&&]() &syncDatabase() end,
-         focus = function[&&](Has:bool, Field:table) fieldFocusChanged(&&, Has, Field) end,
-         blur  = function[&&]() &blurField() end
-      })
+      if not &fixed then
+         &manager = colourpicker_manager.build(&&, &viewport, {
+            x = 0, y = MODEBAR_HEIGHT, width = CLIENT_WIDTH, height = &bodyHeight,
+            open  = function[&&](Index:num, Swatch:num) &openPalette(Index, Swatch) end,
+            save  = function[&&]():bool return &saveDatabase() end,
+            removePalette = function[&&](Index:num):bool return &removePalette(Index) end,
+            sync  = function[&&]() &syncDatabase() end,
+            focus = function[&&](Has:bool, Field:table) fieldFocusChanged(&&, Has, Field) end,
+            blur  = function[&&]() &blurField() end
+         })
+      end
 
       trackKeyOwners(&&)
 
