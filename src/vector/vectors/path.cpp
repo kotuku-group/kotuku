@@ -103,50 +103,6 @@ static TClipRectangle<double> get_authored_path_bounds(const agg::path_storage &
 }
 
 //********************************************************************************************************************
-// Validate masks at every public mutation boundary, before changing the existing command list.
-
-bool valid_path_commands(std::span<const PathCommand> Commands)
-{
-   for (const auto &command : Commands) {
-      PCO allowed = PCO::NIL;
-      switch (command.Type) {
-         case PE::Move:
-         case PE::Line:
-         case PE::QuadSmooth:
-         case PE::Arc:
-            allowed = PCO::X_OFFSET | PCO::Y_OFFSET | PCO::LARGE_ARC | PCO::SWEEP;
-            break;
-         case PE::ArcRel:
-            allowed = PCO::LARGE_ARC | PCO::SWEEP;
-            break;
-         case PE::HLine:
-            allowed = PCO::X_OFFSET;
-            break;
-         case PE::VLine:
-            allowed = PCO::Y_OFFSET;
-            break;
-         case PE::QuadCurve: case PE::Smooth:
-            allowed = PCO::X_OFFSET | PCO::Y_OFFSET | PCO::X2_OFFSET | PCO::Y2_OFFSET;
-            break;
-         case PE::Curve:
-            allowed = PCO(0xffffffff);
-            break;
-         default: break;
-      }
-
-      if ((command.Options & ~allowed) != PCO::NIL) return false;
-
-      if ((((command.Options & PCO::X_OFFSET) != PCO::NIL) and (not std::isfinite(command.X))) or
-          (((command.Options & PCO::Y_OFFSET) != PCO::NIL) and (not std::isfinite(command.Y))) or
-          (((command.Options & PCO::X2_OFFSET) != PCO::NIL) and (not std::isfinite(command.X2))) or
-          (((command.Options & PCO::Y2_OFFSET) != PCO::NIL) and (not std::isfinite(command.Y2))) or
-          (((command.Options & PCO::X3_OFFSET) != PCO::NIL) and (not std::isfinite(command.X3))) or
-          (((command.Options & PCO::Y3_OFFSET) != PCO::NIL) and (not std::isfinite(command.Y3)))) return false;
-   }
-   return true;
-}
-
-//********************************************************************************************************************
 // Refreshes the cached AGG conversion of the command list if it has been invalidated.  Placement-only changes
 // (e.g. the X/Y/Width/Height fields, Move and Resize actions) leave the cache intact because generate_path() applies
 // sizing and placement as a post-transform.
@@ -252,16 +208,6 @@ static TClipRectangle<double> get_unplaced_path_bounds(extVectorPath *Vector)
 
 ERR convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, agg::path_storage &BasePath)
 {
-   if (not valid_path_commands(Paths)) return ERR::InvalidValue;
-
-   if (not Vector) {
-      constexpr auto offsets = PCO::X_OFFSET | PCO::Y_OFFSET | PCO::X2_OFFSET | PCO::Y2_OFFSET |
-         PCO::X3_OFFSET | PCO::Y3_OFFSET;
-      for (const auto &command : Paths) {
-         if ((command.Options & offsets) != PCO::NIL) return ERR::InvalidValue;
-      }
-   }
-
    const double width = Vector ? Vector->ReferenceWidth : 0;
    const double height = Vector ? Vector->ReferenceHeight : 0;
    size_t estimate = 0; // Reserve the vertex storage up-front to avoid repeated reallocation.
@@ -278,6 +224,7 @@ ERR convert_to_aggpath(extVectorPath *Vector, std::vector<PathCommand> &Paths, a
             estimate += 1; break;
       }
    }
+
    BasePath.reserve(BasePath.total_vertices() + estimate);
 
    bool lp_curved = false;
@@ -501,19 +448,15 @@ static ERR VECTORPATH_Clear(extVectorPath *Self)
 -ACTION-
 Flush: Validates writable command edits and invalidates the generated path.
 
-After editing the native writable #Commands span, call Flush to validate coordinate modes and refresh parent-size
-dependencies.  InvalidValue rejects unsupported masks or non-finite offset magnitudes.  Tiri reads Commands as a
-copied typed array; assign edited entries to that array and assign the array back to Commands before flushing.
+After editing the native writable #Commands span, call Flush to refresh parent-size dependencies.
+Tiri reads Commands as a copied typed array; assign edited entries to that array and assign the array back to
+Commands before flushing.
 
--ERRORS-
-Okay
-InvalidValue
 -END-
 *********************************************************************************************************************/
 
 static ERR VECTORPATH_Flush(extVectorPath *Self)
 {
-   if (not valid_path_commands(Self->Commands)) return ERR::InvalidValue;
    Self->CommandsChanged = true; // Commands may have been edited in-place via the Commands field pointer
    reset_path(Self);
    return ERR::Okay;
@@ -600,7 +543,6 @@ array(struct(PathCommand)) Commands: Array of commands to add to the path.
 
 -ERRORS-
 Okay
-InvalidValue: A coordinate-mode mask or offset magnitude is invalid.
 NullArgs
 
 -TAGS-
@@ -618,7 +560,6 @@ static ERR VECTORPATH_AddCommand(extVectorPath *Self, struct vp::AddCommand *Arg
 
    if (total_cmds > 1000000) return log.warning(ERR::Args);
 
-   if (not valid_path_commands(Args->Commands)) return ERR::InvalidValue;
    auto list = Args->Commands.data();
    for (size_t i=0; i < total_cmds; i++) {
       Self->Commands.push_back(list[i]);
@@ -715,7 +656,6 @@ array(struct(PathCommand)) Command: An array of commands to set in the path.
 
 -ERRORS-
 Okay
-InvalidValue: A coordinate-mode mask or offset magnitude is invalid.
 NullArgs
 OutOfRange
 BufferOverflow
@@ -733,7 +673,6 @@ static ERR VECTORPATH_SetCommand(extVectorPath *Self, struct vp::SetCommand *Arg
    const size_t total_cmds = Args->Command.size();
    if (total_cmds > 1000000) return ERR::Args;
 
-   if (not valid_path_commands(Args->Command)) return ERR::InvalidValue;
    const size_t index = size_t(Args->Index);
    if (index > 1000000 - total_cmds) return ERR::BufferOverflow;
    if (index > Self->Commands.max_size() - total_cmds) return ERR::BufferOverflow;
@@ -761,7 +700,6 @@ array(struct(PathCommand)) Commands: An array of !PathCommand structures.
 
 -ERRORS-
 Okay
-InvalidValue: A coordinate-mode mask or offset magnitude is invalid.
 NullArgs
 NotInitialised
 Args
@@ -781,7 +719,6 @@ static ERR VECTORPATH_SetCommandList(extVectorPath *Self, struct vp::SetCommandL
    const size_t total_cmds = Args->Commands.size();
    if (total_cmds > 1000000) return log.warning(ERR::Args);
 
-   if (not valid_path_commands(Args->Commands)) return ERR::InvalidValue;
    Self->Commands.assign(Args->Commands.begin(), Args->Commands.end());
 
    Self->CommandsChanged = true;
@@ -817,7 +754,6 @@ static ERR VECTORPATH_SET_Commands(extVectorPath *Self, std::span<const PathComm
    if (not Value.data()) return ERR::NullArgs;
    if (Value.size() > 1000000) return ERR::Args;
 
-   if (not valid_path_commands(Value)) return ERR::InvalidValue;
    Self->Commands.assign(Value.begin(), Value.end());
 
    Self->CommandsChanged = true;
@@ -1025,9 +961,6 @@ Reference dimensions follow @VectorRectangle conventions: the parent viewport's 
 otherwise its dimensions, with scene page dimensions as fallback.  View-box origins are not added.  Resolution occurs
 before bounds, placement and sizing.  Leave #Width and #Height unset to preserve fixed corner radii; explicit sizing
 scales the entire resolved shape.  Parent resizing resolves the authored values again without modifying #Commands.
-
-Malformed tokens return Syntax and unsupported roles or non-finite values return InvalidValue.  Assignment clears
-the previous path and retains complete commands preceding the first error, excluding the invalid command.
 
 Reading Sequence returns resolved, post-sizing numeric geometry.  Assigning that result creates a fixed snapshot
 without parent dependencies.  SVG export likewise uses standard numeric coordinates.  Authored sequences containing
