@@ -248,25 +248,48 @@ int fcmd_subscribe_event(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Usage: msg("Message")
-// Prints a debug message, with no support for input parameters.  This is the safest way to call LogF().
+// Map a msg() level to the corresponding log flag.  Out-of-range values are clamped and fractions are truncated.
+
+static VLF msg_log_flag(double Level)
+{
+   if (not (Level >= 2.0)) return VLF::ERROR; // Also catches NaN
+   if (Level < 3.0) return VLF::WARNING;
+   if (Level < 5.0) return VLF::INFO;
+   if (Level < 6.0) return VLF::API;
+   if (Level < 8.0) return VLF::DETAIL;
+   if (Level < 9.0) return VLF::DEBUG;
+   return VLF::TRACE;
+}
+
+//********************************************************************************************************************
+// Usage: msg([Level], "Message", ...)
+// Prints each argument to the debug log as a separate message.  If the first argument is a number and is followed by
+// at least one other argument, it is interpreted as the log level (1 = error, 2 = warning, 3 = info, 5 = api,
+// 6 = detail, 8 = debug, 9 = trace).  Otherwise messages are logged at the info level.
 
 int fcmd_msg(lua_State *Lua)
 {
    int n = lua_gettop(Lua);  // number of arguments
+   int first = 1;
+   VLF flags = VLF::INFO;
+   if ((n >= 2) and (lua_type(Lua, 1) IS LUA_TNUMBER)) {
+      flags = msg_log_flag(lua_tonumber(Lua, 1));
+      first = 2;
+   }
+
    lua_getglobal(Lua, "tostring");
-   for (int i=1; i <= n; i++) {
+   for (int i=first; i <= n; i++) {
       lua_pushvalue(Lua, -1);  // function to be called (tostring)
       lua_pushvalue(Lua, i);   // value to pass to tostring
       lua_call(Lua, 1, 1);
       CSTRING s = lua_tostring(Lua, -1);  // get result
       if (not s) {
-         luaL_error(Lua, ERR::TypeMismatch, LUA_QL("tostring") " must return a string to " LUA_QL("print"));
+         luaL_error(Lua, ERR::TypeMismatch, LUA_QL("tostring") " must return a string to " LUA_QL("msg"));
       }
 
       {
          kt::Log log("Tiri");
-         log.app("%s", s);
+         log.msg(flags, "%s", s);
       }
 
       lua_pop(Lua, 1);  // pop the string result

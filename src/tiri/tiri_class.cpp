@@ -1443,7 +1443,7 @@ static ERR register_interfaces(lua_State *Lua)
    reg_func_prototype("loadFile", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("exec", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("print", {}, {}, FProtoFlags::Variadic);
-   reg_func_prototype("msg", {}, { TiriType::Str }, FProtoFlags::Variadic);
+   reg_func_prototype("msg", {}, {}, FProtoFlags::Variadic);
    reg_func_prototype("subscribeEvent", { TiriType::Num, TiriType::Userdata }, { TiriType::Str, TiriType::Func });
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Userdata });
    reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str }, FProtoFlags::Variadic);
