@@ -14,6 +14,10 @@ link entries relative to its base, so the link is kept.
 A palette may also have a `mode` (see MODES), which reserves its first swatches for the mode's roles.  Reserved
 swatches are named after their roles and can't be renamed or removed.  A palette without a mode is a Custom palette.
 
+A palette marked `fixed = true` has a set of swatches that the client chose (see fixed()).  Every swatch of a fixed
+palette is reserved: the colours can be edited, but swatches can't be added, removed, renamed, relinked or reordered,
+and the mode can't be changed.  Fixed palettes are never part of the database.
+
 A swatch that the user has added is owned by the user and is marked with `user = true`.  A swatch that the user has
 renamed is marked with `customName = true`.  Palettes and swatches may have a `description` string.
 
@@ -416,10 +420,11 @@ end
 @Doc(text=[[
 @desc Remove the link of the swatch at Index, so that it no longer follows a base.  Its colour is unchanged, and the
 swatches that follow it keep following it.
-@result True if the swatch was unlinked, false if Index is out of range or the swatch has no base
+@result True if the swatch was unlinked, false if Index is out of range, the swatch has no base or the palette is
+fixed
 ]])
 colourpalette.unlinkSwatch = function(Palette:table!, Index:num!):bool
-   if (Index < 0) or (Index >= #Palette.swatches) then return false end
+   if Palette.fixed or (Index < 0) or (Index >= #Palette.swatches) then return false end
    s = Palette.swatches[Index]
    if s.base is nil then return false end
    s.base = nil
@@ -431,10 +436,11 @@ end
 @desc Link the swatch at Index to the swatch at Base, replacing any link that it has.  The entries reproduce the
 swatch's current colour, so colours are unchanged.  A linked swatch keeps the modes of its entries; an unlinked swatch
 gets delta entries.  The swatches that follow Index keep following it.
-@result True if the swatch was linked, false if an index is out of range or Base follows Index (which would make a
-cycle)
+@result True if the swatch was linked, false if an index is out of range, Base follows Index (which would make a
+cycle) or the palette is fixed
 ]])
 colourpalette.linkSwatch = function(Palette:table!, Index:num!, Base:num!):bool
+   if Palette.fixed then return false end
    n = #Palette.swatches
    if (Index < 0) or (Index >= n) or (Base < 0) or (Base >= n) then return false end
 
@@ -489,10 +495,10 @@ end
 @Doc(text=[[
 @desc Append a swatch.  If Base is given, the new swatch is linked to it with delta entries that reproduce the
 given colour.
-@result The index of the new swatch, or nil if the palette is full or Base is invalid
+@result The index of the new swatch, or nil if the palette is full or fixed, or Base is invalid
 ]])
 colourpalette.addSwatch = function(Palette:table!, Name:str!, L:num!, C:num!, H:num!, Alpha:num, Base:num):num
-   if #Palette.swatches >= MAX_SWATCHES then return nil end
+   if Palette.fixed or (#Palette.swatches >= MAX_SWATCHES) then return nil end
    if (Base != nil) and ((Base < 0) or (Base >= #Palette.swatches) or (Base % 1 != 0)) then return nil end
    s = colourpalette.swatch(Name, L, C, H, Alpha)
    if Base != nil then
@@ -624,19 +630,22 @@ colourpalette.reserved = function(Palette:table!):num
 end
 
 @Doc(text=[[
-@desc Return true if the swatch at Index is reserved for a role of the palette's mode.  Reserved swatches can not be
-renamed or removed.
+@desc Return true if the swatch at Index is reserved for a role of the palette's mode, or belongs to a fixed palette.
+Reserved swatches can not be renamed or removed.
 ]])
 colourpalette.isReserved = function(Palette:table!, Index:num!):bool
+   if Palette.fixed then return (Index >= 0) and (Index < #Palette.swatches) end
    return (Index >= 0) and (Index < colourpalette.reserved(Palette))
 end
 
 @Doc(text=[[
 @desc Reorder the swatches.  Order lists the current index of each swatch in its new position, so the swatch at
 Order[i] moves to i.  Every `base` index is rewritten to follow its swatch.
-@result True if the swatches were reordered, false if Order is not a permutation of the swatch indices
+@result True if the swatches were reordered, false if Order is not a permutation of the swatch indices or the
+palette is fixed
 ]])
 colourpalette.reorder = function(Palette:table!, Order:array<any>!):bool
+   if Palette.fixed then return false end
    n = #Palette.swatches
    if #Order != n then return false end
 
@@ -668,6 +677,7 @@ only clears the reservation, and the palette name is never changed.
 @result True if the mode was set.  Otherwise false and a reason, and the palette is unchanged.
 ]])
 colourpalette.setMode = function(Palette:table!, ModeID:str!):<bool, str>
+   if Palette.fixed then return false, 'the palette is fixed' end
    mode = findMode(ModeID)
    mode ?! return false, f'unknown palette mode "{ModeID}"'
 
@@ -766,6 +776,8 @@ and White, as in reset().
 @result True if the mode was set.  Otherwise false and a reason, and the palette is unchanged.
 ]])
 colourpalette.switchMode = function(Palette:table!, ModeID:str!):<bool, str>
+   if Palette.fixed then return false, 'the palette is fixed' end
+
    -- Try the switch on copies of the user's swatches, so that a refusal leaves the palette alone
 
    trial = { name = Palette.name, mode = 'custom', swatches = array<table> }
@@ -834,9 +846,10 @@ end
 
 @Doc(text=[[
 @desc Remove every swatch and recreate the defaults of the palette's mode.  A Custom palette gets unlinked Black and
-White swatches, which are owned by the user.  The palette's name and mode are kept.
+White swatches, which are owned by the user.  The palette's name and mode are kept.  A fixed palette is unchanged.
 ]])
 colourpalette.reset = function(Palette:table!)
+   if Palette.fixed then return end
    mode = colourpalette.mode(Palette)
    Palette.swatches = array<table>
    if #mode.roles > 0 then
@@ -852,12 +865,79 @@ end
 @desc Return an independent snapshot of a palette, retaining its stable ID.
 ]])
 colourpalette.duplicate = function(Palette:table!):table
-   copy = { id = Palette.id, name = Palette.name, mode = Palette.mode,
+   copy = { id = Palette.id, name = Palette.name, mode = Palette.mode, fixed = Palette.fixed,
       description = Palette.description, swatches = array<table> }
    for s in values(Palette.swatches) do
       copy.swatches.push(table.clone(s))
    end
    return copy
+end
+
+@Doc(text=[[
+@desc Create a fixed palette from a client's swatch list, as given to the `palette` option of gui.dialog.colour().
+Each entry is a table of { name, colour, id, description }.  `colour` is a CSS colour string such as
+`oklch(0.62 0.18 258)`, or `none` for a transparent swatch; numeric `l`, `c`, `h` and `alpha` values can be given
+instead.  `id` is an optional client key for the swatch and is kept unchanged.  ModeID names a palette mode whose
+preview and contrast background are wanted.  It applies only if the first swatches are named after the mode's roles,
+in order and ignoring case; otherwise the palette is a Custom palette.
+@input Name of the palette
+@input Swatches: an array or sequence table of swatch entries, 1 to MAX_SWATCHES long
+@input ModeID: optional palette mode
+@result The palette, or nil and an error message
+]])
+colourpalette.fixed = function(Name:str!, Swatches:any, ModeID:str):<table, str>
+   entries = array<any>
+   if Swatches is <array> then
+      for entry in values(Swatches) do entries.push(entry) end
+   elseif Swatches is <table> then
+      i = 0
+      while Swatches[i] != nil do
+         entries.push(Swatches[i])
+         i++
+      end
+   else
+      return nil, 'The palette has no swatch list'
+   end
+   if #entries is 0 then return nil, 'The palette is empty' end
+   if #entries > MAX_SWATCHES then return nil, f'The palette has more than {MAX_SWATCHES} swatches' end
+
+   palette = { id = colourpalette.newID(), name = Name, mode = 'custom', fixed = true, swatches = array<table> }
+   for i, entry in entries do
+      if not (entry is <table>) then return nil, f'Swatch {i} is not a table' end
+      name = entry.name
+      if not (name is <str>) or (#name.trim() is 0) then return nil, f'Swatch {i} has no name' end
+      local l:num, c:num, h:num, a:num
+      if entry.colour is <str> then
+         parsed = colourmath.parseColour(entry.colour)
+         parsed ?! return nil, f'Swatch "{name}" has an invalid colour: {entry.colour}'
+         l, c, h, a = parsed.l, parsed.c, parsed.h, parsed.alpha
+      elseif finite(entry.l) and finite(entry.c) and finite(entry.h) then
+         l, c, h = entry.l, entry.c, entry.h
+         a = finite(entry.alpha) ? entry.alpha : 1
+      else
+         return nil, f'Swatch "{name}" has no colour'
+      end
+      s = colourpalette.swatch(name.trim(), l, c, h, a)
+      s.id = entry.id
+      if entry.description is <str> then s.description = colourpalette.limitDescription(entry.description) end
+      palette.swatches.push(s)
+   end
+
+   mode = ModeID ? findMode(ModeID) : nil
+   if mode and (#mode.roles <= #palette.swatches) then
+      matched = true
+      for r, def in mode.roles do
+         if palette.swatches[r].name.lower() != def.name.lower() then
+            matched = false
+            break
+         end
+      end
+      if matched then
+         for r, def in mode.roles do palette.swatches[r].name = def.name end
+         palette.mode = mode.id
+      end
+   end
+   return palette
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -998,6 +1078,7 @@ colourpalette.decode = function(Data:any):<table, str>
          j = palette.swatches[j].base
          steps++
       end
+
       if j is i then
          s.base = nil
          s.link = nil
@@ -1024,6 +1105,7 @@ colourpalette.decode = function(Data:any):<table, str>
             break
          end
       end
+
       if intact then
          palette.mode = mode.id
          for i in {0 to #mode.roles} do palette.swatches[i].{ user = nil, customName = nil } end
@@ -1031,6 +1113,7 @@ colourpalette.decode = function(Data:any):<table, str>
          colourpalette.setMode(palette, mode.id) -- A refusal leaves the palette as a Custom palette
       end
    end
+
    return palette
 end
 
@@ -1056,6 +1139,7 @@ colourpalette.fromJSON = function(Text:str):<table, str>
    except e
       return nil, 'The text is not valid JSON'
    end
+
    if (data is <table>) and (data.palette is <table>) then data = data.palette end
    return colourpalette.decode(data)
 end
@@ -1068,12 +1152,13 @@ end
 from Seed.  Legacy palette data is returned for one-time migration by the picker.
 @input Path of the settings file
 @input Seed: { l, c, h, alpha } for the demonstration palette's Primary swatch
+@input ReadOnly: if true, leave damaged settings files unchanged
 @result Table of { activePalette, palette, legacy, scheme, clamp, inputFormat, rampSteps, paletteFolder, firstRun }.
 Palette is present only for legacy settings (legacy is true) or a first run.  Preferences are nil if the file doesn't
 set them.  A first run also sets initialActive, the index of the demonstration palette's Primary swatch.  A damaged
-settings file is renamed to `Path.bak` before the first-run result is returned.
+settings file is renamed to `Path.bak` before the first-run result is returned, unless ReadOnly is true.
 ]])
-colourpalette.load = function(Path:str!, Seed:table!):table
+colourpalette.load = function(Path:str!, Seed:table!, ReadOnly:bool):table
    local text:str
    try
       text = io.readAll(Path)
@@ -1096,18 +1181,21 @@ colourpalette.load = function(Path:str!, Seed:table!):table
                firstRun = false
             }
          end
-         print(f'Colour picker: ignoring {Path}: {err}')
+
+         msg(f'Colour picker: ignoring {Path}: {err}')
       except e
-         print(f'Colour picker: ignoring {Path}: {e.message}')
+         msg(f'Colour picker: ignoring {Path}: {e.message}')
       end
 
       -- Preserve damaged settings before the demonstration palette can be saved over them.
 
-      try
-         file <close> = obj.new('File', { path = Path })
-         check file.acRename(Path .. '.bak')
-      except e
-         print(f'Colour picker: failed to back up {Path}: {e.message}')
+      if not ReadOnly then
+         try
+            file <close> = obj.new('File', { path = Path })
+            check file.acRename(Path .. '.bak')
+         except e
+            msg(f'Colour picker: failed to back up {Path}: {e.message}')
+         end
       end
    end
 
@@ -1133,11 +1221,12 @@ colourpalette.save = function(Path:str!, Settings:table!):bool
          paletteFolder = Settings.paletteFolder,
          activePalette = Settings.activePalette ?? Settings.palette?.id
       }
+
       text = json.encode(data)
       colourpicker_storage.replaceFile(Path, text, Path .. '.tmp')
       return true
    except e
-      print(f'Colour picker: failed to save {Path}: {e.message}')
+      msg(f'Colour picker: failed to save {Path}: {e.message}')
       return false
    end
 end
@@ -1151,8 +1240,10 @@ end
 ]])
 colourpalette.uniquePaletteName = function(Palettes:array<table>!, Name:str!):str
    used = { }
+
    for p in values(Palettes) do used[p.name] = true end
    if not used[Name] then return Name end
+
    n = 2
    while used[f'{Name} {n}'] do n++ end
    return f'{Name} {n}'
@@ -1192,10 +1283,13 @@ has a new ID and a unique name.  It is not a starter palette, so it can be edite
 colourpalette.insertCopy = function(Database:table!, Palette:table!, Index:num):num
    palettes = Database.palettes
    Index ?= #palettes
+
    if (Index < 0) or (Index > #palettes) or (#palettes >= MAX_PALETTES) then return nil end
+
    copy = colourpalette.duplicate(Palette)
    copy.id = colourpalette.newID()
    copy.name = colourpalette.uniquePaletteName(palettes, Palette.name)
+
    palettes.insert(Index, copy)
    return Index
 end
@@ -1210,17 +1304,20 @@ database: copy one into the database with insertCopy() to edit it.
 colourpalette.loadStarters = function(Path:str):array<table>
    Path ?= colourpalette.STARTERS
    local text:str
+   
    try
       text = io.readAll(Path)
    except e
-      print(f'Colour picker: starter palettes are unavailable: {e.message}')
+      msg(f'Colour picker: starter palettes are unavailable: {e.message}')
       return array<table>
    end
+   
    data, err = colourpalette.databaseFromJSON(text)
    if not data then
-      print(f'Colour picker: starter palettes in {Path} are unavailable: {err}')
+      msg(f'Colour picker: starter palettes in {Path} are unavailable: {err}')
       return array<table>
    end
+   
    for p in values(data.palettes) do p.starter = true end
    return data.palettes
 end
@@ -1246,7 +1343,11 @@ the load snapshot are not written.
 ]])
 colourpalette.databaseToJSON = function(Database:table!):str
    list = array<table>
-   for p in values(Database.palettes) do list.push(colourpalette.encode(p, true)) end
+
+   for p in values(Database.palettes) do 
+      list.push(colourpalette.encode(p, true)) 
+   end
+
    return json.encode({
       format = DATABASE_FORMAT, version = FILE_VERSION,
       active = (Database.active is <str>) ? Database.active : Database.palettes[Database.active ?? 0]?.id,
@@ -1266,11 +1367,13 @@ counts the invalid and dropped palettes.
 colourpalette.databaseFromJSON = function(Text:str):<table, str>
    Text ?! return nil, 'There is no text to import'
    local data:any
+
    try
       data = json.decode(Text.trim())
    except e
       return nil, 'The text is not valid JSON'
    end
+
    if not (data is <table>) then return nil, 'The database is not an object' end
    if data.format != DATABASE_FORMAT then return nil, 'The file is not a palette database' end
    if not (data.palettes is <array>) then return nil, 'The database has no palette list' end
@@ -1284,17 +1387,20 @@ colourpalette.databaseFromJSON = function(Text:str):<table, str>
          skipped += #data.palettes - i
          break
       end
+
       palette, err = colourpalette.decode(src)
+
       if palette then
          while ids[palette.id] do palette.id = colourpalette.newID() end
          ids[palette.id] = true
          if (data.active is i) or (data.active is palette.id) then active = palette.id end
          palettes.push(palette)
       else
-         print(f'Colour picker: skipping palette {i}: {err}')
+         msg(f'Colour picker: skipping palette {i}: {err}')
          skipped++
       end
    end
+
    if #palettes is 0 then return nil, 'The database has no valid palettes' end
 
    return { palettes = palettes, active = active ?? palettes[0].id, skipped = skipped }
@@ -1316,6 +1422,7 @@ colourpalette.loadDatabase = function(Path:str!):<table, str>
    except e
       return nil, f'Cannot load {Path}: {e.message}. The file has been left unchanged.'
    end
+
    if text is nil then return nil end
 
    db, err = colourpalette.databaseFromJSON(text)
@@ -1332,11 +1439,13 @@ colourpalette.loadDatabase = function(Path:str!):<table, str>
          backup = f'{Path}.bak.{n}'
          n++
       end
+
       file <close> = obj.new('File', { path = Path })
       check file.acRename(backup)
    except e
       return nil, f'Cannot back up {Path}: {e.message}. The damaged file has been left unchanged.'
    end
+
    return nil, f'The palette database was reset because it was damaged ({err}). Backup: {backup}'
 end
 
@@ -1373,10 +1482,12 @@ colourpalette.mergeDatabase = function(Database:table!, Imported:table!):<num, n
       while (not validID(copy.id)) or (colourpalette.paletteIndex(Database, copy.id) != nil) do
          copy.id = colourpalette.newID()
       end
+
       copy.name = colourpalette.uniquePaletteName(Database.palettes, copy.name)
       if copy.name != p.name then renamed++ end
       Database.palettes.push(copy)
       added++
    end
+
    return added, renamed, #Imported.palettes - added
 end

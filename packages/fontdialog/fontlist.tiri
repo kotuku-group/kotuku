@@ -165,7 +165,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       }
    })
 
-   body = self.panel.body
+   local body = self.panel.body
    body_w, body_h = self.panel.bodySize()
    edge = math.ceil(self.panel.bkgd.strokeWidth ?? 0) -- Matches the panel's whole-pixel body inset
 

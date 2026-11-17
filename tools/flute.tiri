@@ -29,6 +29,9 @@ end
    glHotPath = arg('hotPath') -- Force hot-path execution for all tests.
    glSelf    = obj.find('self')
    glLabels  = splitFilter(arg('labels'))
+   glBody    = {
+      tests = { }
+   }
 
    jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
 
@@ -209,8 +212,7 @@ function runTests()
    after_all   = {}
 
    if all then
-      global body ?= {}
-      body.tests ?= {}
+      glBody.tests ?= {}
 
       for func, entry in pairs(all) do
          disabled = false
@@ -280,7 +282,7 @@ function runTests()
          end
 
          if not disabled and is_test then
-            body.tests.insert({
+            glBody.tests.insert({
                func     = func,
                name     = test_name ?? tostring(func),
                timeout  = test_timeout,
@@ -297,14 +299,14 @@ function runTests()
       return
    end
 
-   if not body.tests then
+   if not glBody.tests then
       -- Exporting no tests is considered legitimate - a test file may choose to have no tests.
       print("The Flute test file did not return any tests to execute.")
       glSelf.errorMessage = nil
       return
    end
 
-   glTestTotal += #body.tests
+   glTestTotal += #glBody.tests
 
    if #before_all > 0 then
       state = {
@@ -316,10 +318,10 @@ function runTests()
       end
    end
 
-   sortTests(body.tests)
+   sortTests(glBody.tests)
 
    i = 0
-   for test in values(body.tests) do
+   for test in values(glBody.tests) do
       i++
       skip = false
       assert(test.name, 'Test function is missing a name.')
@@ -418,7 +420,7 @@ function runTests()
       end
    end
 
-   body?.cleanup()
+   glBody.cleanup?()
 
    if glTestsPassed < glTestTotal then
       -- Setting the errorMessage will ensure that an error code is returned to the shell.

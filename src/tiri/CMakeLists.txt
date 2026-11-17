@@ -983,12 +983,9 @@ set (TIRI_TESTS
    type_inference jit jit_uclo jit_fnew jit_stack_stores jit_arrays jit_objects jit_try_regex pipe for_each
    arrow_functions
    result_filter thunks deferred_expr shadow_assert ranges contains bare_iteration compiler_intrinsics
-   annotations ordinary_annotation package_annotation dependencies_annotation no_discard no_discard_import
-   locality anonymous_for
-   key_values
-   debug_filesources compound choose_from enum flow
-   table_slice table_merge table_clone options type_name
-   library_namespaces
+   annotations ordinary_annotation package_annotation dependencies_annotation no_discard
+   locality anonymous_for key_values debug_filesources compound choose_from enum flow
+   table_slice table_merge table_clone options type_name library_namespaces
    try_except checkall import versioned_import package_index_import include_list processing metatables with thunk_table_index debug
    malformed_syntax numeric_limits return_types url tips tempus
    comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library

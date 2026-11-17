@@ -51,13 +51,24 @@ panel's height is set.
 
 ## Related files
 
-`examples/colourpicker.tiri` shows how to open the dialog and receive its result.  The model and export Flute tests live
+`examples/colourpicker.tiri` shows how to open the dialog and receive its result.  The feedback and palette mode tests
+are in `packages/tests/test_colourpicker_feedback.tiri`.  The model and export Flute tests live
 in `packages/tests/test_colourpicker_colour.tiri`, `test_colourpicker_palette.tiri` and
 `test_colourpicker_export.tiri`.  The palette manager's dialog tests are in `test_colourpicker_manager.tiri` and
 `test_colourpicker_persistence.tiri` (storage, starter palettes and drags).  The eyedropper, Tonal Ramp and palette row
 tests (`test_colourpicker_eyedropper.tiri`, `test_colourpicker_rows.tiri`) are not in every checkout.  Registrations
 are in `packages/CMakeLists.txt`.  User documentation is the Colour Picker section of `docs/wiki/Tiri-Widgets.md`,
 including the palette database format.
+
+## Palette mode
+
+The `palette` option of `gui.dialog.colour()` edits a fixed palette that the client supplies (`fixedPalette()` in
+`colourpicker.tiri`, built by `colourpalette.fixed()`).  The palette's `fixed` flag makes every swatch reserved
+(`isReserved()`), and the model refuses to add, remove, rename, relink or reorder its swatches or change its mode.  The
+picker sets `fixed` on itself: the database isn't loaded, `saveDatabase()`, `syncDatabase()` and `saveSettings()` do
+nothing, the manager isn't built and its tab is disabled, and the mode box, name field and Add, Paste and Reset
+palette buttons are disabled.  `paletteResult()` builds the third feedback argument, comparing each swatch with
+`initialPalette` to set `changed`.  The Theme tool (`apps/theme.tiri`) uses this mode to edit the gui palettes.
 
 ## Palette storage
 

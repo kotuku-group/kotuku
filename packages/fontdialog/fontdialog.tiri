@@ -277,15 +277,18 @@ gui.dialog.font = function(Options:table)
          return nil
       end
 
-      -- The first installed family of a comma-separated list, following aliases.  Returns nil if there is none.
+      -- The first installed family of a comma-separated list.  A hidden alias is not listed, so it selects the family
+      -- that it refers to.  Returns nil if there is none.
 
       function findFace(List:str):table
          List ?! return nil
          for entry in values(List.split(',')) do
             local name = entry.trim()
-            local info = gui.fontList[name]
-            local target = info?.alias ?? name
-            local font = findFont(target)
+            local font = findFont(name)
+            if not font then
+               local alias = gui.fontList[name]?.alias
+               if alias then font = findFont(alias) end
+            end
             if font then return font end
          end
          return nil

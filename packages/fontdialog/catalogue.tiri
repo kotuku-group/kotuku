@@ -28,8 +28,61 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+-- Width keywords of the font style syntax, as percentages of the normal width.
+
+WIDTH_KEYWORDS <const> = {
+   ['ultra-condensed'] = 50, ['extra-condensed'] = 62.5, condensed = 75, ['semi-condensed'] = 87.5, normal = 100,
+   ['semi-expanded'] = 112.5, expanded = 125, ['extra-expanded'] = 150, ['ultra-expanded'] = 200
+}
+
+RX_WIDTH <const> = r'(?:^|;)\s*width\s*=\s*([^;]+?)\s*(?:;|$)'
+
+-- The width that an alias's style declares, as a percentage, or nil if it doesn't declare one, e.g. 90 for
+-- 'width=90' and 75 for 'Light;width=Condensed'.
+
+function aliasWidth(Style:str):num
+   Style ?! return nil
+   value = RX_WIDTH.extract(Style.lower(), 0)
+   value ?! return nil
+   if value.endsWith('%') then value = value.sub(0, -1) end
+   return tonumber(value) ?? WIDTH_KEYWORDS[value]
+end
+
+-- The catalogue entry for a family.  Font holds the family's metadata, which an alias takes from the family that it
+-- refers to.
+
+function newEntry(Name:str!, Font:table!):table
+   cls = Font.classification
+   tech = Font.scalable ? 'scalable' : 'bitmap'
+   variable = Font.scalable and (Font.axes != nil) and (#Font.axes > 0)
+   meta = array<str>
+   if CLASS_LABELS[cls] then meta.push(CLASS_LABELS[cls]) end
+   if tech is 'bitmap' then
+      meta.push('Bmp')
+   elseif variable then
+      meta.push('Var')
+   end
+
+   return {
+      name       = Name,
+      cls        = cls,
+      tech       = tech,
+      variable   = variable,
+      axes       = variable ? Font.axes : nil,
+      axisRanges = variable ? Font.axisRanges : nil,
+      features   = Font.features ?? array<str>,
+      coverage   = Font.coverage ?? { },
+      characters = Font.characters ?? 0,
+      styles     = Font.styles,
+      sizes      = Font.sizes,
+      italic     = hasItalic(Font.styles),
+      host       = Font.host,
+      meta       = meta.concat(' · ')
+   }
+end
+
 @Doc(text=[[
-@desc Load the installed font families, sorted by name.  Hidden families and aliases are excluded.  Each entry is a
+@desc Load the installed font families, sorted by name.  Hidden families are excluded.  Each entry is a
 table of `name`, `cls` (`serif`, `sans`, `mono`, `script`, `display`, `symbol`, or nil if the font database could not
 classify the family), `tech` (`scalable` or `bitmap`), `variable`, `axes` (array of axis tags, or nil), `axisRanges`
 (tag = `{ min, default, max }`, or nil), `features` (array of OpenType feature tags), `coverage` (character set id =
@@ -37,39 +90,35 @@ percentage), `characters` (count of mapped characters), `styles` (array of style
 point sizes, or nil), `italic` (the family has italic styles), `host` (the family is provided by the host rather than
 the `fonts:` volume) and `meta`, the short description shown in the font
 list, e.g. `Serif · Var`.
+
+An alias that is not hidden is listed under its own name with the metadata of the family that it refers to, which is
+named by its `alias` field.  If the alias declares a width and the family has a width axis, the axis defaults to that
+width, which is also recorded as `defaultWidth`.  An alias whose family is not installed is left out.
 ]])
 fontdialog_catalogue.load = function():array<table>
    fonts = array<table>
-   for name, font in resolve(gui.fontList) do
-      if font.hidden or font.alias then continue end
+   list = resolve(gui.fontList)
+   for name, font in list do
+      if font.hidden then continue end
 
-      cls = font.classification
-      tech = font.scalable ? 'scalable' : 'bitmap'
-      variable = font.scalable and (font.axes != nil) and (#font.axes > 0)
-      meta = array<str>
-      if CLASS_LABELS[cls] then meta.push(CLASS_LABELS[cls]) end
-      if tech is 'bitmap' then
-         meta.push('Bmp')
-      elseif variable then
-         meta.push('Var')
+      if font.alias then
+         target = list[font.alias]
+         if (not target) or target.alias then continue end
+
+         entry = newEntry(name, target)
+         entry.alias = font.alias
+         width = aliasWidth(font.aliasStyle)
+         if width and entry.axisRanges?.wdth then
+            ranges = table.clone(entry.axisRanges)
+            ranges.wdth = table.merge(ranges.wdth, { default = math.clamp(width, ranges.wdth.min, ranges.wdth.max) })
+            entry.axisRanges = ranges
+            entry.defaultWidth = ranges.wdth.default
+         end
+         entry.meta = (entry.meta != '') ? entry.meta .. ' · Alias' : 'Alias'
+         fonts.push(entry)
+      else
+         fonts.push(newEntry(name, font))
       end
-
-      fonts.push({
-         name       = name,
-         cls        = cls,
-         tech       = tech,
-         variable   = variable,
-         axes       = variable ? font.axes : nil,
-         axisRanges = variable ? font.axisRanges : nil,
-         features   = font.features ?? array<str>,
-         coverage   = font.coverage ?? { },
-         characters = font.characters ?? 0,
-         styles     = font.styles,
-         sizes      = font.sizes,
-         italic     = hasItalic(font.styles),
-         host       = font.host,
-         meta       = meta.concat(' · ')
-      })
    end
 
    fonts.sort((A, B) => A.name.lower() < B.name.lower())
