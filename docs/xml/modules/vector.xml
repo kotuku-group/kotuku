@@ -297,6 +297,7 @@ S: Smooth Curve To
 A: Arc
 Z: Close Path
 </pre>
+<p>Parent-edge <code>~</code> operands are a <class name="VectorPath" field="Sequence">VectorPath.Sequence</class> extension and return InvalidValue here because this resource has no parent layout context.  Numeric SVG paths retain their ordinary absolute and relative coordinate semantics.</p>
 <p>If <code>Sequence</code> is empty, an empty path resource will be generated.  This path can be populated with functions such as <function>MoveTo</function> and <function>LineTo</function>.</p>
     </description>
     <result type="ERR">
@@ -919,6 +920,17 @@ follow a <code>url()</code> reference.</li>
       <const name="TOUCH">Contact input from a touch device; the Value field carries the contact ID</const>
     </constants>
 
+    <constants lookup="PCO" comment="PathCommand options.">
+      <const name="LARGE_ARC">Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path.</const>
+      <const name="SWEEP">Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</const>
+      <const name="X2_OFFSET">Resolve the first control X coordinate from the right edge; not valid for arc radii.</const>
+      <const name="X3_OFFSET">Resolve the second cubic control X coordinate from the right edge.</const>
+      <const name="X_OFFSET">Resolve X as parent width minus X.</const>
+      <const name="Y2_OFFSET">Resolve the first control Y coordinate from the bottom edge; not valid for arc radii.</const>
+      <const name="Y3_OFFSET">Resolve the second cubic control Y coordinate from the bottom edge.</const>
+      <const name="Y_OFFSET">Resolve Y as parent height minus Y.</const>
+    </constants>
+
     <constants lookup="PE">
       <const name="Arc"/>
       <const name="ArcRel"/>
@@ -1008,11 +1020,9 @@ follow a <code>url()</code> reference.</li>
       <field name="BottomLeft" type="struct FRGB">Colour assigned to the bottom-left patch corner.</field>
     </struct>
 
-    <struct name="PathCommand" comment="Base structure for path commands.">
+    <struct name="PathCommand" comment="Base structure for path commands">
       <field name="Type" type="PE" lookup="PE">The command type</field>
-      <field name="LargeArc" type="UINT8">Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when <code>TRUE</code>.</field>
-      <field name="Sweep" type="UINT8">Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</field>
-      <field name="Pad1" type="UINT8">Private</field>
+      <field name="Options" type="PCO" lookup="PCO">Special behavioural options.</field>
       <field name="X" type="DOUBLE">The targeted X coordinate (absolute or scaled) for the command</field>
       <field name="Y" type="DOUBLE">The targeted Y coordinate (absolute or scaled) for the command</field>
       <field name="AbsX" type="DOUBLE">Private</field>

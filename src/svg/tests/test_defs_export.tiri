@@ -354,3 +354,17 @@ end
          f'Collection tile colour space changed after export: expected {expected}, got {actual}')
    end
 end
+
+@Test function PathEdgeOffsetsExportAsNumericSnapshot()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=60 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   local path = viewport.new('VectorPath', { sequence='M 0 0 L ~10 0 L ~10 ~10 L 0 ~10 Z' })
+   local sequence = path.sequence
+   local saved = saveScene(scene, 'temp:svg_path_edge_offsets.svg')
+   assert(saved.find('~') is nil, 'SVG path data must not contain parent-edge syntax')
+   assertContains(saved, 'd="' .. sequence .. '"', 'SVG must contain the resolved numeric Sequence')
+
+   local loaded_scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=100 })
+   local loaded_svg = obj.new('svg', { target=loaded_scene, statement=saved })
+   assert(loaded_svg.viewport != nil, 'Numeric path snapshot must be readable by the SVG parser')
+end

@@ -30,9 +30,16 @@
 
     <action>
       <name>Flush</name>
-      <comment>Flush buffered data from an object.</comment>
+      <comment>Validates writable command edits and invalidates the generated path.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
       <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+      <description>
+<p>After editing the native writable <fl>Commands</fl> span, call Flush to validate coordinate modes and refresh parent-size dependencies.  InvalidValue rejects unsupported masks or non-finite offset magnitudes.  Tiri reads Commands as a copied typed array; assign edited entries to that array and assign the array back to Commands before flushing.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="InvalidValue">A value has not passed validation</error>
+      </result>
     </action>
 
     <action>
@@ -90,9 +97,14 @@
         <param type="std::span&lt;const struct PathCommand&gt;" name="Commands">Array of commands to add to the path.</param>
       </input>
       <description>
-<p>This method will add a series of commands to the end of a Vector's existing path sequence.  The commands must be provided as a sequential array.  No checks will be performed to confirm the validity of the sequence.</p>
+<p>This method will add a series of commands to the end of a Vector's existing path sequence.  The commands must be provided as a sequential array.  Option masks are checked against the supported absolute operands.</p>
 <p>Calling this method will also result in the path being recomputed for the next redraw.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A coordinate-mode mask or offset magnitude is invalid.</error>
+      </result>
       <tags>mutates-object, copies-input</tags>
     </method>
 
@@ -106,7 +118,7 @@
         <param type="struct PathCommand **" name="Command">The requested command will be returned in this parameter.</param>
       </input>
       <description>
-<p>Calling GetCommand() will return a direct pointer to the command identified at <code>Index</code>.  The pointer will remain valid for as long as the <class name="VectorPath">VectorPath</class> is not modified.</p>
+<p>Calling GetCommand() will return a direct pointer to the command identified at <code>Index</code>.  The pointer will remain valid for as long as the <class name="VectorPath">VectorPath</class> is not modified.  Returned coordinates retain authored offset magnitudes and their Option mask.  In Tiri the returned structure is read-only; clone it and submit edits through <method>SetCommand</method>.</p>
       </description>
       <tags>pure-query, object-owns-result</tags>
     </method>
@@ -138,6 +150,13 @@
       <description>
 <p>Use SetCommand() to copy one or more commands into an existing path.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A coordinate-mode mask or offset magnitude is invalid.</error>
+      </result>
       <tags>mutates-object, copies-input</tags>
     </method>
 
@@ -152,6 +171,13 @@
       <description>
 <p>Use SetCommandList() to copy a series of path commands to a <class name="VectorPath">VectorPath</class> object.  All existing commands will be cleared as a result of this process.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A coordinate-mode mask or offset magnitude is invalid.</error>
+      </result>
       <tags>mutates-object, copies-input</tags>
     </method>
 
@@ -164,8 +190,9 @@
       <access read="G" write="S">Get/Set</access>
       <type>PathCommand[]</type>
       <description>
-<p>Read the Commands field to obtain a direct pointer to the <st>PathCommand</st> array.  This will allow the control points of the path to be modified directly, but it is not possible to resize the path.  After making changes to the path, call <action>Flush</action> to register the changes for the next redraw.</p>
+<p>In C++, read the Commands field to obtain a direct pointer to the <st>PathCommand</st> array.  This allows the path control points to be modified directly, but it is not possible to resize the path.  After making changes to the path, call <action>Flush</action> to register the changes for the next redraw.</p>
 <p>This field can also be written at any time with a new array of <st>PathCommand</st> structures.  Doing so will clear the existing path, if any.</p>
+<p><code>Options</code> preserves authored offset magnitudes using the <lk>PCO</lk> bits.  Tiri returns a copied typed array; edit its entries and assign the array back to Commands to replace the authored commands.</p>
       </description>
     </field>
 
@@ -197,7 +224,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
-<p>The Sequence is a string of points and instructions that define the path.  It is based on the SVG standard for the path element <code>d</code> attribute, but also provides some additional features that are present in the vector engine.  Commands are case insensitive.</p>
+<p>The Sequence is a string of points and instructions that define the path.  It is based on the SVG standard for the path element <code>d</code> attribute, with additional Kōtuku features.  Commands are case sensitive: uppercase commands use absolute coordinates and lowercase commands use relative coordinates.</p>
 <p>The following commands are supported:</p>
 <pre>M: Move To
 L: Line To
@@ -212,6 +239,10 @@ Z: Close Path
 </pre>
 <p>The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate of the previous command).</p>
 <p>To terminate a path without joining it to the first coordinate, omit the <code>Z</code> from the end of the sequence.</p>
+<p>In uppercase M, L, H, V, Q, T, C and S commands, prefix any explicit coordinate with <code>~</code> to measure inward from its parent's right edge (X) or bottom edge (Y).  Arc A endpoints also support this syntax; radii, angle and flags do not.  For example, <code>M 10 0 H ~10 L ~0 ~0 Z</code> follows the parent size.  Signed finite decimal and exponent values are accepted, including <code>~0</code>, <code>~-10</code> and <code>~1e2</code>; whitespace between the marker and number is invalid.  Percentages, expressions and offsets in lowercase commands are not supported.  Values are not clamped.</p>
+<p>Reference dimensions follow <class name="VectorRectangle">VectorRectangle</class> conventions: the parent viewport's view-box dimensions when defined, otherwise its dimensions, with scene page dimensions as fallback.  View-box origins are not added.  Resolution occurs before bounds, placement and sizing.  Leave <fl>Width</fl> and <fl>Height</fl> unset to preserve fixed corner radii; explicit sizing scales the entire resolved shape.  Parent resizing resolves the authored values again without modifying <fl>Commands</fl>.</p>
+<p>Malformed tokens return Syntax and unsupported roles or non-finite values return InvalidValue.  Assignment clears the previous path and retains complete commands preceding the first error, excluding the invalid command.</p>
+<p>Reading Sequence returns resolved, post-sizing numeric geometry.  Assigning that result creates a fixed snapshot without parent dependencies.  SVG export likewise uses standard numeric coordinates.  Authored sequences containing <code>~</code> are a Kōtuku extension and cannot be passed directly to standard SVG readers.</p>
       </description>
       <tags>caller-owns-result</tags>
     </field>
@@ -222,7 +253,7 @@ Z: Close Path
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>The total number of points defined in the path <fl>Sequence</fl> is reflected in this field.  Modifying the total directly is permitted, although this should be used for shrinking the list because expansion will create uninitialised command entries.</p>
+<p>The total number of points defined in the path <fl>Sequence</fl> is reflected in this field.  Modifying the total directly is permitted.  Expansion creates zero-initialised entries with no coordinate modes.  The maximum is one million entries.</p>
       </description>
     </field>
 
@@ -265,6 +296,17 @@ Z: Close Path
 
   </fields>
   <types>
+    <constants lookup="PCO" comment="PathCommand options.">
+      <const name="LARGE_ARC">Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path.</const>
+      <const name="SWEEP">Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</const>
+      <const name="X2_OFFSET">Resolve the first control X coordinate from the right edge; not valid for arc radii.</const>
+      <const name="X3_OFFSET">Resolve the second cubic control X coordinate from the right edge.</const>
+      <const name="X_OFFSET">Resolve X as parent width minus X.</const>
+      <const name="Y2_OFFSET">Resolve the first control Y coordinate from the bottom edge; not valid for arc radii.</const>
+      <const name="Y3_OFFSET">Resolve the second cubic control Y coordinate from the bottom edge.</const>
+      <const name="Y_OFFSET">Resolve Y as parent height minus Y.</const>
+    </constants>
+
     <constants lookup="PE">
       <const name="Arc"/>
       <const name="ArcRel"/>
@@ -289,11 +331,9 @@ Z: Close Path
 
   </types>
   <structs>
-    <struct name="PathCommand" comment="Base structure for path commands.">
+    <struct name="PathCommand" comment="Base structure for path commands">
       <field name="Type" type="PE" lookup="PE">The command type</field>
-      <field name="LargeArc" type="UINT8">Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when <code>TRUE</code>.</field>
-      <field name="Sweep" type="UINT8">Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</field>
-      <field name="Pad1" type="UINT8">Private</field>
+      <field name="Options" type="PCO" lookup="PCO">Special behavioural options.</field>
       <field name="X" type="DOUBLE">The targeted X coordinate (absolute or scaled) for the command</field>
       <field name="Y" type="DOUBLE">The targeted Y coordinate (absolute or scaled) for the command</field>
       <field name="AbsX" type="DOUBLE">Private</field>

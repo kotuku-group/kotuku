@@ -298,11 +298,19 @@ struct KeyValue;
    }
   ]])
 
-  structdef("PathCommand", { comment="Base structure for path commands." }, [[
-    int(PE) Type         # The command type
-    uchar   LargeArc     # Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when `TRUE`.
-    uchar   Sweep        # Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.
-    uchar   Pad1         # Private
+  flags("PCO", { bits=8, comment="PathCommand options." },
+    "LARGE_ARC: Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path.",
+    "SWEEP:     Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.",
+    "X_OFFSET:  Resolve X as parent width minus X.",
+    "Y_OFFSET:  Resolve Y as parent height minus Y.",
+    "X2_OFFSET: Resolve the first control X coordinate from the right edge; not valid for arc radii.",
+    "Y2_OFFSET: Resolve the first control Y coordinate from the bottom edge; not valid for arc radii.",
+    "X3_OFFSET: Resolve the second cubic control X coordinate from the right edge.",
+    "Y3_OFFSET: Resolve the second cubic control Y coordinate from the bottom edge.")
+
+  structdef("PathCommand", { comment="Base structure for path commands" }, [[
+    int(PE)  Type        # The command type
+    int(PCO) Options     # Special behavioural options.
     double  X            # The targeted X coordinate (absolute or scaled) for the command
     double  Y            # The targeted Y coordinate (absolute or scaled) for the command
     double  AbsX         # Private
