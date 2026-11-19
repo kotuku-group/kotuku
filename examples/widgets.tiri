@@ -12,7 +12,14 @@ A demonstration of standard widgets
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
-   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('1200dp'), insideHeight=gui.rpixel('1080dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
+   win = gui.window({
+      title        = 'Widget Examples',
+      insideWidth  = gui.rpixel('1200dp'),
+      insideHeight = gui.rpixel('1080dp'),
+      minWidth     = gui.rpixel('650dp'),
+      minHeight    = gui.rpixel('400dp')
+   })
+
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)

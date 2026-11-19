@@ -715,7 +715,7 @@ gui.panel = function(Options:table!)
             fitHeader(&header.width)
          end
 
-         if &scrollbar then &scrollbar.setTheme(scrollbarTheme()) end
+         &scrollbar?.setTheme(scrollbarTheme())
          &viewport.acDraw()
       end
 

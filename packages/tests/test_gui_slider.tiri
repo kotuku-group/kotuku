@@ -982,6 +982,148 @@ end
    end
 end
 
+-- Rendered bounds of a vector in scene coordinates, after drawing the slider's scene.
+
+function renderedBounds(Surface:obj!, Slider:table!, Vector:obj!):<num, num, num, num>
+   Slider.viewport.scene.bitmap = Surface.buffer
+   check Slider.viewport.scene.acDraw()
+   local _, x, y, width, height = check Vector.mtGetBoundary(0)
+   return x, y, width, height
+end
+
+-- Inside labels are drawn over their end of the track, in front of the thumb and behind any value text, and never
+-- overlap inside value text.  Default lengths grow to fit both.
+
+@Test function InsideLabelsSitAtTrackEnds()
+   local combinations = {
+      { 'in-min' }, { 'in-max' }, { 'in-min', 'in-max' }, { 'in-max', 'in-min' }, { 'in-min', 'in-centre' },
+      { 'in-max', 'in-centre' }, { 'in-min', 'out-max' }, { 'in-max', 'out-centre' }
+   }
+
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      local vertical = orientation is 'vertical'
+      for combo in values(combinations) do
+         local label_pos, value_pos = combo[0], combo[1]
+         local context = f'{orientation} {label_pos}/{value_pos}'
+         local surface <close>, slider = newSlider({ orientation=orientation, label='Gain', labelPos=label_pos,
+            valuePos=value_pos, min=0, max=10, value=5, step=0.1
+         })
+
+         local host = slider.trackVP
+         local lx, ly, lw, lh = renderedBounds(surface, slider, slider.labelText)
+         assert(lx >= host.x - 0.5 and ly >= host.y - 0.5 and lx + lw <= host.x + host.width + 0.5
+            and ly + lh <= host.y + host.height + 0.5, f'{context}: the label must render within the track')
+         assert(vertical ? (lh > lw) : (lw > lh), f'{context}: the label must follow the track orientation')
+         assert(slider.prvLabel is nil, f'{context}: inside labels must not reserve a label slot')
+
+         -- The minimum end is the left of a horizontal track and the bottom of a vertical track.
+
+         local centre = vertical ? (host.y + (host.height * 0.5)) : (host.x + (host.width * 0.5))
+         local label_centre = vertical ? (ly + (lh * 0.5)) : (lx + (lw * 0.5))
+         local at_min = vertical ? (label_centre > centre) : (label_centre < centre)
+         assert(at_min is (label_pos is 'in-min'), f'{context}: the label must be at its end of the track')
+
+         local after_track = false
+         local sibling = host.next
+         while sibling do
+            if sibling.id is slider.labelText.id then after_track = true end
+            sibling = sibling.next
+         end
+         assert(after_track, f'{context}: the label must render in front of the track and thumb')
+
+         if value_pos and value_pos.startsWith('in-') then
+            assert(slider.valueText.next is nil, f'{context}: value text must render in front of the label')
+            local vx, vy, vw, vh = renderedBounds(surface, slider, slider.valueText)
+            local apart = vertical ? ((vy + vh <= ly + 0.5) or (ly + lh <= vy + 0.5)) :
+               ((vx + vw <= lx + 0.5) or (lx + lw <= vx + 0.5))
+            assert(apart, f'{context}: the label {lx},{ly} {lw}x{lh} must not overlap the value {vx},{vy} {vw}x{vh}')
+            assert(math.abs((vertical ? lh : lw) - slider.labelText.textWidth) < 1,
+               f'{context}: a default length must fit the label at full size')
+         end
+      end
+   end
+end
+
+-- An inside label cannot share an end of the track with inside value text.  Positions are validated with or without
+-- a label.
+
+@Test function InsideLabelPositionConflictsAreRejected()
+   local surface <close>, slider = newSlider({ })
+   for position in values(array<str> { 'in-min', 'in-max' }) do
+      for label in values({ 'Gain', nil }) do
+         local message = nil
+         try
+            gui.slider({ target=slider.viewport.parent, label=label, labelPos=position, valuePos=position })
+         except e
+            message = e.message
+         end
+         assert(message and message.find('conflicts'), f'labelPos and valuePos {position} must be rejected')
+      end
+   end
+
+   for combo in values({ { 'in-min', 'in-max' }, { 'in-max', 'in-min' }, { 'in-min', 'in-centre' },
+      { 'in-max', 'out-max' }, { 'in-min', 'out-min' } }) do
+      gui.slider({ target=slider.viewport.parent, label='Gain', labelPos=combo[0], valuePos=combo[1] })
+   end
+
+   for invalid in values(array<str> { 'in-centre', 'out-min', 'inside' }) do
+      local raised = false
+      try
+         gui.slider({ target=slider.viewport.parent, label='Gain', labelPos=invalid })
+      except
+         raised = true
+      end
+      assert(raised, f"labelPos '{invalid}' must be rejected")
+   end
+end
+
+-- An inside label and value that do not fit a fixed track are scaled down together, and the label's scale does not
+-- change with the value.
+
+@Test function InsideLabelsScaleWithValuesInFixedTracks()
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      local vertical = orientation is 'vertical'
+      local surface <close>, slider = newSlider({ orientation=orientation, width=vertical ? nil : 60,
+         height=vertical ? 60 : nil, label='Frequency', labelPos='in-min', valuePos='in-max', min=0, max=100,
+         step=1, value=5
+      })
+      assert((vertical ? slider.viewport.height : slider.viewport.width) is 60,
+         f'{orientation}: inside labels must not change a fixed length')
+
+      local font_size = slider.labelText.fontSize
+      local host = slider.trackVP
+      local lx, ly, lw, lh = renderedBounds(surface, slider, slider.labelText)
+      local vx, vy, vw, vh = renderedBounds(surface, slider, slider.valueText)
+      for bounds in values({ { lx, ly, lw, lh }, { vx, vy, vw, vh } }) do
+         assert(bounds[0] >= host.x - 0.5 and bounds[1] >= host.y - 0.5
+            and bounds[0] + bounds[2] <= host.x + host.width + 0.5
+            and bounds[1] + bounds[3] <= host.y + host.height + 0.5, f'{orientation}: text must fit the track')
+      end
+      assert(vertical ? ((vy + vh) <= (ly + 0.5)) : ((lx + lw) <= (vx + 0.5)),
+         f'{orientation}: scaled label and value must not overlap')
+      local length = vertical ? lh : lw
+      assert(length < slider.labelText.textWidth - 1, f'{orientation}: the label must be scaled down, got {length}')
+      assert(slider.labelText.fontSize is font_size, f'{orientation}: the label must be scaled, not resized')
+
+      slider.setValue(100)
+      local _, _, w2, h2 = renderedBounds(surface, slider, slider.labelText)
+      assert(math.abs((vertical ? h2 : w2) - length) < 0.01,
+         f'{orientation}: the label scale must not follow the value')
+   end
+end
+
+-- Track clicks over an inside label move the value as they do elsewhere on the track.
+
+@Test function InsideLabelsDoNotInterceptInput()
+   local surface <close>, slider = newSlider({ width=300, min=0, max=100, value=100, style='track', label='Gain',
+      labelPos='in-min' })
+   local x, y, w, h = renderedBounds(surface, slider, slider.labelText)
+   feed(JET_ABS_XY, surface.absX + x + (w * 0.5), surface.absY + y + (h * 0.5))
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(slider.value < 20, f'A click over the label must move the value, got {slider.value}')
+end
+
 @Test function ThicknessSetsTrackAndThumbThicknessSetsThumb()
    local surface <close>, slider = newSlider({ value=0 })
    assert(slider.thumbSize is '100%' and slider.prvThumbSize is slider.thickness,

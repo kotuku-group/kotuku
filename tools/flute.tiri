@@ -375,6 +375,7 @@ function runTests()
             except e
                succeeded = false
                error_msg = formatException(e)
+               if e.stackTrace then error_msg ..= '\n' .. e.stackTrace end
                break
             end
          end

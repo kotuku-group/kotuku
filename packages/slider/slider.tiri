@@ -13,7 +13,7 @@ Documentation is available in the Kotuku Wiki.
    namespace gui
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.default)
-DEFAULT_THICKNESS <const> = math.floor(FONT_MAX_HEIGHT * 1.4)
+DEFAULT_THICKNESS <const> = math.floor(FONT_MAX_HEIGHT * gui.sizing.widget.height)
 MARGIN <const>            = math.floor(FONT_HEIGHT * 0.5) + 1
 DIGITS <const>            = r'[0-9]'
 MAX_PLACES <const>        = 10 -- Maximum decimal places in the value readout
@@ -492,7 +492,7 @@ gui.slider = function(Options:table!)
             &prvValueSpace = space
          end
 
-         needed = &prvValueLength()
+         needed = &prvInsideLength()
          if &trackVP and needed then
             if (&orientation is 'H') and &prvAutoWidth then
                extra = needed - &trackVP.width
@@ -504,13 +504,120 @@ gui.slider = function(Options:table!)
          end
       end,
 
-      -- Track length needed by value text that runs along the track, or nil for text at one end of it.  Inside text
-      -- is kept clear of the track's ends; out-centre text is centred on the track and needs only its own length.
+      -- Inside text runs along the track, clear of its ends.  An inside label shares the track with inside value
+      -- text, so they are measured together: the content length of the text and the fixed length of the margins at
+      -- the track ends and between the texts.  A centred value keeps a label's length clear on both sides.
+      -- ValueWidth is ignored when the value is not inside.
 
-      prvValueLength = function():num
-         if &valuePos.startsWith('in-') then return &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2) end
-         if &valuePos is 'out-centre' then return &prvValueWidth end
-         return nil
+      prvInsideContent = function(ValueWidth:num!):<num, num>
+         value_inside = (&valuePos != nil) and &valuePos.startsWith('in-')
+         if not &prvLabelEnd then return ValueWidth, MARGIN * 2 end
+         label_width = &labelText.textWidth
+         if not value_inside then return label_width, MARGIN * 2 end
+         if &valuePos is 'in-centre' then return ValueWidth + (label_width * 2), MARGIN * 4 end
+         return ValueWidth + label_width, MARGIN * 3
+      end,
+
+      -- Track length needed by text that runs along the track, or nil for text at one end of it.  Inside text is
+      -- kept clear of the track's ends; out-centre text is centred on the track and needs only its own length.
+
+      prvInsideLength = function():num
+         needed = nil
+         if &prvLabelEnd or ((&valuePos != nil) and &valuePos.startsWith('in-')) then
+            content, fixed = &prvInsideContent(&prvValueWidth ?? 0)
+            needed = content + fixed + (&prvTrackInset() * 2)
+         end
+         if &valuePos is 'out-centre' then needed = math.max(needed ?? 0, &prvValueWidth) end
+         return needed
+      end,
+
+      -- The scale for inside text on a track host of Width and Height.  Text that does not fit the track's length
+      -- (less margins) or breadth is scaled down; an inside label and value are scaled together.
+
+      prvInsideScale = function(Width:num!, Height:num!, ValueWidth:num!):num
+         inset   = &prvTrackInset() * 2
+         length  = ((&orientation is 'H') ? Width : Height) - inset
+         breadth = (&orientation is 'H') ? Height : Width
+         content, fixed = &prvInsideContent(ValueWidth)
+
+         line_height = 0
+         if &prvLabelEnd then line_height = &prvLabelLineHeight end
+         if (&valuePos != nil) and &valuePos.startsWith('in-') then
+            line_height = math.max(line_height, &prvValueHeight)
+         end
+
+         scale = 1
+         if content > 0 then scale = math.min(scale, (length - fixed) / content) end
+         if line_height > 0 then scale = math.min(scale, breadth / line_height) end
+         return math.max(scale, 0.01) -- A degenerate track still gets an invertible matrix
+      end,
+
+      -- Place inside text over the track, which is inset from the host for an overhanging thumb.  The text is scaled
+      -- about its origin and the font size is not changed, so the text keeps its theme metrics.  Vertical text is
+      -- rotated to read up the track, so it runs up from its origin and its capitals extend to the left of the
+      -- baseline.
+
+      prvPlaceInside = function(Text:obj!, Matrix:any, Position:str!, TextWidth:num!, LineHeight:num!, Baseline:num!,
+         Scale:num!, Width:num!, Height:num!)
+         x = &trackVP.x
+         y = &trackVP.y
+         inset = &prvTrackInset()
+         if &orientation is 'H' then
+            x     += inset
+            Width -= inset * 2
+         else
+            y      += inset
+            Height -= inset * 2
+         end
+
+         text_width  = TextWidth * Scale
+         line_height = LineHeight * Scale
+         baseline    = Baseline * Scale
+
+         if &orientation is 'H' then
+            x += choose Position from
+               'min' -> (MARGIN)
+               'max' -> Width - text_width - MARGIN
+               else  -> (Width - text_width) * 0.5
+            end
+            y += baseline + ((Height - line_height) * 0.5)
+         else
+            x += ((Width - line_height) * 0.5) + baseline
+            y += choose Position from
+               'min' -> (Height - MARGIN)
+               'max' -> MARGIN + text_width
+               else  -> (Height + text_width) * 0.5
+            end
+         end
+
+         Text.{ x = x, y = y }
+
+         check mVec.ResetMatrix(Matrix)
+         if Scale < 1 then
+            check mVec.Translate(Matrix, -x, -y)
+            check mVec.Scale(Matrix, Scale, Scale)
+            check mVec.Translate(Matrix, x, y)
+         end
+         if &orientation is 'V' then check mVec.Rotate(Matrix, -90, x, y) end
+      end,
+
+      -- The value length that inside text is scaled for, after updating the value text.  With an inside label the
+      -- widest value in the range is reserved so that the label's size does not change with the value, but a
+      -- valueFormat() can return longer text for an intermediate value, so the rendered value is included.
+
+      prvInsideValueWidth = function():num
+         if (&valuePos is nil) or not &valuePos.startsWith('in-') then return 0 end
+         &valueText.string = &prvValueString(&value)
+         if not &prvLabelEnd then return &valueText.textWidth end
+         return math.max(&prvValueWidth, &valueText.textWidth)
+      end,
+
+      -- Inside value text is placed with the label by prvPlaceValue(), so that they share one scale.
+
+      prvPlaceInsideLabel = function(Width:num!, Height:num!, Scale:num)
+         Scale ?= &prvInsideScale(Width, Height, &prvInsideValueWidth())
+         &prvPlaceInside(&labelText, &prvLabelMatrix, &prvLabelEnd, &labelText.textWidth, &prvLabelLineHeight,
+            &prvLabelBaseline, Scale, Width, Height)
       end,
 
       -- Space reserved beside the track for outside value text.  Text at either end of the track reserves its length,
@@ -524,68 +631,46 @@ gui.slider = function(Options:table!)
          return &prvValueHeight + MARGIN
       end,
 
+      -- Inside value text is scaled with any inside label, and both are placed here because a value can change the
+      -- shared scale.  See prvInsideValueWidth().
+
       prvPlaceValue = function(Width:num!, Height:num!)
-         &valueText.string = &prvValueString(&value)
-         x = &trackVP.x
-         y = &trackVP.y
-         text_width = &valueText.textWidth
-         outside    = &valuePos.startsWith('out-')
-         position   = &valuePos.sub(outside ? 4 : 3)
-         tick_space = (&tickPos != 'start') ? &prvTickSpace : 0 -- out-centre text is placed beyond end ticks
-
-         line_height = &prvValueHeight
-         baseline    = &prvValueBaseline
-         scale       = 1
-
-         -- Inside text is drawn over the track, which is inset from the host for an overhanging thumb.  Text that
-         -- does not fit the track's length (less margins) or breadth is scaled down about its origin.  The font size
-         -- is not changed, so the text keeps its theme metrics.
+         outside  = &valuePos.startsWith('out-')
+         position = &valuePos.sub(outside ? 4 : 3)
 
          if not outside then
-            inset = &prvTrackInset()
-            if &orientation is 'H' then
-               x     += inset
-               Width -= inset * 2
-            else
-               y      += inset
-               Height -= inset * 2
-            end
-
-            length  = (&orientation is 'H') ? Width : Height
-            breadth = (&orientation is 'H') ? Height : Width
-            if text_width > 0 then scale = math.min(scale, (length - (MARGIN * 2)) / text_width) end
-            if line_height > 0 then scale = math.min(scale, breadth / line_height) end
-            scale = math.max(scale, 0.01) -- A degenerate track still gets an invertible matrix
-
-            text_width  *= scale
-            line_height *= scale
-            baseline    *= scale
+            scale = &prvInsideScale(Width, Height, &prvInsideValueWidth())
+            if &prvLabelEnd then &prvPlaceInsideLabel(Width, Height, scale) end
+            &prvPlaceInside(&valueText, &prvValueMatrix, position, &valueText.textWidth, &prvValueHeight,
+               &prvValueBaseline, scale, Width, Height)
+            return
          end
 
-         if &orientation is 'H' then
-            if outside and (position is 'min') then
-               x -= MARGIN + text_width
-            elseif outside and (position is 'max') then
-               x += Width + MARGIN
-            else
-               x += choose position from
-                  'min' -> MARGIN
-                  'max' -> Width - text_width - MARGIN
-                  else  -> (Width - text_width) * 0.5
-               end
-            end
+         &valueText.string = &prvValueString(&value)
+         text_width = &valueText.textWidth
 
-            y += (outside and (position is 'centre')) ? Height + tick_space + MARGIN + baseline :
-               baseline + ((Height - line_height) * 0.5)
+         x = &trackVP.x
+         y = &trackVP.y
+         tick_space = (&tickPos != 'start') ? &prvTickSpace : 0 -- out-centre text is placed beyond end ticks
+         baseline   = &prvValueBaseline
+
+         if &orientation is 'H' then
+            x += choose position from
+               'min' -> (-MARGIN - text_width)
+               'max' -> Width + MARGIN
+               else  -> (Width - text_width) * 0.5
+            end
+            y += (position is 'centre') ? Height + tick_space + MARGIN + baseline :
+               baseline + ((Height - &prvValueHeight) * 0.5)
          else
             -- Vertical text is rotated to read up the track, so it runs up from its origin and its capitals extend to
             -- the left of the baseline.
 
-            x += (outside and (position is 'centre')) ? Width + tick_space + MARGIN + baseline :
-               ((Width - line_height) * 0.5) + baseline
+            x += (position is 'centre') ? Width + tick_space + MARGIN + baseline :
+               ((Width - &prvValueHeight) * 0.5) + baseline
             y += choose position from
-               'min' -> (outside ? Height + MARGIN + text_width : Height - MARGIN)
-               'max' -> (outside ? -MARGIN : MARGIN + text_width)
+               'min' -> (Height + MARGIN + text_width)
+               'max' -> (-MARGIN)
                else  -> (Height + text_width) * 0.5
             end
          end
@@ -594,11 +679,6 @@ gui.slider = function(Options:table!)
 
          if &prvValueMatrix then
             check mVec.ResetMatrix(&prvValueMatrix)
-            if scale < 1 then
-               check mVec.Translate(&prvValueMatrix, -x, -y)
-               check mVec.Scale(&prvValueMatrix, scale, scale)
-               check mVec.Translate(&prvValueMatrix, x, y)
-            end
             if &orientation is 'V' then check mVec.Rotate(&prvValueMatrix, -90, x, y) end
          end
       end,
@@ -609,6 +689,7 @@ gui.slider = function(Options:table!)
 
       prvPlaceLabel = function(Width:num!, Height:num!)
          label = &prvLabel
+         if not label then return end -- Inside labels are placed with the track by prvPlaceSlider()
          host = &trackVP
          if &orientation is 'V' then
             label.place(Width, Height)
@@ -681,6 +762,9 @@ gui.slider = function(Options:table!)
             &button.{ width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2) }
          end
 
+         -- Inside value text places the inside label with it
+         value_inside = &valueText and &valuePos.startsWith('in-')
+         if &prvLabelEnd and not value_inside then &prvPlaceInsideLabel(width, height) end
          if &valueText then &prvPlaceValue(width, height) end
 
          &prvPlaceTicks(width, height)
@@ -727,7 +811,14 @@ gui.slider = function(Options:table!)
          &thumbLength = Options.thumbLength -- Fixed thumb size in track mode
       end
 
-      gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
+      -- Inside labels (in-min and in-max) are drawn over an end of the track.  They have no slot, so labelWidth and
+      -- labelAlign do not apply to them, but they are still validated.
+
+      label_inside = (&labelPos is 'in-min') or (&labelPos is 'in-max')
+      gui.layout.checkLabel(label_inside ? 'left' : &labelPos, &labelWidth, &labelAlign)
+      assert(not (label_inside and (&labelPos is &valuePos)),
+         f"labelPos '{&labelPos}' conflicts with valuePos '{&valuePos}'")
+      &prvLabelEnd = (label_inside and &label) ? &labelPos.sub(3) : nil -- 'min' or 'max' for an inside label
 
       assert((&valuePos is nil) or (&valuePos is 'in-min') or (&valuePos is 'in-centre')
          or (&valuePos is 'in-max') or (&valuePos is 'out-min') or (&valuePos is 'out-centre')
@@ -813,7 +904,21 @@ gui.slider = function(Options:table!)
 
       host = { x = 0, y = 0, xOffset = 0, yOffset = 0 }
 
-      if &label then
+      if &prvLabelEnd then
+         &labelText = &viewport.new('VectorText', {
+            name      = 'Label',
+            fontStyle = gui.fontStyle(table.merge(gui.fonts.widget, &prvTheme.text)),
+            string    = &label,
+            lineLimit = 1
+         })
+
+         &labelText.align = 'start'
+         &labelText.acDisable() -- Inside labels must not intercept track clicks or thumb dragging.
+         _, matrix = check &labelText.mtNewMatrix(false) -- Rotates vertical text and scales text to fit the track
+         &prvLabelMatrix = matrix
+         &prvLabelLineHeight, ascent = gui.layout.textMetrics(&labelText)
+         &prvLabelBaseline = (&prvLabelLineHeight + ascent) * 0.5
+      elseif &label then
          &prvLabel = gui.layout.label(&viewport, {
             string  = &label,
             pos     = &labelPos,
@@ -876,22 +981,23 @@ gui.slider = function(Options:table!)
             if horizontal_space and &prvAutoWidth then &viewport.width += &prvValueSpace end
             if not horizontal_space and &prvAutoHeight then &viewport.height += &prvValueSpace end
          end
-
-         -- A default length grows for inside and out-centre values, which run along the track in both orientations.
-
-         needed = &prvValueLength()
-         if needed then
-            if &prvAutoWidth and (&orientation is 'H') then
-               available = &viewport.width - host.x - host.xOffset
-               if needed > available then &viewport.width += needed - available end
-            elseif &prvAutoHeight and (&orientation is 'V') then
-               available = &viewport.height - host.y - host.yOffset
-               if needed > available then &viewport.height += needed - available end
-            end
-         end
-
-         if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
       end
+
+      -- A default length grows for inside labels and inside and out-centre values, which run along the track in both
+      -- orientations.
+
+      needed = &prvInsideLength()
+      if needed then
+         if &prvAutoWidth and (&orientation is 'H') then
+            available = &viewport.width - host.x - host.xOffset
+            if needed > available then &viewport.width += needed - available end
+         elseif &prvAutoHeight and (&orientation is 'V') then
+            available = &viewport.height - host.y - host.yOffset
+            if needed > available then &viewport.height += needed - available end
+         end
+      end
+
+      if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
 
       &prvReserveTicks(host) -- Ticks sit between the track and any outside value text or label
       &trackVP = &viewport.new('VectorViewport', host)
@@ -971,6 +1077,8 @@ gui.slider = function(Options:table!)
          width  = &thumbVP.width - (&prvGapX * 2),
          height = &thumbVP.height - (&prvGapY * 2)
       }, &prvFill()))
+
+      if &prvLabelEnd then &labelText.acMoveToFront() end -- Placed by prvPlaceSlider()
 
       if &valueText then
          &valueText.acMoveToFront()
