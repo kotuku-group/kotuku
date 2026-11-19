@@ -12,6 +12,7 @@ Name: Bitmap
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstring>
 
 //********************************************************************************************************************
@@ -151,8 +152,27 @@ inline void blend_srgb32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, uint
    }
 }
 
+//********************************************************************************************************************
+// floor(Numerator / Divisor) for the translucent destination formula of blend_linear32(), given Recip = 1.0 / Divisor
+// as a double.  The numerator is an integer below 2^32 and the divisor an integer from 1 to 65025, so the quotient is
+// below 65536.  avx_linear_quotient4() performs the same operations.
+//
+// Exactness: Recip and the product each carry a relative error of at most 2^-53, so the computed product is within
+// 2^-36 of the true quotient q, and adding the bias rounds by at most 2^-37 more.  The bias, 2^-20, exceeds that
+// error, so an integer q is never truncated to q - 1.  A q that is not an integer lies at least 1/Divisor (> 2^-16)
+// below the next integer, which exceeds the bias plus the error, so it is never truncated up.  A fused multiply-add
+// only reduces the error.
+
+constexpr double LINEAR_QUOTIENT_BIAS = 1.0 / double(1<<20);
+
+inline uint32_t linear_quotient(double Numerator, double Recip)
+{
+   return uint32_t((Numerator * Recip) + LINEAR_QUOTIENT_BIAS);
+}
+
 // The linear light equivalent of blend_srgb32().  A translucent destination weights its colour by its own alpha,
-// without which it would be treated as fully opaque and darken the result.
+// without which it would be treated as fully opaque and darken the result.  blend_linear_row_avx2() computes the same
+// results for eight pixels at a time.
 
 inline void blend_linear32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, uint8_t dA,
    uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha)
@@ -172,16 +192,20 @@ inline void blend_linear32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, ui
       Dest[dA] = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8);
    }
    else {
+      // The divisor is at least 255, because a translucent destination gives dest_weight >= 255 when Alpha is 0.
+      // Each numerator is at most 65535 * divisor + round, so the quotient never exceeds 0xffff.
+
       const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8); // Always >= 1
-      const uint64_t src_weight  = 0xff * Alpha;
-      const uint64_t dest_weight = alpha_inv * dest_alpha;
-      const uint64_t divisor     = src_weight + dest_weight; // Normalise before rounding the stored alpha.
-      const uint64_t round       = divisor>>1;
+      const uint32_t src_weight  = 0xff * Alpha;
+      const uint32_t dest_weight = alpha_inv * dest_alpha;
+      const uint32_t divisor     = src_weight + dest_weight; // Normalise before rounding the stored alpha.
+      const double round = double(divisor>>1);
+      const double recip = 1.0 / double(divisor);
 
       auto mix = [&](uint8_t Source, uint8_t Target) -> uint8_t {
-         const uint64_t value = (glLinearRGB.convert16(Source) * src_weight +
-            glLinearRGB.convert16(Target) * dest_weight + round) / divisor;
-         return glLinearRGB.invert16(uint16_t(std::min<uint64_t>(0xffff, value)));
+         const double numerator = (double(glLinearRGB.convert16(Source)) * double(src_weight)) +
+            (double(glLinearRGB.convert16(Target)) * double(dest_weight)) + round;
+         return glLinearRGB.invert16(uint16_t(std::min<uint32_t>(0xffff, linear_quotient(numerator, recip))));
       };
 
       Dest[dR] = mix(Red, Dest[dR]);
@@ -570,6 +594,197 @@ ROW_NOINLINE KOTUKU_TARGET_AVX2 static int mix_row32_avx2(const uint32_t *Src, u
       _mm256_storeu_si256((__m256i *)(Dest + i), _mm256_or_si256(_mm256_and_si256(packed, rgb_mask), alpha));
    }
    return i;
+}
+
+//********************************************************************************************************************
+// BAF::LINEAR blending.  The sRGB conversions are table lookups, which the AVX2 kernel performs with gathers.  These
+// copies of the glLinearRGB tables suit 32-bit gathers: Forward holds the 8-bit linear value in bits 0-7 and the
+// 16-bit linear value in bits 8-23, so one gather serves both blend formulas.  The inverse tables are byte tables
+// that are read with a scale of 1 and masked, so they are padded by three bytes to keep every 32-bit read in bounds.
+
+struct LinearTables {
+   int32_t Forward[256];
+   uint8_t Invert[256 + 3];
+   uint8_t Invert16[4096 + 3];
+};
+
+// Built on first use, because glLinearRGB is initialised by another translation unit.
+
+static const LinearTables & linear_tables()
+{
+   static const LinearTables tables = []() {
+      LinearTables t{};
+      for (int i=0; i < 256; i++) {
+         t.Forward[i] = int32_t(glLinearRGB.convert(uint8_t(i)) | (uint32_t(glLinearRGB.convert16(uint8_t(i))) << 8));
+         t.Invert[i]  = glLinearRGB.invert(uint8_t(i));
+      }
+      for (int i=0; i < 4096; i++) t.Invert16[i] = glLinearRGB.invert16(uint16_t(i << 4));
+      return t;
+   }();
+   return tables;
+}
+
+KOTUKU_TARGET_AVX2 inline __m128i avx_half(__m256i V, int Half) // Half 0 is the low 128 bits, 1 the high
+{
+   return Half ? _mm256_extracti128_si256(V, 1) : _mm256_castsi256_si128(V);
+}
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_gather_byte(const uint8_t *Table, __m256i Index)
+{
+   return _mm256_and_si256(_mm256_i32gather_epi32((const int *)Table, Index, 1), _mm256_set1_epi32(0xff));
+}
+
+// linear_quotient() for four pixels, with the numerator computed from 16-bit linear values in 32-bit lanes.  Every
+// term of the numerator is an integer below 2^32, so it is exact in a double whatever the order of operations.
+
+KOTUKU_TARGET_AVX2 inline __m128i avx_linear_quotient4(__m128i Src, __m128i Dest, __m256d SrcWeight,
+   __m256d DestWeight, __m256d Round, __m256d Recip)
+{
+   const auto numerator = _mm256_add_pd(_mm256_add_pd(_mm256_mul_pd(_mm256_cvtepi32_pd(Src), SrcWeight),
+      _mm256_mul_pd(_mm256_cvtepi32_pd(Dest), DestWeight)), Round);
+   return _mm256_cvttpd_epi32(_mm256_add_pd(_mm256_mul_pd(numerator, Recip),
+      _mm256_set1_pd(LINEAR_QUOTIENT_BIAS)));
+}
+
+// Blends eight pixels with the formulas of blend_linear32(), for any source and destination alpha.  Each 32-bit lane
+// holds one pixel, and each colour channel is processed for all eight pixels at once.  Opaque and empty destinations
+// take nine gathers (two forward lookups and one inverse per channel).  A group with a translucent destination also
+// runs the 16-bit formula, which takes three more gathers.
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_blend_linear8(__m256i S, __m256i D, const AvxShifts &Shifts,
+   __m256i AlphaMask, __m256i Opacity, const LinearTables &Tables)
+{
+   const auto max = _mm256_set1_epi32(255);
+
+   // Products of values below 256 fit the low 16-bit half of each 32-bit lane, as in avx_blend_translucent8().
+
+   auto sa = _mm256_and_si256(_mm256_srl_epi32(S, Shifts.Alpha), max);
+   const auto da = _mm256_and_si256(_mm256_srl_epi32(D, Shifts.Alpha), max);
+   sa = _mm256_srli_epi32(_mm256_add_epi32(_mm256_mullo_epi16(sa, Opacity), max), 8);
+   const auto inv = _mm256_sub_epi32(max, sa);
+   const auto final_alpha = _mm256_sub_epi32(max,
+      _mm256_srli_epi32(_mm256_mullo_epi16(inv, _mm256_sub_epi32(max, da)), 8));
+
+   const auto translucent = avx_translucent_mask(D, AlphaMask);
+   const bool any_translucent = not _mm256_testz_si256(translucent, translucent);
+
+   __m256d src_weight[2], dest_weight[2], round[2], recip[2];
+   if (any_translucent) {
+      const auto sw = _mm256_mullo_epi16(sa, max);
+      const auto dw = _mm256_mullo_epi16(inv, da);
+      const auto divisor = _mm256_add_epi32(sw, dw);
+      const auto half = _mm256_srli_epi32(divisor, 1);
+
+      // Lanes that are not translucent can have a divisor of 0 (an empty source over an empty destination).  Their
+      // results are discarded, but they still index the gather, so they divide by 1 instead.  Every lane's
+      // numerator is then at most 65535 * divisor + round, which keeps its index within Invert16.
+
+      const auto safe_divisor = _mm256_max_epi32(divisor, _mm256_set1_epi32(1));
+      for (int h=0; h < 2; h++) {
+         src_weight[h]  = _mm256_cvtepi32_pd(avx_half(sw, h));
+         dest_weight[h] = _mm256_cvtepi32_pd(avx_half(dw, h));
+         round[h]       = _mm256_cvtepi32_pd(avx_half(half, h));
+         recip[h]       = _mm256_div_pd(_mm256_set1_pd(1.0), _mm256_cvtepi32_pd(avx_half(safe_divisor, h)));
+      }
+   }
+
+   auto result = _mm256_sll_epi32(final_alpha, Shifts.Alpha);
+   for (const auto &shift : Shifts.Colour) {
+      const auto fs = _mm256_i32gather_epi32(Tables.Forward, _mm256_and_si256(_mm256_srl_epi32(S, shift), max), 4);
+      const auto fd = _mm256_i32gather_epi32(Tables.Forward, _mm256_and_si256(_mm256_srl_epi32(D, shift), max), 4);
+
+      const auto mixed = _mm256_srli_epi32(_mm256_add_epi32(_mm256_add_epi32(
+         _mm256_mullo_epi16(_mm256_and_si256(fs, max), sa), _mm256_mullo_epi16(_mm256_and_si256(fd, max), inv)),
+         max), 8);
+      auto channel = avx_gather_byte(Tables.Invert, mixed);
+
+      if (any_translucent) {
+         const auto ls = _mm256_srli_epi32(fs, 8), ld = _mm256_srli_epi32(fd, 8);
+         const auto q_lo = avx_linear_quotient4(avx_half(ls, 0), avx_half(ld, 0),
+            src_weight[0], dest_weight[0], round[0], recip[0]);
+         const auto q_hi = avx_linear_quotient4(avx_half(ls, 1), avx_half(ld, 1),
+            src_weight[1], dest_weight[1], round[1], recip[1]);
+         const auto q = _mm256_min_epu32(_mm256_set_m128i(q_hi, q_lo), _mm256_set1_epi32(0xffff));
+         channel = avx_select(translucent, avx_gather_byte(Tables.Invert16, _mm256_srli_epi32(q, 4)), channel);
+      }
+
+      result = _mm256_or_si256(result, _mm256_sll_epi32(channel, shift));
+   }
+   return result;
+}
+
+// The most pixels in a group of eight that blend_linear_row_avx2() blends one at a time.  On an i7-6700K, a group with
+// one such pixel took a third of the vector blend's time onto a translucent destination and half onto an opaque one.
+// Limits of 2 and 3 also gained on groups with that many pixels, but cost 4-9% on dense content, because the test
+// and its branch are no longer a single comparison with zero.
+
+constexpr int LINEAR_SPARSE_LIMIT = 1;
+
+// Blends a row of 32-bit pixels for the BAF::LINEAR loops of CopyArea(), with the results of blend_linear32().  The
+// pixel selection matches the scalar loops: a source alpha of 0 leaves the destination unchanged, a source alpha of
+// 255 is copied when Opacity is 255, and Copy replaces empty destination pixels with the source.  The BAF::COPY loop
+// ignores Opacity, so the caller passes 255 for it.  Groups in which few or no pixels blend, which are common in glyph
+// and icon images, skip the vector blend.
+
+template <bool Copy>
+ROW_NOINLINE KOTUKU_TARGET_AVX2 static int blend_linear_row_avx2(const uint8_t *Src, uint8_t *Dest, int Width,
+   int AlphaPos, int Opacity, const LinearTables &Tables)
+{
+   const AvxShifts shifts(AlphaPos);
+   const auto zero  = _mm256_setzero_si256();
+   const auto amask = _mm256_set1_epi32(int(uint32_t(0xff) << AlphaPos));
+   const auto op    = _mm256_set1_epi32(Opacity);
+   const auto copy_opaque = _mm256_set1_epi32((Opacity IS 255) ? -1 : 0);
+
+   // Byte positions for blend_linear32(), which blends each colour channel alike, so their order does not matter.
+
+   const uint8_t a_byte = AlphaPos>>3;
+   const uint8_t c0 = (a_byte IS 0) ? 1 : 0, c1 = (a_byte <= 1) ? 2 : 1, c2 = (a_byte IS 3) ? 2 : 3;
+
+   int x = 0;
+   for (; x + 8 <= Width; x += 8) {
+      const auto s = _mm256_loadu_si256((const __m256i *)(Src + (x<<2)));
+      const auto d = _mm256_loadu_si256((const __m256i *)(Dest + (x<<2)));
+
+      // A pixel cannot be both empty and opaque, so take_src can be applied after keep_dest.  For Copy, an empty
+      // destination takes the source whatever the source alpha.
+
+      const auto src_alpha = _mm256_and_si256(s, amask);
+      const auto keep_dest = _mm256_cmpeq_epi32(src_alpha, zero);
+      auto take_src = _mm256_and_si256(_mm256_cmpeq_epi32(src_alpha, amask), copy_opaque);
+      if constexpr (Copy) {
+         take_src = _mm256_or_si256(take_src, _mm256_cmpeq_epi32(_mm256_and_si256(d, amask), zero));
+      }
+
+      // The vector blend costs the same however few of its pixels need it, so a group in which at most
+      // LINEAR_SPARSE_LIMIT pixels blend uses blend_linear32() for those pixels.  The group is staged in a local
+      // copy, so that every pixel is still loaded before the single store, as simd_overlap() requires.
+
+      const auto unchanged = _mm256_or_si256(keep_dest, take_src);
+      const uint32_t blend_lanes = ~uint32_t(_mm256_movemask_ps(_mm256_castsi256_ps(unchanged))) & 0xff;
+      __m256i result;
+      if (std::popcount(blend_lanes) <= LINEAR_SPARSE_LIMIT) {
+         result = avx_select(take_src, s, d);
+         if (blend_lanes) {
+            alignas(32) uint32_t src_px[8], dest_px[8];
+            _mm256_store_si256((__m256i *)src_px, s);
+            _mm256_store_si256((__m256i *)dest_px, result);
+            for (auto lanes = blend_lanes; lanes; lanes &= lanes - 1) {
+               const int lane = std::countr_zero(lanes);
+               const auto sp = (const uint8_t *)(src_px + lane);
+               const uint8_t a = (sp[a_byte] * Opacity + 0xff)>>8;
+               blend_linear32((uint8_t *)(dest_px + lane), c0, c1, c2, a_byte, sp[c0], sp[c1], sp[c2], a);
+            }
+            result = _mm256_load_si256((const __m256i *)dest_px);
+         }
+      }
+      else {
+         result = avx_blend_linear8(s, d, shifts, amask, op, Tables);
+         result = avx_select(take_src, s, avx_select(keep_dest, d, result));
+      }
+      _mm256_storeu_si256((__m256i *)(Dest + (x<<2)), result);
+   }
+   return x;
 }
 
 #endif // KOTUKU_AVX2
@@ -1121,6 +1336,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 #ifdef KOTUKU_AVX2
                // The AVX2 kernels process groups of eight, so narrower rows skip the call
                const bool use_avx2 = (Width >= 8) and simd_has_avx2();
+               const bool linear_avx2 = use_avx2 and simd_ok and ((Flags & BAF::LINEAR) != BAF::NIL);
+               const LinearTables *linear = linear_avx2 ? &linear_tables() : nullptr;
 #endif
 
 #ifdef DISPLAY_BLIT_STATS
@@ -1140,7 +1357,15 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   for (int y=0; y < Height; y++) {
                      uint8_t *sp = sdata, *dp = ddata;
                      if ((Flags & BAF::LINEAR) != BAF::NIL) {
-                        for (int x=0; x < Width; x++) {
+                        int x = 0;
+#ifdef KOTUKU_AVX2
+                        if (linear_avx2 and (not simd_overlap(sp, dp, 32))) {
+                           x = blend_linear_row_avx2<true>(sp, dp, Width, sA<<3, 255, *linear);
+                           sp += x<<2;
+                           dp += x<<2;
+                        }
+#endif
+                        for (; x < Width; x++) {
                            if (dp[dA]) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
@@ -1199,7 +1424,15 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      uint8_t *sp = sdata, *dp = ddata;
                      if (src->Opacity IS 0xff) {
                         if ((Flags & BAF::LINEAR) != BAF::NIL) {
-                           for (i=0; i < Width; i++) {
+                           i = 0;
+#ifdef KOTUKU_AVX2
+                           if (linear_avx2 and (not simd_overlap(sp, dp, 32))) {
+                              i = blend_linear_row_avx2<false>(sp, dp, Width, sA<<3, 255, *linear);
+                              sp += i<<2;
+                              dp += i<<2;
+                           }
+#endif
+                           for (; i < Width; i++) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
                                  blend_linear32(dp, dR, dG, dB, dA, sp[sR], sp[sG], sp[sB], a);
@@ -1244,7 +1477,18 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         }
                      }
                      else if ((Flags & BAF::LINEAR) != BAF::NIL) {
-                        for (i=0; i < Width; i++) {
+                        i = 0;
+#ifdef KOTUKU_AVX2
+                        // Opacity is not clamped by the Bitmap class.  The scalar loop truncates out-of-range results
+                        // to 8 bits, which the kernel does not reproduce, and its gathers need indices below 256.
+
+                        if (linear_avx2 and (uint32_t(src->Opacity) <= 255) and (not simd_overlap(sp, dp, 32))) {
+                           i = blend_linear_row_avx2<false>(sp, dp, Width, sA<<3, src->Opacity, *linear);
+                           sp += i<<2;
+                           dp += i<<2;
+                        }
+#endif
+                        for (; i < Width; i++) {
                            if (auto a = sp[sA]) {
                               a = (a * src->Opacity + 0xff)>>8;
                               blend_linear32(dp, dR, dG, dB, dA, sp[sR], sp[sG], sp[sB], a);

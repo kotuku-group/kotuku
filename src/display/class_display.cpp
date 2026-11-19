@@ -935,10 +935,10 @@ will be returned if it is not implemented.
 A negative value leaves the corresponding limit at the value set by the previous call, while zero removes it.  This
 convention is honoured by the X11 and Wayland drivers.
 
-The enforced aspect ratio is the proportion of the window's width and height at the time that `EnforceAspect` is 
+The enforced aspect ratio is the proportion of the window's width and height at the time that `EnforceAspect` is
 first set.  It is retained until a call clears `EnforceAspect`, so that it does not drift as the user resizes the
-window.  When the client resizes the window, the new dimensions become the enforced ratio.  The Windows driver 
-reads minimum and maximum sizes from the window's @Surface when the user resizes it, so on that platform only 
+window.  When the client resizes the window, the new dimensions become the enforced ratio.  The Windows driver
+reads minimum and maximum sizes from the window's @Surface when the user resizes it, so on that platform only
 `EnforceAspect` is taken from this call.
 
 Window managers ignore aspect ratio and maximum size hints when a window is maximised.  On X11, setting
@@ -1956,12 +1956,13 @@ static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
    return ERR::Okay;
 }
 
-#ifdef DESKTOP_ENTRIES
-
+//********************************************************************************************************************
 // GNOME 46 and later ignore window icons, and resolve a window's icon from the .desktop entry that matches its X11
 // class or Wayland app ID.  When running under GNOME, a custom Icon is therefore published as a generated entry in
 // $XDG_DATA_HOME/applications, with a window class derived from the icon source.  The session type does not change
 // during the lifetime of the process, so it is evaluated once.
+
+#ifdef DESKTOP_ENTRIES
 
 static bool gnome_integration()
 {
@@ -2080,6 +2081,7 @@ static void update_desktop_identity(extDisplay *Self)
 
 #endif
 
+//********************************************************************************************************************
 // Drivers that do not support window icons are ignored, as the icon is a cosmetic hint to the host.
 
 static void apply_window_icon(extDisplay *Self)
@@ -2098,6 +2100,8 @@ static void apply_window_icon(extDisplay *Self)
    }
 #endif
 }
+
+//********************************************************************************************************************
 
 static ERR GET_Icon(extDisplay *Self, std::string_view &Value)
 {
