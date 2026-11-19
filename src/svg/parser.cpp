@@ -5095,8 +5095,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_y:      rect->setY(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_width:  rect->setWidth(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_height: rect->setHeight(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_rx:     rect->setRoundX(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_ry:     rect->setRoundY(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_rx:     rect->setCornerX(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_ry:     rect->setCornerY(SVGUnit(StrValue)); return ERR::Okay;
 
             case SVF_xOffset: rect->setXOffset(SVGUnit(StrValue)); return ERR::Okay; // Kotuku only
             case SVF_yOffset: rect->setYOffset(SVGUnit(StrValue)); return ERR::Okay; // Kotuku only

@@ -538,14 +538,14 @@ gui.panel = function(Options:table!)
       end
 
       function headerFillStyle():table
-         fill_round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
-         fill_round_y = theme.bkgd.roundY or fill_round_x
+         fill_round_x = theme.bkgd.cornerX or theme.bkgd.cornerY or 0
+         fill_round_y = theme.bkgd.cornerY or fill_round_x
          fill_round_x = math.max(0, fill_round_x - (edge * 0.5))
          fill_round_y = math.max(0, fill_round_y - (edge * 0.5))
 
          return table.merge({
             x = edge, y = edge, xOffset = edge,
-            rounding = array<double> { fill_round_x, fill_round_y, fill_round_x, fill_round_y, 0, 0, 0, 0 }
+            corners = array<double> { fill_round_x, fill_round_y, fill_round_x, fill_round_y, 0, 0, 0, 0 }
          }, theme.header)
       end
 
@@ -647,19 +647,19 @@ gui.panel = function(Options:table!)
          -- scrollbar sections of the new theme when the window theme changes.
 
          scrollbarTheme = function():table
-            round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
-            round_y = theme.bkgd.roundY or round_x
+            round_x = theme.bkgd.cornerX or theme.bkgd.cornerY or 0
+            round_y = theme.bkgd.cornerY or round_x
             round_x = math.max(0, round_x - (edge * 0.5))
             round_y = math.max(0, round_y - (edge * 0.5))
 
             return {
                scrollbar_v = table.merge(base_theme.scrollbar_v ?? base_theme.scrollbar, {
-                  bkgd = { rounding = { 0, 0, round_x * round_tr, round_y * round_tr,
+                  bkgd = { corners = { 0, 0, round_x * round_tr, round_y * round_tr,
                      round_x * round_br, round_y * round_br, 0, 0 } },
                   margin = { round_y * round_tr, round_y * round_br }
                }, true, true),
                scrollbar_h = table.merge(base_theme.scrollbar_h ?? base_theme.scrollbar, {
-                  bkgd = { rounding = { 0, 0, 0, 0, round_x * round_br_h, round_y * round_br_h,
+                  bkgd = { corners = { 0, 0, 0, 0, round_x * round_br_h, round_y * round_br_h,
                      round_x * round_bl, round_y * round_bl } },
                   margin = { round_x * round_bl, round_x * round_br_h }
                }, true, true)

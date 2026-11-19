@@ -266,26 +266,26 @@ static ERR VECTORRECTANGLE_SET_Height(extVectorRectangle *Self, Unit &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Rounding: Precisely controls rounded corner positioning.
+Corners: Precisely controls rounded corner positioning.
 
-Set the Rounding field if all four corners of the rectangle need to be precisely controlled.  Four X,Y sizing
+Set the Corners field if all four corners of the rectangle need to be precisely controlled.  Four X,Y sizing
 pairs must be provided in sequence, with the first describing the top-left corner and proceeding in clockwise fashion.
-Each pair of values is equivalent to a #RoundX,#RoundY definition for that corner only.  A corner with a zero radius
+Each pair of values is equivalent to a #CornerX,#CornerY definition for that corner only.  A corner with a zero radius
 is square.
 
-Values can be fixed or scaled.  A scaled value is relative to the diagonal of the rectangle, as for #RoundX.  In Tiri,
+Values can be fixed or scaled.  A scaled value is relative to the diagonal of the rectangle, as for #CornerX.  In Tiri,
 numbers are fixed values and strings such as `'10%'` are scaled, for example
-`rect.rounding = { 0, 0, 0, 0, 6, 6, 0, 0 }` rounds the bottom-right corner only.
+`rect.corners = { 0, 0, 0, 0, 6, 6, 0, 0 }` rounds the bottom-right corner only.
 
 *********************************************************************************************************************/
 
-static ERR VECTORRECTANGLE_GET_Rounding(extVectorRectangle *Self, std::span<Unit> &Array)
+static ERR VECTORRECTANGLE_GET_Corners(extVectorRectangle *Self, std::span<Unit> &Array)
 {
    Array = std::span<Unit>((Unit *)Self->rRound.data(), 8);
    return ERR::Okay;
 }
 
-static ERR VECTORRECTANGLE_SET_Rounding(extVectorRectangle *Self, std::span<const Unit> &Array)
+static ERR VECTORRECTANGLE_SET_Corners(extVectorRectangle *Self, std::span<const Unit> &Array)
 {
    if (Array.size() IS 8) {
       for (unsigned i=0; i < 4; i++) {
@@ -303,20 +303,20 @@ static ERR VECTORRECTANGLE_SET_Rounding(extVectorRectangle *Self, std::span<cons
 /*********************************************************************************************************************
 
 -FIELD-
-RoundX: Specifies the size of rounded corners on the horizontal axis.
+CornerX: Specifies the size of rounded corners on the horizontal axis.
 
-The corners of a rectangle can be rounded by setting the RoundX and RoundY values.  Each value is interpreted as a
+The corners of a rectangle can be rounded by setting the CornerX and CornerY values.  Each value is interpreted as a
 radius along the relevant axis.  A value of zero (the default) turns off this feature.
 
 *********************************************************************************************************************/
 
-static ERR VECTORRECTANGLE_GET_RoundX(extVectorRectangle *Self, Unit &Value)
+static ERR VECTORRECTANGLE_GET_CornerX(extVectorRectangle *Self, Unit &Value)
 {
    Value = Self->rRound[0].x;
    return ERR::Okay;
 }
 
-static ERR VECTORRECTANGLE_SET_RoundX(extVectorRectangle *Self, Unit &Value)
+static ERR VECTORRECTANGLE_SET_CornerX(extVectorRectangle *Self, Unit &Value)
 {
    if ((Value < 0) or (Value > 1000)) return ERR::OutOfRange;
 
@@ -328,20 +328,20 @@ static ERR VECTORRECTANGLE_SET_RoundX(extVectorRectangle *Self, Unit &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-RoundY: Specifies the size of rounded corners on the vertical axis.
+CornerY: Specifies the size of rounded corners on the vertical axis.
 
-The corners of a rectangle can be rounded by setting the RoundX and RoundY values.  Each value is interpreted as a
+The corners of a rectangle can be rounded by setting the CornerX and CornerY values.  Each value is interpreted as a
 radius along the relevant axis.  A value of zero (the default) turns off this feature.
 
 *********************************************************************************************************************/
 
-static ERR VECTORRECTANGLE_GET_RoundY(extVectorRectangle *Self, Unit &Value)
+static ERR VECTORRECTANGLE_GET_CornerY(extVectorRectangle *Self, Unit &Value)
 {
    Value = Self->rRound[0].y;
    return ERR::Okay;
 }
 
-static ERR VECTORRECTANGLE_SET_RoundY(extVectorRectangle *Self, Unit &Value)
+static ERR VECTORRECTANGLE_SET_CornerY(extVectorRectangle *Self, Unit &Value)
 {
    if ((Value < 0) or (Value > 1000)) return ERR::OutOfRange;
    Self->rRound[0].y = Self->rRound[1].y = Self->rRound[2].y = Self->rRound[3].y = Value;
@@ -491,9 +491,9 @@ extVectorRectangle::extVectorRectangle(objMetaClass *ClassPtr, OBJECTID ObjectID
 #include "rectangle_def.cpp"
 
 static const FieldArray clRectangleFields[] = {
-   { "Rounding",   FDF_VIRTUAL|FDF_UNIT|FDF_ARRAY|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_Rounding, VECTORRECTANGLE_SET_Rounding },
-   { "RoundX",     FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_RoundX, VECTORRECTANGLE_SET_RoundX },
-   { "RoundY",     FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_RoundY, VECTORRECTANGLE_SET_RoundY },
+   { "Corners",    FDF_VIRTUAL|FDF_UNIT|FDF_ARRAY|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_Corners, VECTORRECTANGLE_SET_Corners },
+   { "CornerX",    FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_CornerX, VECTORRECTANGLE_SET_CornerX },
+   { "CornerY",    FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_CornerY, VECTORRECTANGLE_SET_CornerY },
    { "X",          FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_X, VECTORRECTANGLE_SET_X },
    { "Y",          FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORRECTANGLE_GET_Y, VECTORRECTANGLE_SET_Y },
    { "XOffset",    FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW, VECTORRECTANGLE_GET_XOffset, VECTORRECTANGLE_SET_XOffset },

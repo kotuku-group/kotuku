@@ -364,7 +364,7 @@ end
    draw(surface, root)
 
    local bar = multi.scrollbar.vbar
-   assert(bar.barBkgd.rounding, 'The multi-line scrollbar must follow the rounded border')
+   assert(bar.barBkgd.corners, 'The multi-line scrollbar must follow the rounded border')
    local margin = bar.sliderHostVP.y
    assert(margin > 0, 'The multi-line scrollbar must have a margin for the rounded border')
 
@@ -378,7 +378,7 @@ end
    assert(styled.bkgd.fill is '#ff0000', 'Options.theme must survive the broadcast')
    assert(bar.theme is multi.scrollbar.theme.scrollbar_v, 'The dark multi-line scrollbar must use scrollbar_v')
    assert(bar.barBkgd.fill is dark.scrollbar_v.bkgd.fill, 'The multi-line scrollbar must take the dark theme')
-   assert(bar.barBkgd.rounding and bar.sliderHostVP.y is margin, 'The scrollbar must keep its rounding and margin')
+   assert(bar.barBkgd.corners and bar.sliderHostVP.y is margin, 'The scrollbar must keep its rounding and margin')
 
    styled.setTheme({ bkgd={ fill='#00ff00' } })
    assert(styled.bkgd.fill is '#00ff00', 'setTheme() must apply the per-instance override')
@@ -390,7 +390,7 @@ end
       'Returning to the light theme must restore the input')
    assert(multi.scrollbar.theme.scrollbar_v is nil, 'A stale scrollbar_v section must not survive the light theme')
    assert(bar.barBkgd.fill is light.scrollbar.bkgd.fill, 'The multi-line scrollbar must return to the light theme')
-   assert(bar.barBkgd.rounding and bar.sliderHostVP.y is margin, 'The light scrollbar must keep its rounding')
+   assert(bar.barBkgd.corners and bar.sliderHostVP.y is margin, 'The light scrollbar must keep its rounding')
    assert(styled.bkgd.fill is '#00ff00', 'The override must survive the broadcast')
    styled.setTheme(nil)
    assert(styled.bkgd.fill is '#ff0000', 'setTheme(nil) must restore Options.theme')

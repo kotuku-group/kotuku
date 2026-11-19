@@ -189,7 +189,7 @@ gui.listView = function(Options:table!):table
       if not vectors.highlight then
          if Reason is 'deselected' then return end
          vectors.highlight = vectors.viewport.new('VectorRectangle', {
-            roundX = gui.rpixel('6dp'), roundY = gui.rpixel('6dp'),
+            cornerX = gui.rpixel('6dp'), cornerY = gui.rpixel('6dp'),
             width = '100%', height = '100%', visibility = VIS_HIDDEN
          })
          vectors.highlight.acMoveToBack()

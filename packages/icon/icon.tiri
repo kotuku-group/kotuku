@@ -175,8 +175,8 @@ gui.icon = function(Options:table!)
          fill   = base_theme.palette.shade,
          x      = 0,
          y      = math.floor(y),
-         roundX = gui.pixel('7.5dp'),
-         roundY = gui.pixel('7.5dp'),
+         cornerX = gui.pixel('7.5dp'),
+         cornerY = gui.pixel('7.5dp'),
          width  = icon_width,
          height = box_height
       })

@@ -281,7 +281,7 @@ void scroll_mgr::scroll_bar::init(scroll_mgr *Manager, char Direction, objVector
    objVectorRectangle::create::global({
       fl::Owner(m_bar_vp->UID),
       fl::X(0), fl::Y(0), fl::Width(SCALE(1.0)), fl::YOffset(0),
-      fl::RoundX(m_breadth * 0.5), fl::RoundY(m_breadth * 0.5),
+      fl::CornerX(m_breadth * 0.5), fl::CornerY(m_breadth * 0.5),
       fl::Fill(glSliderBkgd)
    });
 
@@ -306,7 +306,7 @@ void scroll_mgr::scroll_bar::init(scroll_mgr *Manager, char Direction, objVector
    m_slider_rect = objVectorRectangle::create::global({
       fl::Owner(m_slider_vp->UID),
       fl::X(2), fl::Y(0), fl::XOffset(2), fl::Height(SCALE(1.0)),
-      fl::RoundX(m_breadth * 0.5), fl::RoundY(m_breadth * 0.5),
+      fl::CornerX(m_breadth * 0.5), fl::CornerY(m_breadth * 0.5),
       fl::Fill(glSliderColour)
    });
 

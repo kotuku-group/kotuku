@@ -555,7 +555,7 @@ struct parser {
             fl::Owner(pattern->Scene->Viewport->UID),
             fl::X(0), fl::Y(0), fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
             fl::Stroke("white"), fl::StrokeWidth(1.0),
-            fl::RoundX(SCALE(0.03)), fl::RoundY(SCALE(0.03)),
+            fl::CornerX(SCALE(0.03)), fl::CornerY(SCALE(0.03)),
             fl::Fill("rgb(0 0 0 / .7)")
          });
 
@@ -1596,7 +1596,7 @@ void parser::tag_button(const tag_view &Tag)
                fl::Owner(pattern_active->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
                fl::Stroke("oklch(0.371 0.000 89.876 / 0.500)"), fl::StrokeWidth(2.0),
-               fl::RoundX(SCALE(0.1)),
+               fl::CornerX(SCALE(0.1)),
                fl::Fill("oklch(0.000 0.000 0.000 / 0.125)")
             });
          }
@@ -1617,7 +1617,7 @@ void parser::tag_button(const tag_view &Tag)
                fl::Owner(pattern_inactive->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
                fl::Stroke("oklch(0.000 0.000 0.000 / 0.250)"), fl::StrokeWidth(2.0),
-               fl::RoundX(SCALE(0.1)),
+               fl::CornerX(SCALE(0.1)),
                fl::Fill("oklch(1.000 0.000 89.876 / 0.370)")
             });
          }
@@ -1696,7 +1696,7 @@ void parser::tag_checkbox(const tag_view &Tag)
             fl::Owner(vp->UID),
             fl::X(-8), fl::Y(-8), fl::Width(54), fl::Height(54),
             fl::Stroke("white"), fl::StrokeWidth(2.0),
-            fl::RoundX(6), fl::RoundY(6),
+            fl::CornerX(6), fl::CornerY(6),
             fl::Fill("rgb(0 0 0 / .7)")
          });
 
@@ -1725,7 +1725,7 @@ void parser::tag_checkbox(const tag_view &Tag)
             fl::Owner(vp->UID),
             fl::X(-8), fl::Y(-8), fl::Width(54), fl::Height(54),
             fl::Stroke("white"), fl::StrokeWidth(2.0),
-            fl::RoundX(6), fl::RoundY(6),
+            fl::CornerX(6), fl::CornerY(6),
             fl::Fill("rgb(0 0 0 / .7)")
          });
 
@@ -1840,7 +1840,7 @@ void parser::tag_combobox(const tag_view &Tag)
          });
 
          std::array<Unit, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
-         rect->setRounding(round);
+         rect->setCorners(round);
 
          objVectorPath::create::global({ // Down arrow
             fl::Owner(vp->UID),

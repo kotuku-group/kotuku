@@ -35,8 +35,8 @@
     },
     {
       "path": "effects.tiri",
-      "size": 52430,
-      "sha256": "72485c7db16ecc0d9eed255d3ae14feb31bf6c2738cdd0a2dee1887940112894",
+      "size": 52409,
+      "sha256": "5ea7251982203739a6869f7c67bc6f0ec7749338a581327442ba5d9abe4fec26",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -53,8 +53,8 @@
     },
     {
       "path": "gui.tiri",
-      "size": 61632,
-      "sha256": "7866bb5155f6b72d390ef3b2e1378ee1a65addbbf521df847f6e00a48d49b985",
+      "size": 61666,
+      "sha256": "d98550d4990d062ca87460b3e2920e739bd7ed48d1b4ff02c25d07cc7fc99ff1",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -71,8 +71,8 @@
     },
     {
       "path": "paths.tiri",
-      "size": 119,
-      "sha256": "1d9167d0892ec85bb02227feeda6b13a77def33e63d009b993079b101ff1f2fe",
+      "size": 3893,
+      "sha256": "5db0e11b46b578e91fdf5bcdcf3f0c0a4ed0ead1bfc29ba13d75ab1246795e50",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ],

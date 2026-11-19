@@ -675,8 +675,8 @@ constexpr FieldValue Overflow(VOF Value) { return FieldValue(strhash("overflow")
 [[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(strhash("fontStyle"), Value); }
 [[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(strhash("fontStyle"), Value ? std::string_view(Value) : std::string_view{}); }
 
-template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(strhash("roundX"), Value); }
-template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(strhash("roundY"), Value); }
+template <kt::NumericOrScale T> FieldValue CornerX(T Value) { return FieldValue(strhash("cornerX"), Value); }
+template <kt::NumericOrScale T> FieldValue CornerY(T Value) { return FieldValue(strhash("cornerY"), Value); }
 
 }
 ]==])

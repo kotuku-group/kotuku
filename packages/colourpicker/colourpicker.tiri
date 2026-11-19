@@ -885,7 +885,7 @@ function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
    -- The keyboard target is outlined while the grid has the focus
 
    self.readoutRing = vp.new('VectorRectangle', {
-      roundX = 3, roundY = 3, fill = 'none', stroke = &theme.palette.prime, strokeWidth = 1, visibility = VIS_HIDDEN
+      cornerX = 3, cornerY = 3, fill = 'none', stroke = &theme.palette.prime, strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
    vp.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
@@ -1677,7 +1677,7 @@ function buildEyedropper(Target:obj)
    body = panel.body
 
    body.new('VectorRectangle', table.merge({
-      x = 12.5, y = 12.5, width = box_w - 1, height = box_h - 1, roundX = 5, roundY = 5,
+      x = 12.5, y = 12.5, width = box_w - 1, height = box_h - 1, cornerX = 5, cornerY = 5,
       stroke = &theme.palette.edge, strokeWidth = 1
    }, &theme.page.bkgd))
 
@@ -1941,7 +1941,7 @@ function buildCentre()
          })
       }
       swatch.box = swatch.viewport.new('VectorRectangle', {
-         x = 0.5, y = 0.5, height = chip_h - 1, roundX = 3, roundY = 3, stroke = t.border, strokeWidth = 1,
+         x = 0.5, y = 0.5, height = chip_h - 1, cornerX = 3, cornerY = 3, stroke = t.border, strokeWidth = 1,
          cursor = 'hand'
       })
       swatch.gesture = colourpicker_parts.dragGesture(swatch.viewport, {
@@ -1958,7 +1958,7 @@ function buildCentre()
       target = col, width = &schemeChip.width, height = chip_h, label = 'Apply All',
       tip = 'Apply the scheme colours to linked swatches, darkening inner companions and adding links as needed',
       theme = {
-         bkgd = { roundX = 3, roundY = 3, stroke = 'none' },
+         bkgd = { cornerX = 3, cornerY = 3, stroke = 'none' },
          text = {
             face = colourpicker_parts.FACE_MONO, size = 10, style = 'Medium'
          }
@@ -2297,7 +2297,7 @@ function buildContrast(self:table, Target:obj)
 
    row_y = 8
    body.new('VectorRectangle', {
-      x = PANEL_PAD + 0.5, y = row_y + 0.5, width = inner_w - 1, height = CONTRAST_ROW_H - 1, roundX = 5, roundY = 5,
+      x = PANEL_PAD + 0.5, y = row_y + 0.5, width = inner_w - 1, height = CONTRAST_ROW_H - 1, cornerX = 5, cornerY = 5,
       fill = t.sunk, stroke = t.border, strokeWidth = 1
    })
 

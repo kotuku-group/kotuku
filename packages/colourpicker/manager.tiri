@@ -77,7 +77,7 @@ function lockGlyph(Target:obj!, X:num!, Y:num!, Fill:str!):obj
    vp.new('VectorPath', {
       sequence = 'M3 4.5 V3.25 A2 2 0 0 1 7 3.25 V4.5', stroke = Fill, strokeWidth = 1, lineCap = 'round'
    })
-   vp.new('VectorRectangle', { x = 1.5, y = 4.5, width = 7, height = 5, roundX = 1, roundY = 1, fill = Fill })
+   vp.new('VectorRectangle', { x = 1.5, y = 4.5, width = 7, height = 5, cornerX = 1, cornerY = 1, fill = Fill })
    return vp
 end
 
@@ -141,7 +141,7 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
    Viewport.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand' })
 
    self.highlight = Viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = t.accentSoft, stroke = &theme.palette.prime,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 4, cornerY = 4, fill = t.accentSoft, stroke = &theme.palette.prime,
       strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
@@ -150,7 +150,7 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
       x = STRIP_X, y = strip_y, width = STRIP_W, height = STRIP_H, overflow = VOF_HIDDEN
    })
    Viewport.new('VectorRectangle', {
-      x = STRIP_X + 0.5, y = strip_y + 0.5, width = STRIP_W - 1, height = STRIP_H - 1, roundX = 2, roundY = 2,
+      x = STRIP_X + 0.5, y = strip_y + 0.5, width = STRIP_W - 1, height = STRIP_H - 1, cornerX = 2, cornerY = 2,
       fill = 'none', stroke = t.swatchBorder, strokeWidth = 1
    })
 
@@ -279,7 +279,7 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
    card.viewport = vp
 
    card.bkgd = vp.new('VectorRectangle', {
-      x = 1, y = 1, width = Width - 2, height = CARD_H - 2, roundX = 5, roundY = 5, fill = theme.palette.bkgd, stroke = 'none'
+      x = 1, y = 1, width = Width - 2, height = CARD_H - 2, cornerX = 5, cornerY = 5, fill = theme.palette.bkgd, stroke = 'none'
    })
 
    -- The colour block has rounded top corners only, as a path.
@@ -338,7 +338,7 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
    })
 
    card.ring = vp.new('VectorRectangle', {
-      x = 0.5, y = 1, width = Width - 2, height = CARD_H - 2, roundX = 5, roundY = 5, fill = 'none',
+      x = 0.5, y = 1, width = Width - 2, height = CARD_H - 2, cornerX = 5, cornerY = 5, fill = 'none',
       stroke = t.border, strokeWidth = 2
    })
 
@@ -915,7 +915,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    g = self.swatchGroup
 
    self.swatchBlock = g.new('VectorRectangle', {
-      x = INSET + 0.5, y = INSET + 0.5, width = 47, height = 47, roundX = 6, roundY = 6, stroke = t.swatchBorder,
+      x = INSET + 0.5, y = INSET + 0.5, width = 47, height = 47, cornerX = 6, cornerY = 6, stroke = t.swatchBorder,
       strokeWidth = 1, fill = 'white'
    })
    self.swatchName = colourpicker_parts.text(g, { x = INSET + 60, y = INSET + 20, size = 13, fill = t.fg0 })

@@ -57,8 +57,8 @@
     },
     {
       "path": "controls.tiri",
-      "size": 24834,
-      "sha256": "dfbf6b7b5a633c0a205893f7905e82da4106026c022d470fa41614fb9e5ba248",
+      "size": 24842,
+      "sha256": "a5c5934f1e5cc81a21cec4d496c83696cce7c8a56f7995f58b39360a09d3a99a",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -81,20 +81,20 @@
     },
     {
       "path": "fontlist.tiri",
-      "size": 14237,
-      "sha256": "3a7e8290cc9027de79e12e64be849f81391bd87515d1ba94b071954c7adaeea8",
+      "size": 14239,
+      "sha256": "13d90e052e38e4aa0acd669537bf52eeee5a6dada3a36a3f7bf206665b6b01f0",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "glyphs.tiri",
-      "size": 6914,
-      "sha256": "b2dc8b2a1709b4c0c35773feb479785bdedb64792ebfa3494b0ca4f59060b3e7",
+      "size": 6918,
+      "sha256": "f43d6b1afb1f54c8e1402979431cb26a8d80c9f63907362ca0c753546eac4ca5",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "parts.tiri",
-      "size": 5366,
-      "sha256": "03efaa3dc98c58141beeb7be5fa36bf9162b42b034f1fd67e2f4df23e879c0c2",
+      "size": 5370,
+      "sha256": "454cff807c50e2ae7e67470c77a790a96d07ec0528b0a1ac636ce96c449020be",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -111,8 +111,8 @@
     },
     {
       "path": "preview.tiri",
-      "size": 31637,
-      "sha256": "c30d284a7d826a9ea9db94cb97cbd3b015ae9efc096b4b3b0bb58eda68ac7037",
+      "size": 31645,
+      "sha256": "445289a66fafa77f5937a8cb64abcb046267bdab1eb00c9333bb8d4adc52e3c7",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -141,8 +141,8 @@
     },
     {
       "path": "theme.tiri",
-      "size": 8544,
-      "sha256": "fda42c1477c563fd09cc4064b8a2277c133d995862767af70464da50a104ec8c",
+      "size": 8548,
+      "sha256": "a259cfd17cca032f8c3ed80976dd120e9da4a5a22843889ff5151175b07357a9",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ],

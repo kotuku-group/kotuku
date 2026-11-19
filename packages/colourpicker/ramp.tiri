@@ -132,7 +132,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    -- use.  Each button has a transparent background over a swatch, so that its hover and focus styling still apply.
 
    theme = {
-      bkgd      = { fill = 'rgba(0,0,0,0)', stroke = t.swatchBorder, roundX = ROUND, roundY = ROUND },
+      bkgd      = { fill = 'rgba(0,0,0,0)', stroke = t.swatchBorder, cornerX = ROUND, cornerY = ROUND },
       highlight = { fill = 'rgba(0,0,0,0)' },
       text      = { face = colourpicker_parts.FACE_MONO, size = 11 }
    }
@@ -140,7 +140,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    for i in {0 to MAX_STEPS} do
       step = { shown = true }
       step.swatch = body.new('VectorRectangle', {
-         y = TOP + 0.5, width = 1, height = ROW - 1, roundX = ROUND, roundY = ROUND
+         y = TOP + 0.5, width = 1, height = ROW - 1, cornerX = ROUND, cornerY = ROUND
       })
 
       step.button = gui.button({
@@ -182,7 +182,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    -- The ring marks the step that matches the edited colour
 
    self.ring = body.new('VectorRectangle', {
-      y = TOP - 1.5, width = 1, height = ROW + 3, roundX = ROUND + 1.5, roundY = ROUND + 1.5,
+      y = TOP - 1.5, width = 1, height = ROW + 3, cornerX = ROUND + 1.5, cornerY = ROUND + 1.5,
       fill = 'none', stroke = &theme.palette.prime, strokeWidth = 1.5, visibility = VIS_HIDDEN
    })
 
