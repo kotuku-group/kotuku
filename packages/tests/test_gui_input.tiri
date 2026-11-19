@@ -372,7 +372,7 @@ end
    assert(plain.bkgd.fill is dark.input.bkgd.fill, 'The background must take the dark theme')
    assert(plain.text.fill is dark.input.text.fill and plain.placeholder.fill is dark.input.text.fill,
       'The text and placeholder must take the dark text fill')
-   assert(plain.labelText.fill is dark.window.text.fill, 'The label must take the dark window text fill')
+   assert(plain.labelText.fill is dark.widget.text.fill, 'The label must take the dark widget text fill')
    assert(disabled.bkgd.fill is dark.input.bkgd.fill and disabled.bkgd.opacity is dark.input.disabled.opacity,
       'A disabled input must keep its disabled style')
    assert(styled.bkgd.fill is '#ff0000', 'Options.theme must survive the broadcast')
