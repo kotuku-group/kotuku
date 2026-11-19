@@ -701,9 +701,9 @@ end
    end
 end
 
-@Test function RefreshValueRescalesVerticalText()
+@Test function RefreshValueGrowsVerticalTrack()
    local suffix = ''
-   local surface <close>, slider = newSlider({ orientation='vertical', height=200, thickness=40,
+   local surface <close>, slider = newSlider({ orientation='vertical', thickness=40,
       min=0, max=10, value=2, step=1, valuePos='in-centre',
       valueFormat = function(Value:num):str return f'{Value}{suffix}' end
    })
@@ -712,29 +712,54 @@ end
    suffix = ' seconds remaining'
    slider.refreshValue()
    assert(slider.valueText.string is '2 seconds remaining', 'Refresh must update the formatted text')
-   assert(slider.valueText.textWidth <= slider.thickness - 4,
-      'Refreshed vertical text must fit within the track insets')
-
-   suffix = ''
-   slider.refreshValue()
-   assert(slider.valueText.fontSize is font_size, 'Shorter text must restore the original font size')
+   assert(slider.valueText.fontSize is font_size, 'Vertical value text must not be scaled to fit')
+   slider.viewport.scene.bitmap = surface.buffer
+   check slider.viewport.scene.acDraw()
+   local host = slider.trackVP
+   local _, x, y, width, height = check slider.valueText.mtGetBoundary(0)
+   assert(height > width, f'Vertical value text must run along the track ({width} x {height})')
+   assert(y >= host.y and y + height <= host.y + host.height,
+      'A default height must grow so that rotated inside text fits along the track')
    assert(slider.value is 2, 'Refreshing text must preserve the value')
 end
 
-@Test function ThemeChangesKeepVerticalTextFitted()
+-- Out-centre text on a vertical slider runs along the track, so a default height must cover it, whether the long text
+-- is present at creation or arrives on refresh.
+
+@Test function OutCentreValueGrowsVerticalTrack()
+   for at_refresh in values({ false, true }) do
+      local suffix = at_refresh ? '' : ' seconds remaining'
+      local surface <close>, slider = newSlider({ orientation='vertical', min=0, max=10, value=2, step=1,
+         valuePos='out-centre', valueFormat = function(Value:num):str return f'{Value}{suffix}' end
+      })
+
+      if at_refresh then
+         suffix = ' seconds remaining'
+         slider.refreshValue()
+      end
+
+      slider.viewport.scene.bitmap = surface.buffer
+      check slider.viewport.scene.acDraw()
+      local vp = slider.viewport
+      local _, x, y, width, height = check slider.valueText.mtGetBoundary(0)
+      local _, vx, vy = check vp.mtGetBoundary(0)
+      assert(height > width, f'Out-centre text must run along a vertical track ({width} x {height})')
+      assert(y >= vy - 0.5 and y + height <= vy + vp.height + 0.5,
+         f'A default height must cover out-centre text (refresh={at_refresh}): text {y}..{y + height}, ' ..
+         f'slider {vy}..{vy + vp.height}')
+   end
+end
+
+@Test function ThemeChangesKeepValueTextSize()
    local surface <close>, slider = newSlider({ orientation='vertical', height=200, thickness=40,
-      min=0, max=10, value=2, step=1, valuePos='in-centre',
-      valueFormat = function(Value:num):str return f'{Value} seconds remaining' end
+      min=0, max=10, value=2, step=1, valuePos='in-centre'
    })
-   local available = slider.thickness - 4
-   local fitted = slider.valueText.fontSize
-   assert(slider.valueText.textWidth <= available, 'The value text must start fitted to the track')
+   local font_size = slider.valueText.fontSize
 
    slider.setTheme({ text = { fill = '#102030' } })
-   assert(slider.valueText.fill is '#102030', 'A paint-only change must apply the new fill')
-   assert(slider.valueText.fontSize is fitted,
-      f'A paint-only change must keep the fitted size, got {slider.valueText.fontSize}')
-   assert(slider.valueText.textWidth <= available, 'A paint-only change must keep the text within the track')
+   assert(slider.valueText.fill is '#102030', 'A theme change must apply the new fill')
+   assert(slider.valueText.fontSize is font_size,
+      f'A theme change must keep the value text size, got {slider.valueText.fontSize}')
 end
 
 @Test function RefreshValueUpdatesOutsideReservation()
@@ -780,6 +805,11 @@ end
          local host, text = slider.trackVP, slider.valueText
          local _, x, y, width, height = check text.mtGetBoundary(0)
          assert(text.next is nil, 'Value text must render in front of the track and thumb')
+         if orientation is 'vertical' then
+            assert(height > width, f'Vertical {position} text must be rotated to run along the track')
+         else
+            assert(width > height, f'Horizontal {position} text must not be rotated')
+         end
          if position.startsWith('in-') then
             assert(x >= host.x and y >= host.y and x + width <= host.x + host.width
                and y + height <= host.y + host.height, 'Inside value text must fit within the track')
@@ -902,26 +932,53 @@ end
    end
 end
 
-@Test function NarrowVerticalValuesUseMinimumFontAndHideWhenTheyCannotFit()
-   for thickness in values(array<int> { 1, 4, 5, 8 }) do
+-- Draw the slider and require its value text to render within the track, with the theme font size unchanged.
+
+function assertValueInTrack(Surface:obj!, Slider:table!, Context:str!)
+   local font_size = Slider.valueText.fontSize
+   Slider.viewport.scene.bitmap = Surface.buffer
+   check Slider.viewport.scene.acDraw()
+   local _, x, y, width, height = check Slider.valueText.mtGetBoundary(0)
+   local _, tx, ty, tw, th = check Slider.trackVP.mtGetBoundary(0)
+   assert(x >= tx - 0.5 and x + width <= tx + tw + 0.5 and y >= ty - 0.5 and y + height <= ty + th + 0.5,
+      f'{Context}: value text {x},{y} {width}x{height} must render within the track {tx},{ty} {tw}x{th}')
+   assert(Slider.valueText.fontSize is font_size, f'{Context}: text must be scaled, not resized')
+end
+
+@Test function NarrowVerticalTracksKeepTheirBreadth()
+   for thickness in values(array<int> { 1, 4, 8 }) do
       local surface <close>, slider = newSlider({ orientation='vertical', thickness=thickness,
          min=-100000000, max=100000000, step=1, value=-100000000, valuePos='in-centre'
       })
-      assert(tonumber(slider.valueText.fontSize) is 1,
-         'A narrow track must reach the minimum font size even when the estimate rounds to zero')
-      assert(slider.valueText.visibility is VIS_HIDDEN,
-         'A value that cannot fit at the minimum font size must be hidden')
-      slider.setValue(100000000)
-      assert(slider.valueText.string is '100000000' and slider.valueText.visibility is VIS_HIDDEN,
-         'Hidden value text must continue to update without overflowing the track')
       assert(slider.viewport.width is thickness, 'Value text must preserve the configured track breadth')
+      assert(slider.valueText.visibility is VIS_VISIBLE, 'Rotated value text is not hidden on a narrow track')
+      slider.setValue(100000000)
+      assert(slider.valueText.string is '100000000', 'Value text must continue to update')
+      assertValueInTrack(surface, slider, f'thickness {thickness}')
+   end
+end
 
-      if thickness is 8 then
-         slider.setRange(0, 1)
-         assert(slider.valueText.string is '1' and slider.valueText.visibility is VIS_VISIBLE
-            and slider.prvValueWidth <= thickness - 4,
-            'A range change must restore value text when it fits within the track')
-      end
+-- Inside text that is longer than a fixed track is scaled down, in both orientations, and returns to full size when
+-- it fits again.
+
+@Test function InsideValuesScaleToFitFixedTracks()
+   for orientation in values({ 'vertical', 'horizontal' }) do
+      local suffix = ' seconds remaining'
+      local vertical = orientation is 'vertical'
+      local surface <close>, slider = newSlider({ orientation=orientation, width=vertical ? nil : 60,
+         height=vertical ? 60 : nil, min=0, max=10, value=2, step=1, valuePos='in-centre',
+         valueFormat = function(Value:num):str return f'{Value}{suffix}' end
+      })
+      assert((vertical ? slider.viewport.height : slider.viewport.width) is 60,
+         'Inside text must not change a fixed length')
+      assertValueInTrack(surface, slider, orientation)
+
+      suffix = ''
+      slider.refreshValue()
+      assertValueInTrack(surface, slider, orientation .. ' after refresh')
+      local _, _, _, w, h = check slider.valueText.mtGetBoundary(0)
+      assert(math.abs((vertical ? h : w) - slider.valueText.textWidth) < 1,
+         f'{orientation}: text that fits must be drawn at full size, got {vertical ? h : w}')
    end
 end
 

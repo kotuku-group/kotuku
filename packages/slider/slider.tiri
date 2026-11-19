@@ -15,7 +15,6 @@ Documentation is available in the Kotuku Wiki.
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.default)
 DEFAULT_THICKNESS <const> = math.floor(FONT_MAX_HEIGHT * 1.4)
 MARGIN <const>            = math.floor(FONT_HEIGHT * 0.5) + 1
-VALUE_INSET <const>       = 2 -- Minimum space between vertical value text and the track's sides
 DIGITS <const>            = r'[0-9]'
 MAX_PLACES <const>        = 10 -- Maximum decimal places in the value readout
 TICK_LENGTH <const>       = math.floor(FONT_HEIGHT * 0.5) -- Length of major ticks
@@ -82,7 +81,7 @@ gui.slider = function(Options:table!)
       value      = Options.value or (min + ((max - min) * 0.5)),
       label      = Options.label,
       valuePos   = Options.valuePos,
-      valueWidth = Options.valueWidth, -- Fixed breadth for value text beside the track; defaults to the widest value
+      valueWidth = Options.valueWidth, -- Fixed length for value text at the track's ends; defaults to the widest value
       valueFormat = Options.valueFormat, -- function(Value):str for the value text; nil for the step's precision
       labelPos   = Options.labelPos ?? 'left',
       labelAlign = Options.labelAlign ?? 'left',
@@ -455,8 +454,8 @@ gui.slider = function(Options:table!)
          return string.format(&prvValueFormat(), Value)
       end,
 
-      -- Reserve a stable width for all digits in the range, so value changes do not resize the track.  Vertical
-      -- values in line with the track are scaled down until the widest value fits across it.
+      -- Reserve a stable length for all digits in the range, so value changes do not resize the track.  Vertical values
+      -- are rotated to run along the track, so the length is measured in the reading direction for both orientations.
 
       prvMeasureValue = function()
          -- The widest values are the range ends with every digit drawn as 8, e.g. 8.88 for 0.00
@@ -474,29 +473,7 @@ gui.slider = function(Options:table!)
             return width
          end
 
-         &valueText.fontSize = f'{&prvValueFontSize}px'
          &prvValueWidth = widest()
-         &valueText.acShow()
-
-         -- Font sizes are whole pixels and hinted widths are not proportional, so step down from the estimate.
-
-         if (&orientation is 'V') and (&valuePos != 'out-centre') then
-            available = math.max(0, &thickness - (VALUE_INSET * 2))
-            if &prvValueWidth > available then
-               size = math.max(1, math.floor(&prvValueFontSize * available / &prvValueWidth))
-               while size >= 1 do
-                  &valueText.fontSize = f'{size}px'
-                  &prvValueWidth = widest()
-                  if &prvValueWidth <= available then break end
-                  size -= 1
-               end
-
-               -- A one-pixel font is the minimum; hide values that still cannot fit within the track.
-
-               if &prvValueWidth > available then &valueText.acHide() end
-            end
-         end
-
          &prvValueHeight, ascent = gui.layout.textMetrics(&valueText)
          &prvValueBaseline = (&prvValueHeight + ascent) * 0.5
          &valueText.string = &prvValueString(&value)
@@ -515,19 +492,35 @@ gui.slider = function(Options:table!)
             &prvValueSpace = space
          end
 
-         if &trackVP and &prvAutoWidth and (&orientation is 'H') and &valuePos.startsWith('in-') then
-            extra = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2) - &trackVP.width
-            if extra > 0 then &viewport.width += extra end
+         needed = &prvValueLength()
+         if &trackVP and needed then
+            if (&orientation is 'H') and &prvAutoWidth then
+               extra = needed - &trackVP.width
+               if extra > 0 then &viewport.width += extra end
+            elseif (&orientation is 'V') and &prvAutoHeight then
+               extra = needed - &trackVP.height
+               if extra > 0 then &viewport.height += extra end
+            end
          end
       end,
 
-      -- Space reserved beside the track for outside value text.  An explicit valueWidth replaces the measured width of
-      -- text placed to the left or right of the track, so that the track length does not depend on the range.
+      -- Track length needed by value text that runs along the track, or nil for text at one end of it.  Inside text
+      -- is kept clear of the track's ends; out-centre text is centred on the track and needs only its own length.
+
+      prvValueLength = function():num
+         if &valuePos.startsWith('in-') then return &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2) end
+         if &valuePos is 'out-centre' then return &prvValueWidth end
+         return nil
+      end,
+
+      -- Space reserved beside the track for outside value text.  Text at either end of the track reserves its length,
+      -- which an explicit valueWidth replaces so that the track length does not depend on the range.  Text beside the
+      -- track reserves its line height.
 
       prvValueReserve = function():num
-         if (&prvValueSide is 'x') or (&prvValueSide is 'xOffset') then
-            return (&valueWidth ?? &prvValueWidth) + MARGIN
-         end
+         along = (&orientation is 'H') ? ((&prvValueSide is 'x') or (&prvValueSide is 'xOffset')) :
+            ((&prvValueSide is 'y') or (&prvValueSide is 'yOffset'))
+         if along then return (&valueWidth ?? &prvValueWidth) + MARGIN end
          return &prvValueHeight + MARGIN
       end,
 
@@ -540,7 +533,13 @@ gui.slider = function(Options:table!)
          position   = &valuePos.sub(outside ? 4 : 3)
          tick_space = (&tickPos != 'start') ? &prvTickSpace : 0 -- out-centre text is placed beyond end ticks
 
-         -- Inside text is drawn over the track, which is inset from the host for an overhanging thumb.
+         line_height = &prvValueHeight
+         baseline    = &prvValueBaseline
+         scale       = 1
+
+         -- Inside text is drawn over the track, which is inset from the host for an overhanging thumb.  Text that
+         -- does not fit the track's length (less margins) or breadth is scaled down about its origin.  The font size
+         -- is not changed, so the text keeps its theme metrics.
 
          if not outside then
             inset = &prvTrackInset()
@@ -551,6 +550,16 @@ gui.slider = function(Options:table!)
                y      += inset
                Height -= inset * 2
             end
+
+            length  = (&orientation is 'H') ? Width : Height
+            breadth = (&orientation is 'H') ? Height : Width
+            if text_width > 0 then scale = math.min(scale, (length - (MARGIN * 2)) / text_width) end
+            if line_height > 0 then scale = math.min(scale, breadth / line_height) end
+            scale = math.max(scale, 0.01) -- A degenerate track still gets an invertible matrix
+
+            text_width  *= scale
+            line_height *= scale
+            baseline    *= scale
          end
 
          if &orientation is 'H' then
@@ -566,19 +575,32 @@ gui.slider = function(Options:table!)
                end
             end
 
-            y += (outside and (position is 'centre')) ? Height + tick_space + MARGIN + &prvValueBaseline :
-               &prvValueBaseline + ((Height - &prvValueHeight) * 0.5)
+            y += (outside and (position is 'centre')) ? Height + tick_space + MARGIN + baseline :
+               baseline + ((Height - line_height) * 0.5)
          else
-            x += (outside and (position is 'centre')) ? Width + tick_space + MARGIN : (Width - text_width) * 0.5
+            -- Vertical text is rotated to read up the track, so it runs up from its origin and its capitals extend to
+            -- the left of the baseline.
+
+            x += (outside and (position is 'centre')) ? Width + tick_space + MARGIN + baseline :
+               ((Width - line_height) * 0.5) + baseline
             y += choose position from
-               'min' -> (outside ? Height + MARGIN + &prvValueBaseline :
-                  Height - &prvValueHeight - MARGIN + &prvValueBaseline)
-               'max' -> (outside ? -MARGIN - &prvValueHeight + &prvValueBaseline : MARGIN + &prvValueBaseline)
-               else  -> &prvValueBaseline + ((Height - &prvValueHeight) * 0.5)
+               'min' -> (outside ? Height + MARGIN + text_width : Height - MARGIN)
+               'max' -> (outside ? -MARGIN : MARGIN + text_width)
+               else  -> (Height + text_width) * 0.5
             end
          end
 
          &valueText.{ x = x, y = y }
+
+         if &prvValueMatrix then
+            check mVec.ResetMatrix(&prvValueMatrix)
+            if scale < 1 then
+               check mVec.Translate(&prvValueMatrix, -x, -y)
+               check mVec.Scale(&prvValueMatrix, scale, scale)
+               check mVec.Translate(&prvValueMatrix, x, y)
+            end
+            if &orientation is 'V' then check mVec.Rotate(&prvValueMatrix, -90, x, y) end
+         end
       end,
 
       -- Labels are placed in a line of the label's lineHeight across the reading direction, with their capitals
@@ -830,7 +852,13 @@ gui.slider = function(Options:table!)
             lineLimit = 1
          })
 
-         &prvValueFontSize = tonumber(&valueText.fontSize) -- Unscaled size in pixels
+         -- The matrix rotates vertical text and scales inside text that does not fit the track.
+
+         if (&orientation is 'V') or &valuePos.startsWith('in-') then
+            _, matrix = check &valueText.mtNewMatrix(false)
+            &prvValueMatrix = matrix
+         end
+
          &valueText.align = 'start'
          &valueText.acDisable() -- Value text must not intercept track clicks or thumb dragging.
          &prvMeasureValue()
@@ -849,13 +877,17 @@ gui.slider = function(Options:table!)
             if not horizontal_space and &prvAutoHeight then &viewport.height += &prvValueSpace end
          end
 
-         -- A default width grows for horizontal inside values, which run along the track.  Vertical values are
-         -- scaled to the track's breadth instead.
+         -- A default length grows for inside and out-centre values, which run along the track in both orientations.
 
-         if &prvAutoWidth and (&orientation is 'H') and &valuePos.startsWith('in-') then
-            available = &viewport.width - host.x - host.xOffset
-            needed    = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2)
-            if needed > available then &viewport.width += needed - available end
+         needed = &prvValueLength()
+         if needed then
+            if &prvAutoWidth and (&orientation is 'H') then
+               available = &viewport.width - host.x - host.xOffset
+               if needed > available then &viewport.width += needed - available end
+            elseif &prvAutoHeight and (&orientation is 'V') then
+               available = &viewport.height - host.y - host.yOffset
+               if needed > available then &viewport.height += needed - available end
+            end
          end
 
          if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
@@ -1041,7 +1073,7 @@ gui.slider = function(Options:table!)
       &trackVP.mtSubscribeInput(JTYPE_BUTTON, trackInput)
 
       -- Apply the current theme to the existing vectors.  The size of the track and thumb, the font size and the layout
-      -- are not changed, so the value text keeps its fitted size.
+      -- are not changed.
 
       function restyle()
          &prvApplyStyle()
