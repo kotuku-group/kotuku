@@ -14,7 +14,7 @@
 -- and icon padding can accommodate it.  The region always extends by at least glFilterExtent.  A blur of radius r
 -- reaches 2r, because its kernel extends to twice the radius.
 --
--- Future candidates: halo(), sand(), stone(), and inset() (filter).
+-- Future candidates: halo(), inset()
 
    include 'vector'
 
