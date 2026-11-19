@@ -1875,30 +1875,6 @@ static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
 
    if (not svg.ok()) return log.warning(ERR::CreateObject);
 
-   if (is_svg and svg->Viewport) {
-      auto viewport = svg->Viewport;
-      double view_width, view_height;
-      if (auto error = viewport->getViewWidth(view_width); error != ERR::Okay) return log.warning(error);
-      if (auto error = viewport->getViewHeight(view_height); error != ERR::Okay) return log.warning(error);
-
-      // Autoscaling changes the target size only.  Without a viewBox, retain the intrinsic dimensions as the
-      // source area before replacing the target dimensions, otherwise small icons crop the original artwork.
-
-      if ((view_width <= 0) and (view_height <= 0)) {
-         Unit width(0, FD_PURE), height(0, FD_PURE);
-         if (auto error = viewport->getWidth(width); error != ERR::Okay) return log.warning(error);
-         if (auto error = viewport->getHeight(height); error != ERR::Okay) return log.warning(error);
-         if (width.defined() and height.defined() and (not width.scaled()) and (not height.scaled()) and
-               (double(width) > 0) and (double(height) > 0)) {
-            if (auto error = viewport->setViewWidth(width); error != ERR::Okay) return log.warning(error);
-            if (auto error = viewport->setViewHeight(height); error != ERR::Okay) return log.warning(error);
-         }
-      }
-
-      if (auto error = viewport->setWidth(Unit(1.0, FD_SCALED)); error != ERR::Okay) return log.warning(error);
-      if (auto error = viewport->setHeight(Unit(1.0, FD_SCALED)); error != ERR::Okay) return log.warning(error);
-   }
-
    if (not is_svg) {
       OBJECTPTR def = nullptr;
       if ((svg->Scene->findDef("display_icon", &def) != ERR::Okay) or (def->classID() != CLASSID::VECTORIMAGE)) {
@@ -1906,16 +1882,6 @@ static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
          return ERR::File;
       }
    }
-
-   // Fit even square artwork inside the circular backing, retaining the source's colours and aspect ratio.
-   // Both documents render at the final size so the circle and source retain antialiased edges at small sizes.
-
-   if (not svg->Viewport) return log.warning(ERR::InvalidObject);
-   auto viewport = svg->Viewport;
-   if (auto error = viewport->setX(Unit(0.16, FD_SCALED)); error != ERR::Okay) return log.warning(error);
-   if (auto error = viewport->setY(Unit(0.16, FD_SCALED)); error != ERR::Okay) return log.warning(error);
-   if (auto error = viewport->setWidth(Unit(0.68, FD_SCALED)); error != ERR::Okay) return log.warning(error);
-   if (auto error = viewport->setHeight(Unit(0.68, FD_SCALED)); error != ERR::Okay) return log.warning(error);
 
    objSVG::create backing { fl::Statement(
       "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\">"
@@ -1933,7 +1899,14 @@ static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
       clearmem(bmp->Data, bmp->LineWidth * bmp->Height);
 
       if (auto error = backing->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
-      if (auto error = svg->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
+
+      // Render() fits the document's native size to the target area and centres it, preserving the aspect ratio.
+      // The artwork is inset to fit inside the circular backing.  Both documents render at the final size so that
+      // the circle and source retain antialiased edges at small sizes.
+
+      auto inset = int(std::lround(size * 0.16));
+      auto inner = size - (inset * 2);
+      if (auto error = svg->render(*bmp, inset, inset, inner, inner); error != ERR::Okay) return log.warning(error);
 
       if ((bmp->Flags & BMF::PREMUL) != BMF::NIL) bmp->demultiply();
 
