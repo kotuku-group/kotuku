@@ -1369,14 +1369,18 @@ function buildPalette(Target:obj)
    -- extends FIELD_PAD beyond its text at each side, so its text ends at the usual header inset.
 
    panel = gui.panel({
-      target = Target,
-      x = LEFT_PAD, y = LEFT_PAD, width = LEFT_INNER, height = 100,
+      target  = Target,
+      x       = LEFT_PAD,
+      y       = LEFT_PAD,
+      width   = LEFT_INNER,
+      height  = 100,
       padding = colourpicker_parts.PANEL_PADDING,
-      theme = {
+      theme   = {
          headerPad = LIST_PAD_X,
-         metaGap = PALETTE_META_GAP
+         metaGap   = PALETTE_META_GAP
       }
    })
+
    &palettePanel = panel
 
    buildModeBox(&&, panel)
@@ -2417,7 +2421,6 @@ function buildRight()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
-
 -- Stack the right column's panels.  The Relationship panel is only shown for a linked colour; without it, the
 -- Contrast and Tonal Ramp panels move up and the Export panel takes the space.
 
