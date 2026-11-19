@@ -202,25 +202,64 @@ inline void blend_linear32(uint8_t *Dest, uint8_t dR, uint8_t dG, uint8_t dB, ui
 // the same row has already rewritten.  A SIMD iteration loads 16 source bytes before storing any, which gives the
 // same result only when the destination starts at least 16 bytes after the source or anywhere before it.  The
 // destination loads are not affected, because each iteration reads its own destination bytes before storing them.
+// The AVX2 loops load 32 bytes per iteration and pass a Span of 32.
 
-inline bool simd_overlap(const void *Src, const void *Dest)
+inline bool simd_overlap(const void *Src, const void *Dest, uintptr_t Span = 16)
 {
    const auto s = uintptr_t(Src), d = uintptr_t(Dest);
-   return (d > s) and (d - s < 16);
+   return (d > s) and (d - s < Span);
 }
 
-inline __m128i simd_select(__m128i Mask, __m128i A, __m128i B) // Mask ? A : B, per bit
+// The helpers below use SSE4.1 and SSSE3 instructions where KOTUKU_SSE42 is defined, which is the build baseline on
+// x86.  The SSE2 forms are retained for toolchains without it and give identical results.
+
+// Mask ? A : B.  Every Mask byte must be 0x00 or 0xff, because _mm_blendv_epi8() reads only the top bit of each
+// byte.  The masks used here are comparison results and byte-aligned channel masks, which meet that condition.
+
+inline __m128i simd_select(__m128i Mask, __m128i A, __m128i B)
 {
+#ifdef KOTUKU_SSE42
+   return _mm_blendv_epi8(B, A, Mask);
+#else
    return _mm_or_si128(_mm_and_si128(Mask, A), _mm_andnot_si128(Mask, B));
+#endif
 }
 
-// Broadcast the alpha byte of each 32-bit pixel across all four of its byte lanes.
+// Zero-extend the low eight bytes of V to 16-bit lanes, and the low four 16-bit lanes to 32-bit lanes.  The high
+// halves still use _mm_unpackhi_epi8() and _mm_unpackhi_epi16() with a zero vector.
+
+inline __m128i simd_widen8_lo(__m128i V)
+{
+#ifdef KOTUKU_SSE42
+   return _mm_cvtepu8_epi16(V);
+#else
+   return _mm_unpacklo_epi8(V, _mm_setzero_si128());
+#endif
+}
+
+inline __m128i simd_widen16_lo(__m128i V)
+{
+#ifdef KOTUKU_SSE42
+   return _mm_cvtepu16_epi32(V);
+#else
+   return _mm_unpacklo_epi16(V, _mm_setzero_si128());
+#endif
+}
+
+// Broadcast the alpha byte of each 32-bit pixel across all four of its byte lanes.  AlphaPos must be a multiple of
+// 8.  The shuffle control depends only on AlphaPos, so the compiler hoists it out of the callers' loops.
 
 inline __m128i simd_broadcast_alpha(__m128i Pixels, int AlphaPos)
 {
+#ifdef KOTUKU_SSE42
+   const auto control = _mm_add_epi8(_mm_set1_epi8(char(AlphaPos>>3)),
+      _mm_setr_epi8(0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12));
+   return _mm_shuffle_epi8(Pixels, control);
+#else
    auto a = _mm_and_si128(_mm_srl_epi32(Pixels, _mm_cvtsi32_si128(AlphaPos)), _mm_set1_epi32(0xff));
    a = _mm_or_si128(a, _mm_slli_epi32(a, 8));
    return _mm_or_si128(a, _mm_slli_epi32(a, 16));
+#endif
 }
 
 // round((Value * Alpha) / 255) on 16-bit lanes, matching the scalar mul_div255().
@@ -242,9 +281,9 @@ inline __m128i simd_blend4(__m128i S, __m128i D, int AlphaPos, __m128i AlphaLane
    const auto max  = _mm_set1_epi16(255);
 
    auto a8  = simd_broadcast_alpha(S, AlphaPos);
-   auto slo = _mm_unpacklo_epi8(S, zero),  shi = _mm_unpackhi_epi8(S, zero);
-   auto dlo = _mm_unpacklo_epi8(D, zero),  dhi = _mm_unpackhi_epi8(D, zero);
-   auto alo = _mm_unpacklo_epi8(a8, zero), ahi = _mm_unpackhi_epi8(a8, zero);
+   auto slo = simd_widen8_lo(S),  shi = _mm_unpackhi_epi8(S, zero);
+   auto dlo = simd_widen8_lo(D),  dhi = _mm_unpackhi_epi8(D, zero);
+   auto alo = simd_widen8_lo(a8), ahi = _mm_unpackhi_epi8(a8, zero);
 
    alo = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(alo, Opacity), max), 8);
    ahi = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(ahi, Opacity), max), 8);
@@ -317,14 +356,14 @@ inline __m128i simd_blend_translucent4(__m128i S, __m128i D, int AlphaPos, __m12
    const auto round       = _mm_cvtepi32_ps(_mm_srli_epi32(divisor, 1));
    const auto div         = _mm_cvtepi32_ps(divisor);
 
-   const auto slo = _mm_unpacklo_epi8(S, zero), shi = _mm_unpackhi_epi8(S, zero);
-   const auto dlo = _mm_unpacklo_epi8(D, zero), dhi = _mm_unpackhi_epi8(D, zero);
+   const auto slo = simd_widen8_lo(S), shi = _mm_unpackhi_epi8(S, zero);
+   const auto dlo = simd_widen8_lo(D), dhi = _mm_unpackhi_epi8(D, zero);
 
-   auto p0 = simd_translucent_pixel<0>(_mm_unpacklo_epi16(slo, zero), _mm_unpacklo_epi16(dlo, zero),
+   auto p0 = simd_translucent_pixel<0>(simd_widen16_lo(slo), simd_widen16_lo(dlo),
       src_weight, dest_weight, round, div);
    auto p1 = simd_translucent_pixel<1>(_mm_unpackhi_epi16(slo, zero), _mm_unpackhi_epi16(dlo, zero),
       src_weight, dest_weight, round, div);
-   auto p2 = simd_translucent_pixel<2>(_mm_unpacklo_epi16(shi, zero), _mm_unpacklo_epi16(dhi, zero),
+   auto p2 = simd_translucent_pixel<2>(simd_widen16_lo(shi), simd_widen16_lo(dhi),
       src_weight, dest_weight, round, div);
    auto p3 = simd_translucent_pixel<3>(_mm_unpackhi_epi16(shi, zero), _mm_unpackhi_epi16(dhi, zero),
       src_weight, dest_weight, round, div);
@@ -352,6 +391,188 @@ inline __m128i simd_blend4_any(__m128i S, __m128i D, int AlphaPos, __m128i Alpha
 }
 
 #endif // KOTUKU_SSE2
+
+#ifdef KOTUKU_AVX2
+
+//********************************************************************************************************************
+// AVX2 forms of the 32-bit blend kernels, for eight pixels per iteration.  Callers select them once per CopyArea() or
+// CopyRawBitmap() call with simd_has_avx2().  Each row function processes whole groups of eight pixels and returns
+// the number processed; the caller's SSE2 and scalar loops finish the remaining 0 - 7 pixels.  The rows must not
+// overlap within 32 bytes; see simd_overlap().
+//
+// The 16-bit lane arithmetic is that of the SSE2 kernels.  The 256-bit unpack and pack instructions operate on each
+// 128-bit half independently, so each half reproduces the SSE2 result for its four pixels.
+
+// Shift counts for the alpha channel and the three colour channels of a 32-bit pixel with byte-aligned channels.
+
+struct AvxShifts {
+   __m128i Alpha;
+   __m128i Colour[3];
+
+   AvxShifts(int AlphaPos) {
+      // The colour channels occupy the three byte positions that the alpha channel does not.
+      Alpha     = _mm_cvtsi32_si128(AlphaPos);
+      Colour[0] = _mm_cvtsi32_si128((AlphaPos IS 0) ? 8 : 0);
+      Colour[1] = _mm_cvtsi32_si128((AlphaPos <= 8) ? 16 : 8);
+      Colour[2] = _mm_cvtsi32_si128((AlphaPos IS 24) ? 16 : 24);
+   }
+};
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_select(__m256i Mask, __m256i A, __m256i B) // Mask ? A : B, per bit
+{
+   return _mm256_or_si256(_mm256_and_si256(Mask, A), _mm256_andnot_si256(Mask, B));
+}
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_broadcast_alpha(__m256i Pixels, __m128i Shift)
+{
+   auto a = _mm256_and_si256(_mm256_srl_epi32(Pixels, Shift), _mm256_set1_epi32(0xff));
+   a = _mm256_or_si256(a, _mm256_slli_epi32(a, 8));
+   return _mm256_or_si256(a, _mm256_slli_epi32(a, 16));
+}
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_mul_div255(__m256i Value, __m256i Alpha)
+{
+   auto t = _mm256_add_epi16(_mm256_mullo_epi16(Value, Alpha), _mm256_set1_epi16(128));
+   return _mm256_srli_epi16(_mm256_add_epi16(t, _mm256_srli_epi16(t, 8)), 8);
+}
+
+// The eight-pixel form of simd_blend4(): the opaque and empty destination formula.
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_blend8(__m256i S, __m256i D, __m128i AlphaShift, __m256i AlphaLane,
+   __m256i Opacity)
+{
+   const auto zero = _mm256_setzero_si256();
+   const auto max  = _mm256_set1_epi16(255);
+
+   auto a8  = avx_broadcast_alpha(S, AlphaShift);
+   auto slo = _mm256_unpacklo_epi8(S, zero),  shi = _mm256_unpackhi_epi8(S, zero);
+   auto dlo = _mm256_unpacklo_epi8(D, zero),  dhi = _mm256_unpackhi_epi8(D, zero);
+   auto alo = _mm256_unpacklo_epi8(a8, zero), ahi = _mm256_unpackhi_epi8(a8, zero);
+
+   alo = _mm256_srli_epi16(_mm256_add_epi16(_mm256_mullo_epi16(alo, Opacity), max), 8);
+   ahi = _mm256_srli_epi16(_mm256_add_epi16(_mm256_mullo_epi16(ahi, Opacity), max), 8);
+
+   auto calo = _mm256_sub_epi16(max, alo), cahi = _mm256_sub_epi16(max, ahi);
+
+   auto blo = _mm256_srli_epi16(_mm256_add_epi16(_mm256_add_epi16(_mm256_mullo_epi16(slo, alo),
+      _mm256_mullo_epi16(dlo, calo)), max), 8);
+   auto bhi = _mm256_srli_epi16(_mm256_add_epi16(_mm256_add_epi16(_mm256_mullo_epi16(shi, ahi),
+      _mm256_mullo_epi16(dhi, cahi)), max), 8);
+
+   auto xlo = _mm256_sub_epi16(max, _mm256_srli_epi16(_mm256_mullo_epi16(calo, _mm256_sub_epi16(max, dlo)), 8));
+   auto xhi = _mm256_sub_epi16(max, _mm256_srli_epi16(_mm256_mullo_epi16(cahi, _mm256_sub_epi16(max, dhi)), 8));
+
+   blo = avx_select(AlphaLane, xlo, blo);
+   bhi = avx_select(AlphaLane, xhi, bhi);
+   return _mm256_packus_epi16(blo, bhi);
+}
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_translucent_mask(__m256i D, __m256i AlphaMask)
+{
+   const auto a = _mm256_and_si256(D, AlphaMask);
+   const auto edge = _mm256_or_si256(_mm256_cmpeq_epi32(a, _mm256_setzero_si256()), _mm256_cmpeq_epi32(a, AlphaMask));
+   return _mm256_xor_si256(edge, _mm256_set1_epi32(-1));
+}
+
+// The eight-pixel form of simd_blend_translucent4().  It works on one channel of all eight pixels at a time, which
+// holds each pixel's weights in its own 32-bit lane and needs one division per colour channel: three per eight
+// pixels, against four per four pixels in the SSE2 kernel.  Each lane performs the same float operations in the same
+// order as the SSE2 kernel, so the exactness argument given there applies unchanged.  The quotients are clamped to
+// 255 as the saturating packs do there.
+
+KOTUKU_TARGET_AVX2 inline __m256i avx_blend_translucent8(__m256i S, __m256i D, const AvxShifts &Shifts,
+   __m256i Opacity)
+{
+   const auto max = _mm256_set1_epi32(255);
+
+   auto sa = _mm256_and_si256(_mm256_srl_epi32(S, Shifts.Alpha), max);
+   auto da = _mm256_and_si256(_mm256_srl_epi32(D, Shifts.Alpha), max);
+   sa = _mm256_srli_epi32(_mm256_add_epi32(_mm256_mullo_epi16(sa, Opacity), max), 8);
+   const auto inv = _mm256_sub_epi32(max, sa);
+   const auto final_alpha = _mm256_sub_epi32(max,
+      _mm256_srli_epi32(_mm256_mullo_epi16(inv, _mm256_sub_epi32(max, da)), 8));
+   const auto divisor = _mm256_mullo_epi16(final_alpha, max);
+
+   const auto src_weight  = _mm256_cvtepi32_ps(_mm256_mullo_epi16(sa, max));
+   const auto dest_weight = _mm256_cvtepi32_ps(_mm256_mullo_epi16(inv, da));
+   const auto round       = _mm256_cvtepi32_ps(_mm256_srli_epi32(divisor, 1));
+   const auto div         = _mm256_cvtepi32_ps(divisor);
+
+   auto result = _mm256_sll_epi32(final_alpha, Shifts.Alpha);
+   for (const auto &shift : Shifts.Colour) {
+      const auto sc = _mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srl_epi32(S, shift), max));
+      const auto dc = _mm256_cvtepi32_ps(_mm256_and_si256(_mm256_srl_epi32(D, shift), max));
+      const auto num = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(sc, src_weight), _mm256_mul_ps(dc, dest_weight)),
+         round);
+      const auto q = _mm256_min_epi32(_mm256_cvttps_epi32(_mm256_div_ps(num, div)), max);
+      result = _mm256_or_si256(result, _mm256_sll_epi32(q, shift));
+   }
+   return result;
+}
+
+// Blends a row of 32-bit pixels for the three BAF::BLEND loops of CopyArea().  Copy selects the BAF::COPY form, in
+// which an empty destination pixel is replaced by the source pixel.  Source and destination share one channel
+// layout, with the alpha channel at AlphaPos.
+
+template <bool Copy>
+ROW_NOINLINE KOTUKU_TARGET_AVX2 static int blend_row32_avx2(const uint8_t *Src, uint8_t *Dest, int Width,
+   int AlphaPos, int Opacity)
+{
+   const AvxShifts shifts(AlphaPos);
+   const auto zero = _mm256_setzero_si256();
+   const auto amask = _mm256_set1_epi32(int(uint32_t(0xff) << AlphaPos));
+   const auto alpha_lane = _mm256_cmpeq_epi16(_mm256_unpacklo_epi8(amask, zero), _mm256_set1_epi16(0xff));
+   const auto op = _mm256_set1_epi16(short(Opacity));
+
+   int x = 0;
+   for (; x + 8 <= Width; x += 8) {
+      const auto s = _mm256_loadu_si256((const __m256i *)(Src + (x<<2)));
+      const auto d = _mm256_loadu_si256((const __m256i *)(Dest + (x<<2)));
+      const auto src_zero = _mm256_cmpeq_epi32(_mm256_and_si256(s, amask), zero);
+
+      auto blended = avx_blend8(s, d, shifts.Alpha, alpha_lane, op);
+      const auto translucent = avx_translucent_mask(d, amask);
+      if (not _mm256_testz_si256(translucent, translucent)) {
+         BLIT_STAT_PIXELS(BLEND32_TRANSLUCENT, 8);
+         blended = avx_select(translucent, avx_blend_translucent8(s, d, shifts, op), blended);
+      }
+
+      auto result = avx_select(src_zero, d, blended);
+      if constexpr (Copy) {
+         result = avx_select(_mm256_cmpeq_epi32(_mm256_and_si256(d, amask), zero), s, result);
+      }
+      _mm256_storeu_si256((__m256i *)(Dest + (x<<2)), result);
+   }
+   return x;
+}
+
+// Mixes a row of 32-bit pixels at a constant Opacity, for the constant-opacity loops of CopyArea() and
+// CopyRawBitmap().  The result keeps the RGBMask channels and has Alpha added in.
+
+ROW_NOINLINE KOTUKU_TARGET_AVX2 static int mix_row32_avx2(const uint32_t *Src, uint32_t *Dest, int Width,
+   uint32_t RGBMask, uint32_t Alpha, int Opacity)
+{
+   const auto zero = _mm256_setzero_si256();
+   const auto op   = _mm256_set1_epi16(short(Opacity));
+   const auto cop  = _mm256_set1_epi16(short(255 - Opacity));
+   const auto rgb_mask = _mm256_set1_epi32(int(RGBMask));
+   const auto alpha = _mm256_set1_epi32(int(Alpha));
+
+   int i = 0;
+   for (; i + 8 <= Width; i += 8) {
+      const auto s = _mm256_loadu_si256((const __m256i *)(Src + i));
+      const auto d = _mm256_loadu_si256((const __m256i *)(Dest + i));
+      const auto blo = _mm256_add_epi16(avx_mul_div255(_mm256_unpacklo_epi8(s, zero), op),
+         avx_mul_div255(_mm256_unpacklo_epi8(d, zero), cop));
+      const auto bhi = _mm256_add_epi16(avx_mul_div255(_mm256_unpackhi_epi8(s, zero), op),
+         avx_mul_div255(_mm256_unpackhi_epi8(d, zero), cop));
+      const auto packed = _mm256_packus_epi16(blo, bhi);
+      _mm256_storeu_si256((__m256i *)(Dest + i), _mm256_or_si256(_mm256_and_si256(packed, rgb_mask), alpha));
+   }
+   return i;
+}
+
+#endif // KOTUKU_AVX2
 
 //********************************************************************************************************************
 // NOTE: Please ensure that the Width and Height are already clipped to meet the restrictions of BOTH the source and
@@ -897,6 +1118,10 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                const auto simd_amask = _mm_set1_epi32(int(uint32_t(0xff) << (sA<<3)));
                const auto simd_alpha_lane = _mm_cmpeq_epi16(_mm_unpacklo_epi8(simd_amask, _mm_setzero_si128()), _mm_set1_epi16(0xff));
 #endif
+#ifdef KOTUKU_AVX2
+               // The AVX2 kernels process groups of eight, so narrower rows skip the call
+               const bool use_avx2 = (Width >= 8) and simd_has_avx2();
+#endif
 
 #ifdef DISPLAY_BLIT_STATS
                {
@@ -940,6 +1165,13 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         int x = 0;
 #ifdef KOTUKU_SSE2
                         if (simd_ok and (not simd_overlap(sp, dp))) {
+#ifdef KOTUKU_AVX2
+                           if (use_avx2 and (not simd_overlap(sp, dp, 32))) {
+                              x = blend_row32_avx2<true>(sp, dp, Width, sA<<3, 255);
+                              sp += x<<2;
+                              dp += x<<2;
+                           }
+#endif
                            const auto zero = _mm_setzero_si128();
                            const auto op = _mm_set1_epi16(255);
                            for (; x + 4 <= Width; x += 4, sp += 16, dp += 16) {
@@ -986,6 +1218,13 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            i = 0;
 #ifdef KOTUKU_SSE2
                            if (simd_ok and (not simd_overlap(sp, dp))) {
+#ifdef KOTUKU_AVX2
+                              if (use_avx2 and (not simd_overlap(sp, dp, 32))) {
+                                 i = blend_row32_avx2<false>(sp, dp, Width, sA<<3, 255);
+                                 sp += i<<2;
+                                 dp += i<<2;
+                              }
+#endif
                               const auto zero = _mm_setzero_si128();
                               const auto op = _mm_set1_epi16(255);
                               for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
@@ -1026,6 +1265,13 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         i = 0;
 #ifdef KOTUKU_SSE2
                         if (simd_ok and (not simd_overlap(sp, dp))) {
+#ifdef KOTUKU_AVX2
+                           if (use_avx2 and (not simd_overlap(sp, dp, 32))) {
+                              i = blend_row32_avx2<false>(sp, dp, Width, sA<<3, src->Opacity);
+                              sp += i<<2;
+                              dp += i<<2;
+                           }
+#endif
                            const auto zero = _mm_setzero_si128();
                            const auto op = _mm_set1_epi16(src->Opacity);
                            for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
@@ -1146,6 +1392,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
                      }
 #endif
+                     // The scalar colour-key loops keep their conditional stores.  A select form would vectorise,
+                     // but it reads the destination at key pixels, which may be uninitialised in a new bitmap.
                      for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                      ddata = (uint32_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint32_t *)(((int8_t *)sdata) + src->LineWidth);
@@ -1247,21 +1495,32 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      (src->prvColourFormat.BluePos IS dest->prvColourFormat.BluePos) and
                      (((src->prvColourFormat.RedPos | src->prvColourFormat.GreenPos | src->prvColourFormat.BluePos) & 7) IS 0);
                   if (not simd_ok) BLIT_STAT(OPACITY32_NO_SIMD, int64_t(Width) * Height);
+                  const uint32_t rgb_bits = (uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                     (uint32_t(0xff) << dest->prvColourFormat.GreenPos) |
+                     (uint32_t(0xff) << dest->prvColourFormat.BluePos);
+#endif
+#ifdef KOTUKU_AVX2
+                  // The AVX2 kernels process groups of eight, so narrower rows skip the call
+                  const bool use_avx2 = (Width >= 8) and simd_has_avx2();
 #endif
                   while (Height > 0) {
                      i = 0;
 #ifdef KOTUKU_SSE2
                      if (simd_ok and (not simd_overlap(sdata, ddata))) {
+#ifdef KOTUKU_AVX2
+                        if (use_avx2 and (not simd_overlap(sdata, ddata, 32))) {
+                           i = mix_row32_avx2(sdata, ddata, Width, rgb_bits, cmp_alpha, src->Opacity);
+                        }
+#endif
                         const auto zero = _mm_setzero_si128();
                         const auto op   = _mm_set1_epi16(src->Opacity);
                         const auto cop  = _mm_set1_epi16(255 - src->Opacity);
-                        const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
-                           (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                        const auto rgb_mask = _mm_set1_epi32(int(rgb_bits));
                         const auto alpha = _mm_set1_epi32(int(cmp_alpha));
                         for (; i + 4 <= Width; i += 4) {
                            auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
                            auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
-                           auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), op), simd_mul_div255(_mm_unpacklo_epi8(d, zero), cop));
+                           auto blo = _mm_add_epi16(simd_mul_div255(simd_widen8_lo(s), op), simd_mul_div255(simd_widen8_lo(d), cop));
                            auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), op), simd_mul_div255(_mm_unpackhi_epi8(d, zero), cop));
                            auto packed = _mm_packus_epi16(blo, bhi);
                            _mm_storeu_si128((__m128i *)(ddata + i), _mm_or_si128(_mm_and_si128(packed, rgb_mask), alpha));
@@ -1585,14 +1844,14 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                      // fully opaque (straight copy) and fully transparent (no-op) cases.
 
                      auto a8  = simd_broadcast_alpha(s, Surface->Format.AlphaPos);
-                     auto alo = simd_mul_div255(_mm_unpacklo_epi8(a8, zero), op);
+                     auto alo = simd_mul_div255(simd_widen8_lo(a8), op);
                      auto ahi = simd_mul_div255(_mm_unpackhi_epi8(a8, zero), op);
                      auto a8s = _mm_packus_epi16(alo, ahi);
                      auto opaque = _mm_cmpeq_epi8(a8s, _mm_set1_epi8(char(0xff)));
                      auto transparent = _mm_cmpeq_epi8(a8s, zero);
 
-                     auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), alo),
-                                              simd_mul_div255(_mm_unpacklo_epi8(d, zero), _mm_sub_epi16(max16, alo)));
+                     auto blo = _mm_add_epi16(simd_mul_div255(simd_widen8_lo(s), alo),
+                                              simd_mul_div255(simd_widen8_lo(d), _mm_sub_epi16(max16, alo)));
                      auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), ahi),
                                               simd_mul_div255(_mm_unpackhi_epi8(d, zero), _mm_sub_epi16(max16, ahi)));
                      auto blended = _mm_or_si128(_mm_and_si128(_mm_packus_epi16(blo, bhi), rgb_mask), alpha_or);
@@ -1781,20 +2040,31 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   (Surface->Format.GreenPos IS dest->prvColourFormat.GreenPos) and
                   (Surface->Format.BluePos IS dest->prvColourFormat.BluePos) and
                   (((Surface->Format.RedPos | Surface->Format.GreenPos | Surface->Format.BluePos) & 7) IS 0);
+               const uint32_t rgb_bits = (uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                  (uint32_t(0xff) << dest->prvColourFormat.GreenPos) |
+                  (uint32_t(0xff) << dest->prvColourFormat.BluePos);
+#endif
+#ifdef KOTUKU_AVX2
+               // The AVX2 kernels process groups of eight, so narrower rows skip the call
+               const bool use_avx2 = (Width >= 8) and simd_has_avx2();
 #endif
                while (Height > 0) {
                   int i = 0;
 #ifdef KOTUKU_SSE2
                   if (simd_ok and (not simd_overlap(sdata, ddata))) {
+#ifdef KOTUKU_AVX2
+                     if (use_avx2 and (not simd_overlap(sdata, ddata, 32))) {
+                        i = mix_row32_avx2(sdata, ddata, Width, rgb_bits, 0, Surface->Opacity);
+                     }
+#endif
                      const auto zero = _mm_setzero_si128();
                      const auto op   = _mm_set1_epi16(Surface->Opacity);
                      const auto cop  = _mm_set1_epi16(255 - Surface->Opacity);
-                     const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
-                        (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                     const auto rgb_mask = _mm_set1_epi32(int(rgb_bits));
                      for (; i + 4 <= Width; i += 4) {
                         auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
                         auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
-                        auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), op), simd_mul_div255(_mm_unpacklo_epi8(d, zero), cop));
+                        auto blo = _mm_add_epi16(simd_mul_div255(simd_widen8_lo(s), op), simd_mul_div255(simd_widen8_lo(d), cop));
                         auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), op), simd_mul_div255(_mm_unpackhi_epi8(d, zero), cop));
                         _mm_storeu_si128((__m128i *)(ddata + i), _mm_and_si128(_mm_packus_epi16(blo, bhi), rgb_mask));
                      }
