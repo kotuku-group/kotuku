@@ -1,0 +1,133 @@
+
+   include 'vector'
+
+   module vector as mVec
+
+   namespace gui
+
+gui.path ?= {}
+
+@Doc(text=[[
+Generates an SVG path sequence for a rectangle with optional rounded corners.
+
+The path starts at the top-left and runs clockwise.  Corners are declared as X,Y radius pairs in clockwise order from
+the top-left (TL, TR, BR, BL).  A single pair applies to all four corners, and missing pairs leave their corners
+square.  A corner is only rounded when both of its radii are positive.  Oversized radii are scaled down
+proportionally so that adjacent corners never overlap, following the CSS border-radius rule.
+
+-INPUT-
+X: Left edge of the rectangle.  Defaults to 0.
+Y: Top edge of the rectangle.  Defaults to 0.
+Width: Width of the rectangle.  Defaults to 1.
+Height: Height of the rectangle.  Defaults to 1.
+Corners: Optional corner radii as X,Y pairs, e.g. `array<double> { 4, 4 }` for uniform 4 px corners.
+
+-RESULTS-
+str: A path sequence suitable for the sequence field of a VectorPath.
+]])
+gui.path.rectangle = function(X:num, Y:num, Width:num, Height:num, Corners:array<double>):str
+   buffer = array<char>
+   X ?= 0
+   Y ?= 0
+   Width ?= 1
+   Height ?= 1
+
+   -- Resolve the corner radii as rx/ry pairs in clockwise order from the top-left
+
+   r = array<double, 8>
+   total = Corners ? #Corners : 0
+   for i in {0 to 8} do
+      src = (total is 2) ? (i % 2) : i
+      if src < total then
+         v = Corners[src]
+         if v > 0 then r[i] = v end
+      end
+   end
+
+   -- A corner is only rounded when both of its radii are non-zero
+
+   for i in {0 to 8 by 2} do
+      if r[i] <= 0 or r[i + 1] <= 0 then
+         r[i] = 0
+         r[i + 1] = 0
+      end
+   end
+
+   -- Scale all radii down if the sum of any two adjacent radii exceeds the side length
+
+   scale = 1
+   function fit(Length:num, A:num, B:num)
+      if A + B > Length then scale = math.min(scale, Length / (A + B)) end
+   end
+
+   fit(Width, r[0], r[2])  -- Top
+   fit(Height, r[3], r[5]) -- Right
+   fit(Width, r[4], r[6])  -- Bottom
+   fit(Height, r[7], r[1]) -- Left
+
+   if scale < 1 then
+      for i in {0 to 8} do r[i] *= scale end
+   end
+
+   right  = X + Width
+   bottom = Y + Height
+
+   -- Emits an elliptical arc to (EX, EY) if the corner has a radius
+
+   function arc(RX:num, RY:num, EX:num, EY:num)
+      if RX > 0 then buffer ..= f'A{RX} {RY} 0 0 1 {EX} {EY} ' end
+   end
+
+   tl_x, tl_y = r[0], r[1]
+   tr_x, tr_y = r[2], r[3]
+   br_x, br_y = r[4], r[5]
+   bl_x, bl_y = r[6], r[7]
+
+   buffer ..= f'M{X + tl_x} {Y} '
+   buffer ..= f'H{right - tr_x} '
+   arc(tr_x, tr_y, right, Y + tr_y)
+   buffer ..= f'V{bottom - br_y} '
+   arc(br_x, br_y, right - br_x, bottom)
+   buffer ..= f'H{X + bl_x} '
+   arc(bl_x, bl_y, X, bottom - bl_y)
+   buffer ..= f'V{Y + tl_y} '
+   arc(tl_x, tl_y, X + tl_x, Y)
+   buffer ..= 'Z'
+
+   return tostring(buffer)
+end
+
+@Doc(text=[[
+Generates an SVG path sequence for an ellipse or circle.
+
+The path follows the SVG 2 ellipse equivalent: it starts at the rightmost point and runs clockwise as four quarter
+arcs, avoiding the ambiguity of a single 180 degree arc.  A non-positive radius yields an empty string, matching
+SVG's rule that such ellipses are not rendered.
+
+-INPUT-
+CX: Horizontal centre of the ellipse.  Defaults to 0.
+CY: Vertical centre of the ellipse.  Defaults to 0.
+RX: Horizontal radius.  Defaults to 1.
+RY: Vertical radius.  Defaults to RX, producing a circle.
+
+-RESULTS-
+str: A path sequence suitable for the sequence field of a VectorPath, or an empty string if a radius is not positive.
+]])
+gui.path.ellipse = function(CX:num, CY:num, RX:num, RY:num):str
+   CX ?= 0
+   CY ?= 0
+   RX ?= 1
+   RY ?= RX
+
+   if RX <= 0 or RY <= 0 then return '' end
+
+   function arc(EX:num, EY:num):str
+      return f'A{RX} {RY} 0 0 1 {EX} {EY} '
+   end
+
+   return f'M{CX + RX} {CY} ' ..
+      arc(CX, CY + RY) ..
+      arc(CX - RX, CY) ..
+      arc(CX, CY - RY) ..
+      arc(CX + RX, CY) .. 'Z'
+end

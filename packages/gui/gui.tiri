@@ -997,6 +997,7 @@ end
    import './fills_data'
    import './fonts_data'
    import './effects'
+   import './paths'
 
 @Doc(text=[[
 -FUNCTION-
