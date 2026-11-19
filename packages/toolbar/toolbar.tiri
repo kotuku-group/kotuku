@@ -221,7 +221,7 @@ gui.toolbar = function(Options:table)
 
       &_vHover = &vg.new('VectorRectangle', {
          fill = &_hoverFill, x = 0, y = 0, width = 1, height = 1, visibility = 'hidden',
-         roundX = highlight_round, roundY = highlight_round
+         cornerX = highlight_round, cornerY = highlight_round
       })
 
       if &_groupClip then &_vHover.mask = &_groupClip end
@@ -295,18 +295,18 @@ gui.toolbar = function(Options:table)
                end
 
                item.bkgd = &vg.new('VectorRectangle', table.merge({
-                  name = 'groupbkgd', x = x, y = y, roundX = &_round, roundY = &_round, width = 1, height = 1
+                  name = 'groupbkgd', x = x, y = y, cornerX = &_round, cornerY = &_round, width = 1, height = 1
                }, tb_theme.bkgd))
 
                item.bkgd.acMoveToBack()
 
                item.border = &vg.new('VectorRectangle', table.merge({
-                  name = 'grouprect', x = x, y = y, roundX = &_round, roundY = &_round, width = 1, height = 1
+                  name = 'grouprect', x = x, y = y, cornerX = &_round, cornerY = &_round, width = 1, height = 1
                }, tb_theme.groupBorder))
 
                if &_groupClip then
                   item.clip = &_groupClip.viewport.new('VectorRectangle', {
-                     name = 'groupclip', x = x, y = y, roundX = &_round, roundY = &_round, width = 1, height = 1
+                     name = 'groupclip', x = x, y = y, cornerX = &_round, cornerY = &_round, width = 1, height = 1
                   })
                end
             end
@@ -352,7 +352,7 @@ gui.toolbar = function(Options:table)
 
             item.vSelected = &_vSelection.new('VectorRectangle', {
                fill = &_selectFill, x = 0, y = 0, width = 1, height = 1, visibility = 'hidden',
-               roundX = highlight_round, roundY = highlight_round
+               cornerX = highlight_round, cornerY = highlight_round
             })
             coverItem(item.vSelected, item)
             updateItemState(item)

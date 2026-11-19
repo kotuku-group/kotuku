@@ -5145,28 +5145,28 @@ class objVectorRectangle : public objVector {
 
    // Customised field getting
 
-   inline ERR getRounding(std::span<Unit> &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getRoundX(Unit &Value) noexcept {
+   inline ERR getCorners(std::span<Unit> &Value) noexcept {
       auto field = &this->Class->Dictionary[47];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getRoundY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+   inline ERR getCornerX(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getCornerY(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
+      auto field = &this->Class->Dictionary[50];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
+      auto field = &this->Class->Dictionary[48];
       return field->GetValue(this, &Value);
    }
 
@@ -5179,7 +5179,7 @@ class objVectorRectangle : public objVector {
    }
 
    inline ERR getYOffset(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[49];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -5187,40 +5187,40 @@ class objVectorRectangle : public objVector {
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+      auto field = &this->Class->Dictionary[51];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
+      auto field = &this->Class->Dictionary[52];
       return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
-   inline ERR setRounding(std::span<const Unit> Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRoundX(const Unit Value) noexcept {
+   inline ERR setCorners(std::span<const Unit> Value) noexcept {
       auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setRoundY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+   inline ERR setCornerX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCornerY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
+      auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -5230,17 +5230,17 @@ class objVectorRectangle : public objVector {
    }
 
    inline ERR setYOffset(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+      auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
+      auto field = &this->Class->Dictionary[52];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -6328,7 +6328,7 @@ constexpr FieldValue Overflow(VOF Value) { return FieldValue(strhash("overflow")
 [[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(strhash("fontStyle"), Value); }
 [[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(strhash("fontStyle"), Value ? std::string_view(Value) : std::string_view{}); }
 
-template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(strhash("roundX"), Value); }
-template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(strhash("roundY"), Value); }
+template <kt::NumericOrScale T> FieldValue CornerX(T Value) { return FieldValue(strhash("cornerX"), Value); }
+template <kt::NumericOrScale T> FieldValue CornerY(T Value) { return FieldValue(strhash("cornerY"), Value); }
 
 }

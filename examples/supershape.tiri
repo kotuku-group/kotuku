@@ -204,7 +204,7 @@ function constructSavedRow(Item:table, Viewport:obj, Reason:str)
          x = 4, y = 4, width = size, height = size, viewWidth = 640, viewHeight = 640,
          aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_MEET, overflow = 'hidden'
       })
-      thumb.new('VectorRectangle', { width = '100%', height = '100%', roundX = 64, roundY = 64, fill = '#f5f7fa' })
+      thumb.new('VectorRectangle', { width = '100%', height = '100%', cornerX = 64, cornerY = 64, fill = '#f5f7fa' })
 
       shape = thumb.new('VectorShape', {
          cx = 320, cy = 320, fillRule = 'evenodd', strokeWidth = 12, lineJoin = 'round', lineCap = 'round'

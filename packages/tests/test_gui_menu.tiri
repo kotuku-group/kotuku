@@ -1517,9 +1517,9 @@ end
       createItems=function(Bar) Bar.addItem('file', 'File', nil, nil) end })
    local original_stroke = bar._bkgdRect.stroke
    local original_opacity = bar._highlight.opacity
-   local original_rounding = bar._bkgdRect.rounding
+   local original_rounding = bar._bkgdRect.corners
    bar.setTheme({ menubar={
-      bkgd={ stroke='red', strokeWidth=4, roundX=12, roundY=6 },
+      bkgd={ stroke='red', strokeWidth=4, cornerX=12, cornerY=6 },
       highlight={ opacity=0.2 }, focus={ opacity=0.3 }
    } })
    assert(bar._bkgdRect.stroke is 'red' and math.abs(bar._highlight.opacity - 0.2) < 0.001,
@@ -1530,7 +1530,7 @@ end
    assert(math.abs(bar._highlight.opacity - original_opacity) < 0.001,
       'The original theme option must remain in effect')
    assert(bar._focusEdge.opacity is 1, 'Omitted focus opacity must return to its native value')
-   for i, value in bar._bkgdRect.rounding do
+   for i, value in bar._bkgdRect.corners do
       local original = original_rounding[i]
       assert((value is original) or ((value != value) and (original != original)),
          'Omitted rounding must restore every corner, including unset native coordinates')

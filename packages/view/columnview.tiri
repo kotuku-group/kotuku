@@ -122,7 +122,7 @@ end
 function checkboxPatterns(View:table!, Size:num!):table
    style = View.theme.input.bkgd
    ink = View.theme.input.text.fill
-   signature = f'{Size}|{style.fill}|{style.stroke}|{style.strokeWidth}|{style.roundX}|{style.roundY}' ..
+   signature = f'{Size}|{style.fill}|{style.stroke}|{style.strokeWidth}|{style.cornerX}|{style.cornerY}' ..
       f'|{style.opacity}|{ink}'
    prefix = f'column_checkbox_{Size}_{signature.hash()}'
    fills = { }
@@ -140,8 +140,8 @@ function checkboxPatterns(View:table!, Size:num!):table
          pattern.viewport.new('VectorRectangle', {
             x = inset, y = inset, width = Size-inset*2, height = Size-inset*2,
             fill = style.fill, stroke = style.stroke, strokeWidth = (style.strokeWidth is nil ? 1 : style.strokeWidth),
-            roundX = (style.roundX is nil ? Size*0.15 : style.roundX),
-            roundY = (style.roundY is nil ? Size*0.15 : style.roundY),
+            cornerX = (style.cornerX is nil ? Size*0.15 : style.cornerX),
+            cornerY = (style.cornerY is nil ? Size*0.15 : style.cornerY),
             opacity = (style.opacity is nil ? 1 : style.opacity)
          })
 
@@ -244,7 +244,7 @@ function highlightItem(View:table!, Item:table, Highlighted:bool)
       local radius = View._metrics.lineHeight * 0.2
       Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {
          name = 'item_highlight',
-         roundX = radius, roundY = radius,
+         cornerX = radius, cornerY = radius,
          x = 0, y = 0, width = '100%', height = '100%'
       })
       Item._vectors.highlight.acMoveToBack()

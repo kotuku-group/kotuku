@@ -60,6 +60,8 @@ CLAUDE.local.md
 AGENTS.local.md
 src/link/kotuku.manifest
 src/link/resource.rc
+src/svg/katana-parser/config.h
+src/svg/katana-parser/Makefile
 data/ssl/localhost*.p12
 data/ssl/localhost*.pem
 docs/kotuku*/

@@ -91,7 +91,7 @@ fdc.inlineEdit = function(Picker:table!, Target:obj!, Options:table!):table
       cursor = 'text'
    })
    ed.clip.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 3, cornerY = 3,
       fill = t.sunk, stroke = Picker.theme.palette.prime, strokeWidth = 1
    })
 
@@ -329,7 +329,7 @@ fdc.segmented = function(Picker:table!, Target:obj!, Options:table!):table
    group   = Target.new('VectorViewport', { x = Options.x ?? 0, y = Options.y ?? 0, width = 1, height = height })
 
    base_theme = {
-      bkgd = { roundX = 3, roundY = 3 },
+      bkgd = { cornerX = 3, cornerY = 3 },
       text = { size = size } -- The button centres the label for this size
    }
 
@@ -572,7 +572,7 @@ fdc.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
    cb.button = gui.button({
       target = Target, x = Options.x ?? 0, y = Options.y ?? 0, width = Options.width, height = height,
       theme = {
-         bkgd = { fill = t.sunk, stroke = t.border, roundX = 4, roundY = 4 },
+         bkgd = { fill = t.sunk, stroke = t.border, cornerX = 4, cornerY = 4 },
          highlight = { fill = t.accentSoft }
       },
       events = {
@@ -591,7 +591,7 @@ fdc.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
    vp = cb.button.viewport
    sw = height - 10
    cb.swatch = vp.new('VectorRectangle', {
-      x = 5.5, y = 5.5, width = sw - 1, height = sw - 1, roundX = 3, roundY = 3,
+      x = 5.5, y = 5.5, width = sw - 1, height = sw - 1, cornerX = 3, cornerY = 3,
       stroke = t.swatchBorder, strokeWidth = 1
    })
 

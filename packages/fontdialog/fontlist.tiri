@@ -71,7 +71,7 @@ function buildRow(Picker:table!, Item:table!, Viewport:obj!):table
    row = { viewport = Viewport }
 
    row.highlight = Viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = 'none',
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 4, cornerY = 4, fill = 'none',
       strokeWidth = 1, visibility = VIS_HIDDEN
    })
 

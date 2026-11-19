@@ -109,11 +109,11 @@ fontdialog_glyphs.new = function(Picker:table!, Target:obj!, Options:table!):tab
       base = fontdialog_parts.baseline(0, COV_ROW, 11)
       row.label = text(row.viewport, { x = PAD, y = base, size = 11, fill = t.fg1 })
       row.viewport.new('VectorRectangle', {
-         x = bar_x, y = (COV_ROW - BAR_H) * 0.5, width = bar_w, height = BAR_H, roundX = 2, roundY = 2,
+         x = bar_x, y = (COV_ROW - BAR_H) * 0.5, width = bar_w, height = BAR_H, cornerX = 2, cornerY = 2,
          fill = t.border
       })
       row.bar = row.viewport.new('VectorRectangle', {
-         x = bar_x, y = (COV_ROW - BAR_H) * 0.5, width = 1, height = BAR_H, roundX = 2, roundY = 2, fill = t.fg0
+         x = bar_x, y = (COV_ROW - BAR_H) * 0.5, width = 1, height = BAR_H, cornerX = 2, cornerY = 2, fill = t.fg0
       })
       row.value = text(row.viewport, {
          x = PAD + inner, y = base, size = 11, face = mono, fill = t.fg2, align = 'right'

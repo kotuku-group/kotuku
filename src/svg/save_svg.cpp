@@ -1039,8 +1039,8 @@ static ERR save_svg_scan_rectangle(extSVG *Self, objXML *XML, objVector *Vector,
    if (!error) error = XML->getTag(new_index, &tag);
 
    if (!error) {
-      if ((!rect->getRoundX(rx)) and rx.defined() and (rx > 0)) set_dimension(tag, "rx", rx);
-      if ((!rect->getRoundY(ry)) and ry.defined() and (ry > 0)) set_dimension(tag, "ry", ry);
+      if ((!rect->getCornerX(rx)) and rx.defined() and (rx > 0)) set_dimension(tag, "rx", rx);
+      if ((!rect->getCornerY(ry)) and ry.defined() and (ry > 0)) set_dimension(tag, "ry", ry);
       if ((!rect->getX(x))) set_dimension(tag, "x", x);
       if ((!rect->getY(y))) set_dimension(tag, "y", y);
       if ((!rect->getWidth(width))) set_dimension(tag, "width", width);

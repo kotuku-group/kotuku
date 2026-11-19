@@ -85,7 +85,7 @@ fontdialog_parts.hints = function(Viewport:obj!, Options:table!):num
       end
 
       box = Viewport.new('VectorRectangle', {
-         x = x + 0.5, y = key_top + 0.5, width = 1, height = key_height - 1, roundX = 3, roundY = 3,
+         x = x + 0.5, y = key_top + 0.5, width = 1, height = key_height - 1, cornerX = 3, cornerY = 3,
          fill = t.panel, stroke = t.border, strokeWidth = 1
       })
 
@@ -118,7 +118,7 @@ The rings are placed behind the thumb bar, so the slider's thumbSize must be at 
 fontdialog_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
    bar = Slider.button
    outer = Slider.thumbVP.new('VectorRectangle', {
-      x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, roundX = 3, roundY = 3,
+      x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, cornerX = 3, cornerY = 3,
       stroke = &theme.scheme is 'light' ? 'black' : 'white', fill=&theme.panel.bkgd.fill
    })
    outer.acMoveToBack()

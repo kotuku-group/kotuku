@@ -548,7 +548,7 @@ colourpicker_wheel.loupe = function(Target:obj!, Options:table!):table
    check scene.mtAddDef('cpLoupe', self.image)
 
    self.viewport.new('VectorRectangle', {
-      x = 0, y = 0, width = LOUPE_SIZE, height = LOUPE_SIZE, roundX = 4, roundY = 4, fill = 'url(#cpLoupe)'
+      x = 0, y = 0, width = LOUPE_SIZE, height = LOUPE_SIZE, cornerX = 4, cornerY = 4, fill = 'url(#cpLoupe)'
    })
 
    grid = array<str>
@@ -568,7 +568,7 @@ colourpicker_wheel.loupe = function(Target:obj!, Options:table!):table
    })
 
    self.viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = LOUPE_SIZE - 1, height = LOUPE_SIZE - 1, roundX = 4, roundY = 4,
+      x = 0.5, y = 0.5, width = LOUPE_SIZE - 1, height = LOUPE_SIZE - 1, cornerX = 4, cornerY = 4,
       stroke = t.border, strokeWidth = 1
    })
 

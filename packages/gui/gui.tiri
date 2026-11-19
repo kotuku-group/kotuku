@@ -610,15 +610,15 @@ end
 
 -- Replace a rectangle's style, restoring fields omitted by the replacement to their native values.  Defaults is
 -- private to the vector and must be supplied from the first style application.  Records retain nil values, and the
--- rounding fields share storage, so all corners are saved and restored together.
+-- corner fields share storage, so all corners are saved and restored together.
 
 gui.styleRectangle = function(Vector:obj!, Style:table, Defaults:table!)
-   Defaults.rounding ?= { value=Vector.rounding }
+   Defaults.corners ?= { value=Vector.corners }
    for key, saved in Defaults do Vector[key] = saved.value end
 
    if Style then
       for key in Style do
-         if key != 'roundX' and key != 'roundY' and not (key in Defaults) then
+         if key != 'cornerX' and key != 'cornerY' and not (key in Defaults) then
             Defaults[key] = { value=Vector[key] }
          end
       end
@@ -1195,20 +1195,20 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          disabled    = { opacity = 0.5 }
       },
       button = {
-         bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text      = table.merge({ fill = Palette.text }, gui.fonts.widget),
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+            bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
             highlight = { fill = Palette.contrast, stroke = Palette.edge },
             focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
             text      = { fill = Palette.altText }
          }
       },
       dropdown = { -- Exclusive to combobox
-         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, roundX = Edge.round, roundY = Edge.round },
+         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.round, cornerY = Edge.round },
          highlight     = { fill = Palette.contrast },
          textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
          icon          = Icon('fill(pearl)'),
@@ -1219,7 +1219,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          effect = Icon('fill(pearl)')
       },
       input = { -- Used by checkbox, input, combobox
-         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
          focus = { stroke = Palette.contrast },
          text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
@@ -1239,7 +1239,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          icon      = Icon('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round },
+         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round },
          header        = { fill = Palette.surround },
          title         = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, style = 'semi bold' },
          meta          = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, opacity = 0.7 },
@@ -1249,9 +1249,9 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          metaGap       = gui.sizing.widget.labelGap    -- Minimum space between the title and the meta
       },
       slider = {
-         bkgd          = { fill = Palette.mid, stroke = Palette.edge, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
-         slideFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
-         thumbFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         bkgd          = { fill = Palette.mid, stroke = Palette.edge, cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
+         slideFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
+         thumbFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text          = table.merge({ fill = Palette.text }, gui.fonts.widget),
@@ -1278,7 +1278,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          iconHighlight = Icon('fill(pearl)')
       },
       tooltip = {
-         bkgd = { fill = Palette.bkgd, roundX = gui.pixel('4pt'), roundY = gui.rpixel('4pt'), strokeWidth = 2, stroke = Palette.edge },
+         bkgd = { fill = Palette.bkgd, cornerX = gui.pixel('4pt'), cornerY = gui.rpixel('4pt'), strokeWidth = 2, stroke = Palette.edge },
          text = { fill = Palette.text }
       },
       window = {
@@ -1336,20 +1336,20 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          disabled    = { opacity = 0.5 }
       },
       button = {
-         bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text      = table.merge({ fill = Palette.altText }, gui.fonts.widget),
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+            bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
             highlight = { fill = Palette.contrast, stroke = Palette.edge },
             focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
             text      = { fill = Palette.altText }
          }
       },
       dropdown = {
-         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, roundX = Edge.round, roundY = Edge.round },
+         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.round, cornerY = Edge.round },
          border        = { stroke = Palette.inverse },
          highlight     = { fill = Palette.contrast },
          textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
@@ -1361,7 +1361,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          effect = Icon('fill(carbon)')
       },
       input = {
-         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
          focus = { stroke = Palette.contrast },
          text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
@@ -1381,7 +1381,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          icon      = Icon('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round },
+         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round },
          header        = { fill = Palette.surround },
          title         = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, style = 'bold' },
          meta          = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, opacity = 0.9 },
@@ -1391,9 +1391,9 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          metaGap       = gui.sizing.widget.labelGap
       },
       slider = {
-         bkgd          = { fill = Palette.mid, stroke = Palette.edge, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
-         slideFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
-         thumbFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         bkgd          = { fill = Palette.mid, stroke = Palette.edge, cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
+         slideFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
+         thumbFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
@@ -1414,7 +1414,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          iconHighlight = Icon('fill(pearl)')
       },
       tooltip = {
-         bkgd = { fill = Palette.bkgd, roundX = 4, roundY = 4, strokeWidth = gui.rpixel('2px'), stroke = Palette.edge },
+         bkgd = { fill = Palette.bkgd, cornerX = 4, cornerY = 4, strokeWidth = gui.rpixel('2px'), stroke = Palette.edge },
          text = { fill = Palette.text }
       },
       window = {

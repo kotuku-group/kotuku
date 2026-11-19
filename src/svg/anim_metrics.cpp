@@ -67,8 +67,8 @@ static uint32_t animation_field(std::string_view Attribute, objVector &Vector)
    switch (strhash(Attribute)) {
       case SVF_display: return strhash("visibility");
       case SVF_r: return strhash("radius");
-      case SVF_rx: return strhash(Vector.classID() IS CLASSID::VECTORRECTANGLE ? "roundX" : "radiusX");
-      case SVF_ry: return strhash(Vector.classID() IS CLASSID::VECTORRECTANGLE ? "roundY" : "radiusY");
+      case SVF_rx: return strhash(Vector.classID() IS CLASSID::VECTORRECTANGLE ? "cornerX" : "radiusX");
+      case SVF_ry: return strhash(Vector.classID() IS CLASSID::VECTORRECTANGLE ? "cornerY" : "radiusY");
       case SVF_font_family: return strhash("face");
       case SVF_font_size: return strhash("fontSize");
       case SVF_text_anchor: return strhash("align");

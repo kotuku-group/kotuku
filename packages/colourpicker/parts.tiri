@@ -158,7 +158,7 @@ colourpicker_parts.chip = function(Viewport:obj!, Options:table!):table
    }
 
    self.bkgd = self.viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = 1, height = CHIP_HEIGHT - 1, roundX = 3, roundY = 3,
+      x = 0.5, y = 0.5, width = 1, height = CHIP_HEIGHT - 1, cornerX = 3, cornerY = 3,
       fill = t.sunk, stroke = t.border, strokeWidth = 1
    })
 
@@ -219,7 +219,7 @@ colourpicker_parts.hints = function(Viewport:obj!, Options:table!):num
       end
 
       box = Viewport.new('VectorRectangle', {
-         x = x + 0.5, y = key_top + 0.5, width = 1, height = key_height - 1, roundX = 3, roundY = 3,
+         x = x + 0.5, y = key_top + 0.5, width = 1, height = key_height - 1, cornerX = 3, cornerY = 3,
          fill = t.panel, stroke = t.border, strokeWidth = 1
       })
 
@@ -307,7 +307,7 @@ colourpicker_parts.notice = function(Viewport:obj!, Options:table!):table
    })
 
    self.swatch = self.viewport.new('VectorRectangle', {
-      x = 8.5, y = ((NOTICE_HEIGHT - 12) * 0.5) + 0.5, width = 11, height = 11, roundX = 2, roundY = 2,
+      x = 8.5, y = ((NOTICE_HEIGHT - 12) * 0.5) + 0.5, width = 11, height = 11, cornerX = 2, cornerY = 2,
       stroke = t.swatchBorder, strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
@@ -347,7 +347,7 @@ The rings are placed behind the thumb bar, so the slider's thumbSize must be at 
 colourpicker_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
    bar = Slider.button
    outer = Slider.thumbVP.new('VectorRectangle', {
-      x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, roundX = 3, roundY = 3,
+      x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, cornerX = 3, cornerY = 3,
       stroke = &theme.scheme is 'light' ? 'black' : 'white', fill=&theme.panel.bkgd.fill
    })
    outer.acMoveToBack()
@@ -392,12 +392,12 @@ colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
    self = { viewport = Viewport, depth = 0, linked = false }
 
    self.highlight = Viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 4, cornerY = 4,
       fill = t.accentSoft, stroke = &theme.palette.prime, strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
    self.swatch = Viewport.new('VectorRectangle', {
-      x = ROW_PAD + 0.5, y = 0.5, width = ROW_SWATCH - 1, height = ROW_SWATCH - 1, roundX = 3, roundY = 3,
+      x = ROW_PAD + 0.5, y = 0.5, width = ROW_SWATCH - 1, height = ROW_SWATCH - 1, cornerX = 3, cornerY = 3,
       stroke = t.swatchBorder, strokeWidth = 1
    })
 
@@ -434,7 +434,7 @@ colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
    self.lock.new('VectorPath', {
       sequence = 'M3 4.5 V3.25 A2 2 0 0 1 7 3.25 V4.5', stroke = t.fg3, strokeWidth = 1, lineCap = 'round'
    })
-   self.lock.new('VectorRectangle', { x = 1.5, y = 4.5, width = 7, height = 5, roundX = 1, roundY = 1, fill = t.fg3 })
+   self.lock.new('VectorRectangle', { x = 1.5, y = 4.5, width = 7, height = 5, cornerX = 1, cornerY = 1, fill = t.fg3 })
 
    -- The editor covers the name and glyph columns, up to the hex value.
 
@@ -478,7 +478,7 @@ colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
       ed = { done = false }
       ed.clip = Viewport.new('VectorViewport', { overflow = VOF_HIDDEN, cursor = 'text' })
       ed.clip.new('VectorRectangle', {
-         x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+         x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 3, cornerY = 3,
          fill = t.sunk, stroke = &theme.palette.prime, strokeWidth = 1
       })
       ed.text = ed.clip.new('VectorText', {
@@ -601,7 +601,7 @@ colourpicker_parts.valueField = function(Viewport:obj!, Options:table!):table
    vp = self.viewport
 
    self.bkgd = vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 3, cornerY = 3,
       fill = t.sunk, stroke = &theme.palette.prime,
       strokeWidth = 1, visibility = VIS_HIDDEN
    })
@@ -757,7 +757,7 @@ colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!,
    return previewSurface(Parent, size, size, function(Viewport:obj!)
       Viewport.new('VectorRectangle', {
          x = 1, y = 1, width = DRAG_TILE - 2, height = DRAG_TILE - 2, fill = Fill, stroke = 'white', strokeWidth = 2,
-         roundX = 4, roundY = 4
+         cornerX = 4, cornerY = 4
       })
 
       if Move then
@@ -781,7 +781,7 @@ PALETTE_DRAG_H <const> = 24
 colourpicker_parts.paletteDragPreview = function(Parent:obj!, Fills:array<str>!):obj
    return previewSurface(Parent, PALETTE_DRAG_W, PALETTE_DRAG_H, function(Viewport:obj!)
       Viewport.new('VectorRectangle', {
-         x = 0, y = 0, width = PALETTE_DRAG_W, height = PALETTE_DRAG_H, roundX = 4, roundY = 4, fill = 'white'
+         x = 0, y = 0, width = PALETTE_DRAG_W, height = PALETTE_DRAG_H, cornerX = 4, cornerY = 4, fill = 'white'
       })
       inner_w = PALETTE_DRAG_W - 4
       w = inner_w / math.max(1, #Fills)
@@ -808,13 +808,13 @@ STRIP_PAD    <const> = 8
 function tabGlyph(Viewport:obj!, Kind:str!, Colour:str!)
    if Kind is 'picker' then
       Viewport.new('VectorRectangle', {
-         x = 0, y = 0, width = 12, height = 12, roundX = 3, roundY = 3, fill = 'oklch(0.62 0.18 258)'
+         x = 0, y = 0, width = 12, height = 12, cornerX = 3, cornerY = 3, fill = 'oklch(0.62 0.18 258)'
       })
    elseif Kind is 'palette' then
       cells = array<str> { 'oklch(0.65 0.18 258)', 'oklch(0.7 0.14 150)', 'oklch(0.6 0.16 30)', 'oklch(0.8 0.08 90)' }
       for i, fill in cells do
          Viewport.new('VectorRectangle', {
-            x = (i % 2) * 6.5, y = math.floor(i / 2) * 6.5, width = 5.5, height = 5.5, roundX = 1, roundY = 1,
+            x = (i % 2) * 6.5, y = math.floor(i / 2) * 6.5, width = 5.5, height = 5.5, cornerX = 1, cornerY = 1,
             fill = fill
          })
       end
@@ -822,7 +822,7 @@ function tabGlyph(Viewport:obj!, Kind:str!, Colour:str!)
       bars = array<str> { 'oklch(0.35 0.08 258)', 'oklch(0.55 0.14 258)', 'oklch(0.75 0.12 258)', 'oklch(0.9 0.05 258)' }
       for i, fill in bars do
          Viewport.new('VectorRectangle', {
-            x = i * 3.25, y = 0, width = 2.25, height = 12, roundX = 1, roundY = 1, fill = fill
+            x = i * 3.25, y = 0, width = 2.25, height = 12, cornerX = 1, cornerY = 1, fill = fill
          })
       end
    end
@@ -856,7 +856,7 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
       vp = Viewport.new('VectorViewport', { x = x, y = top, width = 1, height = TAB_HEIGHT })
 
       bkgd = vp.new('VectorRectangle', {
-         x = 0.5, y = 0.5, width = 1, height = TAB_HEIGHT - 1, roundX = 5, roundY = 5,
+         x = 0.5, y = 0.5, width = 1, height = TAB_HEIGHT - 1, cornerX = 5, cornerY = 5,
          fill = t.panel, stroke = t.border, strokeWidth = 1, visibility = active ? VIS_VISIBLE : VIS_HIDDEN
       })
 
@@ -975,7 +975,7 @@ colourpicker_parts.badge = function(Target:obj, Label:str, Tokens:table):table
    height = colourpicker_parts.BADGE_HEIGHT
    self = { viewport = Target.new('VectorViewport', { x = 0, y = 0, width = 1, height = height }) }
    self.bkgd = self.viewport.new('VectorRectangle', {
-      x = 0, y = 0, width = 1, height = height, roundX = 3, roundY = 3
+      x = 0, y = 0, width = 1, height = height, cornerX = 3, cornerY = 3
    })
    self.label = colourpicker_parts.text(self.viewport, {
       x = 6, y = colourpicker_parts.baseline(0, height, 9.5), size = 9.5, face = colourpicker_parts.FACE_MONO,

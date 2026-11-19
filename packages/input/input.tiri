@@ -128,11 +128,11 @@ gui.input = function(Options)
 
    function scrollbarTheme():table
       edge = input_theme.bkgd.strokeWidth ?? 0
-      round_x = math.max(0, (tonumber(input_theme.bkgd.roundX) ?? 0) - edge)
-      round_y = math.max(0, (tonumber(input_theme.bkgd.roundY ?? input_theme.bkgd.roundX) ?? 0) - edge)
+      round_x = math.max(0, (tonumber(input_theme.bkgd.cornerX) ?? 0) - edge)
+      round_y = math.max(0, (tonumber(input_theme.bkgd.cornerY ?? input_theme.bkgd.cornerX) ?? 0) - edge)
       bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'
       return { [bar_style] = table.merge({
-         bkgd   = { rounding = { 0, 0, round_x, round_y, round_x, round_y, 0, 0 } },
+         bkgd   = { corners = { 0, 0, round_x, round_y, round_x, round_y, 0, 0 } },
          margin = round_y
       }, input_theme.scrollbar ?? {}, true, true) }
    end

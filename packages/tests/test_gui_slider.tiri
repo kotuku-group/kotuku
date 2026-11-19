@@ -1112,6 +1112,33 @@ end
    end
 end
 
+-- A valueFormat() can return longer text for an intermediate value than for the range ends that the label's scale is
+-- reserved for.  The longer value rescales the label with it, so that neither overlaps nor leaves the track.
+
+@Test function InsideLabelsScaleWithLongFormattedValues()
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      local vertical = orientation is 'vertical'
+      local surface <close>, slider = newSlider({ orientation=orientation, width=vertical ? nil : 160,
+         height=vertical ? 160 : nil, label='Frequency', labelPos='in-min', valuePos='in-max', min=0, max=100,
+         step=1, value=0, valueFormat = function(Value:num):str
+            return (Value is 50) ? 'Halfway along the range' : tostring(Value)
+         end
+      })
+
+      slider.setValue(50)
+      local host = slider.trackVP
+      local lx, ly, lw, lh = renderedBounds(surface, slider, slider.labelText)
+      local vx, vy, vw, vh = renderedBounds(surface, slider, slider.valueText)
+      for bounds in values({ { lx, ly, lw, lh }, { vx, vy, vw, vh } }) do
+         assert(bounds[0] >= host.x - 0.5 and bounds[1] >= host.y - 0.5
+            and bounds[0] + bounds[2] <= host.x + host.width + 0.5
+            and bounds[1] + bounds[3] <= host.y + host.height + 0.5, f'{orientation}: text must fit the track')
+      end
+      assert(vertical ? ((vy + vh) <= (ly + 0.5)) : ((lx + lw) <= (vx + 0.5)),
+         f'{orientation}: a long formatted value must not overlap the label')
+   end
+end
+
 -- Track clicks over an inside label move the value as they do elsewhere on the track.
 
 @Test function InsideLabelsDoNotInterceptInput()

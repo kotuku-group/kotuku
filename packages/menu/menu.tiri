@@ -296,8 +296,8 @@ gui.menu = function(Options:table!)
                      y       = y + 2,
                      width   = 1,
                      height  = ITEM_HEIGHT - 4,
-                     roundX  = ITEM_HEIGHT * 0.5,
-                     roundY  = ITEM_HEIGHT * 0.5
+                     cornerX  = ITEM_HEIGHT * 0.5,
+                     cornerY  = ITEM_HEIGHT * 0.5
                   })
 
                   vKey = &content.new('VectorText', {

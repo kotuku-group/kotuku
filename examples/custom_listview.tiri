@@ -84,7 +84,7 @@ function paletteRow(SelectedText:bool!):func
       if Reason is 'create' then
          Item.content = {
             swatch = Viewport.new('VectorRectangle', {
-               x=6, y=4, width=ROW_HEIGHT - 8, height=ROW_HEIGHT - 8, roundX=3, roundY=3, stroke='rgb(0,0,0,.3)',
+               x=6, y=4, width=ROW_HEIGHT - 8, height=ROW_HEIGHT - 8, cornerX=3, cornerY=3, stroke='rgb(0,0,0,.3)',
                strokeWidth=1
             }),
             name  = rowText(Viewport, ROW_HEIGHT + 4, Item.name),
@@ -112,7 +112,7 @@ function constructAccentHighlight(Item:table, Viewport:obj, Reason:str)
    if not hl then
       if Reason is 'deselected' then return end
       hl = {
-         outline = Viewport.new('VectorRectangle', { x=0.5, y=0.5, xOffset=0.5, yOffset=0.5, roundX=4, roundY=4,
+         outline = Viewport.new('VectorRectangle', { x=0.5, y=0.5, xOffset=0.5, yOffset=0.5, cornerX=4, cornerY=4,
             strokeWidth=1 }),
          bar = Viewport.new('VectorRectangle', { x=0, y=3, width=3, yOffset=3 })
       }
@@ -151,7 +151,7 @@ function colourDragPreview(View:table!, Items:array<table>!):obj
 
       local vp = scene.new('VectorViewport', { width=width, height=height })
 
-      vp.new('VectorRectangle', { width=width, height=height, roundX=4, roundY=4, fill='white' })
+      vp.new('VectorRectangle', { width=width, height=height, cornerX=4, cornerY=4, fill='white' })
 
       local swatch_width = (width - 4) / #Items
 

@@ -70,7 +70,7 @@ function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:
    status_top = height - 1 - STATUS_HEIGHT
 
    paint(vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5
    }), 'fill', 'surface')
 
    -- Document area, between the separators under the menu bar and over the status bar, with a scrollbar
@@ -85,7 +85,7 @@ function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:
       x = width - 1 - 8, y = MENU_HEIGHT + 1, width = 8, height = status_top - MENU_HEIGHT - 1
    }), 'fill', 'mid')
    paint(vp.new('VectorRectangle', {
-      x = width - 1 - 7, y = MENU_HEIGHT + 4, width = 6, height = 36, roundX = 3, roundY = 3
+      x = width - 1 - 7, y = MENU_HEIGHT + 4, width = 6, height = 36, cornerX = 3, cornerY = 3
    }), 'fill', 'handle')
 
    -- Menu bar
@@ -95,7 +95,7 @@ function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:
    for item in values(array<str> { 'File', 'Edit', 'View', 'Help' }) do
       if item is 'View' then -- The pill is created first so that it sits behind its label
          pill = paint(vp.new('VectorRectangle', {
-            x = x, y = math.floor((MENU_HEIGHT - 15) * 0.5) + 1, width = 1, height = 15, roundX = 2, roundY = 2
+            x = x, y = math.floor((MENU_HEIGHT - 15) * 0.5) + 1, width = 1, height = 15, cornerX = 2, cornerY = 2
          }), 'fill', 'primary')
          label = paint(text(vp, { x = x + 6, y = menu_y, size = 10.5, string = item }), 'fill', 'selectedInk')
          pill.width = math.ceil(label.textWidth) + 12
@@ -143,7 +143,7 @@ function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:
       { text = 'Ghost',   stroke = 'primary', ink = 'primary' }
    }) do
       pad = def.stroke ? 9 : 10
-      btn = vp.new('VectorRectangle', { x = x + 0.5, y = top + 0.5, width = 1, height = 21, roundX = 3, roundY = 3 })
+      btn = vp.new('VectorRectangle', { x = x + 0.5, y = top + 0.5, width = 1, height = 21, cornerX = 3, cornerY = 3 })
       if def.fill then paint(btn, 'fill', def.fill) end
       if def.stroke then
          btn.strokeWidth = 1
@@ -163,7 +163,7 @@ function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:
 
    top += 30
    badge = paint(vp.new('VectorRectangle', {
-      x = left, y = top + 1, width = 1, height = 14, roundX = 7, roundY = 7
+      x = left, y = top + 1, width = 1, height = 14, cornerX = 7, cornerY = 7
    }), 'fill', 'accent')
 
    badge_label = paint(text(vp, {
@@ -203,7 +203,7 @@ function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:
    space.opacity = 0.7
 
    frame = vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5, strokeWidth = 1
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5, strokeWidth = 1
    })
 
    paint(frame, 'stroke', 'inverse')
@@ -234,7 +234,7 @@ function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
    baseline = colourpicker_parts.baseline
 
    paint(vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5
    }), 'fill', 'background')
 
    -- Nav bar
@@ -268,7 +268,7 @@ function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
    lead = paint(text(vp, { x = left, y = line_y, size = 10.5, string = 'Fast, ' }), 'fill', 'text')
    x = left + math.ceil(lead.textWidth)
    mark = paint(vp.new('VectorRectangle', {
-      x = x - 1, y = line_y - 9, width = 1, height = 12, roundX = 2, roundY = 2
+      x = x - 1, y = line_y - 9, width = 1, height = 12, cornerX = 2, cornerY = 2
    }), 'fill', 'highlight')
    marked = paint(text(vp, { x = x, y = line_y, size = 10.5, string = 'accessible' }), 'fill', 'highlightText')
    mark.width = math.ceil(marked.textWidth) + 2
@@ -287,7 +287,7 @@ function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
 
    top = line_y + 10
    btn = paint(vp.new('VectorRectangle', {
-      x = left + 0.5, y = top + 0.5, width = 1, height = 21, roundX = 3, roundY = 3
+      x = left + 0.5, y = top + 0.5, width = 1, height = 21, cornerX = 3, cornerY = 3
    }), 'fill', 'button')
    label = paint(text(vp, {
       x = left + 10, y = baseline(top, 22, 10.5), size = 10.5, style = 'Bold', string = 'Get started'
@@ -295,7 +295,7 @@ function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
    btn.width = math.ceil(label.textWidth) + 19
 
    outline = vp.new('VectorRectangle', {
-      x = left + btn.width + 7.5, y = top + 0.5, width = 1, height = 21, roundX = 3, roundY = 3, strokeWidth = 1
+      x = left + btn.width + 7.5, y = top + 0.5, width = 1, height = 21, cornerX = 3, cornerY = 3, strokeWidth = 1
    })
    paint(outline, 'stroke', 'border')
    label = paint(text(vp, {
@@ -308,12 +308,12 @@ function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
    top += 30
    card = vp.new('VectorRectangle', {
       x = left + 0.5, y = top + 0.5, width = width - 2 - (PAD * 2) - 1, height = height - top - PAD - 1,
-      roundX = 4, roundY = 4, strokeWidth = 1
+      cornerX = 4, cornerY = 4, strokeWidth = 1
    })
    paint(card, 'stroke', 'border')
 
    tag = paint(vp.new('VectorRectangle', {
-      x = left + 9, y = top + 8, width = 1, height = 14, roundX = 7, roundY = 7
+      x = left + 9, y = top + 8, width = 1, height = 14, cornerX = 7, cornerY = 7
    }), 'fill', 'highlight')
    tag_label = paint(text(vp, {
       x = left + 15, y = baseline(top + 8, 14, 9.5), size = 9.5, style = 'Bold', string = 'NEW'
@@ -328,7 +328,7 @@ function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
    }), 'fill', 'text')
 
    vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5,
       stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
    })
 end
@@ -428,7 +428,7 @@ function buildCode(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table
    mono = colourpicker_parts.FACE_MONO
 
    paint(vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5
    }), 'fill', 'background')
 
    advance = monoAdvance(vp, CODE_SIZE)
@@ -454,7 +454,7 @@ function buildCode(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table
    end
 
    vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5,
       stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
    })
 end
@@ -514,7 +514,7 @@ function buildDatavis(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:ta
    mono = colourpicker_parts.FACE_MONO
 
    paint(vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5
    }), 'fill', 'background')
 
    -- Legend
@@ -523,7 +523,7 @@ function buildDatavis(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:ta
    x = 1 + PAD
    for i in {0 to SERIES_COUNT} do
       paint(vp.new('VectorRectangle', {
-         x = x, y = legend_y + 1, width = 8, height = 8, roundX = 2, roundY = 2
+         x = x, y = legend_y + 1, width = 8, height = 8, cornerX = 2, cornerY = 2
       }), 'fill', seriesRole(i))
       label = paint(text(vp, {
          x = x + 11, y = legend_y + 8, size = 9.5, string = f'S{i + 1}'
@@ -588,7 +588,7 @@ function buildDatavis(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:ta
    end
 
    vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5,
       stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
    })
 end
@@ -658,7 +658,7 @@ function buildTerminal(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:t
    vp, width, height, paint = Viewport, Width, Height, Paint
 
    paint(vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5
    }), 'fill', 'background')
 
    advance = monoAdvance(vp, TERM_SIZE)
@@ -696,7 +696,7 @@ function buildTerminal(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:t
    }), 'fill', 'cursor')
 
    vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, cornerX = 5, cornerY = 5,
       stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
    })
 end
