@@ -159,7 +159,9 @@ gui.slider = function(Options:table!)
             if &hasFocus then gui.applyStyle(&button, theme.foreFocus) end
          end
 
-         for _, path in &prvTickPaths do &prvStyleTicks(path) end
+         for _, path in &prvTickPaths do
+            &prvStyleTicks(path)
+         end
       end,
 
       prvStyleTicks = function(Path:obj!)
@@ -314,7 +316,7 @@ gui.slider = function(Options:table!)
             if outward > 0 then base += (vertical ? Width : Height) end
             base = math.round(base + (TICK_GAP * outward))
 
-            sequence = ''
+            sequence = array<char>
             function addTicks(Values:array<double>!, Length:num!)
                tip = base + (Length * outward)
                for v in values(Values) do
@@ -329,7 +331,7 @@ gui.slider = function(Options:table!)
 
             addTicks(majors, TICK_LENGTH)
             addTicks(minors, TICK_MINOR_LENGTH)
-            path.sequence = sequence
+            path.sequence = tostring(sequence)
          end
       end,
 
@@ -338,8 +340,8 @@ gui.slider = function(Options:table!)
 
       prvTickStep = function(Direction:num!)
          tolerance = (&max - &min) * 1e-9
-         stops = &prvTickStops
-         count = #stops
+         stops     = &prvTickStops
+         count     = #stops
 
          i = (Direction > 0) ? 0 : count - 1
          while (i >= 0) and (i < count) do
@@ -543,10 +545,10 @@ gui.slider = function(Options:table!)
          if not outside then
             inset = &prvTrackInset()
             if &orientation is 'H' then
-               x += inset
+               x     += inset
                Width -= inset * 2
             else
-               y += inset
+               y      += inset
                Height -= inset * 2
             end
          end
@@ -576,8 +578,7 @@ gui.slider = function(Options:table!)
             end
          end
 
-         &valueText.x = x
-         &valueText.y = y
+         &valueText.{ x = x, y = y }
       end,
 
       -- Labels are placed in a line of the label's lineHeight across the reading direction, with their capitals
@@ -591,8 +592,8 @@ gui.slider = function(Options:table!)
             label.place(Width, Height)
             label_height = &labelText.textWidth
             line_height = label.lineHeight
-            local x:num, y:num
 
+            local x:num, y:num
             if label.stacked then
                track_x = host ? host.x : 0
                track_width = Width - track_x - (host ? host.xOffset : 0)
@@ -627,10 +628,10 @@ gui.slider = function(Options:table!)
       -- The track and thumb are centred across the host; whole-pixel offsets keep their edges sharp.
 
       prvPlaceSlider = function(Width:num, Height:num)
-         width = (Width != nil) ? Width : &trackVP.width
-         height = (Height != nil) ? Height : &trackVP.height
+         width    = (Width != nil) ? Width : &trackVP.width
+         height   = (Height != nil) ? Height : &trackVP.height
          fraction = (&value - &min) / (&max - &min)
-         inset = &prvTrackInset()
+         inset    = &prvTrackInset()
 
          if &orientation is 'V' then
             track = math.max(0, height - &prvThumbLength)
@@ -650,14 +651,12 @@ gui.slider = function(Options:table!)
             &prvBarBkgd.y = math.floor((height - &thickness) * 0.5)
 
             if &prvTheme.overhang then
-               &prvBarBkgd.x = inset
-               &prvBarBkgd.width = math.max(0, width - (inset * 2))
+               &prvBarBkgd.{ x = inset, width = math.max(0, width - (inset * 2)) }
             end
          end
 
          if &style is 'slide' and &button then
-            &button.width = &thumbVP.width - (&prvGapX * 2)
-            &button.height = &thumbVP.height - (&prvGapY * 2)
+            &button.{ width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2) }
          end
 
          if &valueText then &prvPlaceValue(width, height) end
@@ -780,9 +779,9 @@ gui.slider = function(Options:table!)
          vps.height = (&orientation is 'V') ? 100 : breadth
       end
 
-      &prvAutoWidth = Options.width is nil and not (Options.x != nil and Options.xOffset != nil)
+      &prvAutoWidth  = Options.width is nil and not (Options.x != nil and Options.xOffset != nil)
       &prvAutoHeight = Options.height is nil and not (Options.y != nil and Options.yOffset != nil)
-      &viewport = target.new('VectorViewport', vps)
+      &viewport      = target.new('VectorViewport', vps)
 
       &viewport.subscribe('free', function[&&]()
          &viewport = nil
@@ -813,6 +812,7 @@ gui.slider = function(Options:table!)
          -- Expand default dimensions for the label; explicit and stretched dimensions include it.
 
          width, height = &prvLabel.expand(&viewport.width, &viewport.height)
+
          if &prvAutoWidth then &viewport.width = width end
          if &prvAutoHeight then &viewport.height = height end
 
@@ -824,15 +824,11 @@ gui.slider = function(Options:table!)
       end
 
       if &valuePos then
-         &valueText = &viewport.new('VectorText', table.merge({
-            name      = 'Value',
-            x         = 0,
-            y         = 0,
-            face      = gui.fonts.widget.face,
-            fontSize  = f'{gui.fonts.widget.size}pt',
-            fontStyle = gui.fonts.widget.style,
+         &valueText = &viewport.new('VectorText', {
+            name      = 'SliderValue',
+            fontStyle = gui.fontStyle(&prvTheme.text),
             lineLimit = 1
-         }, &prvTheme.text))
+         })
 
          &prvValueFontSize = tonumber(&valueText.fontSize) -- Unscaled size in pixels
          &valueText.align = 'start'
@@ -846,7 +842,7 @@ gui.slider = function(Options:table!)
                ((position is 'min') ? 'yOffset' : ((position is 'max') ? 'y' : 'xOffset'))
 
             horizontal_space = (&prvValueSide is 'x') or (&prvValueSide is 'xOffset')
-            &prvValueSpace = &prvValueReserve()
+            &prvValueSpace   = &prvValueReserve()
             host[&prvValueSide] += &prvValueSpace
 
             if horizontal_space and &prvAutoWidth then &viewport.width += &prvValueSpace end
@@ -893,7 +889,7 @@ gui.slider = function(Options:table!)
       &thumbVP.dragCallback = function[<weak> &&](Viewport:obj!, X:num!, Y:num!, OriginX:num!, OriginY:num!)
          if &disabled then return end
          local track_vp = &trackVP
-         _, _, _, display_w, display_h = track_vp.mtGetBoundary(0)
+         display_w, display_h = [___*]track_vp.mtGetBoundary(0)
 
          if &orientation is 'V' then
             scale = ((display_h ?? 0) > 0) ? display_h / track_vp.height : 1
@@ -932,13 +928,16 @@ gui.slider = function(Options:table!)
       -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.  The
       -- insets follow the configured thumb dimensions, which an anchored thumb exceeds as it grows.
 
-      thumb_width = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength
+      thumb_width  = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength
       thumb_height = (&orientation is 'V') ? &prvThumbLength : &prvThumbSize
-      &prvGapX = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
-      &prvGapY = math.min(GAP, math.max(0, (thumb_height - 1) * 0.5))
+      &prvGapX     = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
+      &prvGapY     = math.min(GAP, math.max(0, (thumb_height - 1) * 0.5))
 
       &button = &thumbVP.new('VectorRectangle', table.merge({
-         x = &prvGapX, y = &prvGapY, width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2)
+         x      = &prvGapX,
+         y      = &prvGapY,
+         width  = &thumbVP.width - (&prvGapX * 2),
+         height = &thumbVP.height - (&prvGapY * 2)
       }, &prvFill()))
 
       if &valueText then
@@ -1041,16 +1040,22 @@ gui.slider = function(Options:table!)
 
       &trackVP.mtSubscribeInput(JTYPE_BUTTON, trackInput)
 
-      -- Apply the current theme to the existing vectors.  The size of the track and thumb, the font and the layout are
-      -- not changed.
+      -- Apply the current theme to the existing vectors.  The size of the track and thumb, the font size and the layout
+      -- are not changed, so the value text keeps its fitted size.
 
       function restyle()
          &prvApplyStyle()
-         fill = &prvTheme.text?.fill
-         if fill then
-            if &labelText then &labelText.fill = fill end
-            if &valueText then &valueText.fill = fill end
+         style = gui.fontStyle(&prvTheme.text)
+
+         function keepSize(Text:obj)
+            if not Text then return end
+            size = Text.fontSize
+            Text.fontStyle = style
+            Text.fontSize = f'{size}px'
          end
+
+         keepSize(&labelText)
+         keepSize(&valueText)
          &viewport.acDraw()
       end
 

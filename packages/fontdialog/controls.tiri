@@ -330,7 +330,7 @@ fdc.segmented = function(Picker:table!, Target:obj!, Options:table!):table
 
    base_theme = {
       bkgd = { roundX = 3, roundY = 3 },
-      text = { fontSize = f'{size}px', y = fontdialog_parts.baseline(0, height - 2, size) }
+      text = { size = size } -- The button centres the label for this size
    }
 
    pressed_theme = {
@@ -422,7 +422,7 @@ end
 fdc.checkRow = function(Picker:table!, Target:obj!, Options:table!):table
    box = gui.toggle({
       target = Target, x = Options.x ?? 0, y = Options.y ?? 0, label = Options.label, value = Options.value ?? false,
-      height = 16, theme = { window = { text = { fontSize = f'{LABEL_SIZE}px', fill = Picker.tokens.fg1 } } },
+      height = 16, theme = { window = { text = { size = LABEL_SIZE, fill = Picker.tokens.fg1 } } },
       events = {
          activate = function()
             Options.onToggle?(&value)

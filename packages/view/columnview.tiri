@@ -38,7 +38,7 @@ end
 -- are rounded to 2 decimal places to keep round trips stable.
 
 function columnScale(View:table!):num
-   return gui.pixel(tostring(View.theme.list.text.fontSize), 96)
+   return gui.pixel(tostring(View.theme.list.text.size), 96) -- A theme override can give the size in text form
 end
 
 function columnPixels(View:table!, Width:num!):num
@@ -218,12 +218,13 @@ function updateCellText(View:table!, Item:table!, Col:table!)
    local y = Item._y + View._metrics.lineOffset
 
    if not cell.text then
-      cell.text = Col.vecViewport.new('VectorText', table.merge({
+      cell.text = Col.vecViewport.new('VectorText', {
          name       = f'text_{attrib}',
          align      = Col.align ?? 'left',
          y          = y,
+         fontStyle  = gui.fontStyle(View.theme.list.text),
          visibility = vis
-      }, View.theme.list.text))
+      })
       Item._vectors['_a_' .. attrib] = cell.text -- Referenced for future termination
    else
       cell.text.y = y
@@ -252,40 +253,41 @@ function highlightItem(View:table!, Item:table, Highlighted:bool)
    if Highlighted then
       if Item._selected then -- Both selected AND highlighted
          for k, col in pairs(Item._col) do
-            if col.text then col.text.fill = View.namedCol[k].fillItemSelect end
+            col.text?.fill = View.namedCol[k].fillItemSelect
          end
 
-         Item._vectors.highlight.fill        = View.theme.list.textSelectBkgd
-         Item._vectors.highlight.stroke      = View.theme.list.textHighlightBkgd
-         Item._vectors.highlight.strokeWidth = 2
+         Item._vectors.highlight.{
+            fill        = View.theme.list.textSelectBkgd,
+            stroke      = View.theme.list.textHighlightBkgd,
+            strokeWidth = 2
+         }
+
          if Item._vectors.iconImage and Item._iconHighlight then
             Item._vectors.iconImage.fill = Item._iconHighlight
          end
       else -- Highlighted
          for k, col in pairs(Item._col) do
-            if col.text then col.text.fill = View.namedCol[k].fillItemSelect end
+            col.text?.fill = View.namedCol[k].fillItemSelect
          end
 
-         Item._vectors.highlight.fill        = View.theme.list.textHighlightBkgd
-         Item._vectors.highlight.strokeWidth = 0
+         Item._vectors.highlight.{ fill = View.theme.list.textHighlightBkgd, strokeWidth = 0 }
          if Item._vectors.iconImage and Item._iconHighlight then
             Item._vectors.iconImage.fill = Item._iconHighlight
          end
       end
    elseif Item._selected then
       for k, col in pairs(Item._col) do
-         if col.text then col.text.fill = View.namedCol[k].fillItemSelect end
+         col.text?.fill = View.namedCol[k].fillItemSelect
       end
 
-      Item._vectors.highlight.fill = View.theme.list.textSelectBkgd
-      Item._vectors.highlight.strokeWidth = 0
+      Item._vectors.highlight.{ fill = View.theme.list.textSelectBkgd, strokeWidth = 0 }
       if Item._vectors.iconImage and Item._iconHighlight then
          Item._vectors.iconImage.fill = Item._iconHighlight
       end
    else
       if Item.fill then
          for k, col in pairs(Item._col) do
-            if col.text then col.text.fill = Item.fill end
+            col.text?.fill = Item.fill
          end
       else
          for k, col in pairs(Item._col) do
@@ -322,6 +324,7 @@ function dispatchCells(View:table!, Item:table!, Reason:str!)
          failure ?= e
       end
    end
+
    if failure then raiseFailure(failure) end
 end
 
@@ -338,7 +341,9 @@ function notifyCellGeometry(View:table!)
          local cell = item._col?[col.attrib]
          if not cell?.created then continue end
          if (cell._cellWidth is col.px_width) and (cell._cellHeight is height) then continue end
+
          cell.{ _cellWidth = col.px_width, _cellHeight = height }
+
          try
             View._dispatch(col.constructCell, item, cell.cellViewport, 'layout', col)
          except e
@@ -396,24 +401,20 @@ function arrangeColumns(View:table!)
    for col in values(View.columns) do
       col.vecTitle.x = col.align is 'right' ? col.px_width - m.margin : m.margin
 
-      pc.type = PE_Move
-      pc.x    = col.x + col.px_width
-      pc.y    = 1
+      pc.{ type = PE_Move, x = col.x + col.px_width, y = 1 }
       View.banner.lines.mtAddCommand(pc)
 
-      pc.type = PE_Line
-      pc.x    = col.x + col.px_width
-      pc.y    = m.lineHeight
+      pc.{ type = PE_Line, x = col.x + col.px_width, y = m.lineHeight }
       View.banner.lines.mtAddCommand(pc)
 
-      col.bannerVP.x = col.x
-      col.bannerVP.width = col.px_width
+      col.bannerVP.{ x = col.x, width = col.px_width }
       if col.checkBoxes then
-         for item in values(View.items) do refreshCheckbox(View, item, col) end
+         for item in values(View.items) do
+            refreshCheckbox(View, item, col)
+         end
       end
 
-      col.fillItem = View.theme.list.text.fill
-      col.fillItemSelect = View.theme.list.textHighlight
+      col.{ fillItem = View.theme.list.text.fill, fillItemSelect = View.theme.list.textHighlight }
    end
 
    if View._sort?.icon then positionSortIcon(View) end
@@ -423,6 +424,7 @@ function arrangeColumns(View:table!)
       for col in values(View.columns) do
          page_width = col.x + col.px_width + m.edge
       end
+
       View.scrollbar.setDynamicPageSize(page_width, page_width, View.page.height)
    end
 end
@@ -450,9 +452,7 @@ function itemIconStyle(View:table!, Item:table!)
    local size  = View._metrics.iconSize
    local uid   = f'{gui.parseFill(theme).key}+{Item.icon}'
    local info  = gui.createIcon(View.scene, Item.icon, size, theme, uid)
-   Item._iconFill      = info.fill
-   Item._iconMargin    = info.margin
-   Item._iconHighlight = nil
+   Item.{ _iconFill = info.fill, _iconMargin = info.margin, _iconHighlight = nil }
 
    if View.theme.page.iconHighlight and View.theme.page.iconHighlight != theme then
       theme = View.theme.page.iconHighlight
@@ -481,7 +481,9 @@ end
 function updateCustomCell(View:table!, Item:table!, Col:table!)
    local cell = Item._col[Col.attrib]
    if cell.cellViewport then
-      if cell.created then View._dispatch(Col.constructCell, Item, cell.cellViewport, 'update', Col) end
+      if cell.created then
+         View._dispatch(Col.constructCell, Item, cell.cellViewport, 'update', Col)
+      end
       return
    end
 
@@ -494,6 +496,7 @@ function updateCustomCell(View:table!, Item:table!, Col:table!)
       overflow   = VOF_HIDDEN,
       visibility = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
    })
+
    Item._vectors['_cell_' .. Col.attrib] = cell.cellViewport
    cell.{ _cellWidth = Col.px_width, _cellHeight = View._metrics.lineHeight }
 
@@ -510,6 +513,7 @@ function destroyCells(View:table!, Item:table!):any
       local cell = Item._col?[col.attrib]
       if not cell?.created then continue end
       cell.created = nil
+
       try
          View._dispatch(col.constructCell, Item, cell.cellViewport, 'destroy', col)
       except e
@@ -527,7 +531,7 @@ function updateCells(View:table!, Item:table!)
 
    for col in values(View.columns) do
       local attrib = col.attrib
-      if not Item._col[attrib] then Item._col[attrib] = { } end
+      Item._col[attrib] ?= { }
 
       if col.constructCell then
          updateCustomCell(View, Item, col)
@@ -628,9 +632,7 @@ function rearrangeItems(View)
          item._vectors.viewport.y = y
       end
 
-      if item._vectors.iconImage then
-         item._vectors.iconImage.y = y + m.iconOffset - item._iconMargin
-      end
+      item._vectors.iconImage?.y = y + m.iconOffset - item._iconMargin
 
       for col in values(View.columns) do
          item._col?[col.attrib]?.text?.y = y + m.lineOffset
@@ -660,6 +662,7 @@ gui.columnView = function(Options):table
 
    function validateColumns(Columns:any, Editable:any)
       if not Columns then return end
+
       for col in values(Columns) do
          if col.constructCell != nil then
             assert(col.constructCell is <func>, f'constructCell of column "{col.attrib}" must be a function')
@@ -692,12 +695,12 @@ gui.columnView = function(Options):table
 
       -- The column viewports host the editor, and are replaced below.
 
-      if View._cancelEdit then View._cancelEdit() end
+      View._cancelEdit?()
 
       local m = View._metrics
       sort = View._sort
       View._sort = nil
-      c = 0
+      c   = 0
       set = { }
       View.namedCol = { }
       for col in values(Columns) do
@@ -706,11 +709,14 @@ gui.columnView = function(Options):table
          new_col = { _index=c, width=8, title='Untitled' }
          for k, v in pairs(col) do new_col[k] = v end
          if new_col.checkBoxes then
-            new_col._checkboxSize = math.max(4, math.round(m.fontHeight))
-            new_col._checkboxMargin = m.margin
-            new_col._checkboxOffset = math.round((m.lineHeight - new_col._checkboxSize) * 0.5)
-            new_col._checkboxFills = checkboxPatterns(View, new_col._checkboxSize)
+            new_col.{
+               _checkboxSize   = math.max(4, math.round(m.fontHeight)),
+               _checkboxMargin = m.margin,
+               _checkboxOffset = math.round((m.lineHeight - new_col._checkboxSize) * 0.5),
+               _checkboxFills  = checkboxPatterns(View, new_col._checkboxSize)
+            }
          end
+
          set.insert(new_col)
          View.namedCol[col['attrib']] = new_col
          c++
@@ -724,9 +730,9 @@ gui.columnView = function(Options):table
 
             for col in values(View.columns) do
                item._col?[col.attrib] = nil
-               item._vectors['_a_' .. col.attrib] = nil
+               item._vectors['_a_' .. col.attrib]     = nil
                item._vectors['_check_' .. col.attrib] = nil
-               item._vectors['_cell_' .. col.attrib] = nil
+               item._vectors['_cell_' .. col.attrib]  = nil
             end
             item._vectors.iconImage = nil
          end
@@ -748,9 +754,7 @@ gui.columnView = function(Options):table
       end
 
       View.reserveTop('ViewUI', m.lineHeight)
-
-      if View.banner then View.banner.clip.free() end
-
+      View.banner?.clip?.free()
       View.banner = { }
 
       -- Background graphics
@@ -807,6 +811,7 @@ gui.columnView = function(Options):table
             if user.base is col.width then width = user.width
             else View._userWidths[col.attrib] = nil end
          end
+
          col.px_width = columnPixels(View, width)
 
          if not col.bannerVP then
@@ -823,18 +828,22 @@ gui.columnView = function(Options):table
 
             -- Column title
 
-            col.vecTitle = col.bannerVP.new('VectorText', table.merge({
+            col.vecTitle = col.bannerVP.new('VectorText', {
                name  = 'col_title',
                align = col.align ?? 'left',
                y     = m.lineOffset,
-            }, View.theme.list.text))
+               fontStyle = gui.fontStyle(View.theme.list.text)
+            })
 
             -- Support for resize management
 
             col.resizeVP = View.banner.viewport.new('VectorViewport', {
-               name = 'col_resize_zone',
-               x = x + col.px_width - (m.margin * 0.5), y = 0,
-               width = m.margin, height = '100%', cursor = PTC_SPLIT_HORIZONTAL
+               name   = 'col_resize_zone',
+               x      = x + col.px_width - (m.margin * 0.5),
+               y      = 0,
+               width  = m.margin,
+               height = '100%',
+               cursor = PTC_SPLIT_HORIZONTAL
             })
 
             col.resizeVP.dragCallback = function(SizeVP, X, Y)
@@ -1057,7 +1066,7 @@ gui.columnView = function(Options):table
       processing.collect()
 
       if failure then
-         if View._afterLayout then View._afterLayout() end -- rebuild() does not complete the layout if this raises
+         View._afterLayout?() -- rebuild() does not complete the layout if this raises
          raiseFailure(failure)
       end
    end

@@ -9,8 +9,8 @@ Documentation is available in the Kotuku Wiki.
    namespace gui
    module vector as mVec
 
-rx_whitespace = <{ regex.new([[\s+]]) }>
-rx_volume_prefix = <{ regex.new([[^[^:\/\\]+:]]) }>
+rx_whitespace = <{ r[[\s+]] }>
+rx_volume_prefix = <{ r[[^[^:\/\\]+:]] }>
 
 -- NB: If a custom SVG file is desired then the client must specify a volume in the path.
 
@@ -110,14 +110,14 @@ gui.icon = function(Options:table!)
       text_words ?! return
 
       scale = choose icon_size from
-         < 26 -> 0.5
-         < 60 -> 2 / 3
+         < 35 -> 0.5
+         < 70 -> 2 / 3
          else -> 5 / 6
       end
 
-      font_size_px = gui.pixel(theme.text.fontSize, 96) * scale
+      font_size_px = gui.pixel(tostring(theme.text.size), 96) * scale -- A theme override can give the size in text form
 
-      err, font    = check mVec.GetFontHandle(theme.text.face, theme.text.fontStyle ?? "Medium", 0, font_size_px)
+      err, font    = check mVec.GetFontHandle(theme.text.face, theme.text.style ?? "Medium", 0, font_size_px)
       metrics      = struct<FontMetrics>
       err          = check mVec.GetFontMetrics(font, metrics)
       line_height  = metrics.lineSpacing
@@ -182,12 +182,12 @@ gui.icon = function(Options:table!)
       })
 
       for line in values(lines) do
-         text_vector = text_group.new('VectorText', table.merge({
+         text_vector = text_group.new('VectorText', {
             x         = math.floor(icon_width * 0.5),
-            fontSize  = string.format('%.2fpx', font_size_px),
+            fontStyle = gui.fontStyle(table.merge(theme.text, { size = font_size_px })),
             align     = 'horizontal',
             string    = line
-         }, theme.text, false))
+         })
 
          y += line_height
          text_vector.y = math.floor(y)

@@ -86,10 +86,7 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
    tab_theme = {
       bkgd      = { stroke = 'none', strokeWidth = 0 },
       focus     = { strokeWidth = 1 },
-      text      = {
-         face = mono, fontSize = f'{TAB_SIZE}px', fontStyle = 'Medium',
-         y = colourpicker_parts.baseline(0, TAB_HEIGHT - 2, TAB_SIZE)
-      }
+      text      = { face = mono, size = TAB_SIZE, style = 'Medium' }
    }
 
    self.tabs = array<table>

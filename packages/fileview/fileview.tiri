@@ -32,6 +32,27 @@ rxExtractIcon    <const> = <{ regex.new([[^(.+)\.([^:\/\\]+)$]]) }>
 rxStripExtension <const> = <{ regex.new([[^(.*?)\.[^:\/\\]+$]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
+-- The font selection keys of the font dialog's properties: the face, the size in pixels, and the style name or style
+-- descriptors of a variable font, e.g. { weight = '550', italic = 'yes' }.  Registered axis tags are lower case and
+-- custom axis tags are upper case.  Other keys, such as fill, are left to the theme.
+
+STYLE_KEYS <const> = {
+   style = true, weight = true, width = true, italic = true, slant = true, ital = true, opsz = true, slnt = true,
+   wdth = true, wght = true
+}
+rxCustomAxis <const> = <{ regex.new([[^[A-Z0-9]{4}$]]) }>
+
+function fontKeys(Properties:table!):table
+   result = { face = Properties.face }
+   -- VectorText converts point sizes at 96 DPI
+   if Properties.size?? then result.size = gui.pixel(tostring(Properties.size), 96) end
+   for key, value in Properties do
+      if STYLE_KEYS[key] or rxCustomAxis.test(key) then result[key] = value end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 -- The text fill of folder items for a theme.
 
@@ -327,9 +348,10 @@ function displayFilters()
             fill = &theme.list.textSelectBkgd, visibility = VIS_HIDDEN
          })
 
-         item.txt = item.vp.new('VectorText', table.merge({
-            x=0, y=0, string=item.name, face=gui.fonts.widget.face, fontSize='10pt'
-         }, &theme.list.text, false))
+         item.txt = item.vp.new('VectorText', {
+            x = 0, y = 0, string = item.name,
+            fontStyle = gui.fontStyle(table.merge(&theme.list.text, { face = gui.fonts.widget.face, size = '10pt' }))
+         })
 
          if not descent then
             descent = math.round(item.txt.descent)
@@ -1833,13 +1855,12 @@ gui.fileview = function(Options)
                         popOver    = &_surface,
                         feedback = function(Result)
                            if Result then
-                              ViewOptions.theme = table.merge(ViewOptions.theme, {
-                                 list = { text = {
-                                    face = Result.face,
-                                    fontSize = string.format('%.2fpt', Result.pointSize),
-                                    fontStyle = Result.style
-                                 } }
-                              }, true, true)
+                              -- The text is replaced rather than merged, so that no style keys of an earlier
+                              -- selection remain.
+
+                              ViewOptions.theme = table.merge(ViewOptions.theme, { list = { } }, true, true)
+                              ViewOptions.theme.list.text = fontKeys(Result.properties)
+
                               self.setStyle(self.style)
                            end
                         end
@@ -1931,9 +1952,9 @@ gui.fileview = function(Options)
       theme = {
          list = {
             text = {
-               face      = gui.fonts.filesys.face,
-               fontSize  = string.format('%.2fpt', gui.fonts.filesys.size),
-               fontStyle = gui.fonts.filesys.style
+               face  = gui.fonts.filesys.face,
+               size  = gui.fonts.filesys.size,
+               style = gui.fonts.filesys.style
             }
          }
       },

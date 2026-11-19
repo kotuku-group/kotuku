@@ -7,6 +7,8 @@ A demonstration of standard widgets
    import 'gui/dialog', 'gui/filedialog', 'gui/icon', 'gui/input', 'gui/button'
    import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'gui/panel', 'vfx', 'json'
 
+   module vector as mVec
+
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
@@ -196,13 +198,10 @@ end
       end
    })
 
-   y += lToolbar.viewport.height + 10
+   y += lToolbar.viewport.height + gui.sizing.widget.gap
 
    popupMenu = gui.menu({
-      --target = win.surface,
       theme  = win.theme,
-      x      = 30,
-      y      = 50,
       popup  = true,
       events = {
          activate = itemClicked,
@@ -246,10 +245,13 @@ end
 
    TEXT_SAMPLE <const> = 'Kōtuku interfaces are drawn using real-time vector graphics'
 
-   text = viewport.new('vectortext', table.merge({
-      x=win.margins.left, y=y, string=TEXT_SAMPLE,
-      face='Noto Sans', fontSize=20, textFlags='!editable'
-   }, win.theme.window.text, false))
+   text = viewport.new('vectortext', {
+      x         = win.margins.left,
+      y         = y,
+      string    = TEXT_SAMPLE,
+      fontStyle = gui.fontStyle(table.merge(win.theme.window.text, { face = 'Noto Sans', size = 20 })),
+      textFlags = '!editable'
+   })
 
    font_size = tonumber(text.fontSize)
    text.y = y + font_size
@@ -326,7 +328,7 @@ end
    -- The most recent font dialog selection, which is passed back to the dialog so that every setting is restored when it
    -- is reopened.  The paragraph settings are not part of a font definition, so they are kept separately.
 
-   fontChoice = { fontDef = nil, align = nil, letterCase = nil, paragraphSpacing = nil }
+   fontChoice = { properties = nil, align = nil, letterCase = nil, paragraphSpacing = nil }
 
    -- Apply a letter case from the font dialog to the sample.  The Unicode option of upper() and lower() also converts
    -- accented letters.  Title case capitalises the first character of each space-separated word.
@@ -354,42 +356,38 @@ end
       icon   = 'items/font',
       events = {
          activate = function()
+            -- The first time, the dialog opens on the definition that the text is drawn with.
+
+            local properties:table = fontChoice.properties
+            if (properties is nil) and text.mergeStyle?? then
+               _, properties = check mVec.ReadTextStyle(text.mergeStyle)
+            end
+
             gui.dialog.font({
-               modal    = true,
-               popOver  = win.surface,
-               fontDef  = fontChoice.fontDef ?? text.mergeStyle,
-               align    = fontChoice.align,
-               letterCase = fontChoice.letterCase,
+               modal            = true,
+               popOver          = win.surface,
+               properties       = properties,
+               align            = fontChoice.align,
+               letterCase       = fontChoice.letterCase,
                paragraphSpacing = fontChoice.paragraphSpacing,
-               example  = TEXT_SAMPLE,
-               resultFilter = array<str> {
-                  'face', 'style', 'pointSize', 'fontDef', 'align', 'letterCase', 'paragraphSpacing'
-               },
-               feedback = function(Result)
+               example          = TEXT_SAMPLE,
+               resultFilter     = array<str> { 'properties', 'align', 'letterCase', 'paragraphSpacing' },
+               feedback         = function(Result)
                   if not Result then
                      print('Dialog was cancelled.')
                      return
                   end
 
-                  print(f"The user selected '{Result.face}', size {Result.pointSize}, style '{Result.style}'")
+                  print(f"The user selected '{gui.fontStyle(Result.properties)}'")
 
                   fontChoice.{
-                     fontDef          = Result.fontDef,
+                     properties       = Result.properties,
                      align            = Result.align,
                      letterCase       = Result.letterCase,
                      paragraphSpacing = Result.paragraphSpacing
                   }
 
-                  -- The font definition carries the face, style, fill, stroke and effects such as the glow.  The size
-                  -- is left out because the widgets below the text are laid out for its current height.
-
-                  parts = array<str>
-                  for part in values(Result.fontDef.split(';')) do
-                     part = part.trim()
-                     if not part.startsWith('size=') then parts.push(part) end
-                  end
-                  text.fontStyle = parts.concat('; ')
-
+                  text.fontStyle = gui.fontStyle(Result.properties)
                   text.string = applyCase(TEXT_SAMPLE, Result.letterCase)
 
                   -- Each line aligns about X, so X is moved to the matching edge or centre of the row.  Justification
@@ -607,19 +605,18 @@ end
       }
    })
 
-   notes_text = notes.page.new('VectorText', table.merge({
+   notes_text = notes.page.new('VectorText', {
       x         = gui.sizing.widget.gap,
-      y         = gui.getFontHeight({ face='Inconsolata', fontSize='12pt'}),
+      y         = gui.getFontHeight({ face='Inconsolata', size='12pt' }),
       lineLimit = 0,
-      face      = 'Inconsolata',
-      fontSize  = '12pt',
+      fontStyle = gui.fontStyle(table.merge(win.theme.window.text, { face = 'Inconsolata', size = '12pt' })),
       textFlags = VTXF_SELECTABLE,
       string = 'A panel is a card with a header row and a body for its content.  The header shows a title on ' ..
          'the left and meta text on the right, and either can be replaced by a widget.\n\n' ..
          'This panel was created with the scroll option, so its body holds a page that is moved by the ' ..
          'scrollbar.  The text is wrapped to the width of the page, and the page is sized to fit the text.\n\n' ..
          'Use the mouse wheel or drag the scrollbar to read the rest of this text.'
-   }, win.theme.window.text, false, true))
+   })
 
    fitNotes(notes)
 
@@ -750,30 +747,30 @@ end
    end
 
    glHouseIcon = gui.icon({
-      target = viewport,
-      x      = gui.rpixel('170dp'),
-      y      = y,
-      image  = 'programs/filemanager',
-      label  = 'Wilhelm\'s House',
+      target    = viewport,
+      x         = gui.rpixel('170dp'),
+      y         = y,
+      image     = 'programs/filemanager',
+      label     = 'Wilhelm\'s House',
       draggable = true,
-      theme = { effect = 'fill(pearl) glow(colour=#000000)' },
-      events = {
+      theme     = { effect = 'fill(pearl) glow(colour=#000000)' },
+      events    = {
          show = function()
             vfx.rotate(&viewport, { seconds=0.8 })
             vfx.zoomIn(&viewport, { seconds=0.4, delay=0.3 })
          end,
          activate = function()
-            if &effect then return end
+            if not &effect then
+               &effect = vfx.chain({
+                  vfx.rotate(&viewport, { seconds=0.8 }),
+                  vfx.zoomOut(&viewport, { seconds=0.8 })
+               }, function()
+                  &viewport.free()
+                  &viewport = nil
+               end)
 
-            &effect = vfx.chain({
-               vfx.rotate(&viewport, { seconds=0.8 }),
-               vfx.zoomOut(&viewport, { seconds=0.8 })
-            }, function()
-               &viewport.free()
-               &viewport = nil
-            end)
-
-            sndWilhelm?.acActivate()
+               sndWilhelm?.acActivate()
+            end
          end
       }
    })
@@ -791,9 +788,7 @@ end
             vfx.wipe(&viewport, { seconds=1.2, delay=1.2, style='radial', cx=0.5, cy=0.5 })
          end,
          activate = function()
-            if &effect then return end
-
-            &effect = vfx.chain({
+            &effect ?= vfx.chain({
                vfx.wipe(&viewport, { seconds=0.8, style='spiral', cx=0.5, cy=0.5, invert=true })
             }, function()
                &viewport.free()
@@ -807,21 +802,19 @@ end
    y += gui.rpixel('220dp')
 
    glTree = gui.icon({
-      target = viewport,
-      x      = glAlarmIcon.viewport.x,
-      y      = y,
-      image  = 'nature/pine',
-      label  = 'Hug a Tree',
+      target    = viewport,
+      x         = glAlarmIcon.viewport.x,
+      y         = y,
+      image     = 'nature/pine',
+      label     = 'Pine Scented',
       draggable = true,
-      theme = { effect = 'wood() glow(#404040)' },
-      events = {
+      theme     = { effect = 'wood() glow(#404040)' },
+      events    = {
          show = function()
             vfx.wipe(&viewport, { seconds=2.2, delay=2.2, style='spiral', cx=0.5, cy=0.5 })
          end,
          activate = function()
-            if &effect then return end
-
-            &effect = vfx.chain({
+            &effect ?= vfx.chain({
                vfx.wipe(&viewport, { seconds=0.8, style='shutter', cx=0.5, cy=0.5, invert=true })
             }, function()
                &viewport.free()
@@ -860,7 +853,7 @@ end
       target = themeViewport,
       icon   = themeIcon(),
       tip    = 'Toggle Light and Dark Theme',
-      x = 0, y = 0, width = 24, height = 24,
+      x = 0, y = 0, width = gui.rpixel('36dp'), height = gui.rpixel('36dp'),
       events = {
          activate = function()
             win.setTheme((win.theme.scheme is 'dark') ? gui.themes.light : gui.themes.dark)

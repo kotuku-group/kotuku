@@ -1,30 +1,20 @@
 @Package(name="gui/fontdialog", version="1.0")
 
 --[[
-   import 'gui/fontdialog'
-
    gui.dialog.font({
-      face      = 'Noto Sans, Arial',     -- family list
-      size      = '12pt',                 -- initial size: pixels (number) or e.g. '16px', '12pt'
-      style     = 'Bold Italic',          -- style name, or descriptors such as 'weight=550;italic=yes'
-      fill      = '#203040',            -- text colour
+      properties = { face='Noto Sans, Arial', size='12pt', style='Bold Italic', fill='#203040' },
+                                          -- font definition keys; gui.fontStyle(properties) is a definition
       example   = 'Sample text',          -- preview text
-      bkgd      = '#203040',            -- fill for the preview's background
-      fontDef   = 'face=Noto Sans; ...',  -- font definition; its keys override the options above
+      bkgd      = '#203040',              -- fill for the preview's background
       align     = 'centre',               -- paragraph alignment: left, centre, right or justify
       letterCase = 'upper',               -- letter case: none, upper, lower or title
       paragraphSpacing = 0.8,             -- space between paragraphs, as a multiple of the font size
-      resultFilter = { 'face', 'size' },  -- table or array of the key names to include in the Result
+      resultFilter = { 'properties' },    -- table or array of the key names to include in the Result
       features  = { 'list', 'preview' },  -- table or array of the panels to show; all of them if omitted.  The names
                                           -- are list, presets, preview, sizing, style, glyphs, fill, stroke,
                                           -- effects, alignment
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
-
-   Result holds face, style, size (px), pointSize, fill, fontFeatures, fontDef, align, letterCase, paragraphSpacing and
-   settings, or only the keys named by resultFilter.  fontFeatures is the value of the definition's features key, e.g.
-   'kern 1, liga 0, smcp 1'.  The paragraph settings are not part of a font definition, so a full round trip passes
-   fontDef, align, letterCase and paragraphSpacing back as options.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
@@ -92,7 +82,7 @@ CASE_VALUES  <const> = array<str> { 'none', 'upper', 'lower', 'title' }
 -- The keys returned in the result when the client does not specify a resultFilter.
 
 glDefaultFilter <const> = array<str> {
-   'face', 'style', 'size', 'pointSize', 'fill', 'fontFeatures', 'fontDef', 'align', 'letterCase', 'paragraphSpacing'
+   'properties', 'align', 'letterCase', 'paragraphSpacing'
    -- Not included: settings
 }
 
@@ -115,7 +105,7 @@ DEFAULT_PRESETS <const> = array<table> {
 
 function readFeatures(Features:any):table
    enabled = { }
-   if Features is nil then Features = ALL_FEATURES end
+   Features ?= ALL_FEATURES
    for name in values(Features) do
       assert(name in ALL_FEATURES, f'Unknown font dialog feature \'{name}\'')
       enabled[name] = true
@@ -574,17 +564,11 @@ gui.dialog.font = function(Options:table)
          if &finished then return end
          s = &state
          result = {
-            face      = s.font.name,
-            style     = fontdialog_style.fontStyle(s),
-            size      = s.size,
-            pointSize = fontdialog_sizing.points(s.size),
-            fill      = s.fill,
-            fontFeatures = fontdialog_style.featureList(s),
-            fontDef   = fontdialog_style.fontDef(s),
-            align     = fontdialog_style.textAlign(s),
-            letterCase = s.letterCase,
+            properties       = fontdialog_style.properties(s),
+            align            = fontdialog_style.textAlign(s),
+            letterCase       = s.letterCase,
             paragraphSpacing = s.paraSpace,
-            settings  = fontdialog_style.resultSettings(s)
+            settings         = fontdialog_style.resultSettings(s)
          }
 
          -- Not '??', which would replace an empty filter with the default.
@@ -632,35 +616,29 @@ gui.dialog.font = function(Options:table)
       &tokens = fontdialog_theme.tokens(&themeName)
       &defaultFill = fdc.toHex(&theme.page.text.fill ?? '#000000')
 
-      -- Initial settings: the requested family, or the first default preset.  A requested size overrides the preset's.  The
-      -- other options are then applied, and fontDef last so that its keys take precedence.  The final size is
-      -- converted to a selectable point size, whatever unit it was given in.
+      -- Initial settings: the family named by the properties' face, or the first default preset.  The other keys of
+      -- the properties are then applied over it.  The final size is converted to a selectable point size, whatever
+      -- unit it was given in.
 
-      size = fontdialog_sizing.parse(Options.size)
+      local definition:str
+      if Options.properties?? then definition = gui.fontStyle(Options.properties) end
 
-      local definition:table
-      if Options.fontDef?? then definition = fontdialog_style.readDef(Options.fontDef) end
-
-      font = findFace(definition?.face) ?? findFace(Options.face)
+      font = findFace(definition and fontdialog_style.readDef(definition).face)
 
       if font then
-         &state = freshState(font, size, &defaultFill)
+         &state = freshState(font, nil, &defaultFill)
       else
-         &state = presetStateFor(DEFAULT_PRESETS[0]) ?? freshState(findFont(DEFAULT_FACE) ?? &fonts[0], size,
+         &state = presetStateFor(DEFAULT_PRESETS[0]) ?? freshState(findFont(DEFAULT_FACE) ?? &fonts[0], nil,
             &defaultFill)
       end
 
-      if size then &state.size = size end
+      if definition then fontdialog_style.applyDef(&state, definition) end
 
-      if Options.style?? then fontdialog_style.applyDef(&state, Options.style) end
-      if Options.fill?? then &state.fill = fdc.toHex(Options.fill) end
       if Options.example?? then
          &state.text = Options.example
       else
          &state.text = fontdialog_preview.sampleFor(&state.font)
       end
-
-      if definition then fontdialog_style.applyDef(&state, Options.fontDef) end
 
       -- Paragraph settings aren't part of a font definition, so they have options of their own.  The spacing is
       -- rounded to the slider's step.
@@ -943,25 +921,20 @@ gui.dialog.font = function(Options:table)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- This sub-routine is provided for languages other than Tiri to use the interface.  Options are passed as script keys
--- and the window ID is returned.  The outcome is written back to the script's keys before the window closes:
--- 'response' is 'select' or 'cancel', and on Select 'face', 'style', 'size' (px), 'pointSize', 'fill', 'fontFeatures'
--- and 'fontDef' describe the font, and 'align', 'letterCase' and 'paragraphSpacing' the paragraph.  'fontDef' is the
--- string equivalent of the Tiri result's settings table, less the paragraph settings.
 
 @if(imported=false)
    script = obj.find('self')
    modal = arg('modal')
    features = arg('features')
+   properties_arg = arg('properties')
+
+   local properties:table
+   if properties_arg?? then properties = fontdialog_style.readDef(properties_arg) end
 
    dlg = gui.dialog.font({
-      face      = arg('face'),
-      size      = arg('size'),
-      style     = arg('style'),
-      fill      = arg('fill'),
+      properties = properties,
       example   = arg('example'),
       bkgd      = arg('bkgd'),
-      fontDef   = arg('fontDef'),
       align     = arg('align'),
       letterCase = arg('letterCase'),
       paragraphSpacing = arg('paragraphSpacing'),
@@ -969,17 +942,11 @@ end
       icon      = arg('icon'),
       theme     = arg('theme'),
       modal     = (modal is '1') or (modal is 'true'),
-      features  = (features??) ? features.split(',').map(N => N.trim()) : nil,
+      features  = (features??) ? features.split(',').map(function(N:str):str return N.trim() end) : nil,
       popOver   = tonumber(arg('popOver')),
       feedback  = function(Result:table)
          if Result then
-            script.setKey('face', Result.face)
-            script.setKey('style', Result.style)
-            script.setKey('size', tostring(Result.size))
-            script.setKey('pointSize', tostring(Result.pointSize))
-            script.setKey('fill', Result.fill)
-            script.setKey('fontFeatures', Result.fontFeatures)
-            script.setKey('fontDef', Result.fontDef)
+            script.setKey('fontStyle', gui.fontStyle(Result.properties))
             script.setKey('align', Result.align)
             script.setKey('letterCase', Result.letterCase)
             script.setKey('paragraphSpacing', tostring(Result.paragraphSpacing))

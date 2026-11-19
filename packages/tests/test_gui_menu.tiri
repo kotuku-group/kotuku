@@ -106,7 +106,7 @@ end
 
 @Test function CustomMenuFontsExpandGeometryAndHitRegions()
    local surface <close>, target = newTarget()
-   local overrides = { menubar={ text={ fontSize='30pt' } }, menu={ text={ fontSize='30pt' } } }
+   local overrides = { menubar={ text={ size='30pt' } }, menu={ text={ size='30pt' } } }
    local bar = gui.menubar({ target=target, theme=overrides, createItems=function(Bar)
       Bar.addItem('file', 'File', nil, nil)
    end })
@@ -983,12 +983,14 @@ end
    assert(menu.getChecked('checked') and menu._rows[0].checkmark.visibility is VIS_VISIBLE,
       'Initially checked items must render a checkmark')
    -- The icon's pattern tile pads the artwork (see gui.createIcon()), so the column is found from the icon's centre.
-   -- The icon size follows the menu's own formula.
-   local font_max = gui.getFontHeight(gui.fonts.menu)
-   local icon_size = math.floor(math.floor(font_max * 1.5) * 0.8)
+   -- The icon size and margin follow the menu's own formulas.
+   local _, font_height = gui.getFontHeight(gui.fonts.menu)
+   local icon_size = math.floor(font_height)
+   local hmargin = gui.rpixel('14dp')
    local icon = config.iconView
    local icon_x = icon.x + ((icon.width - icon_size) * 0.5)
-   assert(math.abs(icon_x - 6) < 0.001 and icon.width > icon_size and menu._rows[0].text.x > icon.x + icon.width,
+   assert(math.abs(icon_x - hmargin) < 0.001 and icon.width > icon_size and
+      menu._rows[0].text.x > icon.x + icon.width,
       f'Icons must retain their original left-hand column ({icon_x})')
    local _, text_x, _, text_width = menu._rows[1].text.mtGetBoundary(0)
    local _, check_x, _, check_width = menu._rows[0].checkmark.mtGetBoundary(0)

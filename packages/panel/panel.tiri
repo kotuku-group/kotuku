@@ -5,6 +5,7 @@ Documentation is available in the Kotuku Wiki.
 --]]
 
    import 'gui', 'gui/layout', 'gui/tooltip', 'gui/scrollbar'
+
    include 'vector'
 
    namespace gui
@@ -559,13 +560,25 @@ gui.panel = function(Options:table!)
 
          &header = &viewport.new('VectorViewport', { name = 'PanelHeader', x = 0, y = 0, xOffset = 0, height = 1 })
 
-         &titleText = &header.new('VectorText', table.merge({
-            name = 'PanelTitle', x = header_pad, y = 0, string = &_title, align = 'left', lineLimit = 1
-         }, theme.title))
+         &titleText = &header.new('VectorText', {
+            name      = 'PanelTitle',
+            x         = header_pad,
+            y         = 0,
+            string    = &_title,
+            align     = 'left',
+            lineLimit = 1,
+            fontStyle = gui.fontStyle(theme.title)
+         })
 
-         &metaText = &header.new('VectorText', table.merge({
-            name = 'PanelMeta', x = 0, y = 0, string = &_meta, align = 'right', lineLimit = 1
-         }, theme.meta))
+         &metaText = &header.new('VectorText', {
+            name      = 'PanelMeta',
+            x         = 0,
+            y         = 0,
+            string    = &_meta,
+            align     = 'right',
+            lineLimit = 1,
+            fontStyle = gui.fontStyle(theme.meta)
+         })
 
          for k in theme.metaHighlight do
             meta_base[k] = &metaText[k]

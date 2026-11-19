@@ -15,8 +15,7 @@ LABEL_GAP <const> = gui.sizing.widget.labelGap
 gui.layout = { }
 
 -- Return the line spacing and cap height of the font that a text actually renders with.  Theme text styles can
--- override the label font, and gui.getFontHeight() treats numeric gui.fonts sizes as pixels whereas the text renders
--- them as points, so the text's own pixel size is passed.
+-- override the label font, so the text's own face, style and pixel size are measured.
 
 gui.layout.textMetrics = function(Text:obj!):<num, num>
    spacing, _, ascent = gui.getFontHeight({ face = Text.face, style = Text.fontStyle, size = tonumber(Text.fontSize) })
@@ -157,16 +156,14 @@ gui.layout.label = function(Target:obj!, Options:table!):table
          overflowX = (&width and not &stacked) ? VOF_HIDDEN : VOF_VISIBLE
       })
 
-      &text = &slot.new('VectorText', table.merge({
+      &text = &slot.new('VectorText', {
          name      = 'Label',
          x         = 0,
          y         = 0,
-         face      = gui.fonts.widget.face,
-         fontSize  = f'{gui.fonts.widget.size}pt',
-         fontStyle = gui.fonts.widget.style,
+         fontStyle = gui.fontStyle(table.merge(gui.fonts.widget, Options.style)),
          string    = Options.string,
          lineLimit = 1
-      }, Options.style))
+      })
 
       &text.align = (&rotated or (&align is 'left')) ? 'start' : ((&align is 'centre') ? 'middle' : 'end')
 

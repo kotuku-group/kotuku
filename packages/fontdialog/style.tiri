@@ -382,6 +382,14 @@ fontdialog_style.fontDef = function(State:table!):str
 end
 
 @Doc(text=[[
+@desc Return the canonical font definition for the picker state as a table of keys and values, e.g.
+`{ face = 'Noto Sans', size = '12pt', stroke = 'none', ... }`.  `gui.fontStyle(Properties)` gives a definition back.
+]])
+fontdialog_style.properties = function(State:table!):table
+   return fontdialog_style.readDef(fontdialog_style.fontDef(State))
+end
+
+@Doc(text=[[
 @desc Return the keys of a font definition as a table of normalised strings.
 ]])
 fontdialog_style.readDef = function(Def:str!):table

@@ -10,13 +10,13 @@ Internal script for combobox drop-down menus.
 
    module display as mGfx
 
-FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.menu)
-ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.5)
-VMARGIN      <const> = math.floor(ITEM_HEIGHT * 0.33)
-HMARGIN      <const> = 6
-ICON_SIZE    <const> = math.floor(ITEM_HEIGHT * 0.8)
-ITEM_SPACING <const> = 1.2
-SCROLL_WIDTH <const> = 12
+FONT_MAX_HEIGHT, FONT_HEIGHT, ASCENT = gui.getFontHeight(gui.fonts.menu)
+ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.0)
+VMARGIN      <const> = math.floor(FONT_MAX_HEIGHT * 0.33)
+HMARGIN      <const> = gui.rpixel('9dp')
+ICON_SIZE    <const> = math.floor(FONT_HEIGHT)
+ITEM_SPACING <const> = 1.1
+SCROLL_WIDTH <const> = gui.rpixel('16dp')
 
 gui._dropdown = function(Options)
    theme_name     = gui.getThemeName(Options.relative.scene) -- Adopt the theme of the window that opens the dropdown
@@ -92,6 +92,7 @@ gui._dropdown = function(Options)
             line_end = (content_width - item.textWidth) * 0.5 - HMARGIN
             sequence = string.format('M%f,%f H%f M%f,%f H%f',
                HMARGIN * 2, line_y, line_end, content_width - line_end, line_y, content_width - HMARGIN * 2)
+
             if item.rule then
                item.rule.sequence = sequence
             else
@@ -389,16 +390,17 @@ gui._dropdown = function(Options)
       for item in values(Options.items) do
          if item.label then
             mi = { y = y, config = item }
-            vText = &page.new('VectorText', table.merge({
-               x      = TEXT_X,
-               align  = 'left',
-               string = item.label
-            }, dropdown.text))
+
+            vText = &page.new('VectorText', {
+               x         = TEXT_X,
+               align     = 'left',
+               fontStyle = gui.fontStyle(dropdown.text),
+               string    = item.label
+            })
 
             bw = [___*_]vText.mtGetBoundary(0)
 
-            -- Rows are whole pixels so that they meet the highlight exactly.  Text capitals and icons are centred
-            -- in the row.
+            -- Rows are whole pixels so that they meet the highlight exactly
 
             mi.{
                text   = vText,
@@ -435,12 +437,16 @@ gui._dropdown = function(Options)
             &items.insert(mi)
          elseif item.group then -- Group headers are centred between rules once the menu width is known
             mi = { y=y, config=item, lineBreak=true }
-            vText = &page.new('VectorText', table.merge(table.merge({ }, dropdown.text), {
+
+            style = table.clone(dropdown.text)
+            style.size = gui.pixel(tostring(style.size), 96) * 0.8 -- A theme override can give the size in text form
+
+            vText = &page.new('VectorText', {
                align    = 'middle',
-               fontSize = string.format('%.2fpt', gui.fonts.input.size * 0.85),
+               fontStyle = gui.fontStyle(style),
                opacity  = 0.7,
                string   = item.group
-            }))
+            })
 
             _, bx, by, bw, bh = vText.mtGetBoundary(0)
 

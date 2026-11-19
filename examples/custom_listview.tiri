@@ -49,8 +49,9 @@ function newEntry(Prefix:str!):table
 end
 
 function rowText(Viewport:obj!, X:num!, String:str!, Align:str):obj
-   return Viewport.new('VectorText', table.merge({ x=X, y=glBaseLine, string=String, align=Align ?? 'left' },
-      theme.list.text))
+   return Viewport.new('VectorText', {
+      x=X, y=glBaseLine, string=String, align=Align ?? 'left', fontStyle=gui.fontStyle(theme.list.text)
+   })
 end
 
 -- Content is created once per row, updated in place and repositioned when the row width changes.  Client vectors are

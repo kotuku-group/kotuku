@@ -84,7 +84,7 @@ fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):ta
 
    self.blend = gui.combobox({
       target = body, x = PAD + 76, width = inner - 76, height = BLEND_H, items = BLENDS.map(B => { label = B }),
-      text = state.blend, theme = { input = fontdialog_parts.monoText(BLEND_H, 9) },
+      text = state.blend, theme = { input = fontdialog_parts.monoText() },
       events = {
          activate = function(Item) Picker.update({ blend = (Item is <table>) ? Item.label : Item }, 'effects') end
       }
