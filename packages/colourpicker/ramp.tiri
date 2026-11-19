@@ -134,9 +134,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    theme = {
       bkgd      = { fill = 'rgba(0,0,0,0)', stroke = t.swatchBorder, roundX = ROUND, roundY = ROUND },
       highlight = { fill = 'rgba(0,0,0,0)' },
-      text      = {
-         face = colourpicker_parts.FACE_MONO, fontSize = '11px', y = colourpicker_parts.baseline(0, ROW - 2, 10)
-      }
+      text      = { face = colourpicker_parts.FACE_MONO, size = 11 }
    }
 
    for i in {0 to MAX_STEPS} do
@@ -305,7 +303,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
       box = gui.combobox({
          target = body, x = X, y = CURVE_TOP, width = col_w, height = BOX_H, items = items,
          allowCustom = false,
-         theme = { input = { text = { fontSize = '11px', y = colourpicker_parts.baseline(0, BOX_H - 2, 11) } } },
+         theme = { input = { text = { size = 11 } } },
          events = {
             activate = function(Item:table!)
                self.setPreset(editor, Item.id)

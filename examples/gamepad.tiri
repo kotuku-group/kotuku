@@ -14,22 +14,23 @@ Gamepad demonstration
 
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
-   text = viewport.new('vectortext', table.merge({
-      x=win.margins.left, y=20, string='Use a gamepad to control the football.', face='Noto Sans',
-      fontSize=20
-   }, gui.getTheme(win.scene).window.text))
+   label_style = gui.fontStyle(table.merge(gui.getTheme(win.scene).window.text, { face='Noto Sans', size=20 }))
 
-   txtLeftStick = viewport.new('vectortext', table.merge({
-      x=win.margins.left, y=50, string='Left Stick:', face='Noto Sans', fontSize=20
-   }, gui.getTheme(win.scene).window.text))
+   text = viewport.new('vectortext', {
+      x=win.margins.left, y=20, string='Use a gamepad to control the football.', fontStyle=label_style
+   })
 
-   txtRightStick = viewport.new('vectortext', table.merge({
-      x=win.margins.left, y=80, string='Right Stick:', face='Noto Sans', fontSize=20
-   }, gui.getTheme(win.scene).window.text))
+   txtLeftStick = viewport.new('vectortext', {
+      x=win.margins.left, y=50, string='Left Stick:', fontStyle=label_style
+   })
 
-   txtButtons = viewport.new('vectortext', table.merge({
-      x=win.margins.left, y=110, string='Buttons:', face='Noto Sans', fontSize=20,
-   }, gui.getTheme(win.scene).window.text))
+   txtRightStick = viewport.new('vectortext', {
+      x=win.margins.left, y=80, string='Right Stick:', fontStyle=label_style
+   })
+
+   txtButtons = viewport.new('vectortext', {
+      x=win.margins.left, y=110, string='Buttons:', fontStyle=label_style
+   })
 
    --txtStatus = viewport.new('vectortext', {
    --   x=win.margins.left, y=140, string='Controller:', face='Noto Sans', fontSize=16, fill='rgb(0,0,0)'

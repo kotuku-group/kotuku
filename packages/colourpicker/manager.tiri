@@ -110,10 +110,10 @@ end
 
 -- An uppercase section label in the mono face.
 
--- Widget theme override for 12 px UI text in an input box of the given height.
+-- Widget theme override for 12 px UI text in an input box.  The widget positions the text.
 
-function inputText(Height:num):table
-   return { text = { fontSize = '12px', x = 6, y = colourpicker_parts.baseline(0, Height - 2, 12) } }
+function inputText():table
+   return { text = { size = 12 } }
 end
 
 function label(Target:obj, X:num, Y:num, Text:str, Tokens:table):obj
@@ -477,7 +477,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.search = gui.input({
       target = left.body, x = INSET, y = 4, width = inner_w, height = SEARCH_H+4, placeholder = 'Search palettes…',
-      theme = inputText(SEARCH_H),
+      theme = inputText(),
       events = {
          -- Keystrokes that arrive in the same message cycle update the list once.
 
@@ -843,7 +843,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    y += 6
    self.nameInput = gui.input({
       target = info.body, x = INSET, y = y, width = right_inner, height = SEARCH_H, maxLength = NAME_LIMIT,
-      theme = inputText(SEARCH_H),
+      theme = inputText(),
       events = {
          activate = function(Event)
             palette = selectedPalette()
@@ -871,8 +871,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    label(info.body, INSET, y, 'Description', t)
    y += 6
    notes_theme = {
-      text = { x = AREA_PAD - 1, y = AREA_PAD + math.round(AREA_FONT * 0.9) - 1,
-         face = colourpicker_parts.FACE_UI, fontSize = f'{AREA_FONT}px', fontStyle = 'Regular', fill = t.fg0 },
+      text = { face = colourpicker_parts.FACE_UI, size = AREA_FONT, style = 'Regular', fill = t.fg0 },
       scrollbar = { thickness = 8 }
    }
 
@@ -969,7 +968,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.btnEdit = gui.button({
       target = g, x = INSET, y = sw_body_h - INSET - BUTTON_H, width = right_inner, height = BUTTON_H,
       label = 'Edit in Picker', primary = true,
-      theme = { text = { fontSize = '11.5px', y = colourpicker_parts.baseline(0, BUTTON_H - 2, 11.5) } },
+      theme = { text = { size = 11.5 } },
       events = {
          activate = function()
             if (self.selected != nil) and not self.starter then Options.open(self.selected, self.swatch) end

@@ -91,6 +91,7 @@ function activateItem() -- Activate the current menu item.
       &_lastMenu?.hide()
       &_lastMenu = nil
    end
+
    return true
 end
 
@@ -175,6 +176,7 @@ end
 -- Reserve first capitals before assigning fallback letters, so conflicts cannot steal another item's first choice.
 function assignMnemonics()
    &_mnemonics = { }
+
    item = &_first
    while item do
       item.mnemonic = nil
@@ -192,6 +194,7 @@ function assignMnemonics()
             break
          end
       end
+
       item = item.next
    end
 
@@ -203,6 +206,7 @@ function assignMnemonics()
             index = (item._mnemonicStart + offset) % #name
             letter = name.sub(index, index + 1).upper()
             byte = letter.byte()
+
             if byte >= 65 and byte <= 90 and not &_mnemonics[letter] then
                item.mnemonic = letter
                &_mnemonics[letter] = item
@@ -210,6 +214,7 @@ function assignMnemonics()
             end
          end
       end
+
       item = item.next
    end
 end
@@ -243,12 +248,11 @@ function arrangeItems()
       end
 
       if item.displayName?? then
-         item.vectorText = &_vg.new('VectorText', table.merge({
+         item.vectorText = &_vg.new('VectorText', {
             x        = x + icon_width + VMARGIN,
-            face     = gui.fonts.menu.face,
-            fontSize = string.format('%.2fpt', gui.fonts.menu.size),
+            fontStyle = gui.fontStyle(&theme.text),
             string   = item.displayName
-         }, &theme.text))
+         })
 
          err, bx, by, bw, bh = item.vectorText.mtGetBoundary(0)
          item.gfxWidth = icon_width + bw + (VMARGIN * 2)
@@ -298,8 +302,8 @@ gui.menubar = function(Options:table)
       if override?.menu then &menuTheme = table.merge(&menuTheme, override.menu, true, true) end
 
       &_customFont = &theme.text.face != base_theme.menubar.text.face or
-         &theme.text.fontSize != base_theme.menubar.text.fontSize or
-         &theme.text.fontStyle != base_theme.menubar.text.fontStyle
+         &theme.text.size != base_theme.menubar.text.size or
+         &theme.text.style != base_theme.menubar.text.style
    end
 
    -- Returns the size and fill of an item's icon viewport, with the icon pattern in the current text colour.  The
@@ -319,7 +323,7 @@ gui.menubar = function(Options:table)
       item.callback = Function
       if Prepare and Menu is nil then Menu = array<table> end
       item.menuItems = Menu
-      item.prepare = Prepare
+      item.prepare   = Prepare
 
       if Icon then
          item.iconPath = Icon
@@ -453,12 +457,15 @@ gui.menubar = function(Options:table)
                open_item = item
                open_highlight = item.menu.hItem?.config
             end
+
             item.menu.hide()
             item.menu.surface?.free()
             item.menu = nil
          end
+
          item = item.next
       end
+
       &_lastMenu = nil
 
       arrangeItems()
@@ -610,6 +617,7 @@ gui.menubar = function(Options:table)
 
                if &_lastMenu?.visible then
                   if &_lastMenu.handleKey(Qualifiers, Code) then return end
+
                   if Code is KEY_UP then
                      &_lastMenu.hide()
                      &_lastMenu = nil

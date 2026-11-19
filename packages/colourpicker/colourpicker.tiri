@@ -785,7 +785,7 @@ end
 -- Small button text
 
 function smallText():table
-   return { text = { fontSize = '11px', y = colourpicker_parts.baseline(0, SMALL_BUTTON - 2, 11) } }
+   return { text = { size = 11 } } -- The widget centres the text for this size
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -813,7 +813,7 @@ function selector(self:table, Target:obj, X:num, Y:num, Width:num, Label:str, It
       items = Items,
       text = selected.label,
       allowCustom = false,
-      theme = { input = colourpicker_parts.monoText(SELECT_HEIGHT, 9) },
+      theme = { input = colourpicker_parts.monoText() },
       events = {
          activate = function(Item:table!)
             OnSelect(Item)
@@ -1144,7 +1144,7 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
    input_x = PANEL_PAD + self.formatChip.width + 6
    self.colourInput = gui.input({
       target = body, x = input_x, y = y, width = self.btnCopy.viewport.x - 6 - input_x, height = hex_h,
-      text = self.state.hex, theme = colourpicker_parts.monoText(hex_h, 8),
+      text = self.state.hex, theme = colourpicker_parts.monoText(),
       events = {
          activate = function(Event)
             if self.refreshing then return end
@@ -1956,7 +1956,7 @@ function buildCentre()
       theme = {
          bkgd = { roundX = 3, roundY = 3, stroke = 'none' },
          text = {
-            face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium'
+            face = colourpicker_parts.FACE_MONO, size = 10, style = 'Medium'
          }
       },
       events = { activate = function[&&]() &applyScheme() end }

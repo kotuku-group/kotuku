@@ -36,16 +36,13 @@ gui.button = function(Options)
 
          result = table.merge(result, Options.theme, true, true)
          if override then result = table.merge(result, override, true, true) end
-
-         LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight({
-            face = result.text.face, size = result.text.fontSize, style = result.text.fontStyle
-         })
+         LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight(result.text)
 
          HEIGHT    = Options.height ?? FONT_HEIGHT * 2.2
          ICON_SIZE = FONT_HEIGHT
-         L_GAP     = (HEIGHT * .5)
-         R_GAP     = (HEIGHT * .5)
-         ICON_GAP  = (HEIGHT * .5) * 0.75 -- Space between the icon and the label, if both are present
+         L_GAP     = HEIGHT * .5
+         R_GAP     = HEIGHT * .5
+         ICON_GAP  = HEIGHT * .5 * 0.75 -- Space between the icon and the label, if both are present
 
          return result
       end
@@ -168,9 +165,12 @@ gui.button = function(Options)
          inset = math.ceil(sw)
 
          if &_label then
-            if theme.text.fill then &_label.fill = theme.text.fill end
-            if theme.text.fontSize then
-               &_label.fontSize = theme.text.fontSize
+            if theme.text.fill then
+               &_label.fill = theme.text.fill
+            end
+
+            if theme.text.size then
+               &_label.fontSize = theme.text.size
                label_size = tonumber(&_label.fontSize)
             end
          end
@@ -221,12 +221,13 @@ gui.button = function(Options)
             if &_label then
                &_label.string = Label
             else
-               &_label = &viewport.new('VectorText', table.merge({
+               &_label = &viewport.new('VectorText', {
                   x         = 0,
                   y         = labelY(),
                   string    = Label,
+                  fontStyle = gui.fontStyle(theme.text),
                   lineLimit = 1
-               }, theme.text))
+               })
                label_size = tonumber(&_label.fontSize)
             end
          elseif &_label then

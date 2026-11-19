@@ -54,7 +54,7 @@ gui.toggle = function(Options:table!):table
       result = base_theme
       if Options.theme then result = table.merge(result, Options.theme, true, true) end
       if override then result = table.merge(result, override, true, true) end
-      default_height = math.floor(gui.getFontHeight(gui.fonts.default) * 1.1) -- Matches the combobox and input
+      default_height = math.floor(gui.getFontHeight(gui.fonts.default)) -- Matches the combobox and input
       return result
    end
 
@@ -162,7 +162,11 @@ gui.toggle = function(Options:table!):table
 
       function restyle()
          refreshStyle()
-         if &labelText and &theme.window.text.fill then &labelText.fill = &theme.window.text.fill end
+         if &labelText then -- The label is drawn with widget.text; its size is kept so the layout does not move
+            size = &labelText.fontSize
+            &labelText.fontStyle = gui.fontStyle(&theme.widget.text)
+            &labelText.fontSize = f'{size}px'
+         end
 
          try
             gui.applyStyle(&iconRender, checkmark())

@@ -1,16 +1,15 @@
    namespace gui
 
--- Merges the configured overrides into a copy of the defaults, converts percentage font sizes to points, scales all
--- point sizes to the interface density and sets the default style.  Overrides are partial; a role keeps the defaults
--- for the keys that it does not set.  Overrides for unknown roles are ignored.
+-- Merges the configured overrides into a copy of the defaults, converts percentage font sizes to points, converts all
+-- point sizes to whole pixels at the interface density and sets the default style.  Overrides are partial; a role keeps
+-- the defaults for the keys that it does not set.  Overrides for unknown roles are ignored.
 --
--- A point is always 1/72 inch, but VectorText converts points to pixels at a fixed 96 DPI.  Multiplying by dpi/96
--- compensates, so that the rendered pixel size is pt * dpi / 72.  The stored sizes are therefore 96 DPI equivalents
--- and only match the true point size when the interface density is 96.
+-- A point is 1/72 inch, so the resolved size is pt * dpi / 72 pixels.  The result is a plain number that can be given
+-- to VectorText.fontSize and gui.getFontHeight() without a unit, both of which treat bare numbers as pixels.
 
 thunk scaledFonts(Defaults:table!, Overrides:table):table
    rxFontSize <const> = r[[^(-?\d+(?:\.\d+)?)%$]]
-   scale = gui.interface.dpi / 96
+   px_per_pt = gui.interface.dpi / 72
    fonts = table.clone(Defaults)
    for role, font in Overrides ?? { } do
       if fonts[role] then
@@ -26,7 +25,9 @@ thunk scaledFonts(Defaults:table!, Overrides:table):table
          font.size = gui.interface.fontSize * (pct / 100)
       end
 
-      if font.size is <num> then font.size = math.round(font.size * scale) end
+      if font.size is <num> then
+         font.size = math.round(font.size * px_per_pt)
+      end
 
       font.style ?= 'medium'
    end
@@ -34,9 +35,8 @@ thunk scaledFonts(Defaults:table!, Overrides:table):table
 end
 
 glFontDefaults = {
-   -- Percentages are converted to numeric pt sizes, relative to gui.interface.fontSize
-   -- Numeric sizes are points (1/72 in); scaled by dpi/96 to offset VectorText's fixed 96 DPI pt conversion
-   -- All sizes are scaled to gui.interface.dpi on first access
+   -- Percentages are relative to gui.interface.fontSize (pt); numeric sizes are points (1/72 in)
+   -- All sizes are converted to whole pixels at gui.interface.dpi on first access
    default  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Always matches gui.interface.fontSize
    window   = { face='Noto Sans UI', size='100%', style='Regular' }, -- For text placed against the window background, e.g. labels
    filesys  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Text for files, folders

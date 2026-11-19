@@ -98,7 +98,9 @@ end
 
 function rebuildMenu()
    items = { }
-   for item in values(&menu.items) do items.insert(item.config) end
+   for item in values(&menu.items) do
+      items.insert(item.config)
+   end
 
    was_visible = &menu.visible
    highlight   = &menu.hItem?.config?.label
@@ -157,7 +159,7 @@ gui.combobox = function(Options:table)
       end
 
       FONT_MAX_HEIGHT, FONT_HEIGHT, ASCENT = gui.getFontHeight(&input_theme.text)
-      DEFAULT_HEIGHT = math.floor(FONT_MAX_HEIGHT * 1.1)
+      DEFAULT_HEIGHT = math.floor(FONT_MAX_HEIGHT * gui.sizing.widget.height)
       MARGIN = math.floor(FONT_HEIGHT * 0.5)
    end
 
@@ -166,6 +168,7 @@ gui.combobox = function(Options:table)
 
    function refreshStyle()
       gui.applyStyle(&bkgd, &input_theme.bkgd)
+
       if &disabled then
          gui.applyStyle(&bkgd, &input_theme.disabled)
       elseif &_focus then
@@ -234,7 +237,9 @@ gui.combobox = function(Options:table)
       assert(Options.allowCustom or firstItem(Options.items), 'A list of items is required.')
 
       base_theme = gui.getTheme(&parentViewport)
+
       buildTheme()
+
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       vps = { -- Viewport settings
@@ -301,7 +306,7 @@ gui.combobox = function(Options:table)
       }, &input_theme.bkgd))
 
       clip_inset = math.ceil(&input_theme.bkgd.strokeWidth) -- Whole pixels keep the text and icon sharp
-      ICON_SIZE = math.min(FONT_HEIGHT, BOX_HEIGHT - (clip_inset * 2))
+      ICON_SIZE = math.min(FONT_HEIGHT * .6, BOX_HEIGHT - (clip_inset * 2))
 
       -- Returns the drop-down icon pattern in the current text colour, and the placement of the viewport that paints
       -- it.  The viewport is padded to suit the pattern tile, see gui.createIcon().
@@ -337,11 +342,12 @@ gui.combobox = function(Options:table)
 
       text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (clip_inset * 2)) * 0.5)
 
-      &text = &_textClip.new('VectorText', table.merge({
+      &text = &_textClip.new('VectorText', {
          x         = text_inset,
          y         = math.round((BOX_HEIGHT + ASCENT) * 0.5) - clip_inset,
          string    = defaultText,
          lineLimit = 1,
+         fontStyle = gui.fontStyle(&input_theme.text),
          textFlags = (function()
             flags = 0
             if &allowCustom then
@@ -349,12 +355,11 @@ gui.combobox = function(Options:table)
             end
             return flags
          end)()
-      }, &input_theme.text))
+      })
 
       if Options.selectAll then &text.mtSelectArea(0, 0, -1, -1) end -- Select all of the text
 
-      focus_mask = FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS | FM_TAB_FOCUS
-      &viewport.mtSubscribeFeedback(focus_mask, function(Viewport, Event)
+      &viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS|FM_TAB_FOCUS, function(Viewport, Event)
          if Event is FM_TAB_FOCUS then
             -- Focus that arrives by keyboard selects all of the editable text.  Pointer focus leaves the caret where
             -- the user clicked.
@@ -448,13 +453,18 @@ gui.combobox = function(Options:table)
          sw = &input_theme.bkgd.strokeWidth ?? 0
          edge = sw * 0.5
          &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+
          refreshStyle()
 
          inset = math.ceil(sw)
          &_textClip.{ x = inset, y = inset, yOffset = inset }
 
          if &input_theme.text.fill then &text.fill = &input_theme.text.fill end
-         if &labelText and &theme.window.text.fill then &labelText.fill = &theme.window.text.fill end
+         if &labelText then -- The label is drawn with widget.text; its size is kept so the layout does not move
+            size = &labelText.fontSize
+            &labelText.fontStyle = gui.fontStyle(&theme.widget.text)
+            &labelText.fontSize = f'{size}px'
+         end
 
          try
             gui.applyStyle(&iconRender, iconSettings())

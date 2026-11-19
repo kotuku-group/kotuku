@@ -952,16 +952,10 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
--- Widget theme override for 11 px mono text in a box of the given height.  The widgets position their text from the
--- default widget font, so the baseline and inset are given as well.  The text sits in a clip inset by the 1 px border.
+-- Widget theme override for mono text.  Theme text holds font definition keys only; the widget positions the text.
 
-colourpicker_parts.monoText = function(Height:num, Inset:num):table
-   return {
-      text = {
-         face = colourpicker_parts.FACE_MONO, fontSize = '14px', x = Inset - 1,
-         y = colourpicker_parts.baseline(0, Height - 2, 11)
-      }
-   }
+colourpicker_parts.monoText = function():table
+   return { text = { face = colourpicker_parts.FACE_MONO, size = 14 } }
 end
 
 ----------------------------------------------------------------------------------------------------------------------

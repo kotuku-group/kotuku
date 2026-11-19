@@ -342,10 +342,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          target = self.sampleRow, x = x, y = 0, height = FOOTER_SEG_H, label = sample.label, disabled = true,
          theme = {
             bkgd = { roundX = 3, roundY = 3 },
-            text = {
-               fontSize = f'{FOOTER_SEG_SIZE}px',
-               y = fontdialog_parts.baseline(0, FOOTER_SEG_H - 2, FOOTER_SEG_SIZE)
-            }
+            text = { size = FOOTER_SEG_SIZE } -- The button centres the label for this size
          },
          events = {
             activate = function()

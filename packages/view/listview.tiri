@@ -151,9 +151,10 @@ gui.listView = function(Options:table!):table
       if label is <table> then label = label.value end
 
       if label != nil then
-         if not Item._vectors.text then
-            Item._vectors.text = vp.new('VectorText', table.merge({ align = 'left' }, View.theme.list.text))
-         end
+         Item._vectors.text ?= vp.new('VectorText', {
+            align     = 'left',
+            fontStyle = gui.fontStyle(View.theme.list.text)
+         })
 
          -- The text stays hidden while it is covered by an editor.
 

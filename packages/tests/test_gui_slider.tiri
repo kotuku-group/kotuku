@@ -721,6 +721,22 @@ end
    assert(slider.value is 2, 'Refreshing text must preserve the value')
 end
 
+@Test function ThemeChangesKeepVerticalTextFitted()
+   local surface <close>, slider = newSlider({ orientation='vertical', height=200, thickness=40,
+      min=0, max=10, value=2, step=1, valuePos='in-centre',
+      valueFormat = function(Value:num):str return f'{Value} seconds remaining' end
+   })
+   local available = slider.thickness - 4
+   local fitted = slider.valueText.fontSize
+   assert(slider.valueText.textWidth <= available, 'The value text must start fitted to the track')
+
+   slider.setTheme({ text = { fill = '#102030' } })
+   assert(slider.valueText.fill is '#102030', 'A paint-only change must apply the new fill')
+   assert(slider.valueText.fontSize is fitted,
+      f'A paint-only change must keep the fitted size, got {slider.valueText.fontSize}')
+   assert(slider.valueText.textWidth <= available, 'A paint-only change must keep the text within the track')
+end
+
 @Test function RefreshValueUpdatesOutsideReservation()
    for explicit in {0 to 2} do
       local suffix = ''

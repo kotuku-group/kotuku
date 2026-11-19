@@ -23,7 +23,7 @@ the first enabled item in menu order.  Shortcut activation callbacks receive the
 
    module display as mGfx
 
-HMARGIN      <const> = 6
+HMARGIN      <const> = gui.rpixel('14dp')
 KB_HIGHLIGHT <const> = 'rgb(0 0 0 / .5)'
 ICON_STRIP   <const> = 'rgb(255 255 255 / .15)'
 
@@ -131,14 +131,10 @@ gui.menu = function(Options:table!)
 
    theme = table.merge(gui.themes[theme_name].menu, Options.theme?.menu, true, true)
 
-   base_text = gui.themes[theme_name].menu.text
-   custom_font = theme.text.face != base_text.face or theme.text.fontSize != base_text.fontSize or
-      theme.text.fontStyle != base_text.fontStyle
-   -- Preserve the default geometry; custom fonts use the renderer's resolved units.
-   font_spacing = gui.getFontHeight(custom_font ? theme.text : gui.fonts.menu)
-   item_height <const> = math.floor(font_spacing * 1.5)
-   vmargin <const> = math.floor(item_height * 0.33)
-   icon_size <const> = math.floor(item_height * 0.8)
+   LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight(theme.text)
+   ITEM_HEIGHT <const>  = math.floor(LINE_SPACING * 1.1)
+   VMARGIN <const>      = math.floor(LINE_SPACING * 0.4)
+   ICON_SIZE <const>    = math.floor(FONT_HEIGHT)
 
    self = entity { -- Public interface
       surface     = nil,
@@ -166,6 +162,10 @@ gui.menu = function(Options:table!)
 
    function selectable(Item:table):bool
       return Item and not (Item.lineBreak or Item.disabled or Item.config.disabled or Item.source?.disabled)
+   end
+
+   function itemY(Space:num, Scale:num):num
+      return math.round(((Space ?? ITEM_HEIGHT) + (ASCENT * (Scale ?? 1))) * 0.5)
    end
 
    function itemIndex(Item:table):num
@@ -221,7 +221,7 @@ gui.menu = function(Options:table!)
          end
 
          icon_x = HMARGIN
-         TEXT_X = icon_x + (icons_present ? icon_size + HMARGIN + HMARGIN : 0)
+         TEXT_X = icon_x + (icons_present ? ICON_SIZE + HMARGIN : 0)
 
          -- Clients can use the hostScene option to gain access to external fills via url()
 
@@ -233,7 +233,7 @@ gui.menu = function(Options:table!)
          }, theme.bkgd))
 
          &highlight = &content.new('VectorRectangle', table.merge({ -- Item highlighting
-            x = 2, y = 0, xOffset = 2, height = item_height,
+            x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT,
             fill = theme.highlight, visibility = 'hidden'
          }, theme.highlight))
 
@@ -244,8 +244,8 @@ gui.menu = function(Options:table!)
 
          &_rows = array<table>
          widestItem = 0
-         widestKey = 0
-         y = vmargin
+         widestKey  = 0
+         y          = VMARGIN
          for source in values(&items) do
             item = source.menu ?? source
             if source.menu then item.icon ?= source.icon end
@@ -253,29 +253,31 @@ gui.menu = function(Options:table!)
             if item.label then
                mi = { y=y, config=item, source=source, submenuConfig=item.items }
 
-               vText = &content.new('VectorText', table.merge({
-                  x        = TEXT_X,
-                  face     = gui.fonts.menu.face,
-                  fill     = 'black',
-                  fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-                  align    = 'left',
-                  string   = item.label
-               }, theme.text))
+               vText = &content.new('VectorText', {
+                  name      = 'MenuItemLabel',
+                  x         = TEXT_X,
+                  fontStyle = gui.fontStyle(theme.text),
+                  align     = 'left',
+                  string    = item.label
+               })
 
                err, bx, by, bw, bh = vText.mtGetBoundary(0)
 
                mi.text = vText
-               mi.textY = y + math.floor((vText.lineSpacing + vText.displayHeight) * 0.5)
+               mi.textY = y + itemY()
 
                if bw > widestItem then widestItem = bw end
 
                if showIcons and item['icon'] then
                   try
-                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, icon_size, theme.icon)
+                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, ICON_SIZE, theme.icon)
 
                      item.iconView = &content.new('VectorRectangle', {
-                        x = icon_x - info.margin, y = y + math.floor((item_height - icon_size) * 0.5) - info.margin,
-                        width = icon_size + (info.margin * 2), height = icon_size + (info.margin * 2), fill = info.fill
+                        x      = icon_x - info.margin,
+                        y      = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5) - info.margin,
+                        width  = ICON_SIZE + (info.margin * 2),
+                        height = ICON_SIZE + (info.margin * 2),
+                        fill   = info.fill
                      })
                   end
                end
@@ -289,36 +291,39 @@ gui.menu = function(Options:table!)
                   end
 
                   kb_highlight = &content.new('VectorRectangle', {
-                     fill = KB_HIGHLIGHT, xOffset = HMARGIN, y = y + 2, width = 1, height = item_height - 4,
-                     roundX = item_height * 0.5, roundY = item_height * 0.5
+                     fill    = KB_HIGHLIGHT,
+                     xOffset = HMARGIN,
+                     y       = y + 2,
+                     width   = 1,
+                     height  = ITEM_HEIGHT - 4,
+                     roundX  = ITEM_HEIGHT * 0.5,
+                     roundY  = ITEM_HEIGHT * 0.5
                   })
 
-                  vKey = &content.new('VectorText', table.merge({
-                     x        = &surface.width,
-                     face     = gui.fonts.menu.face,
-                     fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-                     fill     = 'black',
-                     align    = 'right',
-                     string   = key
-                  }, theme.text))
+                  vKey = &content.new('VectorText', {
+                     name      = 'MenuItemKeyCombo',
+                     x         = &surface.width,
+                     fontStyle = gui.fontStyle(theme.text),
+                     align     = 'right',
+                     string    = key
+                  })
 
                   err, bx, by, bw, bh = vKey.mtGetBoundary(0)
 
-                  vKey.y = y + math.floor((vKey.lineSpacing + vKey.displayHeight) * 0.5)
+                  vKey.y = y + itemY()
 
                   keyWidth = bw
                   if keyWidth > widestKey then widestKey = keyWidth end
                   mi.keyText = vKey
                   kb_highlight.width = keyWidth + HMARGIN + HMARGIN
                elseif mi.submenuConfig then
-                  vKey = &content.new('VectorText', table.merge({
-                     x        = &surface.width,
-                     face     = gui.fonts.menu.face,
-                     fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-                     fill     = 'black',
-                     align    = 'right',
-                     string   = '>'
-                  }, theme.text))
+                  vKey = &content.new('VectorText', {
+                     name      = 'MenuItemExt',
+                     x         = &surface.width,
+                     fontStyle = gui.fontStyle(theme.text),
+                     align     = 'right',
+                     string    = '>'
+                  })
 
                   _, _, _, bw = vKey.mtGetBoundary(0)
                   vKey.y = mi.textY
@@ -327,62 +332,61 @@ gui.menu = function(Options:table!)
                end
 
                vText.y = mi.textY
-               mi.height = item_height
+               mi.height = ITEM_HEIGHT
                y = math.ceil(y + mi.height)
 
                &_rows.push(mi)
             elseif source.group then
-               mi = { y = y, height = item_height, config = source, lineBreak = true }
+               mi = { y = y, height = ITEM_HEIGHT, config = source, lineBreak = true }
 
-               group_text = &content.new('VectorText', table.merge({
+               style = table.clone(theme.text)
+               style.size = gui.pixel(tostring(style.size), 96) * 0.8 -- A theme override can give the size in text form
+               group_text = &content.new('VectorText', {
+                  name      = 'MenuGroupText',
                   x         = 0,
                   y         = 0,
-                  face      = gui.fonts.menu.face,
-                  fontSize  = string.format('%.2fpt', gui.fonts.menu.size * 0.85),
-                  fontStyle = gui.fonts.menu.style,
+                  fontStyle = gui.fontStyle(style),
                   align     = 'middle',
-                  fill      = 'black',
-                  opacity   = 0.7,
                   string    = source.group
-               }, theme.text))
+               })
 
                _, bx, by, bw, bh = group_text.mtGetBoundary(0)
 
-               group_text.y = y + (item_height - bh) * 0.5 - by
+               group_text.y = y + itemY(nil, .85)
                mi.text = group_text
                mi.textWidth = bw
                if bw > widestItem then widestItem = bw end
-               y += item_height
+               y += ITEM_HEIGHT
                &_rows.push(mi)
             end
          end
 
-         check_column = checks_present ? icon_size + HMARGIN : 0
-         check_x = TEXT_X + widestItem + HMARGIN * 4
-         width = TEXT_X + widestItem + (HMARGIN * 6) + check_column + widestKey + HMARGIN
+         check_column = checks_present ? ICON_SIZE + HMARGIN : 0
+         check_x      = TEXT_X + widestItem + HMARGIN * 4
+         width        = TEXT_X + widestItem + (HMARGIN * 6) + check_column + widestKey + HMARGIN
 
          &width  = width
-         &height = y + vmargin
+         &height = y + VMARGIN
          applyScale()
 
          for item in values(&_rows) do
             if not item.lineBreak and item.config.checkable and not item.submenuConfig then
-               check_y = item.y + (item_height - icon_size) * 0.5
+               check_y = item.y + (ITEM_HEIGHT - ICON_SIZE) * 0.5
 
                -- Checkmark icon
                item.checkmark = &content.new('VectorPath', {
                   stroke = theme.text?.fill ?? 'white', strokeWidth = 2, fill = 'none',
                   visibility = item.config.checked ? 'visible' : 'hidden',
                   sequence = string.format('M%f,%f L%f,%f L%f,%f',
-                     check_x + icon_size * 0.15, check_y + icon_size * 0.5,
-                     check_x + icon_size * 0.4, check_y + icon_size * 0.75,
-                     check_x + icon_size * 0.85, check_y + icon_size * 0.2)
+                     check_x + ICON_SIZE * 0.15, check_y + ICON_SIZE * 0.5,
+                     check_x + ICON_SIZE * 0.4, check_y + ICON_SIZE * 0.75,
+                     check_x + ICON_SIZE * 0.85, check_y + ICON_SIZE * 0.2)
                })
             end
 
             if item.lineBreak then
                item.text.x = width * 0.5
-               line_y      = math.floor(item.y + item_height * 0.5) + 0.5
+               line_y      = math.floor(item.y + ITEM_HEIGHT * 0.5) + 0.5
                line_end    = (width - item.textWidth) * 0.5 - HMARGIN
                &content.new('VectorPath', {
                   stroke = theme.text?.fill ?? 'white', strokeWidth = 1, opacity = 0.35,
@@ -497,27 +501,14 @@ gui.menu = function(Options:table!)
 
             sp = surface.parent
             if sp then
-               err, parentInfo = mGfx.GetSurfaceInfo(sp)
-               if err is ERR_Okay then
-                  parent.width  = parentInfo.width
-                  parent.height = parentInfo.height
-                  parent.absX   = parentInfo.absX
-                  parent.absY   = parentInfo.absY
-               else
-                  raise 'Failed to analyse parent surface: ' .. mSys.GetErrorMsg(err)
-               end
+               _, info = check mGfx.GetSurfaceInfo(sp)
+               parent.{ width = info.width, height = info.height, absX = info.absX, absY = info.absY }
             else
                err, scrInfo = mGfx.GetDisplayInfo(0)
                if err is ERR_Okay then
-                  parent.width  = scrInfo.width
-                  parent.height = scrInfo.height
-                  parent.absX   = 0
-                  parent.absY   = 0
+                  parent.{ width = scrInfo.width, height = scrInfo.height, absX = 0, absY = 0 }
                else
-                  parent.absX   = 0
-                  parent.absY   = 0
-                  parent.width  = 0
-                  parent.height = 0
+                  parent.{ absX = 0, absY = 0, width = 0, height = 0 }
                end
             end
 
@@ -568,7 +559,7 @@ gui.menu = function(Options:table!)
 
             x = parent.absX - target.absX + parent.width - MARGIN * scale
             parent_item = &parentItem
-            y = parent.absY - target.absY + ((parent_item?.y ?? 0) - vmargin) * scale
+            y = parent.absY - target.absY + ((parent_item?.y ?? 0) - VMARGIN) * scale
             if x + surface.width > target.width then
                x = parent.absX - target.absX - surface.width + MARGIN * scale
                &reverseX = true
@@ -592,16 +583,12 @@ gui.menu = function(Options:table!)
             if Options.target then
                err, info = mGfx.GetSurfaceInfo(Options.target)
                if err is ERR_Okay then
-                  target.absX   = info.absX
-                  target.absY   = info.absY
-                  target.width  = info.width
-                  target.height = info.height
+                  target.{ absX = info.absX, absY = info.absY, width = info.width, height = info.height }
                end
             else
                err, display = mGfx.GetDisplayInfo(0)
                if err is ERR_Okay then
-                  target.width = display.width
-                  target.height = display.height
+                  target.{ width = display.width, height = display.height }
                end
             end
 
@@ -651,9 +638,7 @@ gui.menu = function(Options:table!)
       &hItem = Item
 
       if Item then -- Draw the newly highlighted area
-         &highlight.y = Item.y
-         &highlight.height = Item.height
-         &highlight.visibility = 'visible'
+         &highlight.{ y = Item.y, height = Item.height, visibility = 'visible' }
          &surface.mtScheduleRedraw()
          if Item.submenuConfig then openSubmenu(Item) end
          if &events.highlight then &events.highlight(Item.config) end
@@ -860,9 +845,7 @@ gui.menu = function(Options:table!)
 
       &surface.subscribe('show', function(Surface:obj!, Args:table!)
          for item in values(&_rows) do
-            if item.checkmark then
-               item.checkmark.visibility = item.config.checked ? 'visible' : 'hidden'
-            end
+            item.checkmark?.visibility = item.config.checked ? 'visible' : 'hidden'
          end
 
          &visible = true

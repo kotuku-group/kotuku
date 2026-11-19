@@ -25,7 +25,7 @@ gui.toolbar = function(Options:table)
       _disabled      = false,
       _lookup        = { },
       _hasFocus      = false,
-      _cellMargin    = Options.cellMargin ?? math.round(gui.getFontHeight(gui.fonts.default) * 0.4)
+      _cellMargin    = Options.cellMargin ?? math.round(gui.getFontHeight(gui.fonts.default) * 0.3)
    }
 
    -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
@@ -251,8 +251,7 @@ gui.toolbar = function(Options:table)
       while item do
          -- Note that groups are converted to breaks when in flush mode.
          if item.type is TI_BREAK then
-            item.x = x
-            item.y = y
+            item.{ x = x, y = y }
 
             local seq:str
             if &_horizontal then
@@ -571,9 +570,14 @@ gui.toolbar = function(Options:table)
 
          font_size = sticker_size * 0.75
          item.sticker.content = item.sticker.viewport.new('VectorText', {
-            face='Noto Sans', fontStyle='bold', fontSize=font_size,
-            x=math.floor(sticker_size*0.5), y=math.floor(font_size),
-            fill='white', string=Content, align='middle'
+            face      = 'Noto Sans',
+            fontStyle = 'bold',
+            fontSize  = font_size,
+            x         = math.floor(sticker_size*0.5),
+            y         = math.floor(font_size),
+            fill      = 'white',
+            string    = Content,
+            align     = 'middle'
          })
       end
    end
@@ -762,8 +766,8 @@ gui.toolbar = function(Options:table)
    -- Release the toolbar, including the tooltip and the group mask owned by the scene.
 
    self.free = function()
-      viewport = &viewport
-      &viewport = nil
+      viewport   = &viewport
+      &viewport  = nil
       &_disabled = true
       &_hasFocus = false
       &_hoverTip?.cancel()

@@ -153,20 +153,19 @@ Returns the line spacing, height and ascent (cap height) of a font in pixels.
 Text is centred vertically in a box by placing its baseline at (BoxHeight + Ascent) / 2.
 
 -INPUT-
-Font: Font table with face, fontSize (or size) and fontStyle (or style) fields.
+Font: Font table with face, size and style fields, as for a gui.fonts role or theme text set.
 
 -RESULTS-
 num: Line spacing in pixels.
 num: Font height in pixels.
 num: Ascent (cap height) in pixels.  This can be fractional, so round the resulting baseline to whole pixels.
 ]])
-
 gui.getFontHeight = function(Font:table):<num,num,num>
    try <trace>
       global _FONT_CACHE ?= { }
 
-      style = Font.fontStyle ?? Font.style ?? "Medium"
-      size = Font.fontSize ?? Font.size
+      style = Font.style ?? "Medium"
+      size = Font.size -- A number is in pixels, as gui.fonts sizes are
       key = f'{Font.face}:{style}:{size}'
 
       if _FONT_CACHE[key] then
@@ -200,6 +199,28 @@ gui.getFontHeight = function(Font:table):<num,num,num>
    except ex
       raise f'{ex.message}\n{ex.stackTrace}'
    end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Converts a font configuration table into a specification string, suitable for passing to VectorText.FontStyle.
+@input A table containing the configuration key values.
+@result The concatenated string is returned.
+]])
+gui.fontStyle = function(Config:table!):str
+   buffer = array<char>
+   first = true
+   for k, v in Config do
+      if first is true then
+         first = false
+      else
+         buffer ..= '; '
+      end
+      buffer ..= k .. '=' .. v
+   end
+
+   return tostring(buffer)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -542,7 +563,7 @@ gui.setTheme = function(Object:obj, Theme:str!):table
          loadFile(f'config:themes/{Theme}.tiri')
          assert(gui.themes[Theme], 'Theme configuration did not initialise correctly.')
       else
-         print(f'Requested theme "config:themes/{Theme}.tiri" unavailable.')
+         msg(2, f'Requested theme "config:themes/{Theme}.tiri" unavailable.')
          Theme = 'light' -- Revert to a safe default
       end
    end
@@ -688,7 +709,7 @@ end
 
 glStyleDefaults <const> = {
    interface = {
-      fontSize  = 10.5,      -- Default font-size for everything (pt)
+      fontSize  = 11,        -- Default font-size for everything (pt)
       iconTheme = 'Default', -- Named folder to load the icons from
       flashTime = 1.5,       -- Default duration of flashed messages, in seconds
       tabPing   = 0.3,       -- Seconds that the tab ping stays visible in a window; 0 disables it
@@ -703,8 +724,9 @@ glStyleDefaults <const> = {
          gap       = 4,   -- Recommended gap between widgets (px at 96 DPI)
          margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
          labelGap  = 12,  -- Spacing between labels and the widget parts
-         edgeWidth = 2,   -- Default stroke-width for widget edges (px at 96 DPI)
-         edgeRound = 5    -- Default corner radius for widget edges (px at 96 DPI)
+         edgeWidth = 2,   -- Default stroke-width for widget edges (fixed)
+         edgeRound = 5,   -- Default corner radius for widget edges (fixed)
+         height    = 1.2  -- Box height, expressed in em scale
       }
    }
 }
@@ -713,18 +735,18 @@ glStyleDefaults <const> = {
 -- of at least zero, 'size' a number greater than zero and 'fontSize' a size or a percentage string such as '120%'.
 -- An 'object' is validated by its own reader.
 
-glStyleSchema <const> = {
-   style     = {
-      theme = 'str', palette = 'str', paletteTheme = 'str', fill = 'str', effects = 'str', paletteColours = 'object'
-   },
-   interface = {
-      fontSize = 'size', dpi = 'size', iconTheme = 'str', flashTime = 'num', tabPing = 'num', pingSize = 'size',
-      tabPingDistance = 'num'
-   },
-   window = { gap = 'num' },
-   widget = { width = 'size', gap = 'num', margin = 'num', labelGap = 'num', edgeWidth = 'num', edgeRound = 'num' },
-   font   = { face = 'str', size = 'fontSize', style = 'str', fontDef = 'str' }
+SCHEMA_STYLE <const> = {
+   theme = 'str', palette = 'str', paletteTheme = 'str', fill = 'str', effects = 'str', paletteColours = 'object'
 }
+SCHEMA_INTERFACE <const> = {
+   fontSize = 'size', dpi = 'size', iconTheme = 'str', flashTime = 'num', tabPing = 'num', pingSize = 'size',
+   tabPingDistance = 'num'
+}
+SCHEMA_WINDOW <const> = { gap = 'num' }
+SCHEMA_WIDGET <const> = {
+   width = 'size', gap = 'num', margin = 'num', labelGap = 'num', edgeWidth = 'num', edgeRound = 'num', height = 'num'
+}
+SCHEMA_FONT <const> = { face = 'str', size = 'fontSize', style = 'str' }
 
 function validStyleValue(Kind:str!, Value:any):bool
    if Kind is 'str' then
@@ -743,11 +765,12 @@ end
 -- Returns the valid entries of a configuration section.  Invalid values are reported and dropped, so that their
 -- defaults apply.  Unknown keys are ignored silently, as they may belong to other tools.
 
-function styleSection(Section:any, Schema:table!, Path:str!):table
+function parseStyleTable(Section:any, Schema:table!, Path:str!):table
    result = { }
    if Section is nil then return result end
+
    if not (Section is <table>) then
-      print(f'Style configuration: "{Path}" is not an object and has been ignored.')
+      msg(2, f'Style configuration: "{Path}" is not an object and has been ignored.')
       return result
    end
 
@@ -760,9 +783,56 @@ function styleSection(Section:any, Schema:table!, Path:str!):table
       elseif validStyleValue(kind, value) then
          result[key] = value
       else
-         print(f'Style configuration: invalid value for "{Path}.{key}" has been ignored.')
+         msg(2, f'Style configuration: invalid value for "{Path}.{key}" has been ignored.')
       end
    end
+
+   return result
+end
+
+-- Reads a font role.  face, size and style select the font, and every other key is a font definition key such as
+-- stroke or shadow:
+--
+--   widget = { face = 'Courier Prime', stroke = '#EC3013', strokeWidth = '0.05em' }
+--
+-- The definition keys are kept in the role alongside face, size and style, so that gui.fontStyle() passes them to the
+-- text.  Keys that aren't valid definition keys are reported and dropped.
+
+function fontRoleSection(Section:any, Path:str!):table
+   result = { }
+   if Section is nil then return result end
+
+   if not (Section is <table>) then
+      msg(2, f'Style configuration: "{Path}" is not an object and has been ignored.')
+      return result
+   end
+
+   for key, value in Section do
+      kind = SCHEMA_FONT[key]
+      if kind then
+         if validStyleValue(kind, value) then
+            result[key] = value
+         else
+            msg(2, f'Style configuration: invalid value for "{Path}.{key}" has been ignored.')
+         end
+         continue
+      end
+
+      -- A ';' would add further keys to the definition, so a value holding one is rejected
+      entry = f'{key}={value}'
+      valid = (value is <num>) or ((value is <str>) and not (';' in value))
+      if valid then
+         err, normal = mVec.NormaliseTextStyle(entry)
+         valid = (err is ERR_Okay) and normal??
+      end
+
+      if valid then
+         result[key] = value
+      else
+         msg(2, f'Style configuration: invalid value for "{Path}.{key}" has been ignored.')
+      end
+   end
+
    return result
 end
 
@@ -779,13 +849,13 @@ function paletteColourSection(Section:any):table
    if Section is nil then return result end
 
    if not (Section is <table>) then
-      print('Style configuration: "style.paletteColours" is not an object and has been ignored.')
+      msg(2, 'Style configuration: "style.paletteColours" is not an object and has been ignored.')
       return result
    end
 
    for name, schemes in Section do
       if not (schemes is <table>) then
-         print(f'Style configuration: "style.paletteColours.{name}" is not an object and has been ignored.')
+         msg(2, f'Style configuration: "style.paletteColours.{name}" is not an object and has been ignored.')
          continue
       end
 
@@ -793,7 +863,7 @@ function paletteColourSection(Section:any):table
       for scheme, colours in schemes do
          path = f'style.paletteColours.{name}.{scheme}'
          if not (colours is <table>) then
-            print(f'Style configuration: "{path}" is not an object and has been ignored.')
+            msg(2, f'Style configuration: "{path}" is not an object and has been ignored.')
             continue
          end
 
@@ -802,7 +872,7 @@ function paletteColourSection(Section:any):table
             if validStyleValue('str', value) then
                variant[key] = value
             else
-               print(f'Style configuration: invalid value for "{path}.{key}" has been ignored.')
+               msg(2, f'Style configuration: invalid value for "{path}.{key}" has been ignored.')
             end
          end
 
@@ -826,7 +896,7 @@ function loadStyle():table
 
    if mSys.AnalysePath(glStyleConfig) != ERR_Okay then
       if glStyleOverride then
-         print(f'Style configuration {glStyleConfig} is unavailable; using defaults.')
+         msg(2, f'Style configuration {glStyleConfig} is unavailable; using defaults.')
       else
          fl <close> = obj.new('file', { path=glStyleConfig, flags=FL_WRITE|FL_NEW })
          fl.acWrite(json.encode({
@@ -835,47 +905,45 @@ function loadStyle():table
                   palette = 'ocean',
                   paletteTheme = 'light'
                },
-               interface = {
-               },
-               sizing = {
-               }
+               interface = { }, -- Don't override internal defaults
+               sizing = { }
             })
          )
       end
       return style
    end
 
-   cfg:any
+   local cfg:any
    try
       cfg = json.decode(io.readAll(glStyleConfig))
    except ex
-      print(f'Error in style configuration file {glStyleConfig}; delete to reset it')
-      print(f'  Detail: {ex.message}')
+      msg(2, f'Error in style configuration file {glStyleConfig}; delete to reset it')
+      msg(2, f'  Detail: {ex.message}')
       return style
    end
 
    if not (cfg is <table>) then
-      print(f'Style configuration file {glStyleConfig} does not hold an object; delete to reset it')
+      msg(2, f'Style configuration file {glStyleConfig} does not hold an object; delete to reset it')
       return style
    end
 
-   style.style     = styleSection(cfg.style, glStyleSchema.style, 'style')
+   style.style     = parseStyleTable(cfg.style, SCHEMA_STYLE, 'style')
    if cfg.style is <table> then style.paletteColours = paletteColourSection(cfg.style.paletteColours) end
-   style.interface = styleSection(cfg.interface, glStyleSchema.interface, 'interface')
+   style.interface = parseStyleTable(cfg.interface, SCHEMA_INTERFACE, 'interface')
 
    if cfg.sizing is <table> then
-      style.sizing.window = styleSection(cfg.sizing.window, glStyleSchema.window, 'sizing.window')
-      style.sizing.widget = styleSection(cfg.sizing.widget, glStyleSchema.widget, 'sizing.widget')
+      style.sizing.window = parseStyleTable(cfg.sizing.window, SCHEMA_WINDOW, 'sizing.window')
+      style.sizing.widget = parseStyleTable(cfg.sizing.widget, SCHEMA_WIDGET, 'sizing.widget')
    elseif cfg.sizing != nil then
-      print('Style configuration: "sizing" is not an object and has been ignored.')
+      msg(2, 'Style configuration: "sizing" is not an object and has been ignored.')
    end
 
    if cfg.fonts is <table> then
       for role, font in cfg.fonts do
-         style.fonts[role] = styleSection(font, glStyleSchema.font, f'fonts.{role}')
+         style.fonts[role] = fontRoleSection(font, f'fonts.{role}')
       end
    elseif cfg.fonts != nil then
-      print('Style configuration: "fonts" is not an object and has been ignored.')
+      msg(2, 'Style configuration: "fonts" is not an object and has been ignored.')
    end
 
    return style
@@ -894,28 +962,36 @@ thunk displayDensity():num
 end
 
 -- Scales a table of pixel values from a 96 DPI baseline to the interface density.  Values are rounded to whole pixels
--- for layout, except for the keys in Exact, which are drawing values such as stroke widths and corner radii.
+-- for layout, except for the keys in Exact, which are drawing values such as stroke widths and corner radii.  The keys
+-- in Unscaled are not pixel values, e.g. multipliers of the font height, and are left as they are.
 
-thunk scaledPixels(Values:table!, Exact:table):table
+thunk scaledPixels(Values:table!, Exact:table, Unscaled:table):table
    scale = gui.interface.dpi / 96
    for k, v in Values do
+      if Unscaled and Unscaled[k] then continue end
       Values[k] = (Exact and Exact[k]) ? v * scale : math.round(v * scale)
    end
    return Values
 end
 
--- The configured dpi replaces the detected display density, acting as a scale override for the interface.
+   -- The configured dpi replaces the detected display density, acting as a scale override for the interface.
 
-gui.interface = table.merge(glStyleDefaults.interface, glStyle.interface)
-if not glStyle.interface.dpi then gui.interface.dpi = displayDensity() end -- Resolved on first read
+   gui.interface = table.merge(glStyleDefaults.interface, glStyle.interface)
 
-gui.sizing = { -- Universal sizing information, scaled to the interface density on first read
-   window = scaledPixels(table.merge(glStyleDefaults.sizing.window, glStyle.sizing.window)),
-   widget = scaledPixels(table.merge(glStyleDefaults.sizing.widget, glStyle.sizing.widget),
-      { edgeWidth = true, edgeRound = true })
-}
+   if not glStyle.interface.dpi then
+      gui.interface.dpi = displayDensity() -- Resolved on first read
+   end
 
-local glFontDefaults:table -- The unscaled font roles, assigned by fonts_data
+   gui.sizing = { } -- Universal sizing information, scaled to the interface density on first read
+
+   gui.sizing.window = scaledPixels(table.merge(glStyleDefaults.sizing.window, glStyle.sizing.window))
+
+   gui.sizing.widget = scaledPixels(table.merge(glStyleDefaults.sizing.widget, glStyle.sizing.widget),
+      { edgeWidth = true, edgeRound = true },
+      { height = true } -- A multiplier of the line spacing, which already follows the density
+   )
+
+   local glFontDefaults:table -- The unscaled font roles, assigned by fonts_data
 
    import './palettes_data'
    import './fills_data'
@@ -962,11 +1038,11 @@ function withPaletteColours(Palette:table!, Overrides:table, Name:str!):table
       for key, value in colours do
          path = f'style.paletteColours.{Name}.{scheme}.{key}'
          if not variant or (variant[key] is nil) then
-            print(f'Style configuration: "{path}" is not a colour of the palette and has been ignored.')
+            msg(2, f'Style configuration: "{path}" is not a colour of the palette and has been ignored.')
          elseif (value is 'none') or (mVec.ReadPainter(nil, value, glPainter) is ERR_Okay) then
             variant[key] = value
          else
-            print(f'Style configuration: invalid colour for "{path}" has been ignored.')
+            msg(2, f'Style configuration: invalid colour for "{path}" has been ignored.')
          end
       end
    end
@@ -984,7 +1060,7 @@ function validIconSpec(Spec:str, Path:str!):str
       gui.parseFill(Spec)
       return Spec
    except ex
-      print(f'Style configuration: invalid spec for "{Path}" has been ignored: {ex.message}')
+      msg(2, f'Style configuration: invalid spec for "{Path}" has been ignored: {ex.message}')
    end
    return nil
 end
@@ -1006,7 +1082,7 @@ end
          gui.paletteTheme = gui.palettes[palette_name][palette_theme] ? palette_theme : 'light'
          gui.palette      = withPaletteColours(gui.palettes[palette_name], glStyle.paletteColours[palette_name], palette_name)
       elseif palette_name then
-         print(f'Style configuration: unknown palette "{palette_name}" has been ignored.')
+         msg(2, f'Style configuration: unknown palette "{palette_name}" has been ignored.')
       end
    end
 
@@ -1018,50 +1094,6 @@ function iconTheme(Default:str!, Fill:any, Effects:any):str
    spec = Fill ?? Default
    if Effects?? then return f'{spec} {Effects}' end
    return spec
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Font definition keys that select the font.  A role states them in its face, size and style, so they are ignored in
--- its fontDef.
-
-FONT_SELECTION_KEYS <const> = { face = true, size = true, style = true, weight = true, italic = true, width = true }
-
--- A theme text style for a font role, filled with Fill.  The role's fontDef holds further font definition keys, such as
--- shadow, glow and spacing.  Its fill replaces Fill, and the other keys are applied through the VectorText mergeStyle
--- field, which keeps the face, size and style of the role.  Extra overrides the result.
-
-function roleText(Role:str!, Fill:any, Extra:table):table
-   font = gui.fonts[Role]
-   text = { fill = Fill, face = font.face, fontSize = string.format('%.2fpt', font.size), fontStyle = font.style }
-
-   if font.fontDef?? then
-      err, def_keys = mVec.ReadTextStyle(font.fontDef)
-      if err is ERR_Okay then
-         merge = array<str>
-         for key, value in def_keys do
-            if key is 'fill' then
-               text.fill = value
-            elseif not (key in FONT_SELECTION_KEYS) then
-               merge.push(f'{key}={value}')
-            end
-         end
-
-         if #merge > 0 then
-            merge.sort() -- A fixed order, because table iteration order varies
-            text.mergeStyle = merge.concat('; ')
-         end
-      else
-         msg(f'Font role "{Role}" has an invalid fontDef: {font.fontDef}')
-      end
-   end
-
-   if Extra then
-      for key, value in Extra do
-         text[key] = value
-      end
-   end
-
-   return text
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1135,7 +1167,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
             stroke      = Palette.contrast,
             strokeWidth = 2
          },
-         text = roleText('page', Palette.text), -- Default colour for text drawn over 'bkgd'
+         text = table.merge({ fill = Palette.text }, gui.fonts.page), -- Default colour for text drawn over 'bkgd'
          -- The following are for text colour changes only; face is already defined by text {}
          textHighlight     = Palette.altText,  -- Colour for 'text' during user hover
          textHighlightBkgd = Palette.contrast, -- Background fill for 'text' during user hover
@@ -1148,14 +1180,14 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          fill = 'rgb(255 255 255 / .5)',
       },
       list = {
-         text = roleText('list', Palette.text),
+         text              = table.merge({ fill = Palette.text }, gui.fonts.list),
          textHighlight     = Palette.altText,  -- Colour for 'text' during user hover
          textHighlightBkgd = Palette.contrast, -- Background fill for 'text' during user hover
          textSelect        = Palette.altText,  -- Colour for 'text' when selected
          textSelectBkgd    = Palette.prime     -- Background fill for 'text' when selected
       },
       widget = { -- Non-input widgets only (exc. checkbox, combobox, etc.)
-         text        = roleText('widget', Palette.text),
+         text        = table.merge({ fill = Palette.text }, gui.fonts.widget), -- Widget labels
          bkgd        = { fill = Palette.prime, opacity = 1 },
          stroke      = { stroke = Palette.edge },
          strokeFocus = { stroke = Palette.contrast },
@@ -1165,7 +1197,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
-         text      = roleText('widget', Palette.text),
+         text      = table.merge({ fill = Palette.text }, gui.fonts.widget),
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
@@ -1182,18 +1214,18 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          iconHighlight = Icon('fill(pearl)')
       },
       icon = {
-         text = roleText('icon', Palette.text),
+         text = table.merge({ fill = Palette.text }, gui.fonts.icon),
          effect = Icon('fill(pearl)')
       },
       input = { -- Used by checkbox, input, combobox
          bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          focus = { stroke = Palette.contrast },
-         text  = roleText('input', Palette.text),
+         text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
       },
       menubar = {
          bkgd      = { fill = Palette.shade },
-         text      = roleText('menu', Palette.text),
+         text      = table.merge({ fill = Palette.text }, gui.fonts.menu),
          highlight = { fill = Palette.contrast }
          focus     = { fill = Palette.contrast }
          -- 'menu' item reference is inserted post-construction
@@ -1202,14 +1234,14 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          bkgd      = { fill = Palette.bkgd }, -- VectorRectangle
          border    = { stroke = Palette.inverse, opacity = 0.5 }, -- VectorRectangle
          highlight = { fill = Palette.contrast }, -- VectorRectangle
-         text      = roleText('menu', Palette.text), -- VectorText
+         text      = table.merge({ fill = Palette.text }, gui.fonts.menu), -- VectorText
          icon      = Icon('fill(pearl)')
       },
       panel = {
          bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round },
          header        = { fill = Palette.surround },
-         title         = roleText('small', Palette.text, { fontStyle = 'semi bold' }),
-         meta          = roleText('small', Palette.text, { opacity = 0.7 }),
+         title         = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, style = 'semi bold' },
+         meta          = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, opacity = 0.7 },
          metaHighlight = { fill = Palette.contrast }, -- Hover style of a clickable meta
          divider       = { fill = Palette.edge },
          headerPad     = gui.sizing.widget.margin * 2, -- Inset of the header content from the panel edges
@@ -1221,7 +1253,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          thumbFill     = { fill = Palette.handle, stroke = 'none', roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
-         text          = roleText('widget', Palette.text),
+         text          = table.merge({ fill = Palette.text }, gui.fonts.widget),
          tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
          disabled      = { opacity = 0.5 }
       },
@@ -1250,7 +1282,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
       },
       window = {
          bkgd   = { fill = Palette.neutral },
-         text   = roleText('window', Palette.text),
+         text   = table.merge({ fill = Palette.text }, gui.fonts.window),
          stroke = { stroke = modifyAlpha(Palette.text, 0.25), strokeWidth = 2 }, -- Stroking of direct lines/paths (not widget edges)
          icon   = Icon('fill(pearl)'),
          tabPing  = { stroke = 'rgb(220 30 30 / 0.85)', strokeWidth = gui.rpixel('2dp') } -- Tab ping ring
@@ -1277,7 +1309,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
             stroke = Palette.contrast,
             strokeWidth = 2
          },
-         text = roleText('page', Palette.text),
+         text              = table.merge({ fill = Palette.text }, gui.fonts.page),
          textHighlight     = Palette.altText,
          textHighlightBkgd = Palette.contrast,
          textSelect        = Palette.altText,
@@ -1289,14 +1321,14 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          fill = 'rgb(0 0 0 / .5)',
       },
       list = {
-         text = roleText('list', Palette.text),
+         text              = table.merge({ fill = Palette.text }, gui.fonts.list),
          textHighlight     = Palette.altText,
          textHighlightBkgd = Palette.contrast,
          textSelect        = Palette.altText,
          textSelectBkgd    = Palette.prime
       },
       widget = {
-         text        = roleText('widget', Palette.altText),
+         text        = table.merge({ fill = Palette.text }, gui.fonts.widget), -- Widget labels
          bkgd        = { fill = Palette.prime, opacity = 1 },
          stroke      = { stroke = Palette.edge },
          strokeFocus = { stroke = Palette.contrast },
@@ -1306,7 +1338,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
-         text      = roleText('widget', Palette.altText),
+         text      = table.merge({ fill = Palette.altText }, gui.fonts.widget),
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
@@ -1324,18 +1356,18 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          iconHighlight = Icon('fill(pearl)')
       },
       icon = {
-         text = roleText('icon', Palette.altText),
+         text = table.merge({ fill = Palette.altText }, gui.fonts.icon),
          effect = Icon('fill(carbon)')
       },
       input = {
          bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          focus = { stroke = Palette.contrast },
-         text  = roleText('input', Palette.text),
+         text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
       },
       menubar = {
          bkgd      = { fill = Palette.inverse, },
-         text      = roleText('menu', Palette.altText),
+         text      = table.merge({ fill = Palette.altText }, gui.fonts.menu),
          highlight = { fill = Palette.contrast }
          focus     = { fill = Palette.contrast }
          -- 'menu' item reference is inserted post-construction
@@ -1344,17 +1376,17 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          bkgd      = { fill = Palette.inverse },
          border    = { stroke  = Palette.neutral, opacity = 0.5 },
          highlight = { fill = Palette.contrast },
-         text      = roleText('menu', Palette.altText),
+         text      = table.merge({ fill = Palette.altText }, gui.fonts.menu),
          icon      = Icon('fill(pearl)')
       },
       panel = {
          bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round },
          header        = { fill = Palette.surround },
-         title         = roleText('small', Palette.text, { fontStyle = 'bold' }),
-         meta          = roleText('small', Palette.text, { opacity = 0.9 }),
+         title         = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, style = 'bold' },
+         meta          = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, opacity = 0.9 },
          metaHighlight = { fill = Palette.contrast },
          divider       = { fill = Palette.edge },
-         headerPad     = gui.fonts.small.size,
+         headerPad     = math.round(gui.fonts.small.size * 0.75), -- Three quarters of an em
          metaGap       = gui.sizing.widget.labelGap
       },
       slider = {
@@ -1364,7 +1396,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
-         text          = roleText('widget', Palette.text),
+         text          = table.merge({ fill = Palette.text }, gui.fonts.widget),
          disabled      = { opacity = 0.5 }
       },
       scrollbar = {
@@ -1386,7 +1418,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
       },
       window = {
          bkgd   = { fill = Palette.neutral },
-         text   = roleText('window', Palette.text),
+         text   = table.merge({ fill = Palette.text }, gui.fonts.window),
          stroke = { stroke = modifyAlpha(Palette.inverse, 0.5), strokeWidth = gui.rpixel('2px') },
          icon   = Icon('fill(carbon)'),
          tabPing  = { stroke = Palette.prime, strokeWidth = gui.rpixel('3dp') } -- Tab ping ring

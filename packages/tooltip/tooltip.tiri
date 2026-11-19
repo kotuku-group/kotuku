@@ -117,13 +117,13 @@ gui.tooltip = function(Options:table)
          else -> gui.fonts.small
       end
 
-      pad = font.size
+      pad = math.round(font.size * 0.75)
 
       &text = &viewport.new('VectorText', table.merge({
          x         = pad,
          face      = font.face,
          fontStyle = font.style,
-         fontSize  = string.format('%.2fpt', font.size),
+         fontSize  = font.size,
          textFlags = VTXF_RASTER
       }, theme.text))
 

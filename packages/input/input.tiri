@@ -88,11 +88,6 @@ gui.input = function(Options)
    assert(self.maskMode is 'commit' or self.maskMode is 'keystroke', 'maskMode must be "commit" or "keystroke".')
    assert(not (self.multiline and Options.secret), 'multiline cannot be combined with secret.')
 
-   -- Change the active state of the input box to disabled or enabled
-
-   -- The applied theme is layered as base.input <- Options.theme <- the override from setTheme().  It is rebuilt
-   -- whenever the base theme or the override changes.
-
    override = nil -- Per-instance override from setTheme()
 
    function buildTheme()
@@ -158,7 +153,11 @@ gui.input = function(Options)
          &placeholder?.fill = input_theme.text.fill
       end
 
-      if &labelText and theme.window.text.fill then &labelText.fill = theme.window.text.fill end
+      if &labelText then -- The label is drawn with widget.text; its size is kept so the layout does not move
+         size = &labelText.fontSize
+         &labelText.fontStyle = gui.fontStyle(theme.widget.text)
+         &labelText.fontSize = f'{size}px'
+      end
 
       if &scrollbar then
          &scrollbar.setTheme(scrollbarTheme())
@@ -199,11 +198,11 @@ gui.input = function(Options)
    -- repeated below the last line.  The scroll position is kept unless the page has become too short for it.
 
    function fitPage()
-      view_h = &_textView.height
-      _, _, top = &text.mtGetCaretBounds(0, 0)
+      view_h     = &_textView.height
+      _, _, top  = &text.mtGetCaretBounds(0, 0)
       _, _, y, h = &text.mtGetCaretBounds(&text.totalLines - 1, 0x7fffffff)
-      height = math.max(view_h, math.ceil(y + h + top))
-      min_y = math.min(0, view_h - height)
+      height     = math.max(view_h, math.ceil(y + h + top))
+      min_y      = math.min(0, view_h - height)
       if (height != &page.height) or (&page.y < min_y) then
          &page.height = height
          if &page.y < min_y then &page.y = min_y end
@@ -215,12 +214,13 @@ gui.input = function(Options)
    -- page stays on whole pixels so that the text remains sharp.
 
    function revealCaret()
-      view_h = &_textView.height
-      _, _, pad = &text.mtGetCaretBounds(0, 0)
+      view_h     = &_textView.height
+      _, _, pad  = &text.mtGetCaretBounds(0, 0)
       _, _, y, h = &text.mtGetCaretBounds(-1, -1)
-      top = y - pad
-      bottom = y + h + pad
-      view_top = -&page.y
+      top        = y - pad
+      bottom     = y + h + pad
+      view_top   = -&page.y
+
       if top < view_top then
          &page.y = -math.max(0, math.floor(top))
       elseif bottom > view_top + view_h then
@@ -228,6 +228,7 @@ gui.input = function(Options)
       else
          return
       end
+
       &_textClip.acDraw()
    end
 
@@ -235,7 +236,9 @@ gui.input = function(Options)
 
    function wrapText()
       inline_size = math.max(1, &_textView.width - (TEXT_PAD * 2))
-      if &text.inlineSize != inline_size then &text.inlineSize = inline_size end
+      if &text.inlineSize != inline_size then
+         &text.inlineSize = inline_size
+      end
       fitPage()
    end
 
@@ -243,14 +246,16 @@ gui.input = function(Options)
    -- later lost-focus activation compares against the text that the user saw.
 
    self.setText = function(Text:str!)
-      &text?.string = Text
-      &_currentText = Text
+      &text?.string   = Text
+      &_currentText   = Text
       &_lastGoodInput = Text
       &hash = textHash(Text)
+
       if &page then
          &page.y = 0
          fitPage()
       end
+
       checkPlaceholder()
       &viewport.acDraw()
    end
@@ -317,10 +322,10 @@ gui.input = function(Options)
       buildTheme()
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
-      font_max_height, font_height = gui.getFontHeight(gui.fonts.default)
-      line_height = math.floor(font_max_height * 1.4) -- The height of a single-line box
-      default_height = line_height
-      if &multiline then default_height += math.ceil(font_max_height * 3) end -- Estimated; corrected for the text
+      LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight(gui.fonts.default)
+      LINE_HEIGHT <const> = math.floor(LINE_SPACING * gui.sizing.widget.height) -- The height of a single-line box
+      default_height = LINE_HEIGHT
+      if &multiline then default_height += math.ceil(LINE_SPACING * 3) end -- Estimated; corrected for the text
 
       vps = { -- Viewport settings
          name    = 'vp_input',
@@ -355,14 +360,14 @@ gui.input = function(Options)
          if &_label.stacked and not Options.height then &viewport.height = height end
       end
 
-      box_height = &viewport.height - box.y - box.yOffset
+      BOX_HEIGHT <const> = &viewport.height - box.y - box.yOffset
 
       &inputViewport = &viewport.new('VectorViewport', box)
 
       -- A side label is centred on the first line of a multi-line box.
 
       if &_label then
-         label_height = &multiline ? line_height : box_height
+         label_height = &multiline ? LINE_HEIGHT : BOX_HEIGHT
          &_label.place(&viewport.width, &viewport.height, box.y, label_height)
          &_label.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
             &_label.place(Width, Height, box.y, label_height)
@@ -370,6 +375,7 @@ gui.input = function(Options)
       end
 
       edge = (input_theme.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
+
       &bkgd = &inputViewport.new('VectorRectangle', table.merge({
          x = edge, y = edge, xOffset = edge, yOffset = edge
       }, input_theme.bkgd))
@@ -384,8 +390,12 @@ gui.input = function(Options)
       -- The text is centred vertically in a single-line box.  A multi-line box places its first line where a
       -- default single-line box would.
 
-      text_y = math.round(font_height + math.floor(((&multiline ? line_height : box_height) - font_height -
-         (input_theme.bkgd.strokeWidth * 2)) * 0.5))
+      local text_y
+      if &multiline then
+         text_y = math.round(FONT_HEIGHT + math.floor((LINE_HEIGHT - FONT_HEIGHT - (input_theme.bkgd.strokeWidth * 2)) * 0.5))
+      else
+         text_y = math.round((BOX_HEIGHT + ASCENT) * 0.5)
+      end
 
       -- In multi-line mode, the text is drawn on a page that scrolls within a view.  The scrollbar narrows the view
       -- while the text overflows it.
@@ -397,8 +407,9 @@ gui.input = function(Options)
          })
 
          &page = &_textView.new('VectorViewport', {
-            name = 'vp_input_page', x = 0, y = 0, width = '100%', height = box_height - (clip_inset * 2)
+            name = 'vp_input_page', x = 0, y = 0, width = '100%', height = BOX_HEIGHT - (clip_inset * 2)
          })
+
          text_host = &page
 
          -- The scrollbar styling is an override rather than the theme option, because the section that it applies to
@@ -407,47 +418,50 @@ gui.input = function(Options)
          &scrollbar = gui.scrollbar({
             target = &inputViewport, view = &_textView, page = &page, direction = 'vertical'
          })
+
          &scrollbar.setTheme(scrollbarTheme())
+
          edge = input_theme.bkgd.strokeWidth ?? 0
          &scrollbar.vbar.viewport.{ y = edge, yOffset = edge, xOffset = edge }
       end
 
       if Options.placeholder then
-         &placeholder = text_host.new('VectorText', table.merge({
+         &placeholder = text_host.new('VectorText', {
             name      = 'vt_placeholder',
             x         = TEXT_PAD,
             y         = text_y,
+            fontStyle = gui.fontStyle(input_theme.text),
             opacity   = 0.5,
             string    = Options.placeholder,
             lineLimit = 1
-         }, input_theme.text))
+         })
 
          if Options.text?? then
             &placeholder.visibility = VIS_HIDDEN
          end
       end
 
-      &text = text_host.new('VectorText', table.merge({
-         name      = 'vt_input',
-         x         = TEXT_PAD,
-         y         = text_y,
-         face      = gui.fonts.input.face, -- Fallbacks; theme.text normally defines the font
-         fontSize  = string.format('%.2fpt', gui.fonts.input.size),
-         fontStyle = gui.fonts.input.style,
-         string    = Options.text,
-         lineLimit = &multiline ? 0 : 1,
-         textFlags = (function()
+      &text = text_host.new('VectorText', {
+         name         = 'InputBodyText',
+         x            = TEXT_PAD,
+         y            = text_y,
+         fontStyle    = gui.fontStyle(input_theme.text),
+         string       = Options.text,
+         lineLimit    = &multiline ? 0 : 1,
+         onChange     = textChanged,
+         onCursorMove = cursorMoved,
+         textFlags    = (function()
             flags = VTXF_EDITABLE -- Required at init for VectorText to support editing; readOnly is applied after
             if Options.secret then flags = flags | VTXF_SECRET end
+
             if &multiline then
                -- Keep caret geometry available when readOnly clears EDITABLE; the page does the scrolling.
                flags = flags | VTXF_NO_AUTO_OFFSET | VTXF_SELECTABLE
             end
+
             return flags
-         end)(),
-         onChange  = textChanged,
-         onCursorMove = cursorMoved
-      }, input_theme.text))
+         end)()
+      })
 
       if &multiline then
          -- The default height fits four lines of the text's own font, with the first line's top padding repeated
@@ -456,11 +470,12 @@ gui.input = function(Options)
          if not Options.height then
             _, _, top, line_h = &text.mtGetCaretBounds(0, 0)
             needed = math.ceil((top * 2) + (line_h * 4)) + (clip_inset * 2)
-            &viewport.height += needed - box_height
+            &viewport.height += needed - BOX_HEIGHT
             &page.height = needed - (clip_inset * 2)
          end
 
          wrapText()
+
          &page.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height) -- Reports the view
             wrapText()
          end

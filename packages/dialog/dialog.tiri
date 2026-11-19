@@ -275,15 +275,14 @@ gui.dialog.message = function(Options:table!)
       image_size = &image ? ICON_SIZE : 0
       column_x = &window.margins.left + (&image ? ICON_SIZE + ICON_GAP : 0)
 
-      &messageText = &viewport.new('VectorText',
-         table.merge({
-            string   = &message,
-            wrapMode = VTW_ANYWHERE, -- Long words such as file paths are broken to fit the column
-            x        = column_x,
-            y        = 0,
-            textFlags = VTXF_SELECTABLE
-         }, theme.window.text)
-      )
+      &messageText = &viewport.new('VectorText', {
+         string    = &message,
+         wrapMode  = VTW_ANYWHERE, -- Long words such as file paths are broken to fit the column
+         x         = column_x,
+         y         = 0,
+         fontStyle = gui.fontStyle(theme.window.text),
+         textFlags = VTXF_SELECTABLE
+      })
 
       em = tonumber(&messageText.fontSize) -- The font size reads back in pixels
 
