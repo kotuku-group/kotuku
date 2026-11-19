@@ -49,7 +49,7 @@ function addSlider(Label:str, Value:num, Min:num, Max:num, Step:num, Apply:func)
    })
 
    gui.slider({
-      target = glViewport, x = 16, y = glY + 20, width = 270, step = Step,
+      target = glViewport, x = 16, y = glY + 20, width = 270, step = Step, valuePos='in-max',
       min = Min, max = Max, value = Value,
       events = {
          activate = function(Position:num)

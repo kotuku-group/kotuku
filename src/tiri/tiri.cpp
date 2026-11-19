@@ -337,22 +337,22 @@ static void expunge_package_index()
                   auto hash = kt::strhash(trimmed);
                   if (hash IS HASH_TRACE_VALUE_CATEGORY)   glJitOptions |= JOF::TRACE_VALUE_CATEGORY;
                   else if (hash IS HASH_TRACE_ASSIGNMENTS) glJitOptions |= JOF::TRACE_ASSIGNMENTS;
-                  else if (hash IS HASH_TRACE_OPERATORS) glJitOptions |= JOF::TRACE_OPERATORS;
-                  else if (hash IS HASH_TRACE_REGISTERS) glJitOptions |= JOF::TRACE_REGISTERS;
-                  else if (hash IS HASH_TRACE_BOUNDARY) glJitOptions |= JOF::TRACE_BOUNDARY;
-                  else if (hash IS HASH_TRACE_TOKENS)  glJitOptions |= JOF::TRACE_TOKENS;
-                  else if (hash IS HASH_TRACE_EXPECT)  glJitOptions |= JOF::TRACE_EXPECT;
-                  else if (hash IS HASH_TRACE_CFG)     glJitOptions |= JOF::TRACE_CFG;
-                  else if (hash IS HASH_TRACE_TYPES)   glJitOptions |= JOF::TRACE_TYPES;
-                  else if (hash IS HASH_DIAGNOSE)      glJitOptions |= JOF::DIAGNOSE;
-                  else if (hash IS HASH_DUMP_BYTECODE) glJitOptions |= JOF::DUMP_BYTECODE;
-                  else if (hash IS HASH_PROFILE)       glJitOptions |= JOF::PROFILE;
-                  else if (hash IS HASH_TRACE)         glJitOptions |= JOF::TRACE;
-                  else if (hash IS HASH_TOP_TIPS)      glJitOptions |= JOF::TOP_TIPS;
-                  else if (hash IS HASH_TIPS)          glJitOptions |= JOF::TIPS;
-                  else if (hash IS HASH_ALL_TIPS)      glJitOptions |= JOF::ALL_TIPS;
+                  else if (hash IS HASH_TRACE_OPERATORS)   glJitOptions |= JOF::TRACE_OPERATORS;
+                  else if (hash IS HASH_TRACE_REGISTERS)   glJitOptions |= JOF::TRACE_REGISTERS;
+                  else if (hash IS HASH_TRACE_BOUNDARY)    glJitOptions |= JOF::TRACE_BOUNDARY;
+                  else if (hash IS HASH_TRACE_TOKENS)   glJitOptions |= JOF::TRACE_TOKENS;
+                  else if (hash IS HASH_TRACE_EXPECT)   glJitOptions |= JOF::TRACE_EXPECT;
+                  else if (hash IS HASH_TRACE_CFG)      glJitOptions |= JOF::TRACE_CFG;
+                  else if (hash IS HASH_TRACE_TYPES)    glJitOptions |= JOF::TRACE_TYPES;
+                  else if (hash IS HASH_DIAGNOSE)       glJitOptions |= JOF::DIAGNOSE;
+                  else if (hash IS HASH_DUMP_BYTECODE)  glJitOptions |= JOF::DUMP_BYTECODE;
+                  else if (hash IS HASH_PROFILE)        glJitOptions |= JOF::PROFILE;
+                  else if (hash IS HASH_TRACE)          glJitOptions |= JOF::TRACE;
+                  else if (hash IS HASH_TOP_TIPS)       glJitOptions |= JOF::TOP_TIPS;
+                  else if (hash IS HASH_TIPS)           glJitOptions |= JOF::TIPS;
+                  else if (hash IS HASH_ALL_TIPS)       glJitOptions |= JOF::ALL_TIPS;
                   else if (hash IS HASH_TRACE_ON_ERROR) glJitOptions |= JOF::TRACE_ON_ERROR;
-                  else if (hash IS HASH_OFF)           glJitOptions |= JOF::DISABLE_JIT;
+                  else if (hash IS HASH_OFF)            glJitOptions |= JOF::DISABLE_JIT;
                   else log.warning("Unknown JIT option \"%s\" specified.", trimmed.c_str());
                }
 

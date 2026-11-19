@@ -674,7 +674,8 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
    }
 
    if ((Self->VectorClip.bottom <= Self->VectorClip.top) or (Self->VectorClip.right <= Self->VectorClip.left)) {
-      return log.warning(ERR::InvalidDimension);
+      // This is a common error, and typically triggers from resizing to small coverage areas.
+      return ERR::InvalidDimension;
    }
 
    return ERR::Okay;
