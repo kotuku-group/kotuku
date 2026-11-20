@@ -323,6 +323,8 @@ struct NameRef {
    AssignmentTargetResolution assignment_resolution = AssignmentTargetResolution::Unresolved;
    uint16_t slot = 0;
    mutable StaticBindingID binding_id{};
+   bool sees_initial_forward_function = false;
+   bool sees_completed_function = false;
 };
 
 struct LiteralValue {
@@ -673,6 +675,7 @@ struct FunctionExprPayload {
    FunctionContextBinding context;     // function[], function[X] or function[<weak> X]
    mutable FunctionReturnTypes return_types{}; // Declared, validated inferred or advisory result metadata
    mutable StaticCallableHandle callable{};
+   const FunctionExprPayload *forward_declaration = nullptr; // Earlier local declaration sharing this binding
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function
 
@@ -690,6 +693,7 @@ struct FunctionExprPayload {
 
    // True if the function inherits the caller's context during entity member dispatch.
    [[nodiscard]] bool is_ordinary() const { return context.kind != FunctionContextKind::None; }
+   [[nodiscard]] bool is_forward_declaration() const;
 
    ~FunctionExprPayload();
 };

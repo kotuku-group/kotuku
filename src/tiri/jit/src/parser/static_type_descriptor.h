@@ -129,6 +129,7 @@ struct StaticBindingDescriptor {
    GCstr *name = nullptr;
    const ExprNode *initialiser = nullptr;
    const FunctionExprPayload *function = nullptr;
+   const FunctionExprPayload *completed_function = nullptr;
    StaticValueHandle value{};
    StaticValueHandle analysed_value{};
    StaticCallableHandle callable{};
@@ -142,6 +143,9 @@ struct StaticBindingDescriptor {
    bool is_parameter = false;
    bool is_variant = false;
    bool captured = false;
+   bool has_captured_write = false;
+   bool assigned_before_completion = false;
+   bool assigned_after_completion = false;
    bool is_import_namespace = false;
    bool resolving = false;
 };

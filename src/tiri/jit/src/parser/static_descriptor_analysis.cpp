@@ -199,6 +199,18 @@ private:
       return id;
    }
 
+   void discover_local_function(Identifier &Name, FunctionExprPayload *Function)
+   {
+      StaticBindingID completion{};
+      if (Function and Function->forward_declaration) {
+         // The binding can hold either closure. Their inferred results and annotations may differ.
+         this->catalogue_.binding(Name.binding_id).immutable = false;
+         if (not Function->is_forward_declaration()) completion = Name.binding_id;
+      }
+      else this->declare(Name, nullptr, 0, Function);
+      if (Function) this->discover_function(*Function, completion);
+   }
+
    void attach_assignment_write(NameRef &Reference)
    {
       AssignmentTargetResolution category = Reference.assignment_resolution;
@@ -237,7 +249,13 @@ private:
          return;
       }
       if (this->validation_only_) return;
-      if (expected_upvalue) binding.captured = true;
+      // A captured write can run through a closure on either side of the definition.
+      if (expected_upvalue) {
+         binding.captured = true;
+         binding.has_captured_write = true;
+      }
+      else if (binding.completed_function) binding.assigned_after_completion = true;
+      else binding.assigned_before_completion = true;
       binding.immutable = false;
       this->note_binding_use(Reference.binding_id, Reference.identifier.span);
    }
@@ -256,6 +274,11 @@ private:
       if (not id) return;
 
       auto &binding = this->catalogue_.binding(id);
+      Reference.sees_completed_function = bool(binding.completed_function);
+      // A nested function can read this slot after the definition has replaced the stub.
+      Reference.sees_initial_forward_function = not binding.completed_function and
+         not binding.assigned_before_completion and binding.function_depth IS this->function_depth_ and
+         binding.function and binding.function->is_forward_declaration();
       if (binding.function_depth < this->function_depth_) binding.captured = true;
       this->note_binding_use(id, Reference.identifier.span);
    }
@@ -309,10 +332,12 @@ private:
       return std::get<NameRef>(Function.context.reference->data).binding_id;
    }
 
-   void discover_function(FunctionExprPayload &Function)
+   void discover_function(FunctionExprPayload &Function, StaticBindingID Completion = {})
    {
       // The context binding is evaluated by the enclosing function when the closure is created.
       if (Function.context.reference) this->discover_expression(*Function.context.reference);
+
+      if (Completion) this->catalogue_.binding(Completion).completed_function = &Function;
 
       StaticBindingID weak_binding = this->validation_only_ ? StaticBindingID{} : weak_binding_identifier(Function);
       if (weak_binding) this->weak_binding_checks_.push_back(WeakBindingCheck{ .binding = weak_binding });
@@ -599,16 +624,18 @@ private:
          }
          case AstNodeKind::LocalFunctionStmt: {
             auto &payload = std::get<LocalFunctionStmtPayload>(Statement.data);
-            this->declare(payload.name, nullptr, 0, payload.function.get());
-            if (payload.function) this->discover_function(*payload.function);
+            this->discover_local_function(payload.name, payload.function.get());
             break;
          }
          case AstNodeKind::FunctionStmt: {
             auto &payload = std::get<FunctionStmtPayload>(Statement.data);
             bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1;
-            if (local) this->declare(payload.name.segments.front(), nullptr, 0, payload.function.get());
-            else if (payload.name.is_explicit_global and not payload.name.segments.empty() and
-                     payload.name.segments.front().symbol) {
+            if (local) {
+               this->discover_local_function(payload.name.segments.front(), payload.function.get());
+               break;
+            }
+            if (payload.name.is_explicit_global and not payload.name.segments.empty() and
+                payload.name.segments.front().symbol) {
                this->global_names_.push_back(payload.name.segments.front().symbol);
                if (payload.name.segments.size() IS 1) {
                   this->declare_global_callable(payload.name.segments.front().symbol, payload.function.get());
@@ -907,12 +934,23 @@ private:
          else if (initialiser.kind IS AstNodeKind::IdentifierExpr) {
             const auto &reference = std::get<NameRef>(initialiser.data);
             binding.alias_of = reference.binding_id;
-            callable = this->resolve_binding_callable(reference.binding_id);
+            callable = this->resolve_reference_callable(reference);
          }
       }
       binding.resolving = false;
       binding.callable = callable;
       return callable;
+   }
+
+   StaticCallableHandle resolve_reference_callable(const NameRef &Reference)
+   {
+      if (Reference.binding_id) {
+         const auto &binding = this->catalogue_.binding(Reference.binding_id);
+         if (const auto *function = resolve_forward_function(Reference, binding)) {
+            return this->function_callable(*function, Reference.binding_id);
+         }
+      }
+      return this->resolve_binding_callable(Reference.binding_id);
    }
 
    void resolve_all_callables()
@@ -926,12 +964,17 @@ private:
    {
       for (size_t id = 1; id < this->catalogue_.binding_count(); ++id) {
          auto &binding = this->catalogue_.binding(StaticBindingID(id));
-         if (binding.callable) {
-            auto &callable = this->catalogue_.callable(binding.callable);
-            if (callable.function) callable.results = this->catalogue_.add_results(
-               this->function_results(*callable.function));
+         auto initial = binding.callable;
+         if (binding.function and binding.function->is_forward_declaration()) initial = binding.function->callable;
+         auto completed = binding.completed_function ? binding.completed_function->callable : StaticCallableHandle{};
+         for (auto handle : { initial, completed }) {
+            if (handle) {
+               auto &callable = this->catalogue_.callable(handle);
+               if (callable.function) callable.results = this->catalogue_.add_results(
+                  this->function_results(*callable.function));
+            }
          }
-         else if (binding.immutable and binding.initialiser and
+         if (not initial and not completed and binding.immutable and binding.initialiser and
              binding.initialiser->kind IS AstNodeKind::CallExpr) {
             const auto &call = std::get<CallExprPayload>(binding.initialiser->data);
             if (call.result_type IS TiriType::Func and call.struct_def) {
@@ -1016,7 +1059,7 @@ private:
          }
          else if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
             const auto &reference = std::get<NameRef>(direct->callable->data);
-            StaticCallableHandle resolved = this->resolve_binding_callable(reference.binding_id);
+            StaticCallableHandle resolved = this->resolve_reference_callable(reference);
             if (resolved) Call.callable = resolved;
             else if (not reference.binding_id) {
                auto global = this->global_functions_.find(reference.identifier.symbol);
@@ -3198,6 +3241,16 @@ private:
 };
 
 } // namespace
+
+const FunctionExprPayload * resolve_forward_function(const NameRef &Reference, const StaticBindingDescriptor &Binding)
+{
+   if (Binding.has_captured_write) return nullptr;
+   if (Reference.sees_completed_function and not Binding.assigned_after_completion) {
+      return Binding.completed_function;
+   }
+   if (Reference.sees_initial_forward_function) return Binding.function;
+   return nullptr;
+}
 
 void discover_static_bindings(ParserContext &Context, BlockStmt &Module)
 {

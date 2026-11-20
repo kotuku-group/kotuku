@@ -5,6 +5,7 @@
 #include "ast/nodes.h"
 #include "import_interface.h"
 #include "parser_context.h"
+#include "static_descriptor_analysis.h"
 #include "static_type_descriptor.h"
 
 #include <algorithm>
@@ -339,9 +340,14 @@ const FunctionExprPayload * function_expression(const ExprNode *Expression, Pars
    if (not Expression) return nullptr;
    if (Expression->kind IS AstNodeKind::FunctionExpr) return &std::get<FunctionExprPayload>(Expression->data);
    if (Expression->kind != AstNodeKind::IdentifierExpr) return nullptr;
-   StaticBindingID binding_id = std::get<NameRef>(Expression->data).binding_id;
+   const auto &reference = std::get<NameRef>(Expression->data);
+   StaticBindingID binding_id = reference.binding_id;
    if (not binding_id or binding_id.raw() >= Context.descriptors().binding_count()) return nullptr;
-   return Context.descriptors().binding(binding_id).function;
+   const auto &binding = Context.descriptors().binding(binding_id);
+   if (binding.function and binding.function->is_forward_declaration()) {
+      return resolve_forward_function(reference, binding);
+   }
+   return binding.function;
 }
 
 //********************************************************************************************************************

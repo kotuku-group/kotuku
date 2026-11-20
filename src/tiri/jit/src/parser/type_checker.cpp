@@ -27,9 +27,19 @@ void TypeCheckScope::declare_local(GCstr *Name, const InferredType &Type, Source
    this->variables_.push_back(info);
 }
 
-void TypeCheckScope::declare_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location)
+void TypeCheckScope::declare_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location,
+   StaticBindingID Binding)
 {
    if (not Function) return;
+
+   if (Function->forward_declaration) {
+      for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
+         if (it->function IS Function->forward_declaration) {
+            it->function = Function;
+            return;
+         }
+      }
+   }
 
    VariableInfo info;
    info.name = Name;
@@ -38,6 +48,7 @@ void TypeCheckScope::declare_function(GCstr *Name, const FunctionExprPayload *Fu
    info.is_parameter = false;
    info.is_used = false;
    info.function = Function;
+   info.binding_id = Binding;
    this->variables_.push_back(info);
 }
 
@@ -67,10 +78,10 @@ std::optional<InferredType> TypeCheckScope::lookup_local_type(GCstr *Name) const
    return std::nullopt;
 }
 
-const FunctionExprPayload* TypeCheckScope::lookup_function(GCstr *Name) const
+const FunctionExprPayload* TypeCheckScope::lookup_function(GCstr *Name, StaticBindingID Binding) const
 {
    for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
-      if (it->name IS Name and it->function) return it->function;
+      if (it->name IS Name and it->function and (not Binding or it->binding_id IS Binding)) return it->function;
    }
    return nullptr;
 }

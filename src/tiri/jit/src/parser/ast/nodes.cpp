@@ -683,6 +683,11 @@ AssignmentStmtPayload::~AssignmentStmtPayload() = default;
 LocalDeclStmtPayload::~LocalDeclStmtPayload() = default;
 GlobalDeclStmtPayload::~GlobalDeclStmtPayload() = default;
 ExternDeclStmtPayload::~ExternDeclStmtPayload() = default;
+bool FunctionExprPayload::is_forward_declaration() const
+{
+   return this->body and this->body->statements.empty();
+}
+
 LocalFunctionStmtPayload::~LocalFunctionStmtPayload() = default;
 FunctionStmtPayload::~FunctionStmtPayload() = default;
 IfStmtPayload::~IfStmtPayload() = default;

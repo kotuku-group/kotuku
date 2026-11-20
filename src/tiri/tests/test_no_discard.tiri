@@ -46,6 +46,35 @@ function make():<table, num>
 end
 ]]
 
+@Test function ForwardDefinitionRetainsContract()
+   local source = [[
+function make():table end
+make()
+function call_stub() make() end
+call_stub()
+
+@NoDiscard
+function make():table return {} end
+]]
+   expect_valid(source .. 'local value = make()', 'stored result from a completed forward declaration')
+   expect_no_discard_error(source .. 'make()', 'Result 1', 'discarded result from a completed forward declaration')
+   expect_no_discard_error(source .. 'function call_definition() make() end', 'Result 1',
+      'discarded result from a captured forward definition')
+   expect_no_discard_error(source .. 'local make_alias = make\nmake_alias()', 'Result 1',
+      'discarded result from an alias of a completed forward declaration')
+
+   expect_valid([[
+function make():table end
+function replace()
+   make = function():table return {} end
+end
+@NoDiscard
+function make():table return {} end
+replace()
+make()
+]], 'a captured assignment can replace the annotated closure')
+end
+
 @Test function StorageDestinationsRetainFreshResults()
    for source in values(array<str> {
       'local value = make()',

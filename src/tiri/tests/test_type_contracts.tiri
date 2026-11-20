@@ -1183,6 +1183,72 @@ end
       'An incompatible conditional definition must not bypass its forward declaration')
 end
 
+@Test function LocalCallableForwardCaptures()
+   local calls = 0
+   function close_editor(Force:bool) end
+
+   function confirm_close():func
+      return function() close_editor(true) end
+   end
+
+   local feedback = confirm_close()
+   local empty_handler = close_editor
+   feedback()
+   assert(calls is 0, 'A call before the definition must run the empty body')
+
+   do
+      function close_editor(Force:str) calls += 10 end
+      close_editor('nested')
+   end
+   feedback()
+   assert(calls is 10, 'A nested declaration must leave the outer forward binding alone')
+
+   function close_editor(Force:bool)
+      assert(Force is true, 'The callback must pass its argument to the definition')
+      calls++
+   end
+   feedback()
+   empty_handler(true)
+   assert(calls is 11, 'The callback must see the new definition and a copied function must keep the empty body')
+
+   local function explicit_forward():num end
+   local function call_explicit():num return explicit_forward() end
+   local function explicit_forward():num return 42 end
+   assert(call_explicit() is 42, 'An explicit local definition must also update captured references')
+
+   local function ordinary():num return 1 end
+   local function call_ordinary():num return ordinary() end
+   local function ordinary():num return 2 end
+   assert(call_ordinary() is 1 and ordinary() is 2, 'An ordinary redeclaration must still create a new local')
+end
+
+@Test function LocalCallableForwardUsesLexicalSignature()
+   function work(Value:num):num end
+   local methods = {}
+   function methods.work(Value:str):str return Value end
+
+   local function callback():num return work(1) end
+   assert(callback() is nil, 'The callback must initially call the stub')
+
+   function work(Value:num):num return Value end
+   assert(work(2) is 2 and callback() is 1, 'Both calls must use the local definition')
+   assert(methods.work('test') is 'test', 'The qualified method must retain its own signature')
+end
+
+@Test function CopiedForwardDeclarationRetainsSignature()
+   function work(Value:num):num end
+   local stub = work
+   work = function(Value:str):str return Value end
+   local temporary = work
+   function work(Value:num):num return Value end
+
+   local result = stub(3)
+   assert(result is nil, 'The copy must still call the empty body')
+   result = 8
+   assert(result is 8 and work(3) is 3, 'The copy must retain the declared numeric result type')
+   assert(temporary('text') is 'text', 'A copy after an assignment must use the assigned closure')
+end
+
 @Test function CompiledGlobalWriterRetainsImmutablePolicy()
    global glContractWriter:num = 1
    global glContractVariantWriter:any = 1
