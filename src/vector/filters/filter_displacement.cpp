@@ -56,9 +56,13 @@ class extDisplacementFX : public extFilterEffect {
    CMP XChannel = CMP::ALPHA, YChannel = CMP::ALPHA;
 
    extDisplacementFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
-};
 
-static double SQRT2DIV2 = sqrt(2.0) / 2.0;
+   filter_sampling sampling() const {
+      if (not std::isfinite(Scale)) return { filter_access::BOUNDED, Scale, Scale };
+      // The displacement magnitude depends on the processing dimensions themselves.  Keep the full-input margin.
+      return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED };
+   }
+};
 
 /*********************************************************************************************************************
 -ACTION-
@@ -89,8 +93,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
       uint8_t(Self->Target->ColourFormat->AlphaPos>>3)
    };
 
-   const uint8_t *input = in_bmp->Data + (in_bmp->Clip.Left * in_bmp->BytesPerPixel) +
-      (in_bmp->Clip.Top * in_bmp->LineWidth);
+   const auto input = filter_sampler(in_bmp);
    const uint8_t *mix = mix_bmp->Data + (mix_bmp->Clip.Left * 4) + (mix_bmp->Clip.Top * mix_bmp->LineWidth);
    uint8_t *dest  = Self->Target->Data + (Self->Target->Clip.Left * Self->Target->BytesPerPixel) + (Self->Target->Clip.Top * Self->Target->LineWidth);
 
@@ -104,25 +107,14 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    const int draw_height = (mix_height < height) ? mix_height : height;
    if ((draw_width < 1) or (draw_height < 1)) return ERR::Okay;
 
-   auto &client = Self->Filter->Render->ClientVector;
-   const double c_width  = client->Bounds.width();
-   const double c_height = client->Bounds.height();
-
-   double sx, sy;
-   double scale_against;
-   if (Self->Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      // Scale is relative to the bounding box dimensions
-      scale_against = sqrt((c_width * c_width) + (c_height * c_height)) * SQRT2DIV2;
-      double scale = Self->Scale / scale_against;
-      sx = scale * double(mix_width)  * (1.0 / 255.0);
-      sy = scale * double(mix_height) * (1.0 / 255.0);
-   }
-   else { // USERSPACE
-      scale_against = sqrt((c_width * c_width) + (c_height * c_height)) * SQRT2DIV2;
-      double scale = Self->Scale / scale_against;
-      sx = scale * double(mix_width)  * (1.0 / 255.0);
-      sy = scale * double(mix_height) * (1.0 / 255.0);
-   }
+   const auto &bounds = Self->Filter->Render->ClientPathBounds;
+   const auto diagonal = filter_render_context::normalised_diagonal(bounds.width(), bounds.height());
+   if ((not std::isfinite(diagonal)) or (not std::isfinite(Self->Scale))) return ERR::InvalidValue;
+   if (diagonal <= 0) return ERR::Okay;
+   const double scale = Self->Scale / diagonal;
+   const double sx = scale * double(mix_width) * (1.0 / 255.0);
+   const double sy = scale * double(mix_height) * (1.0 / 255.0);
+   if ((not std::isfinite(sx)) or (not std::isfinite(sy))) return ERR::InvalidValue;
 
    const auto x_channel = Self->XChannel;
    const auto y_channel = Self->YChannel;
@@ -135,52 +127,10 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
       else return Pixel[Type];
    };
 
-   auto get_input_pixel = [input, in_bmp, in_width, in_height](int X, int Y) -> const uint8_t * {
-      if ((X < 0) or (X >= in_width) or (Y < 0) or (Y >= in_height)) return nullptr;
-      else return input + (X * in_bmp->BytesPerPixel) + (Y * in_bmp->LineWidth);
-   };
-
-   auto sample_input_bilinear = [get_input_pixel](uint8_t *Output, double X, double Y) {
-      if ((X < 0.0) or (Y < 0.0)) {
-         ((uint32_t *)Output)[0] = 0;
-         return;
-      }
-
-      const int x0 = int(std::floor(X));
-      const int y0 = int(std::floor(Y));
-      const int x1 = x0 + 1;
-      const int y1 = y0 + 1;
-      const double tx = X - double(x0);
-      const double ty = Y - double(y0);
-
-      auto p00 = get_input_pixel(x0, y0);
-      auto p10 = get_input_pixel(x1, y0);
-      auto p01 = get_input_pixel(x0, y1);
-      auto p11 = get_input_pixel(x1, y1);
-
-      if (!p00) {
-         ((uint32_t *)Output)[0] = 0;
-         return;
-      }
-
-      for (int i=0; i < 4; i++) {
-         const double c00 = p00 ? double(p00[i]) : 0.0;
-         const double c10 = p10 ? double(p10[i]) : 0.0;
-         const double c01 = p01 ? double(p01[i]) : 0.0;
-         const double c11 = p11 ? double(p11[i]) : 0.0;
-         const double top = (c00 * (1.0 - tx)) + (c10 * tx);
-         const double bottom = (c01 * (1.0 - tx)) + (c11 * tx);
-         Output[i] = uint8_t(std::clamp(int(std::lrint((top * (1.0 - ty)) + (bottom * ty))), 0, 255));
-      }
-   };
-
-   //log.warning("W/H: %dx%d; MW/H: %dx%d; IW/H: %dx%d; CW/H: %.2fx%.2f, BBox: %d", width, height, mix_width, mix_height, in_width, in_height, c_width, c_height, Self->Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX);
-   //log.warning("X Channel: %d, Y Channel: %d; Scale: %.2f / %.2f -> %.2f,%.2f; WH: %dx%d", Self->XChannel, Self->YChannel, Self->Scale, scale_against, sx, sy, width, height);
-
    constexpr double HALF8BIT = 255.0 * 0.5;
-   const bool nearest = Self->ResampleMethod IS VSM::NEIGHBOUR;
-   const int mix_stride = mix_bmp->LineWidth, dest_stride = Self->Target->LineWidth;
-   const int mix_pixel_size = mix_bmp->BytesPerPixel, dest_pixel_size = Self->Target->BytesPerPixel;
+   const bool nearest        = Self->ResampleMethod IS VSM::NEIGHBOUR;
+   const int mix_stride      = mix_bmp->LineWidth, dest_stride = Self->Target->LineWidth;
+   const int mix_pixel_size  = mix_bmp->BytesPerPixel, dest_pixel_size = Self->Target->BytesPerPixel;
 
    auto render_rows = [&](int StartY, int EndY) {
       for (int y=StartY; y < EndY; y++) {
@@ -192,25 +142,20 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
             const double sample_x = double(x) + (sx * (double(dx) - HALF8BIT));
             const double sample_y = double(y) + (sy * (double(dy) - HALF8BIT));
 
-            if (nearest) {
-               const int cx = std::lrint(sample_x);
-               const int cy = std::lrint(sample_y);
-               if ((cx < 0) or (cx >= in_width) or (cy < 0) or (cy >= in_height)) {
-                  ((uint32_t *)d)[0] = 0;
-               }
-               else ((uint32_t *)d)[0] = ((const uint32_t *)(input + (cx * 4) + (cy * in_bmp->LineWidth)))[0];
+            if (nearest) input.sample<filter_interpolation::NEAREST>(d,
+               sample_x + in_bmp->Clip.Left, sample_y + in_bmp->Clip.Top);
+            else if ((sample_x >= 0.0) and (sample_x < double(in_width)) and
+                     (sample_y >= 0.0) and (sample_y < double(in_height))) {
+               input.sample<filter_interpolation::BILINEAR>(d,
+                  sample_x + in_bmp->Clip.Left, sample_y + in_bmp->Clip.Top);
             }
-            else if ((sample_x < 0.0) or (sample_x >= double(in_width)) or
-                     (sample_y < 0.0) or (sample_y >= double(in_height))) {
-               // The source pixel is outside of retrievable bounds
-               ((uint32_t *)d)[0] = 0;
-            }
-            else sample_input_bilinear(d, sample_x, sample_y);
+            else std::fill_n(d, 4, uint8_t(0));
          }
       }
    };
 
    // Keep small draws on the caller thread to avoid paying for a pool with little work per worker.
+
    constexpr size_t MIN_PIXELS_PER_WORKER = 32 * 1024;
    constexpr int MIN_ROWS_PER_WORKER = 4;
    const size_t thread_count = std::min({ size_t(std::thread::hardware_concurrency()),

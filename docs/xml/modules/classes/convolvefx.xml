@@ -24,7 +24,7 @@
    ) / Divisor + Bias * ALPHA(x,y)
 </pre>
 <p>Note in the above formula that the values in the kernel matrix are applied such that the kernel matrix is rotated 180 degrees relative to the source and destination images in order to match convolution theory as described in many computer graphics textbooks.</p>
-<p>Because they operate on pixels, matrix convolutions are inherently resolution-dependent.  To make resolution-independent results, an explicit value should be provided for either the <code>ResX</code> and <code>ResY</code> attributes on the parent <class name="VectorFilter">VectorFilter</class> and/or <fl>UnitX</fl> and <fl>UnitY</fl>.</p></description>
+<p>Convolution uses the device-pixel grid by default.  Set <fl>UnitX</fl> and <fl>UnitY</fl> to specify the kernel spacing in primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution and then resamples the result back to device pixels.</p></description>
     <source>
       <file path="filters/">filter_convolve.cpp</file>
     </source>
@@ -137,22 +137,22 @@
 
     <field>
       <name>UnitX</name>
-      <comment>The distance in filter units between rows in the Matrix.</comment>
+      <comment>The distance between successive columns of the Matrix.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits) between successive columns and rows, respectively, in the <fl>Matrix</fl>.  By specifying value(s) for <fl>UnitX</fl>, the kernel becomes defined in a scalable, abstract coordinate system.  If <fl>UnitX</fl> is not specified, the default value is one pixel in the offscreen bitmap, which is a pixel-based coordinate system, and thus potentially not scalable.  For some level of consistency across display media and user agents, it is necessary that a value be provided for at least one of ResX and <fl>UnitX</fl>.</p>
+<p>This spacing uses <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  It lets the kernel scale with the client.  If omitted, spacing on this axis defaults to one device pixel.</p>
 <p>The most consistent results and the fastest performance will be achieved if the pixel grid of the offscreen bitmap aligns with the pixel grid of the kernel.</p>
       </description>
     </field>
 
     <field>
       <name>UnitY</name>
-      <comment>The distance in filter units between columns in the Matrix.</comment>
+      <comment>The distance between successive rows of the Matrix.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits) between successive columns and rows, respectively, in the <fl>Matrix</fl>.  By specifying value(s) for <fl>UnitY</fl>, the kernel becomes defined in a scalable, abstract coordinate system.  If <fl>UnitY</fl> is not specified, the default value is one pixel in the offscreen bitmap, which is a pixel-based coordinate system, and thus potentially not scalable.  For some level of consistency across display media and user agents, it is necessary that a value be provided for at least one of ResY and <fl>UnitY</fl>.</p>
+<p>This spacing uses <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  It lets the kernel scale with the client.  If omitted, spacing on this axis defaults to one device pixel.</p>
 <p>The most consistent results and the fastest performance will be achieved if the pixel grid of the offscreen bitmap aligns with the pixel grid of the kernel.</p>
       </description>
     </field>

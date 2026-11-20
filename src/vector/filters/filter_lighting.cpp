@@ -263,22 +263,10 @@ class extLightingFX : public extFilterEffect {
       map_height result = { Scale, Scale, 0.0 };
       if (not (UnitXProvided or UnitYProvided)) return result;
 
-      auto &t = Filter->Render->ClientVector->Transform;
-      double scale_x = sqrt((t.sx * t.sx) + (t.shy * t.shy));
-      double scale_y = sqrt((t.shx * t.shx) + (t.sy * t.sy));
-      if (scale_x <= 0.0) scale_x = 1.0;
-      if (scale_y <= 0.0) scale_y = 1.0;
-
-      double bound_x = 1.0, bound_y = 1.0;
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-         if (Filter->AspectRatio IS VFA::NONE) {
-            bound_x = bound_y = dist(0, 0, Filter->Render->BoundWidth, Filter->Render->BoundHeight) * INV_SQRT2;
-         }
-         else {
-            bound_x = Filter->Render->BoundWidth;
-            bound_y = Filter->Render->BoundHeight;
-         }
-      }
+      const auto &render = *Filter->Render;
+      const auto &t = render.ToScene;
+      const auto [scale_x, scale_y] = render.axis_scales();
+      const auto [bound_x, bound_y] = render.primitive_scales(true);
 
       if (UnitXProvided) result.x = UnitX * bound_x * scale_x;
       if (UnitYProvided) result.y = UnitY * bound_y * scale_y;
@@ -312,6 +300,15 @@ class extLightingFX : public extFilterEffect {
    void render_spotlight(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
    void render_point(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
    double reach() const;
+
+   filter_sampling sampling() const {
+      if ((not std::isfinite(UnitX)) or (not std::isfinite(UnitY))) {
+         constexpr double invalid = std::numeric_limits<double>::quiet_NaN();
+         return { filter_access::BOUNDED, invalid, invalid };
+      }
+      const double radius = reach();
+      return { filter_access::BOUNDED, radius, radius };
+   }
 
    // True if the enhanced pipeline is used: the scene is not bound to an SVG standard and a feature is enabled.
 
@@ -695,26 +692,26 @@ ERR extLightingFX::draw()
    auto lt = point3(X, Y, Z); // Light source
    auto pt = Spotlight; // Target for the light source, used by LS::SPOT only.
 
-   if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      // Light source coordinates are expressed as relative to the client vector's bounding box in this mode.
-      auto &client = Filter->Render->ClientVector;
-      const double c_width  = client->Bounds.width();
-      const double c_height = client->Bounds.height();
+   const auto &render = *Filter->Render;
+   if (render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      // Light positions are relative to the client's own path bounds.
+      const auto &bounds = render.ClientPathBounds;
+      const double width = bounds.width(), height = bounds.height();
+      const auto diagonal = filter_render_context::normalised_diagonal(width, height);
 
-      lt.x = (lt.x * c_width) + client->Bounds.left;
-      lt.y = (lt.y * c_height) + client->Bounds.top;
-      lt.z = lt.z * sqrt((c_width * c_width) + (c_height * c_height)) * SQRT2DIV2;
+      lt.x = (lt.x * width) + bounds.left;
+      lt.y = (lt.y * height) + bounds.top;
+      lt.z *= diagonal;
 
       if (LightSource IS LS::SPOT) {
-         pt.x = (pt.x * c_width) + client->Bounds.left;
-         pt.y = (pt.y * c_height) + client->Bounds.top;
-         pt.z = pt.z * sqrt((c_width * c_width) + (c_height * c_height)) * SQRT2DIV2;
+         pt.x = (pt.x * width) + bounds.left;
+         pt.y = (pt.y * height) + bounds.top;
+         pt.z *= diagonal;
       }
    }
 
-   auto &t = Filter->Render->Transform; // Maps the client's coordinates to the filter bitmaps
-
-   const double scale = (t.sx IS t.sy) ? t.sx : sqrt((t.sx*t.sx) + (t.sy*t.sy)) * SQRT2DIV2;
+   const auto &t = render.Transform;
+   const double scale = (t.sx IS t.sy) ? t.sx : filter_render_context::normalised_diagonal(t.sx, t.sy);
 
    lt.z *= scale;
    t.transform(&lt.x, &lt.y);

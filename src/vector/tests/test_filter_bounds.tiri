@@ -535,3 +535,56 @@ end
       end
    end
 end
+
+@Test function OffsetReachIncreasesOnNextDraw()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
+   local filter = scene.new('VectorFilter', {
+      units=VUNIT_USERSPACE, x=0, y=-50, width=PAGE, height=PAGE
+   })
+   local offset = filter.new('OffsetFX', { xOffset=0 })
+   check scene.mtAddDef('fx', filter)
+   root.new('VectorRectangle', { x=35, y=-30, width=20, height=20, fill='white', filter='url(#fx)' })
+
+   local first <close> = draw(scene)
+   assert(mGfx.ReadRGBPixel(first, 40, 15).red is 0, 'The unshifted rectangle is off the page')
+   offset.yOffset = 40
+   local second <close> = draw(scene)
+   assert(mGfx.ReadRGBPixel(second, 40, 15).red is 255, 'The new reach must capture the off-page source')
+end
+
+@Test function InvalidFilterGeometryClearsTargetsAndRecovers()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
+   local filter = scene.new('VectorFilter', { units=VUNIT_USERSPACE, x=0, y=0, width=PAGE, height=PAGE })
+   local offset = filter.new('OffsetFX', { xOffset=0 })
+   check scene.mtAddDef('fx', filter)
+   local client = root.new('VectorRectangle', { x=20, y=20, width=40, height=40, fill='white', filter='url(#fx)' })
+
+   local initial <close> = draw(scene)
+   assert(offset.target and (mGfx.ReadRGBPixel(initial, 30, 30).red is 255), 'Control draw must succeed')
+
+   for field in values(array<str> { 'width', 'xOffset' }) do
+      local invalid = field is 'width' ? filter : offset
+      local saved = invalid[field]
+      invalid[field] = math.huge
+      local rejected <close> = draw(scene)
+      assert(offset.target is nil, f'Invalid {field} must clear the previous output')
+      assert(mGfx.ReadRGBPixel(rejected, 30, 30).red is 0, f'Invalid {field} must leave the destination untouched')
+      invalid[field] = saved
+   end
+
+   local _, matrix = check client.mtNewMatrix()
+   check mVec.Scale(matrix, 0, 1)
+   local singular <close> = draw(scene)
+   assert(offset.target is nil, 'A singular transform must clear the previous output')
+   assert(mGfx.ReadRGBPixel(singular, 30, 30).red is 0, 'A singular transform must leave the destination untouched')
+   check mVec.ResetMatrix(matrix)
+
+   offset.width = 0
+   local empty <close> = draw(scene)
+   assert(offset.target and (mGfx.ReadRGBPixel(empty, 30, 30).red is 0), 'An empty primitive publishes transparency')
+   offset.width = 40
+   local recovered <close> = draw(scene)
+   assert(offset.target and (mGfx.ReadRGBPixel(recovered, 30, 30).red is 255), 'A repaired filter must render again')
+end

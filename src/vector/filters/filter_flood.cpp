@@ -53,16 +53,12 @@ static ERR FLOODFX_Draw(extFloodFX *Self, struct acDraw *Args)
    agg::pixfmt_psl format(*Self->Target);
    renderBase.attach(format);
 
-   agg::path_storage path;
-   path.move_to(render.TargetX, render.TargetY);
-   path.line_to(render.TargetX + render.TargetWidth, render.TargetY);
-   path.line_to(render.TargetX + render.TargetWidth, render.TargetY + render.TargetHeight);
-   path.line_to(render.TargetX, render.TargetY + render.TargetHeight);
-   path.close_polygon();
+   auto path = render.FilterRegion.as_path(render.Transform);
+   const auto bounds = get_bounds(path);
+   if (not filter_raster_bounds(bounds)) return ERR::OutOfRange;
 
-   agg::renderer_scanline_bin_solid< agg::renderer_base<agg::pixfmt_psl> > solid_render(renderBase);
-   agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(path, render.Transform);
-   raster.add_path(final_path);
+   agg::renderer_scanline_bin_solid<agg::renderer_base<agg::pixfmt_psl>> solid_render(renderBase);
+   raster.add_path(path);
    renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right - 1, Self->Target->Clip.Bottom - 1);
    solid_render.color(col);
    agg::render_scanlines(raster, scanline, solid_render);

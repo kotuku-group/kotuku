@@ -670,7 +670,7 @@ double extLightingFX::reach() const
 {
    if (not enhanced()) return 2;
 
-   const double scale = Filter->Render->ClientVector ? Filter->Render->ClientVector->Transform.scale() : 1.0;
+   const double scale = Filter->Render->ToScene.scale();
    const double unit_size = unit_length(kernel_unit_pixels(scale));
    const double sigma = std::min(MAX_SIGMA, DETAIL_SIGMA * unit_size);
    double blur = cavity_sigma(unit_size);

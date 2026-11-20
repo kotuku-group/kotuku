@@ -28,22 +28,16 @@ class extOffsetFX : public extFilterEffect {
 
    // Computes the offset in bitmap pixels.
 
-   void pixel_offset(int &DX, int &DY) const {
-      double dx = XOffset, dy = YOffset;
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-         if (Filter->AspectRatio IS VFA::NONE) {
-            double diag = dist(0, 0, Filter->Render->BoundWidth, Filter->Render->BoundHeight) * INV_SQRT2;
-            dx *= diag;
-            dy *= diag;
-         }
-         else {
-            dx *= Filter->Render->BoundWidth;
-            dy *= Filter->Render->BoundHeight;
-         }
-      }
+   std::pair<double, double> pixel_offset() const {
+      const auto &render = *Filter->Render;
+      const auto [unit_x, unit_y] = render.primitive_scales(true);
+      return { std::round((XOffset * unit_x) * render.ToScene.sx),
+         std::round((YOffset * unit_y) * render.ToScene.sy) };
+   }
 
-      DX = int(std::lround(dx * Filter->Render->ClientVector->Transform.sx));
-      DY = int(std::lround(dy * Filter->Render->ClientVector->Transform.sy));
+   filter_sampling sampling() const {
+      const auto [x, y] = pixel_offset();
+      return { filter_access::BOUNDED, std::abs(x), std::abs(y) };
    }
 };
 
@@ -53,9 +47,10 @@ static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 {
    const objBitmap *input;
    if (auto error = get_source_bitmap(Self, &input, filter_input_role::INPUT); error != ERR::Okay) return error;
-   int dx, dy;
-   Self->pixel_offset(dx, dy);
-   return copy_filter_bitmap(input, Self->Target, BAF::NIL, 0, 0, input->Width, input->Height, dx, dy);
+   const auto [dx, dy] = Self->pixel_offset();
+   if ((not std::isfinite(dx)) or (not std::isfinite(dy))) return ERR::InvalidValue;
+   if ((std::abs(dx) >= input->Width) or (std::abs(dy) >= input->Height)) return ERR::Okay;
+   return copy_filter_bitmap(input, Self->Target, BAF::NIL, 0, 0, input->Width, input->Height, int(dx), int(dy));
 }
 
 /*********************************************************************************************************************
