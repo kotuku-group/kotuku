@@ -147,7 +147,10 @@ static void parse_input_source(extSVG *Self, objFilterEffect *Effect, const std:
       case SVF_StrokePaint:     Effect->setSourceType(VSF::STROKE); break;
       default:  {
          if (Self->Effects.contains(Input)) Effect->setInput(Self->Effects[Input]);
-         else kt::Log().warning("Unrecognised input '%s'", Input.c_str());
+         else {
+            kt::Log().warning("Unrecognised input '%s'", Input.c_str());
+            Effect->setSourceType(VSF::REFERENCE);
+         }
          break;
       }
    }
@@ -164,7 +167,10 @@ static void parse_input_mix(extSVG *Self, objFilterEffect *Effect, const std::st
       case SVF_StrokePaint:     Effect->setMixType(VSF::STROKE); break;
       default:  {
          if (Self->Effects.contains(Input)) Effect->setMix(Self->Effects[Input]);
-         else kt::Log().warning("Unrecognised input '%s'", Input.c_str());
+         else {
+            kt::Log().warning("Unrecognised mix input '%s'", Input.c_str());
+            Effect->setMixType(VSF::REFERENCE);
+         }
          break;
       }
    }

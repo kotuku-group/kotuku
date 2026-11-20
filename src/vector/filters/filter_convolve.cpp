@@ -453,7 +453,7 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    data.resize(canvas_width * canvas_height * Self->Target->BytesPerPixel);
 
    objBitmap *inBmp;
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
+   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
 
    // Note: The inBmp->Data pointer is pre-adjusted to match the Clip Left and Top values (i.e. add
    // (Clip.Left * BPP) + (Clip.Top * LineWidth) to Data in order to get its true value)

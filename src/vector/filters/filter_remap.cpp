@@ -159,7 +159,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
 
    objBitmap *bmp;
-   if (get_source_bitmap(Self->Filter, &bmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
+   if (get_source_bitmap(Self, &bmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
 
    int height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
    int width  = Self->Target->Clip.Right - Self->Target->Clip.Left;

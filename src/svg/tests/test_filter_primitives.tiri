@@ -238,6 +238,124 @@ function assertRGBA(P:table, Red:num, Green:num, Blue:num, Alpha:num, Message:st
       f'{Message}: got {P.red},{P.green},{P.blue},{P.alpha}')
 end
 
+@Test function BlurWrapsBothAxesOfTheInputSubregion()
+   local source = '<feComponentTransfer x="8" y="8" width="3" height="3" result="tile"/>'
+   local content = '<rect x="10" y="10" width="1" height="1" fill="white" filter="url(#f)"/>'
+   local points = { { 8, 8 }, { 10, 10 }, { 11, 11 } }
+   local p = samples(source .. '<feGaussianBlur in="tile" stdDeviation=".5" edgeMode="wrap"/>', content, points)
+   assert(p[0].alpha is 15, f'Wrap must sample the opposite corner of the tile, got alpha {p[0].alpha}')
+   assert(p[1].alpha is 63, f'The vertical pass must sample the original horizontal result, got alpha {p[1].alpha}')
+   assert(p[2].alpha is 0, 'The result must still be clipped to the blur subregion')
+end
+
+@Test function BlurWrapReachesTheOffPageEdge()
+   local content = [[<g filter="url(#f)">
+      <rect x="-8" y="9" width="1" height="1" fill="white"/>
+      <rect x="1" y="9" width="1" height="1" fill="white"/>
+   </g>]]
+   local effects = '<feGaussianBlur stdDeviation=".5 0" edgeMode="wrap"/>'
+   local svg <close> = document(effects, content, 64, nil, 'filterUnits="userSpaceOnUse"')
+   local _, filter = check svg.scene.mtFindDef('f')
+   filter.{ x=-8, width=12 }
+   local bmp <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(bmp, 3, 9)
+   assert((p.red is 255) and (p.green is 255) and (p.blue is 255) and (p.alpha is 63),
+      f'Wrap must reach the left edge of the filter region beyond the page, got alpha {p.alpha}')
+end
+
+@Test function BlurEdgeModesRoundTripThroughEffectXML()
+   local source = '<feComponentTransfer x="8" y="8" width="3" height="3"/>'
+   local content = '<rect x="10" y="9" width="1" height="1" fill="white" filter="url(#f)"/>'
+   local namespace_attrib = 'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"'
+   for _, mode in {
+      { input='', output='', alpha=85 },
+      { input='edgeMode="none"', output='', alpha=85 },
+      { input='edgeMode="duplicate"', output='edgeMode="duplicate"', alpha=170 },
+      { input='edgeMode="wrap"', output='edgeMode="wrap"', alpha=85 },
+      { input='kotuku:edgeMode="mirror"', output='kotuku:edgeMode="mirror"', alpha=141 }
+   } do
+      local svg <close> = document(f'<feGaussianBlur stdDeviation="1 0" {mode.input}/>', content, 64, namespace_attrib)
+      local _, filter = check svg.scene.mtFindDef('f')
+      local xml = filter.effectXML
+      if mode.output is '' then
+         assert(xml.find('edgeMode=', 0, true) is nil, 'Transparent addressing should be implicit on export')
+      else
+         assert(xml.find(mode.output, 0, true) != nil, f'Export lost {mode.output}')
+      end
+
+      local loaded <close> = document(source .. xml, content, 64, namespace_attrib, 'filterUnits="userSpaceOnUse"')
+      local bmp <close> = draw(loaded, 64)
+      local p = mGfx.ReadRGBPixel(bmp, 10, 9)
+      assert(p.alpha is mode.alpha, f'Expected alpha {mode.alpha} for {mode.input}, got {p.alpha}')
+      assert(mGfx.ReadRGBPixel(bmp, 10, 8).alpha is 0, 'The disabled Y axis must not blur vertically')
+   end
+end
+
+@Test function BlurEdgeModeCanChangeAtRuntime()
+   local svg <close> = document('<feFlood x="8" y="8" width="1" height="8" flood-color="white"/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local blur = filter.new('BlurFX', { sx=.75 })
+   assert(blur.edgeMode is FEM_TRANSPARENT, 'New blurs must default to transparent addressing')
+
+   for _, mode in {
+      { value=FEM_TRANSPARENT, alpha=106 },
+      { value=FEM_REPEAT, alpha=255 },
+      { value=FEM_MIRROR, alpha=255 },
+      { value=FEM_CLAMP, alpha=255 },
+      { value=FEM_TRANSPARENT, alpha=106 }
+   } do
+      blur.edgeMode = mode.value
+      assert(blur.edgeMode is mode.value, 'EdgeMode must read back the updated value')
+      local bmp <close> = draw(svg, 64)
+      local p = mGfx.ReadRGBPixel(bmp, 8, 10)
+      assert(p.alpha is mode.alpha, f'Expected alpha {mode.alpha} for mode {mode.value}, got {p.alpha}')
+   end
+
+   try
+      blur.edgeMode = 99
+   except e when ERR_OutOfRange
+   success
+      raise 'An out-of-range EdgeMode must be rejected'
+   end
+   assert(blur.edgeMode is FEM_TRANSPARENT, 'A rejected EdgeMode must preserve the current value')
+end
+
+@Test function BlurMirrorUsesScopedNamespace()
+   local uri = 'http://www.kotuku.dev/xmlns/svg'
+   local declarations = f'xmlns:k="{uri}" xmlns:kotuku="{uri}"'
+   for _, mode in {
+      { input='k:edgeMode="mirror"', output='kotuku:edgeMode="mirror"' },
+      { input='xmlns:k="http://www.kotuku.dev/namespaces/kotuku" k:edgeMode="mirror"',
+        output='kotuku:edgeMode="mirror"' },
+      { input='xmlns:kotuku="urn:foreign" kotuku:edgeMode="mirror"', output='edgeMode="duplicate"' }
+   } do
+      local effect = f'<feGaussianBlur stdDeviation="1" edgeMode="duplicate" {mode.input}/>'
+      local svg <close> = document(effect, nil, 64, declarations)
+      local _, filter = check svg.scene.mtFindDef('f')
+      local xml = filter.effectXML
+      assert(xml.find(mode.output, 0, true) != nil, f'Expected {mode.output} for {mode.input}, got {xml}')
+   end
+end
+
+@Test function BlurScratchAllocationDiscardsChangedFilter()
+   local svg <close> = document('<feFlood flood-color="white"/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local blur = filter.new('BlurFX', { sx=.5, sy=.5 })
+
+   -- Prime the bitmap bank. The two-axis wrap pass will need one additional bitmap.
+   local bmp <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(bmp, 20, 20).red is 255, 'The initial filter must render')
+
+   blur.edgeMode = FEM_REPEAT
+   filter.subscribe('NewChild', function() blur.owner = svg.scene end)
+   defer filter.unsubscribe('NewChild') end
+
+   check bmp.acClear()
+   check svg.scene.acDraw()
+   assert(blur.owner?.id is svg.scene.id, 'The scratch allocation callback must move the blur out of the filter')
+   assert(mGfx.ReadRGBPixel(bmp, 20, 20).red is 0, 'The interrupted filter draw must leave no output')
+end
+
 -- feComponentTransfer applies to every pixel including transparent ones, so inverting alpha must make empty areas
 -- opaque and the shape transparent.  Both a negative linear slope and a descending table are valid inversions.
 

@@ -116,7 +116,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    if (canvasWidth * canvasHeight > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
 
    objBitmap *inBmp;
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
+   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
 
    if ((Self->RadiusX <= 0) and (Self->RadiusY <= 0)) {
       BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;

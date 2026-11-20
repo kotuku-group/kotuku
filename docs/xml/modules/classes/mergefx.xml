@@ -44,7 +44,7 @@
       <type>MergeSource[]</type>
       <description>
 <p>The list of sources is built as a simple array of MergeSource structures.</p>
-<p>Input sources are defined by the SourceType field value.  In the case of <code>REFERENCE</code>, it is necessary to provide a direct pointer to the referenced effect in the Effect field, or an error will be returned.</p>
+<p>Input sources are defined by the SourceType field value.  A <code>REFERENCE</code> entry needs a pointer to an earlier effect in the same filter before the pipeline can render.  If a referenced effect is removed, that entry retains its <code>REFERENCE</code> type and its pointer is cleared.  Replace the list to repair the pipeline.</p>
       </description>
     </field>
 

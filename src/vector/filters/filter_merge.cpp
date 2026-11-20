@@ -37,19 +37,6 @@ class extMergeFX : public extFilterEffect {
    }
 };
 
-//********************************************************************************************************************
-
-static void release_merge_sources(std::vector<MergeSource> &List)
-{
-   for (auto &source : List) {
-      if ((source.SourceType IS VSF::REFERENCE) and (source.Effect)) {
-         ((extFilterEffect *)source.Effect)->UsageCount--;
-      }
-   }
-
-   List.clear();
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -58,12 +45,15 @@ Draw: Render the effect to the target bitmap.
 
 static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
 {
+   auto step = active_filter_step(Self);
+   if (not step) return ERR::InvalidState;
+
    BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
 
-   for (auto source : Self->List) {
+   for (size_t i = 0; i < step->Inputs.size(); i++) {
       objBitmap *bmp = nullptr;
-      auto error = get_source_bitmap(Self->Filter, &bmp, source.SourceType, (extFilterEffect *)source.Effect, false);
-      if ((error != ERR::Okay) and (error != ERR::Continue)) continue;
+      auto error = get_source_bitmap(Self, &bmp, filter_input_role::MERGE, i);
+      if ((error != ERR::Okay) and (error != ERR::Continue)) return error;
       if (!bmp) continue;
 
       gfx::CopyArea(bmp, Self->Target, copy_flags, 0, 0, bmp->Width, bmp->Height, 0, 0);
@@ -83,38 +73,30 @@ SourceList: A list of source types to be processed in the merge.
 
 The list of sources is built as a simple array of MergeSource structures.
 
-Input sources are defined by the SourceType field value.  In the case of `REFERENCE`, it is necessary to provide a
-direct pointer to the referenced effect in the Effect field, or an error will be returned.
+Input sources are defined by the SourceType field value.  A `REFERENCE` entry needs a pointer to an earlier
+effect in the same filter before the pipeline can render.  If a referenced effect is removed, that entry retains
+its `REFERENCE` type and its pointer is cleared.  Replace the list to repair the pipeline.
 
 *********************************************************************************************************************/
 
 static ERR MERGEFX_SET_SourceList(extMergeFX *Self, std::span<const MergeSource> &Value)
 {
-   if ((!Value.data()) or (Value.empty())) {
-      release_merge_sources(Self->List);
-      return ERR::Okay;
-   }
-
    std::vector<MergeSource> list;
    list.reserve(Value.size());
 
-   for (auto &source : Value) {
-      if (source.SourceType IS VSF::REFERENCE) {
-         if (!source.Effect) return ERR::InvalidData;
+   for (size_t i = 0; i < Value.size(); i++) {
+      auto source = Value[i];
+      if ((source.SourceType IS VSF::REFERENCE) and source.Effect) {
+         if (auto error = check_filter_reference(Self, source.Effect, filter_input_role::MERGE, i);
+             error != ERR::Okay) return error;
       }
+      else source.Effect = nullptr;
 
       list.push_back(source);
    }
 
-   release_merge_sources(Self->List);
-
-   for (auto &source : list) {
-      if ((source.SourceType IS VSF::REFERENCE) and (source.Effect)) {
-         ((extFilterEffect *)source.Effect)->UsageCount++;
-      }
-   }
-
    Self->List = std::move(list);
+   if (Self->Filter) Self->Filter->GraphRevision++;
    return ERR::Okay;
 }
 

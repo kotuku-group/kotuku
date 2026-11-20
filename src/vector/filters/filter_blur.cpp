@@ -13,7 +13,7 @@ is an approximation of the normalized convolution `G(x,y) = H(x)I(y)` where `H(x
 and `I(y) = exp(-y2/ (2t2)) / sqrt(2* pi*t2)` with 's' being the standard deviation in the x direction and 't' being
 the standard deviation in the y direction, as specified by #SX and #SY.
 
-At least one of #SX or #SY should be greater than 0, otherwise no rendering is performed.
+If both #SX and #SY are zero, the effect copies its input.
 
 The blur is not restricted to whole pixels.  It changes continuously with the standard deviation and the display
 scale, so a blur that covers less than a pixel still softens the input.
@@ -83,6 +83,7 @@ class extBlurFX : public extFilterEffect {
    using create = kt::Create<extBlurFX>;
 
    double SX = 0, SY = 0;
+   FEM EdgeMode = FEM::TRANSPARENT;
 
    extBlurFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
@@ -113,10 +114,30 @@ class extBlurFX : public extFilterEffect {
 };
 
 //********************************************************************************************************************
+
+struct blur_edge {
+   int Start, End;
+   FEM Mode;
+
+   int address(int64_t Index) const {
+      if ((Index >= Start) and (Index < End)) return int(Index);
+      if ((Mode IS FEM::TRANSPARENT) or (Start >= End)) return -1;
+      if (Mode IS FEM::CLAMP) return (Index < Start) ? Start : End - 1;
+
+      const int64_t length = End - Start;
+      const int64_t period = (Mode IS FEM::MIRROR) ? 2 * length : length;
+      auto offset = (Index - Start) % period;
+      if (offset < 0) offset += period;
+      if (offset >= length) offset = period - 1 - offset;
+      return Start + int(offset);
+   }
+};
+
+//********************************************************************************************************************
 // SSE2 implementation of the stack blur pass.  The algorithm is identical to the scalar version below, but the
 // per-channel running sums are held in packed 32-bit lanes so that all four channels advance per operation.  All
 // arithmetic is integral, so the output is bit-identical to the scalar path.  Channel byte order is irrelevant
-// because every channel is processed independently and identically.  Samples outside of the line are transparent.
+// because every channel is processed independently and identically.
 
 #ifdef FILTER_SSE2
 
@@ -163,10 +184,9 @@ inline __m128i blur_mullo32(__m128i A, __m128i B)
 // One full stack blur pass over an axis.  The horizontal pass walks lines of `Count` pixels stepping 4 bytes at a
 // time; the vertical pass swaps the roles of LineStep and PixelStep so that lines become columns.
 
-static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
-   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum)
+static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
+   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum, const blur_edge &Edge)
 {
-   const int max_index = Count - 1;
    const uint32_t div = (Radius * 2) + 1;
    std::vector<uint32_t> stack(div);
 
@@ -181,34 +201,24 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
       auto sum_in  = _mm_setzero_si128();
       auto sum_out = _mm_setzero_si128();
 
-      // Pixels outside of the line are transparent, so only the first pixel contributes to the left half.
+      auto sample = [&](int64_t Index) {
+         const int i = Edge.address(Index);
+         return (i < 0) ? uint32_t(0) : blur_read32(line_in + (std::ptrdiff_t(i) * PixelStep));
+      };
 
-      auto src = line_in;
-      for (int i=0; i < Radius; i++) stack[i] = 0;
-      stack[Radius] = blur_read32(src);
-      const auto first = blur_unpack(stack[Radius]);
-      sum     = blur_mullo32(first, _mm_set1_epi32(Radius + 1));
-      sum_out = first;
-
-      for (int i=1; i <= Radius; i++) {
-         uint32_t px = 0;
-         if (i <= max_index) {
-            src += PixelStep;
-            px = blur_read32(src);
-         }
+      for (int i=-Radius; i <= Radius; i++) {
+         const auto px = sample(i);
          stack[i + Radius] = px;
          const auto v = blur_unpack(px);
-         sum    = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(Radius + 1 - i)));
-         sum_in = _mm_add_epi32(sum_in, v);
+         sum = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(Radius + 1 - std::abs(i))));
+         if (i <= 0) sum_out = _mm_add_epi32(sum_out, v);
+         else sum_in = _mm_add_epi32(sum_in, v);
       }
 
       uint32_t stack_ptr = Radius;
-      int xp = (Radius > max_index) ? max_index : Radius; // Index of the last pixel read from the line
-      src = line_in + (xp * PixelStep);
-      auto dst = line_out;
       for (int i=0; i < Count; i++) {
-         blur_write32(dst, blur_pack(_mm_srl_epi32(blur_mullo32(sum, mul), shr)));
-         dst += PixelStep;
+         const auto blurred = blur_pack(_mm_srl_epi32(blur_mullo32(sum, mul), shr));
+         blur_write32(line_out + (std::ptrdiff_t(i) * PixelStep), blurred);
 
          sum = _mm_sub_epi32(sum, sum_out);
 
@@ -216,13 +226,7 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
          if (stack_start >= div) stack_start -= div;
          sum_out = _mm_sub_epi32(sum_out, blur_unpack(stack[stack_start]));
 
-         uint32_t px = 0;
-         if (xp < max_index) {
-            src += PixelStep;
-            ++xp;
-            px = blur_read32(src);
-         }
-
+         const auto px = sample(int64_t(i) + Radius + 1);
          stack[stack_start] = px;
          sum_in = _mm_add_epi32(sum_in, blur_unpack(px));
          sum    = _mm_add_epi32(sum, sum_in);
@@ -236,20 +240,16 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
    }
 }
 
-#endif
-
 //********************************************************************************************************************
-// Scalar implementation of the stack blur pass, with the same interface and output as the SSE2 version.  Samples
-// outside of the line are treated as transparent black, matching the SVG edge mode of 'none'.
+// Scalar implementation of the stack blur pass, with the same interface and output as the SSE2 version.
 
-#ifndef FILTER_SSE2
+#else
 
 static const uint8_t BLUR_ZERO[4] = { 0, 0, 0, 0 }; // Transparent pixel for samples outside of the line
 
 static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
-   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum)
+   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum, const blur_edge &Edge)
 {
-   const int max_index = Count - 1;
    const uint32_t div = (Radius * 2) + 1;
    std::vector<std::array<uint8_t, 4>> stack(div);
 
@@ -259,47 +259,32 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
 
       uint32_t sum[4] = { 0, 0, 0, 0 }, sum_in[4] = { 0, 0, 0, 0 }, sum_out[4] = { 0, 0, 0, 0 };
 
-      // Pixels outside of the line are transparent, so only the first pixel contributes to the left half.
+      auto sample = [&](int64_t Index) {
+         const int i = Edge.address(Index);
+         return (i < 0) ? BLUR_ZERO : line_in + (std::ptrdiff_t(i) * PixelStep);
+      };
 
-      auto src = line_in;
-      for (int i=0; i < Radius; i++) stack[i] = { 0, 0, 0, 0 };
-      for (int c=0; c < 4; c++) {
-         stack[Radius][c] = src[c];
-         sum[c]     = src[c] * (Radius + 1);
-         sum_out[c] = src[c];
-      }
-
-      for (int i=1; i <= Radius; i++) {
-         const uint8_t *in = BLUR_ZERO;
-         if (i <= max_index) {
-            src += PixelStep;
-            in = src;
-         }
+      for (int i=-Radius; i <= Radius; i++) {
+         const auto in = sample(i);
+         const int weight = Radius + 1 - std::abs(i);
          for (int c=0; c < 4; c++) {
             stack[i + Radius][c] = in[c];
-            sum[c]    += in[c] * (Radius + 1 - i);
-            sum_in[c] += in[c];
+            sum[c] += in[c] * weight;
+            if (i <= 0) sum_out[c] += in[c];
+            else sum_in[c] += in[c];
          }
       }
 
       uint32_t stack_ptr = Radius;
-      int xp = (Radius > max_index) ? max_index : Radius; // Index of the last pixel read from the line
-      src = line_in + (xp * PixelStep);
-      auto dst = line_out;
       for (int i=0; i < Count; i++) {
+         auto dst = line_out + (std::ptrdiff_t(i) * PixelStep);
          for (int c=0; c < 4; c++) dst[c] = uint8_t((sum[c] * MulSum) >> ShrSum);
-         dst += PixelStep;
 
          uint32_t stack_start = stack_ptr + div - Radius;
          if (stack_start >= div) stack_start -= div;
          auto &start = stack[stack_start];
 
-         const uint8_t *in = BLUR_ZERO;
-         if (xp < max_index) {
-            src += PixelStep;
-            ++xp;
-            in = src;
-         }
+         const auto in = sample(int64_t(i) + Radius + 1);
 
          for (int c=0; c < 4; c++) {
             sum[c]     -= sum_out[c];
@@ -329,13 +314,13 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
 // the radius changes, so that a magnified graphic is blurred in proportion and small radii are not lost to
 // truncation.  A radius below 1 is blended with the unblurred input.
 //
-// InData and OutData can refer to the same region.  Temp is resized as necessary to hold the larger radius.
+// Transparent addressing also allows InData and OutData to refer to the same region.
 
 constexpr double MIN_BLUR_RADIUS = 0.5 / 256.0; // Below this, the blend weight rounds to zero
 constexpr double MAX_BLUR_RADIUS = 254.0;       // Limited by the size of the stack blur tables
 
 static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8_t> &Temp, int Width, int Height,
-   int Stride, bool Vertical, double Radius)
+   int Stride, bool Vertical, double Radius, const blur_edge &Edge)
 {
    const int line_step  = Vertical ? 4 : Stride;
    const int pixel_step = Vertical ? Stride : 4;
@@ -343,13 +328,8 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
    const int count      = Vertical ? Height : Width;
 
    auto stack_blur = [&](const uint8_t *Src, uint8_t *Dest, int R) {
-#ifdef FILTER_SSE2
-      stack_blur_axis_sse2(Src, Dest, line_step, pixel_step, lines, count, R,
-         stack_blur_tables<int>::g_stack_blur8_mul[R], stack_blur_tables<int>::g_stack_blur8_shr[R]);
-#else
       stack_blur_axis(Src, Dest, line_step, pixel_step, lines, count, R,
-         stack_blur_tables<int>::g_stack_blur8_mul[R], stack_blur_tables<int>::g_stack_blur8_shr[R]);
-#endif
+         stack_blur_tables<int>::g_stack_blur8_mul[R], stack_blur_tables<int>::g_stack_blur8_shr[R], Edge);
    };
 
    if (Radius > MAX_BLUR_RADIUS) Radius = MAX_BLUR_RADIUS;
@@ -368,7 +348,7 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
       stack_blur(InData, upper, lower + 1);
    }
 
-   if (lower > 0) stack_blur(InData, OutData, lower);
+   if ((lower > 0) or (Edge.Mode != FEM::TRANSPARENT)) stack_blur(InData, OutData, lower);
    else if (InData != OutData) {
       for (int y=0; y < Height; y++) copymem(InData + (y * Stride), OutData + (y * Stride), Width * 4);
    }
@@ -385,6 +365,42 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
 }
 
 //********************************************************************************************************************
+
+static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const objBitmap *Bitmap,
+   const filter_step *Producer)
+{
+   const auto &clip = Bitmap->Clip;
+   const TClipRectangle<int> bitmap_region = { clip.Left, clip.Top, clip.Right, clip.Bottom };
+   if ((Self->EdgeMode IS FEM::TRANSPARENT) or (not Producer)) {
+      return bitmap_region;
+   }
+
+   const auto &sub = Producer->Effect->Subregion;
+   const TClipRectangle<int> empty = { clip.Left, clip.Top, clip.Left, clip.Top };
+   if (not sub.valid()) return empty;
+
+   const auto &transform = Self->Filter->Transform;
+   auto path = sub.as_path(transform);
+   const auto bounds = get_bounds(path);
+   if (not bounds.valid()) return empty;
+
+   // Primitive clipping includes the left and top edges in user space.  Reflection can put those edges on the
+   // far side of the bitmap, so account for which bounds include a pixel centre that falls exactly on the edge.
+   auto limit = [](double Coordinate, bool RoundPastCentre, int Low, int High) {
+      const auto centre = Coordinate - 0.5;
+      const auto index = RoundPastCentre ? std::floor(centre) + 1 : std::ceil(centre);
+      return int(std::clamp(index, double(Low), double(High)));
+   };
+   const TClipRectangle<int> region = {
+      limit(bounds.left, (transform.sx < 0) or (transform.shx < 0), clip.Left, clip.Right),
+      limit(bounds.top, (transform.shy < 0) or (transform.sy < 0), clip.Top, clip.Bottom),
+      limit(bounds.right, (transform.sx <= 0) and (transform.shx <= 0), clip.Left, clip.Right),
+      limit(bounds.bottom, (transform.shy <= 0) and (transform.sy <= 0), clip.Top, clip.Bottom)
+   };
+   return region.valid() ? region : empty;
+}
+
+//********************************************************************************************************************
 // This is the stack blur algorithm originally implemented in AGG.  It is intended to produce a near identical output
 // to that of a standard gaussian blur algorithm.
 //
@@ -393,6 +409,9 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
 
 static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
 {
+   auto step = active_filter_step(Self);
+   if (not step) return ERR::InvalidState;
+   const auto producer = step->Inputs.front().Producer;
    auto outBmp = Self->Target;
    if (outBmp->BytesPerPixel != 4) return ERR::InvalidState;
 
@@ -403,18 +422,18 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    const bool blur_y = ry >= MIN_BLUR_RADIUS;
 
    objBitmap *inBmp;
+   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
 
    if ((not blur_x) and (not blur_y)) {
-      if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
       BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
       gfx::CopyArea(inBmp, outBmp, copy_flags, 0, 0, inBmp->Width, inBmp->Height, 0, 0);
       return ERR::Okay;
    }
 
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
-   if ((Self->SourceType IS VSF::REFERENCE) and (Self->Input)) {
+   if (producer) {
       objBitmap *copy_bmp;
       if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); !error) {
+         if (not active_filter_step(Self)) return ERR::InvalidState;
          gfx::CopyArea(inBmp, copy_bmp, BAF::NIL,
             inBmp->Clip.Left,
             inBmp->Clip.Top,
@@ -428,23 +447,33 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
       else return error;
    }
 
-   if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToLinear();
+   const auto region = blur_input_region(Self, inBmp, producer);
+   const auto &clip = outBmp->Clip;
+   const int w = clip.Right - clip.Left;
+   const int h = clip.Bottom - clip.Top;
+   const blur_edge edge_x = { region.left - clip.Left, region.right - clip.Left, Self->EdgeMode };
+   const blur_edge edge_y = { region.top - clip.Top, region.bottom - clip.Top, Self->EdgeMode };
 
+   auto bitmap_data = [&](objBitmap *Bitmap) {
+      return Bitmap->Data + (std::ptrdiff_t(clip.Top) * Bitmap->LineWidth) + (std::ptrdiff_t(clip.Left) * 4);
+   };
+   auto in_data = bitmap_data(inBmp);
+   auto out_data = bitmap_data(outBmp);
+   auto horizontal = out_data;
+   if (blur_x and blur_y and (Self->EdgeMode != FEM::TRANSPARENT)) {
+      // Addressing can revisit a sample that a pass would overwrite if it ran in place.
+      objBitmap *scratch;
+      if (auto error = get_banked_bitmap(Self->Filter, &scratch); error != ERR::Okay) return error;
+      if (not active_filter_step(Self)) return ERR::InvalidState;
+      horizontal = bitmap_data(scratch);
+   }
+
+   if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToLinear();
    inBmp->premultiply();
 
-   const int w = (outBmp->Clip.Right - outBmp->Clip.Left);
-   const int h = (outBmp->Clip.Bottom - outBmp->Clip.Top);
-
-   uint8_t *in_data  = inBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
-   uint8_t *out_data = outBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
-
    std::vector<uint8_t> temp;
-   if (blur_x) blur_axis(in_data, out_data, temp, w, h, outBmp->LineWidth, false, rx);
-
-   // If the X axis was already processed, the dest becomes the source
-   if (blur_y) blur_axis(blur_x ? out_data : in_data, out_data, temp, w, h, outBmp->LineWidth, true, ry);
-
-   //bmpDemultiply(inBmp);
+   if (blur_x) blur_axis(in_data, horizontal, temp, w, h, outBmp->LineWidth, false, rx, edge_x);
+   if (blur_y) blur_axis(blur_x ? horizontal : in_data, out_data, temp, w, h, outBmp->LineWidth, true, ry, edge_y);
 
    outBmp->Flags |= BMF::PREMUL; // Need to tell the bitmap it has premultiplied output before Demultiply()
    outBmp->demultiply();
@@ -460,6 +489,20 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
 /*********************************************************************************************************************
 
 -FIELD-
+EdgeMode: Controls how the blur samples beyond the edges of its input.
+Lookup: FEM
+
+`TRANSPARENT` (the default) uses transparent black.  `CLAMP` uses the nearest edge sample, `REPEAT` wraps to the
+opposite edge and `MIRROR` reflects alternate copies of the input with the edge sample repeated at each join.
+
+For standard inputs the sampling rectangle is the filter bitmap.  For a referenced effect the non-transparent modes
+use the pixel-aligned bounding rectangle of its transformed primitive subregion, intersected with the filter bitmap.
+The addressing mode applies along each axis with an active blur.
+
+SVG reads and writes `CLAMP` as `edgeMode="duplicate"` and `REPEAT` as `edgeMode="wrap"`.
+`MIRROR` uses the Kōtuku extension `kotuku:edgeMode="mirror"`.
+
+-FIELD-
 SX: The standard deviation of the blur on the x axis.
 
 The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
@@ -467,7 +510,7 @@ The (SX,SY) field values define the standard deviation of the gaussian blur alon
 If either value is 0 or less, the effect is disabled on that axis.
 
 -FIELD-
-SY: The standard deviation of the blur on the x axis.
+SY: The standard deviation of the blur on the y axis.
 
 The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
 
@@ -479,10 +522,23 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
+static ERR BLURFX_SET_EdgeMode(extBlurFX *Self, FEM Value)
+{
+   if ((Value < FEM::TRANSPARENT) or (Value > FEM::MIRROR)) return ERR::OutOfRange;
+   Self->EdgeMode = Value;
+   return ERR::Okay;
+}
+
 static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "feGaussianBlur stdDeviation=\"" << Self->SX << " " << Self->SY << "\"";
+   switch (Self->EdgeMode) {
+      case FEM::CLAMP:  stream << " edgeMode=\"duplicate\""; break;
+      case FEM::REPEAT: stream << " edgeMode=\"wrap\""; break;
+      case FEM::MIRROR: stream << " kotuku:edgeMode=\"mirror\""; break;
+      case FEM::TRANSPARENT: break;
+   }
    Value = stream.str();
    return ERR::Okay;
 }
@@ -492,9 +548,10 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
 #include "filter_blur_def.c"
 
 static const FieldArray clBlurFXFields[] = {
-   { "SX",     FDF_DOUBLE|FDF_RW },
-   { "SY",     FDF_DOUBLE|FDF_RW },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
+   { "SX",       FDF_DOUBLE|FDF_RW },
+   { "SY",       FDF_DOUBLE|FDF_RW },
+   { "EdgeMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_EdgeMode, &clBlurFXFEM },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
    END_FIELD
 };
 
