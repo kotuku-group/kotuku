@@ -1,0 +1,732 @@
+#!/usr/bin/env origo
+--[[
+Water Ripples
+
+Produces an animated water ripple effect over an image.  Click on the image to drop new ripples, or drag to stir the
+water.  The right mouse button cycles the drop style between ripple, punch and warp.
+Use punch or warp to select the starting style.
+The surfer, rain, splashes and swirl flags add independent sources of motion.
+
+The window includes a controls panel at the bottom for adjusting the options in real time.  Drag the strip at the
+top of the panel to lower it out of the way, or click the strip to collapse or restore it.  Press space to hide or
+show the panel.
+
+The water is a height map that is simulated in Tiri with the classic two-page wave algorithm: each cell's new height
+is the average of its neighbours minus its previous height, then damped by the density.  The simulation runs at a
+reduced resolution (see 'detail'), which keeps it cheap and gives the ripples a soft profile once upscaled.
+
+Rendering is delegated to the vector filter pipeline.  Each frame the height map is converted into a 'map' bitmap:
+
+   Red   = 128 + horizontal slope   (displacement X)
+   Green = 128 + vertical slope     (displacement Y)
+   Alpha = 128 + height             (bump map for lighting)
+
+The bitmap is fed into the filter through an ImageFX effect and then processed as follows:
+
+   ImageFX(logo), ImageFX(map) --> DisplacementFX(map red, green) --> displaced
+   ImageFX(map) --> LightingFX(specular) --> CompositeFX(in displaced) --> highlights
+   CompositeFX(displaced + highlights)
+
+Using the slope rather than the height for displacement approximates refraction through the water surface, which is
+the same technique as the original C++ implementation.  Use light to add specular highlights.
+--]]
+
+   import 'gui', 'gui/window', 'gui/slider', 'gui/combobox', 'gui/toggle', 'options'
+
+   include 'display', 'vector'
+
+   parser = options({
+      name        = 'Ripple',
+      cmdName     = 'ripple',
+      description = 'Animated water ripples rendered with the vector displacement and lighting filters.',
+      autoHelp    = false,
+      epilog      = [[
+Examples:
+  origo examples/ripple.tiri
+  origo examples/ripple.tiri punch surfer rain splashes swirl
+  origo examples/ripple.tiri warp frames=60 save=ripple.png
+]],
+      args        = array<table> {
+         { name = 'image', type = 'str', default = 'data/logos/kotuku-square.png', comment = 'Image to display.' },
+         { name = 'detail', type = 'int', default = 2,
+           comment = 'Divisor of the image size that gives the simulation resolution.  Higher values are faster.' },
+         { name = 'strength', type = 'int', default = 15, comment = 'Size of new drops, 2 - 200.' },
+         { name = 'density', type = 'int', default = 50,
+           comment = 'Damping of the water, 0 - 100.  High values calm it quickly.' },
+         { name = 'drop', type = 'int', default = 400, comment = 'Height of new drops, 10 - 1000.' },
+         { name = 'refraction', type = 'num', default = 1, comment = 'Multiplier for the displacement strength.' },
+         { name = 'light', kind = 'flag', comment = 'Enables lighting at an additional performance cost.' },
+         { name = 'mode', type = 'str', default = 'ripple',
+           comment = 'Initial style (ripple, punch or warp). An enabled punch or warp flag takes precedence.' },
+         { name = 'punch', kind = 'flag', comment = 'Start with a dent that creates both a ripple and distortion.' },
+         { name = 'warp', kind = 'flag', comment = 'Start with a cone that distorts the image with little rippling.' },
+         { name = 'surfer', kind = 'flag', comment = 'Leave a wake along a wandering path.' },
+         { name = 'rain', kind = 'flag', comment = 'Add random raindrops to the water.' },
+         { name = 'splashes', kind = 'flag', comment = 'Add occasional large splashes.' },
+         { name = 'swirl', kind = 'flag', comment = 'Make ripples in a circle around the centre.' },
+         { name = 'stats', kind = 'flag', comment = 'Print timing statistics every two seconds.' },
+         { name = 'frames', type = 'int', default = 0,
+           comment = 'Run this many frames offscreen, then exit.  Combine with save to capture the result.' },
+         { name = 'save', type = 'str', comment = 'PNG file to save after the offscreen frames have run.' },
+         { name = 'help', kind = 'flag', hidden = true,
+            exec = function(Parser:table!)
+               print(Parser.getHelp())
+               raise ERR_Terminate
+            end
+         }
+      }
+   })
+
+   glArgs = parser.process()
+   if glArgs is nil then return end
+   if glArgs.punch and glArgs.warp then raise ERR_Args, 'Choose either punch or warp.' end
+
+   FRAME_RATE <const> = 50
+   ANGLE_STEP <const> = 2 * math.pi / 2048
+
+   -- Encoding of the map bitmap.  A slope of 256 (or a height of 1024) uses the full range of a channel.
+
+   SLOPE_ENC  <const> = 0.5
+   HEIGHT_ENC <const> = 0.125
+
+   MODES <const> = array<str> { 'ripple', 'punch', 'warp' }
+
+   local glWindow, glViewport, glScene, glWater, glTimer, glTarget
+   local glPointer = { x = 0, y = 0, down = false, pending = false }
+
+   glStrength = math.min(math.max(glArgs.strength, 2), 200)
+   glDensity  = math.floor(math.min(math.max(glArgs.density, 0), 100) / 10)
+   glDrop     = math.min(math.max(glArgs.drop, 10), 1000)
+   local initial_mode = glArgs.punch ? 'punch' : (glArgs.warp ? 'warp' : glArgs.mode)
+   glMode = MODES.indexOf(initial_mode)
+
+----------------------------------------------------------------------------------------------------------------------
+-- Load the image to get its dimensions.  The filter loads its own copy through ImageFX.
+
+   local source = obj.new('image', { path = glArgs.image, bitsPerPixel = 32 })
+   IMG_W = source.bitmap.width
+   IMG_H = source.bitmap.height
+   source = nil
+
+   detail = math.min(math.max(glArgs.detail, 1), 8)
+   MAP_W = math.floor(IMG_W / detail)
+   MAP_H = math.floor(IMG_H / detail)
+   MAP_CELLS = MAP_W * MAP_H
+
+   -- The angles are always randomised, as the controls panel can enable the surfer and swirl at any time.
+
+   local surfer_x_angle = math.random() * 2 * math.pi
+   local surfer_y_angle = math.random() * 2 * math.pi
+   local swirl_angle = math.random() * 2 * math.pi
+   local surfer_x:num, surfer_y:num
+
+   -- Two pages of height map.  The outer ring of cells is never simulated and remains zero, which removes the need
+   -- for edge checks in the inner loops.
+
+   glOld = array<float, MAP_CELLS>
+   glNew = array<float, MAP_CELLS>
+   glOld.fill(0)
+   glNew.fill(0)
+
+-- Change the simulation resolution.  The water is reset, as the existing height map does not fit the new size.
+
+function setDetail(Detail:num!)
+   detail = Detail
+   MAP_W = math.floor(IMG_W / detail)
+   MAP_H = math.floor(IMG_H / detail)
+   MAP_CELLS = MAP_W * MAP_H
+   glOld = array<float, MAP_CELLS>
+   glNew = array<float, MAP_CELLS>
+   glOld.fill(0)
+   glNew.fill(0)
+   surfer_x, surfer_y = nil, nil
+end
+
+   -- The map bitmap is created by buildFilter() as a child of an ImageFX.  glPixels is the byte buffer that is
+   -- written to it each frame.
+
+   local glMapBitmap:obj, glPixels:array<byte>
+   local LINE_WIDTH:num, R_POS:num, G_POS:num, A_POS:num
+
+   -- The active filter and its displacement effect, which are replaced when the lighting or detail changes.
+
+   local glFilter:obj, glDisplacement:obj
+   local glFilterCount = 0
+
+----------------------------------------------------------------------------------------------------------------------
+-- Blob functions, ported from the C++ original.  Each adds to the current page of the height map within a radius
+-- of X, Y, clipped so that the outer ring of cells is left untouched.
+
+function blobBounds(X:num!, Y:num!, Radius:num!):<num, num, num, num>
+   local left   = math.max(-Radius, 1 - X)
+   local top    = math.max(-Radius, 1 - Y)
+   local right  = math.min(Radius, MAP_W - 1 - X)
+   local bottom = math.min(Radius, MAP_H - 1 - Y)
+   return left, top, right, bottom
+end
+
+-- A flat-topped column of water; the default ripple
+
+function heightBlob(X:num!, Y:num!, Radius:num!, Height:num!)
+   local left, top, right, bottom = blobBounds(X, Y, Radius)
+   local rquad = Radius * Radius
+   local map = glOld
+   for cy in {top to bottom} do
+      local row = (cy + Y) * MAP_W + X
+      for cx in {left to right} do
+         if cx * cx + cy * cy < rquad then map[row + cx] += Height end
+      end
+   end
+end
+
+-- A cosine shaped dent, which produces a ripple combined with a distortion
+
+function sineBlob(X:num!, Y:num!, Radius:num!, Height:num!)
+   local left, top, right, bottom = blobBounds(X, Y, Radius)
+   local rquad = Radius * Radius
+   local map = glOld
+   for cy in {top to bottom} do
+      local row = (cy + Y) * MAP_W + X
+      for cx in {left to right} do
+         local square = cx * cx + cy * cy
+         if square < rquad then
+            map[row + cx] += (math.cos(math.pi * math.sqrt(square) / Radius) + 1) * Height / 8
+         end
+      end
+   end
+end
+
+-- A cone, which produces a pure distortion that has little rippling
+
+function warpBlob(X:num!, Y:num!, Radius:num!, Height:num!)
+   local left, top, right, bottom = blobBounds(X, Y, Radius)
+   local rquad = Radius * Radius
+   local h = Height / 64
+   local map = glOld
+   for cy in {top to bottom} do
+      local row = (cy + Y) * MAP_W + X
+      for cx in {left to right} do
+         local square = cx * cx + cy * cy
+         if square < rquad then map[row + cx] += (Radius - math.sqrt(square)) * h end
+      end
+   end
+end
+
+-- Drop a blob at a position expressed in image coordinates
+
+function addBlob(X:num!, Y:num!)
+   local x = math.floor(X * MAP_W / IMG_W)
+   local y = math.floor(Y * MAP_H / IMG_H)
+   if (x < 1) or (y < 1) or (x >= MAP_W - 1) or (y >= MAP_H - 1) then return end
+
+   local mode = MODES[glMode]
+   if mode is 'punch' then
+      sineBlob(x, y, glStrength, -glDrop)
+   elseif mode is 'warp' then
+      warpBlob(x, y, glStrength, glDrop)
+   else
+      heightBlob(x, y, math.floor(glStrength / 2), glDrop)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Add the automatic disturbances to the current height page before advancing the waves.
+
+function animateWater()
+   if (MAP_W < 3) or (MAP_H < 3) then return end
+
+   local mode = MODES[glMode]
+   local radius = math.floor(glStrength / 2)
+
+   if glArgs.surfer then
+      local x = math.floor(MAP_W * 0.5 + math.sin(surfer_x_angle * 65 / 256) *
+         math.sin(surfer_x_angle * 349 / 256) * math.max(0, (MAP_W - 8) * 0.5))
+      local y = math.floor(MAP_H * 0.5 + math.sin(surfer_y_angle * 377 / 256) *
+         math.sin(surfer_y_angle * 84 / 256) * math.max(0, (MAP_H - 8) * 0.5))
+      surfer_x_angle += 13 * ANGLE_STEP
+      surfer_y_angle += 12 * ANGLE_STEP
+
+      if mode is 'punch' then
+         if surfer_x?? then
+            sineBlob(math.floor((surfer_x + x) / 2), math.floor((surfer_y + y) / 2), 3, -1200)
+         end
+         sineBlob(x, y, 4, -2000)
+      else
+         heightBlob(x, y, radius, glDrop)
+      end
+      surfer_x, surfer_y = x, y
+   end
+
+   if glArgs.rain then
+      local x = math.random(1, MAP_W - 2)
+      local y = math.random(1, MAP_H - 2)
+      glOld[y * MAP_W + x] = math.random(0, glDrop * 4)
+   end
+
+   if glArgs.splashes and (math.random(1, 20) is 1) then
+      -- Reduce the margins on small maps so the random intervals stay valid.
+      local margin_x = math.min(glStrength, math.floor((MAP_W - 1) / 2))
+      local margin_y = math.min(glStrength, math.floor((MAP_H - 1) / 2))
+      local x = math.random(margin_x, MAP_W - 1 - margin_x)
+      local y = math.random(margin_y, MAP_H - 1 - margin_y)
+      if mode is 'punch' then
+         sineBlob(x, y, glStrength, -glDrop * 6)
+      else
+         heightBlob(x, y, radius, glDrop)
+      end
+   end
+
+   if glArgs.swirl then
+      local orbit = math.min(25, (MAP_W - 3) * 0.5, (MAP_H - 3) * 0.5)
+      local x = math.floor(MAP_W * 0.5 + math.cos(swirl_angle) * orbit)
+      local y = math.floor(MAP_H * 0.5 + math.sin(swirl_angle) * orbit)
+      swirl_angle += 50 * ANGLE_STEP
+      if mode is 'ripple' then
+         heightBlob(x, y, 6, glDrop)
+      else
+         sineBlob(x, y, 15, -1200)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Advance the water by one step.  The new page holds the heights from two steps ago, which gives each cell its
+-- momentum.  The original used integer arithmetic, where 'h - (h >> density)' never damps small positive heights and
+-- leaves a permanent low-level noise in the water.  Floating point heights with proportional damping settle cleanly.
+
+function stepWater()
+   animateWater()
+
+   local old = glOld
+   local new = glNew
+   local w = MAP_W
+   local keep = 1 - (1 / (2 ** glDensity))
+   for y in {1 to MAP_H - 1} do
+      local i = y * w + 1
+      for _ in {1 to w - 1} do
+         local h = (old[i - w] + old[i + w] + old[i - 1] + old[i + 1] +
+            old[i - w - 1] + old[i - w + 1] + old[i + w - 1] + old[i + w + 1]) * 0.25 - new[i]
+         new[i] = h * keep
+         i++
+      end
+   end
+
+   glOld = new
+   glNew = old
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert the height map into the map bitmap.  The original measured slopes with the forward difference
+-- h(x) - h(x+1).  The wave kernel sustains a checkerboard pattern that the damping is slow to remove, and forward
+-- differences turn it into large, jagged displacements.  Central differences are blind to that pattern.
+
+function renderMap()
+   local map = glOld
+   local px = glPixels
+   local w = MAP_W
+   local enc = SLOPE_ENC * 0.5 -- Central differences span two cells
+   for y in {1 to MAP_H - 1} do
+      local i = y * w + 1
+      local p = y * LINE_WIDTH + 4
+      for _ in {1 to w - 1} do
+         -- The extra 0.5 rounds the values, as byte stores truncate
+         local r = 128.5 + (map[i - 1] - map[i + 1]) * enc
+         local g = 128.5 + (map[i - w] - map[i + w]) * enc
+         local a = 128.5 + map[i] * HEIGHT_ENC
+         px[p + R_POS] = (r < 0) ? 0 : ((r > 255) ? 255 : r)
+         px[p + G_POS] = (g < 0) ? 0 : ((g > 255) ? 255 : g)
+         px[p + A_POS] = (a < 0) ? 0 : ((a > 255) ? 255 : a)
+         i++
+         p += 4
+      end
+   end
+
+   check glMapBitmap.acSeek(0, SEEK_START)
+   check glMapBitmap.acWrite(px)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glTimes = { sim = 0, map = 0, frames = 0 }
+
+function frame()
+   if glPointer.pending then
+      glPointer.pending = false
+      addBlob(glPointer.x, glPointer.y)
+   end
+
+   local t0 = mSys.PreciseTime()
+   stepWater()
+   local t1 = mSys.PreciseTime()
+   renderMap()
+   local t2 = mSys.PreciseTime()
+   check glWater.acRefresh() -- The map bitmap changed without the vector's knowledge
+
+   glTimes.sim += t1 - t0
+   glTimes.map += t2 - t1
+   glTimes.frames++
+end
+
+function printStats(DrawTime:num)
+   local n = glTimes.frames
+   if n is 0 then return end
+   local draw = DrawTime ? string.format(', draw %.2f', DrawTime / 1000) : ''
+   print(string.format('Per frame (ms): sim %.2f, map %.2f%s | map %dx%d', glTimes.sim / n / 1000,
+      glTimes.map / n / 1000, draw, MAP_W, MAP_H))
+   glTimes.{ sim = 0, map = 0, frames = 0 }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build the filter pipeline described at the top of this file.
+
+function displacementScale():num
+   return 255 / SLOPE_ENC / 8 * (IMG_W / MAP_W) * glArgs.refraction
+end
+
+function buildFilter(Scene:obj!):obj
+   local filter = Scene.new('VectorFilter', {
+      units = VUNIT_BOUNDING_BOX, primitiveUnits = VUNIT_USERSPACE, x = 0, y = 0, width = 1, height = 1,
+      colourSpace = VCS_SRGB -- The map channels are linear values and must not be gamma converted
+   })
+
+   local logo = filter.new('ImageFX', { path = glArgs.image, aspectRatio = ARF_NONE })
+
+   -- A custom bitmap is attached to an ImageFX by creating it as a child before the ImageFX is initialised
+
+   local map = filter.new('ImageFX')
+   glMapBitmap = map.new('Bitmap', { width = MAP_W, height = MAP_H, bitsPerPixel = 32, flags = BMF_ALPHA_CHANNEL })
+   map.aspectRatio = ARF_NONE
+   map.init()
+
+   glPixels   = array<byte, glMapBitmap.size>
+   LINE_WIDTH = glMapBitmap.lineWidth
+   R_POS = glMapBitmap.colourFormat.redPos >> 3
+   G_POS = glMapBitmap.colourFormat.greenPos >> 3
+   A_POS = glMapBitmap.colourFormat.alphaPos >> 3
+
+   -- The unsimulated border keeps zero slope and zero height, both encoded as 128.
+
+   glPixels.fill(128)
+
+   -- The slope encoding offsets by SLOPE_ENC * slope / 255 of the scale.  The original moved each pixel by
+   -- slope / 8 of a map cell.
+
+   local displaced = filter.new('DisplacementFX', {
+      input = logo, mix = map, xChannel = CMP_RED, yChannel = CMP_GREEN, scale = displacementScale()
+   })
+   glDisplacement = displaced
+
+   if not glArgs.light then return filter end
+
+   local specular = filter.new('LightingFX', { input = map, type = LT_SPECULAR, scale = 6, constant = 1.2,
+      exponent = 24 })
+   check specular.mtSetDistantLight(225, 35)
+   local highlights = filter.new('CompositeFX', { input = specular, mix = displaced, operator = OP_IN })
+   filter.new('CompositeFX', { input = displaced, mix = highlights, operator = OP_ARITHMETIC, k2 = 1, k3 = 1 })
+
+   return filter
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build a new filter from the current options and apply it to the water.  Each filter is registered under a unique
+-- name, and freeing the old filter removes its definition from the scene.
+
+function replaceFilter()
+   local scene = glWater.scene
+   local old = glFilter
+   glFilterCount++
+   local name = f'ripple{glFilterCount}'
+   glFilter = buildFilter(scene)
+   check scene.mtAddDef(name, glFilter)
+   glWater.filter = f'url(#{name})'
+   if old then old.free() end
+end
+
+-- Construct the scene inside Viewport, which must provide an IMG_W x IMG_H coordinate space.
+
+function buildScene(Viewport:obj!)
+   glWater = Viewport.new('VectorRectangle', { x = 0, y = 0, width = IMG_W, height = IMG_H, fill = 'black' })
+   replaceFilter()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function createOffscreen()
+   glScene = obj.new('VectorScene', { pageWidth = IMG_W, pageHeight = IMG_H })
+   glViewport = glScene.new('VectorViewport', { x = 0, y = 0, width = IMG_W, height = IMG_H })
+   buildScene(glViewport)
+   glTarget = obj.new('bitmap', { width = IMG_W, height = IMG_H, bitsPerPixel = 32 }) -- Strong reference
+   glScene.bitmap = glTarget
+end
+
+function drawOffscreen()
+   check glTarget.acClear()
+   check glScene.acDraw()
+end
+
+function saveScenePNG(Path:str!)
+   local bmp = glTarget
+   local pic = obj.new('image', { width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
+      flags = 'NEW' })
+   bmp.acCopyData(pic.bitmap)
+   local file = obj.new('file', { flags = FL_NEW|FL_WRITE, path = Path })
+   pic.acSaveImage(file)
+   print('Saved ' .. Path)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The controls panel is overlaid at the bottom of the window.  It is anchored to the bottom edge by its yOffset,
+-- which is made negative to lower the panel by glSlide units.  The strip at the top always remains visible.
+
+   STRIP_H     <const> = 14
+   ROW_H       <const> = 34
+   LABEL_W     <const> = 92
+   PANEL_PAD   <const> = 8
+   PANEL_H     <const> = STRIP_H   + ROW_H * 4
+   MAX_SLIDE   <const> = PANEL_H - STRIP_H
+   CLICK_SLOP  <const> = 3
+
+   glControls = { } -- Strong references to the widgets, which free their viewports when collected
+   local glPanel:obj
+   local glSlide = 0
+   local glPanelKeys:userdata -- Keyboard subscription for the space bar
+
+function slidePanel(Slide:num!)
+   glSlide = math.min(math.max(Slide, 0), MAX_SLIDE)
+   glPanel.yOffset = -glSlide
+   glScene.surface.mtScheduleRedraw()
+end
+
+-- Create a slider in Column at Row.  Apply receives each new value.
+
+function addSlider(Column:obj!, Row:num!, Label:str!, Min:num!, Max:num!, Step:num!, Value:num!, Apply:func!):table
+   return gui.slider({
+      target = Column, x = glWindow.margins.left, xOffset = glWindow.margins.right, y = Row * ROW_H, label = Label, labelWidth = LABEL_W,
+      valuePos = 'out-max', valueWidth = 34, min = Min, max = Max, step = Step, value = Value,
+      events = { activate = function(Position:num) Apply(Position) end }
+   })
+end
+
+function createControls()
+   local theme = gui.getTheme(glViewport)
+
+   glPanel = glViewport.new('VectorViewport', { x = 0, width = '100%', height = PANEL_H, yOffset = 0,
+      overflow = VOF_HIDDEN })
+   glPanel.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = '100%', fill = theme.palette.bkgd,
+      opacity = 0.5 })
+
+   -- Clicks on the panel background must not drop ripples on the water behind it.
+
+   check glPanel.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj, Events:any) end)
+
+   -- The drag strip, with a grip in its centre
+
+   local strip = glPanel.new('VectorViewport', { x = 0, y = 0, width = '100%', height = STRIP_H,
+      cursor = PTC_SPLIT_VERTICAL })
+   strip.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = '100%', fill = theme.palette.edge,
+      opacity = 0.6 })
+   strip.new('VectorRectangle', { x = '45%', y = (STRIP_H - 4) * 0.5, width = '10%', height = 4, cornerX = 2,
+      cornerY = 2, fill = theme.palette.text, opacity = 0.7 })
+
+   -- Absolute coordinates are used for dragging, as the strip moves with the pointer.  A click that does not move
+   -- the strip collapses the panel, or restores it if it is lowered.
+
+   local drag:table
+   check strip.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON, function(Viewport:obj, Events:any)
+      local ev = Events
+      while ev do
+         if ev.type is JET_LMB then
+            if ev.value > 0 then
+               drag = { y = ev.absY, slide = glSlide, moved = false }
+            elseif drag then
+               if not drag.moved then slidePanel((glSlide > 0) ? 0 : MAX_SLIDE) end
+               drag = nil
+            end
+         elseif (ev.type is JET_ABS_XY) and drag then
+            local delta = ev.absY - drag.y
+            if math.abs(delta) >= CLICK_SLOP then drag.moved = true end
+            if drag.moved then slidePanel(drag.slide + delta) end
+         end
+         ev = ev.next
+      end
+   end)
+
+   local body = glPanel.new('VectorViewport', { x = 0, y = STRIP_H + PANEL_PAD, width = '100%',
+      height = ROW_H * 4 })
+   local left  = body.new('VectorViewport', { x = 0, y = 0, width = '50%', height = '100%' })
+   local right = body.new('VectorViewport', { x = '50%', y = 0, width = '50%', height = '100%' })
+
+   glControls.strength = addSlider(left, 0, 'Strength:', 2, 200, 1, glStrength, function(Value:num)
+      glStrength = Value
+   end)
+
+   glControls.density = addSlider(right, 0, 'Density:', 0, 100, 10, glDensity * 10, function(Value:num)
+      glDensity = math.floor(Value / 10)
+   end)
+
+   glControls.drop = addSlider(left, 1, 'Drop:', 10, 1000, 10, glDrop, function(Value:num)
+      glDrop = Value
+   end)
+
+   glControls.refraction = addSlider(right, 1, 'Refraction:', 0, 4, 0.1, glArgs.refraction, function(Value:num)
+      glArgs.refraction = Value
+      glDisplacement.scale = displacementScale()
+   end)
+
+   glControls.detail = addSlider(left, 2, 'Detail:', 1, 8, 1, detail, function(Value:num)
+      if Value is detail then return end
+      setDetail(Value)
+      replaceFilter()
+   end)
+
+   local mode_items = array<table>
+   for _, mode in MODES do
+      mode_items.push({ label = mode })
+   end
+
+   glControls.mode = gui.combobox({
+      target = right, x = glWindow.margins.left, xOffset = glWindow.margins.right, y = 2 * ROW_H, label = 'Style:', labelWidth = LABEL_W,
+      text = MODES[glMode], items = mode_items,
+      events = {
+         activate = function(Item:table!)
+            glMode = MODES.indexOf(Item.label)
+         end
+      }
+   })
+
+   -- The toggles are packed from left to right on the last row.
+
+   local x = glWindow.margins.left
+   for _, name in array<str> { 'light', 'surfer', 'rain', 'splashes', 'swirl' } do
+      local toggle:table
+      toggle = gui.toggle({
+         target = body, x = x, y = 3 * ROW_H, label = name.cap(), value = glArgs[name] ?? false,
+         events = {
+            activate = function()
+               glArgs[name] = toggle.value
+               if name is 'light' then replaceFilter() end
+            end
+         }
+      })
+      glControls[name] = toggle
+      x += toggle.viewport.width + 20
+   end
+
+   -- The hint is right-aligned in the lower right corner, on the baseline of the toggle labels.
+
+   local hint_area = glPanel.new('VectorViewport', { x = 0, xOffset = glWindow.margins.right, y = 0, height = '100%' })
+   hint_area.new('VectorText', {
+      x = '100%', y = PANEL_H - 12, align = 'end', string = 'Space to hide',
+      fontStyle = gui.fontStyle(table.merge(theme.window.text, { size = '9pt' }))
+   })
+
+   -- Space is reserved at the window level, so it toggles the panel even when one of its widgets has the focus.
+
+   glPanelKeys = input.keyboard(glWindow.surface, function(Handle, SurfaceID, Qualifiers:num, Code:num, Unicode:num)
+      if Qualifiers has KQ_PRESSED then
+         glPanel.visibility = (glPanel.visibility is VIS_HIDDEN) ? VIS_VISIBLE : VIS_HIDDEN
+         glScene.surface.mtScheduleRedraw()
+      end
+      return KRES_HANDLED
+   end, { reserve = true, forbidden = KQ_CTRL | KQ_ALT | KQ_COMMAND | KQ_SHIFT, code = KEY_SPACE, noRepeat = true })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Map a pointer position in the client viewport to image coordinates (the view is centred with ARF_MEET).
+
+function toImage(X:num!, Y:num!):<num, num>
+   local w = glViewport.width
+   local h = glViewport.height
+   local scale = math.min(w / IMG_W, h / IMG_H)
+   return (X - (w - IMG_W * scale) * 0.5) / scale, (Y - (h - IMG_H * scale) * 0.5) / scale
+end
+
+function createWindow()
+   glWindow = gui.window({
+      title        = 'Ripple',
+      insideWidth  = IMG_W,
+      insideHeight = IMG_H,
+      minWidth     = 700,
+      minHeight    = 600,
+      events = {
+         close = function(Window:table)
+            if glTimer then mSys.UpdateTimer(glTimer, 0) end
+            glTimer = nil
+            glPanelKeys?.unsubscribe()
+            glPanelKeys = nil
+            glWindow = nil
+            mSys.SendMessage(MSGID_QUIT)
+         end
+      }
+   })
+
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
+   glScene = glViewport.scene
+
+   local view = glViewport.new('VectorViewport', { x = 0, y = 0, width = '100%', height = '100%',
+      aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_MEET, overflow = VOF_HIDDEN })
+   view.{ viewX = 0, viewY = 0, viewWidth = IMG_W, viewHeight = IMG_H }
+   buildScene(view)
+
+   check glViewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON, function(Viewport:obj, Events:any)
+      local ev = Events
+      while ev do
+         if ev.type is JET_ABS_XY then
+            if glPointer.down then
+               glPointer.x, glPointer.y = toImage(ev.x, ev.y)
+               glPointer.pending = true
+            end
+         elseif ev.type is JET_LMB then
+            glPointer.down = ev.value > 0
+            if glPointer.down then
+               glPointer.x, glPointer.y = toImage(ev.x, ev.y)
+               glPointer.pending = true
+            end
+         elseif (ev.type is JET_RMB) and (ev.value > 0) then
+            glMode = (glMode + 1) % #MODES
+            glControls.mode?.setText(MODES[glMode])
+         end
+         ev = ev.next
+      end
+   end)
+
+   createControls()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   if glArgs.frames > 0 then
+      createOffscreen()
+      -- A few drops so that a saved frame shows overlapping ripples
+      addBlob(IMG_W * 0.35, IMG_H * 0.4)
+      addBlob(IMG_W * 0.6, IMG_H * 0.55)
+      addBlob(IMG_W * 0.5, IMG_H * 0.25)
+      local draw_time = 0
+      for _ in {0 to glArgs.frames} do
+         frame()
+         local t = mSys.PreciseTime()
+         drawOffscreen()
+         draw_time += mSys.PreciseTime() - t
+      end
+      printStats(draw_time / glArgs.frames)
+      if glArgs.save then saveScenePNG(glArgs.save) end
+      return
+   end
+
+   createWindow()
+
+   local last_stats = mSys.PreciseTime()
+   err, glTimer = mSys.SubscribeTimer(1 / FRAME_RATE, function(Subscriber:obj, Elapsed:num, Current:num)
+      frame()
+      glScene.surface.mtScheduleRedraw()
+      local now = mSys.PreciseTime()
+      if glArgs.stats and (now - last_stats > 2000000) then
+         last_stats = now
+         printStats()
+      end
+   end)
+
+   glWindow.show()
+   processing.sleep()
+
+   if glTimer then mSys.UpdateTimer(glTimer, 0) end
