@@ -76,9 +76,9 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    // colour space.  When the filter colour space is linear, RGB channels from Mix are linearised on sampling; alpha
    // remains unchanged.
 
-   objBitmap *inBmp, *mixBmp;
-   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return log.warning(ERR::NoData);
-   if (get_source_bitmap(Self, &mixBmp, filter_input_role::MIX) != ERR::Okay) return log.warning(ERR::NoData);
+   const objBitmap *in_bmp, *mix_bmp;
+   if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
+   if (auto error = get_source_bitmap(Self, &mix_bmp, filter_input_role::MIX); error != ERR::Okay) return error;
 
    const uint8_t RGBA[4] = {
       uint8_t(Self->Target->ColourFormat->RedPos>>3),
@@ -87,20 +87,21 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
       uint8_t(Self->Target->ColourFormat->AlphaPos>>3)
    };
 
-   uint8_t *input = inBmp->Data + (inBmp->Clip.Left * inBmp->BytesPerPixel) + (inBmp->Clip.Top * inBmp->LineWidth);
-   uint8_t *mix   = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
+   const uint8_t *input = in_bmp->Data + (in_bmp->Clip.Left * in_bmp->BytesPerPixel) +
+      (in_bmp->Clip.Top * in_bmp->LineWidth);
+   const uint8_t *mix = mix_bmp->Data + (mix_bmp->Clip.Left * 4) + (mix_bmp->Clip.Top * mix_bmp->LineWidth);
    uint8_t *dest  = Self->Target->Data + (Self->Target->Clip.Left * Self->Target->BytesPerPixel) + (Self->Target->Clip.Top * Self->Target->LineWidth);
 
    const int width      = Self->Target->Clip.Right  - Self->Target->Clip.Left;
    const int height     = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
-   const int mix_width  = mixBmp->Clip.Right  - mixBmp->Clip.Left;
-   const int mix_height = mixBmp->Clip.Bottom - mixBmp->Clip.Top;
-   const int in_width   = inBmp->Clip.Right   - inBmp->Clip.Left;
-   const int in_height  = inBmp->Clip.Bottom  - inBmp->Clip.Top;
+   const int mix_width  = mix_bmp->Clip.Right  - mix_bmp->Clip.Left;
+   const int mix_height = mix_bmp->Clip.Bottom - mix_bmp->Clip.Top;
+   const int in_width   = in_bmp->Clip.Right   - in_bmp->Clip.Left;
+   const int in_height  = in_bmp->Clip.Bottom  - in_bmp->Clip.Top;
    const int draw_width = (mix_width < width) ? mix_width : width;
    const int draw_height = (mix_height < height) ? mix_height : height;
 
-   auto &client = Self->Filter->ClientVector;
+   auto &client = Self->Filter->Render->ClientVector;
    const double c_width  = client->Bounds.width();
    const double c_height = client->Bounds.height();
 
@@ -124,14 +125,14 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    const uint8_t y_type = RGBA[int(Self->YChannel)];
    const bool linear_mix = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
 
-   auto sample_mix = [linear_mix](uint8_t *Pixel, CMP Channel, uint8_t Type) -> uint8_t {
+   auto sample_mix = [linear_mix](const uint8_t *Pixel, CMP Channel, uint8_t Type) -> uint8_t {
       if ((linear_mix) and (Channel != CMP::ALPHA)) return glLinearRGB.convert(Pixel[Type]);
       else return Pixel[Type];
    };
 
-   auto get_input_pixel = [input, inBmp, in_width, in_height](int X, int Y) -> uint8_t * {
+   auto get_input_pixel = [input, in_bmp, in_width, in_height](int X, int Y) -> const uint8_t * {
       if ((X < 0) or (X >= in_width) or (Y < 0) or (Y >= in_height)) return nullptr;
-      else return input + (X * inBmp->BytesPerPixel) + (Y * inBmp->LineWidth);
+      else return input + (X * in_bmp->BytesPerPixel) + (Y * in_bmp->LineWidth);
    };
 
    auto sample_input_bilinear = [get_input_pixel](uint8_t *Output, double X, double Y) {
@@ -176,7 +177,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    for (int y=0; y < draw_height; y++) {
       auto m = mix;
       auto d = dest;
-      for (int x=0; x < draw_width; x++, m += mixBmp->BytesPerPixel, d += Self->Target->BytesPerPixel) {
+      for (int x=0; x < draw_width; x++, m += mix_bmp->BytesPerPixel, d += Self->Target->BytesPerPixel) {
          auto dx = sample_mix(m, Self->XChannel, x_type);
          auto dy = sample_mix(m, Self->YChannel, y_type);
          const double sample_x = double(x) + (sx * (double(dx) - HALF8BIT));
@@ -189,7 +190,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
                // The source pixel is outside of retrievable bounds
                ((uint32_t *)d)[0] = 0;
             }
-            else ((uint32_t *)d)[0] = ((uint32_t *)(input + (cx * 4) + (cy * inBmp->LineWidth)))[0];
+            else ((uint32_t *)d)[0] = ((uint32_t *)(input + (cx * 4) + (cy * in_bmp->LineWidth)))[0];
          }
          else if ((sample_x < 0.0) or (sample_x >= double(in_width)) or (sample_y < 0.0) or (sample_y >= double(in_height))) {
             // The source pixel is outside of retrievable bounds
@@ -197,7 +198,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
          }
          else sample_input_bilinear(d, sample_x, sample_y);
       }
-      mix  += mixBmp->LineWidth;
+      mix  += mix_bmp->LineWidth;
       dest += Self->Target->LineWidth;
    }
 

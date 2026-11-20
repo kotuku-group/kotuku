@@ -162,10 +162,11 @@ Draw: Render the effect to the target bitmap.
 
 static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 {
-   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
+   if ((not active_filter_step(Self)) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
 
    auto filter = Self->Filter;
-   const auto clip = filter->scratch_clip();
+   const auto &render = *filter->Render;
+   const auto clip = render.scratch_clip();
    const int width = clip.right;
    const int height = clip.bottom;
    if ((width <= 0) or (height <= 0)) return ERR::Okay;
@@ -176,7 +177,7 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
    double origin_x = 0, origin_y = 0, unit_width = 1, unit_height = 1;
    if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
       TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-      calc_local_boundary(filter->ClientVector, bounds);
+      calc_local_boundary(render.ClientVector, bounds);
       origin_x = bounds.left;
       origin_y = bounds.top;
       unit_width = bounds.width();
@@ -193,7 +194,7 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
    agg::trans_affine sampling;
    sampling.scale(unit_width, unit_height);
    sampling.translate(origin_x, origin_y);
-   sampling *= filter->Transform;
+   sampling *= render.Transform;
    const double determinant = sampling.determinant();
    if ((not std::isfinite(determinant)) or (determinant IS 0)) return ERR::Okay;
    sampling.invert();
@@ -213,7 +214,7 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       if (auto error = Self->Bitmap->resize(width, height); error != ERR::Okay) return error;
    }
 
-   if ((not Self->CacheTransform.is_equal(sampling)) or (Self->CacheColourSpace != filter->ColourSpace) or
+   if ((not Self->CacheTransform.is_equal(sampling, 0.0)) or (Self->CacheColourSpace != filter->ColourSpace) or
        (Self->CacheRegion.left != region.left) or (Self->CacheRegion.top != region.top) or
        (Self->CacheRegion.right != region.right) or (Self->CacheRegion.bottom != region.bottom)) Self->Dirty = true;
 
@@ -276,8 +277,7 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       Self->Dirty = false;
    }
 
-   gfx::CopyArea(Self->Bitmap, Self->Target, BAF::NIL, 0, 0, width, height, 0, 0);
-   return ERR::Okay;
+   return gfx::CopyArea(Self->Bitmap, Self->Target, BAF::NIL, 0, 0, width, height, 0, 0);
 }
 
 //********************************************************************************************************************

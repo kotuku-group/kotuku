@@ -355,7 +355,7 @@ Draw: Render the effect to the target bitmap.
 
 static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
 {
-   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
+   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
    if (!Self->Matrix) return ERR::FieldNotSet;
 
    const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
@@ -370,14 +370,14 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
 
    const bool linear_rgb = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
 
-   objBitmap *inBmp;
-   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
+   const objBitmap *in_bmp;
+   if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
 
    auto out_line = Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth);
-   auto in_line  = inBmp->Data + (inBmp->Clip.Left<<2) + (inBmp->Clip.Top * inBmp->LineWidth);
+   const auto *in_line  = in_bmp->Data + (in_bmp->Clip.Left<<2) + (in_bmp->Clip.Top * in_bmp->LineWidth);
 
-   const int width  = inBmp->Clip.Right - inBmp->Clip.Left;
-   const int height = inBmp->Clip.Bottom - inBmp->Clip.Top;
+   const int width  = in_bmp->Clip.Right - in_bmp->Clip.Left;
+   const int height = in_bmp->Clip.Bottom - in_bmp->Clip.Top;
 
 #ifdef FILTER_SSE2
    // The 4x5 matrix is repacked into column-major register pairs so that the four row dot products are computed
@@ -392,7 +392,7 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
    const __m128d half = _mm_set1_pd(0.5);
 
    for (int y=0; y < height; y++) {
-      uint8_t *pixel = in_line;
+      const uint8_t *pixel = in_line;
       uint8_t *out = out_line;
       for (int x=0; x < width; x++, pixel += 4, out += 4) {
          const auto a = pixel[A];
@@ -436,11 +436,11 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
          }
       }
       out_line += Self->Target->LineWidth;
-      in_line += inBmp->LineWidth;
+      in_line += in_bmp->LineWidth;
    }
 #else
    for (int y=0; y < height; y++) {
-      uint8_t *pixel = in_line;
+      const uint8_t *pixel = in_line;
       uint8_t *out = out_line;
       for (int x=0; x < width; x++, pixel += 4, out += 4) {
          double a = pixel[A];
@@ -480,7 +480,7 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
          }
       }
       out_line += Self->Target->LineWidth;
-      in_line += inBmp->LineWidth;
+      in_line += in_bmp->LineWidth;
    }
 #endif
 

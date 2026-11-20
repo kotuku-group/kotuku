@@ -32,18 +32,18 @@ class extOffsetFX : public extFilterEffect {
       double dx = XOffset, dy = YOffset;
       if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
          if (Filter->AspectRatio IS VFA::NONE) {
-            double diag = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            double diag = dist(0, 0, Filter->Render->BoundWidth, Filter->Render->BoundHeight) * INV_SQRT2;
             dx *= diag;
             dy *= diag;
          }
          else {
-            dx *= Filter->BoundWidth;
-            dy *= Filter->BoundHeight;
+            dx *= Filter->Render->BoundWidth;
+            dy *= Filter->Render->BoundHeight;
          }
       }
 
-      DX = int(std::lround(dx * Filter->ClientVector->Transform.sx));
-      DY = int(std::lround(dy * Filter->ClientVector->Transform.sy));
+      DX = int(std::lround(dx * Filter->Render->ClientVector->Transform.sx));
+      DY = int(std::lround(dy * Filter->Render->ClientVector->Transform.sy));
    }
 };
 
@@ -51,14 +51,11 @@ class extOffsetFX : public extFilterEffect {
 
 static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 {
-   objBitmap *inBmp;
-   if (!get_source_bitmap(Self, &inBmp, filter_input_role::INPUT)) {
-      int dx, dy;
-      Self->pixel_offset(dx, dy);
-      gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height, dx, dy);
-      return ERR::Okay;
-   }
-   else return ERR::NoData;
+   const objBitmap *input;
+   if (auto error = get_source_bitmap(Self, &input, filter_input_role::INPUT); error != ERR::Okay) return error;
+   int dx, dy;
+   Self->pixel_offset(dx, dy);
+   return copy_filter_bitmap(input, Self->Target, BAF::NIL, 0, 0, input->Width, input->Height, dx, dy);
 }
 
 /*********************************************************************************************************************

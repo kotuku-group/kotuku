@@ -100,8 +100,13 @@ this will be reflected in the object once the method returns.
 
 static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
 {
+   if (not active_filter_step(Self)) return ERR::InvalidState;
+
    int resolution = Self->Resolution & (~1);
-   if (!resolution) resolution = std::min(int(Self->Filter->TargetWidth), int(Self->Filter->TargetHeight)) & (~1);
+   if (not resolution) {
+      const auto &render = *Self->Filter->Render;
+      resolution = std::min(int(render.TargetWidth), int(render.TargetHeight)) & ~1;
+   }
    const int half_res = resolution>>1;
 
    if (Self->N < 1) Self->N = 1;
@@ -118,7 +123,9 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
          fl::BlendMode(BLM::SRGB),
          fl::ColourSpace(CS::SRGB)))) return ERR::CreateObject;
    }
-   else if (Self->Bitmap->Width != resolution) Self->Bitmap->resize(resolution, resolution);
+   else if (Self->Bitmap->Width != resolution) {
+      if (auto error = Self->Bitmap->resize(resolution, resolution); error != ERR::Okay) return error;
+   }
 
    // The wave function is symmetrical on all four corners, so the top-left quadrant is duplicated to the others.
 
@@ -147,9 +154,7 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
       }
    }
 
-   render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->Filter->Scene->SampleMethod);
-
-   return ERR::Okay;
+   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->Filter->Scene->SampleMethod);
 }
 
 /*********************************************************************************************************************

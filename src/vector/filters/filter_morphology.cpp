@@ -115,13 +115,12 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
    if (canvasWidth * canvasHeight > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
 
-   objBitmap *inBmp;
-   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
+   const objBitmap *in_bmp;
+   if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
 
    if ((Self->RadiusX <= 0) and (Self->RadiusY <= 0)) {
       BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
-      gfx::CopyArea(inBmp, Self->Target, copy_flags, 0, 0, inBmp->Width, inBmp->Height, 0, 0);
-      return ERR::Okay;
+      return copy_filter_bitmap(in_bmp, Self->Target, copy_flags, 0, 0, in_bmp->Width, in_bmp->Height, 0, 0);
    }
 
    uint8_t *out_line;
@@ -145,7 +144,8 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       buffer_as_input = false;
    }
 
-   uint8_t *input = inBmp->Data + (inBmp->Clip.Top * inBmp->LineWidth) + (inBmp->Clip.Left * inBmp->BytesPerPixel);
+   const uint8_t *input = in_bmp->Data + (in_bmp->Clip.Top * in_bmp->LineWidth) +
+      (in_bmp->Clip.Left * in_bmp->BytesPerPixel);
 
    const bool dilate = Self->Operator IS MOP::DILATE;
 
@@ -154,7 +154,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       if (canvasWidth - 1 < radius) radius = canvasWidth - 1;
 
       for (int y=0; y < canvasHeight; y++) {
-         const uint8_t *in_row = input + (y * inBmp->LineWidth);
+         const uint8_t *in_row = input + (y * in_bmp->LineWidth);
          uint8_t *out = out_line + (y * out_linewidth);
 
          int x = 0;
@@ -189,7 +189,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       }
       else {
          src = input;
-         src_stride = inBmp->LineWidth;
+         src_stride = in_bmp->LineWidth;
       }
 
       auto dest = (uint8_t *)(Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth));

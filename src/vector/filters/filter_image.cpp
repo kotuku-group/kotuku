@@ -11,9 +11,12 @@ ImageFX: Renders a bitmap image in the effect pipeline.
 The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The
 client has the option of providing a pre-allocated @Bitmap or the path to a @Image file as the source.
 
-If a pre-allocated @Bitmap is to be used, it must be created under the ownership of the ImageFX object, and this must
-be configured prior to initialisation.  It is required that the bitmap uses 32 bits per pixel and that the alpha
-channel is enabled.
+If a pre-allocated @Bitmap is to be used, it must be owned by the ImageFX object before the ImageFX is initialised.
+The bitmap can be created as a child of the uninitialised ImageFX, or an existing bitmap can be assigned to it with
+~Core.SetOwner().  The bitmap must be initialised before the ImageFX, and it is required to use 32 bits per pixel with
+the alpha channel enabled.  The bitmap is retained for the lifetime of the ImageFX; an attempt to free it earlier is
+deferred until the ImageFX is freed.  Changes to the content of the bitmap are rendered on the next draw of the filter.
+Call @Vector.Refresh() on the filtered vector to ensure that it is redrawn.
 
 If a source image file is referenced, it will be upscaled to meet the requirements automatically as needed.
 
@@ -34,12 +37,14 @@ class extImageFX : public extFilterEffect {
    VSM ResampleMethod = VSM::BILINEAR; // Resample method.
    objBitmap *Bitmap;    // Bitmap containing source image data.
    objImage *Image;      // Origin image if loading a source file.
+   bool BitmapPinned = false;  // True if the client's Bitmap holds a strong pin taken by Init()
 
    extImageFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS;
    }
 
    ~extImageFX() {
+      if (BitmapPinned) { Bitmap->unpin(true); BitmapPinned = false; }
       if (Image) FreeResource(Image);
    }
 };
@@ -52,15 +57,30 @@ Draw: Render the effect to the target bitmap.
 
 static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
 {
-   render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod);
-   return ERR::Okay;
+   if (not active_filter_step(Self)) return ERR::InvalidState;
+   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod);
 }
+
 
 //********************************************************************************************************************
 
 static ERR IMAGEFX_Init(extImageFX *Self)
 {
-   if (!Self->Bitmap) return kt::Log().warning(ERR::FieldNotSet);
+   kt::Log log;
+
+   if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
+
+   if (not Self->Bitmap->initialised()) {
+      if (Self->BitmapPinned) { Self->Bitmap->unpin(); Self->BitmapPinned = false; }
+      return log.warning(ERR::NotInitialised);
+   }
+
+   if (Self->Bitmap->BytesPerPixel != 4) {
+      log.warning("The source bitmap #%d has %d bytes per pixel; 4 are required.", Self->Bitmap->UID,
+         Self->Bitmap->BytesPerPixel);
+      return ERR::InvalidValue;
+   }
+
    return ERR::Okay;
 }
 
@@ -70,18 +90,18 @@ static ERR IMAGEFX_Init(extImageFX *Self)
 static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
 {
    kt::Log log;
-
    if (Args->Object->classID() IS CLASSID::BITMAP) {
-      if (!Self->Bitmap) {
-         if (((objBitmap *)Args->Object)->BytesPerPixel IS 4) Self->Bitmap = (objBitmap *)Args->Object;
-         else log.warning("Attached bitmap ignored; BPP of %d != 4", ((objBitmap *)Args->Object)->BytesPerPixel);
+      if ((Self->initialised()) or (Self->Bitmap)) log.warning(ERR::AlreadyDefined);
+      else if (Self->Bitmap) log.warning(ERR::AlreadyDefined);
+      else {
+         Self->Bitmap = (objBitmap *)Args->Object;
+         Self->Bitmap->pin();
+         Self->BitmapPinned = true;
       }
-      else log.warning("Attached bitmap ignored; Bitmap field already defined.");
    }
 
    return ERR::Okay;
 }
-
 
 /*********************************************************************************************************************
 
@@ -92,8 +112,8 @@ Lookup: ARF
 -FIELD-
 Bitmap: The @Bitmap being used as the image source.
 
-Reading the Bitmap field will return the @Bitmap that is being used as the image source.  Note that if a custom
-Bitmap is to be used, the correct way to do this as to assign it to the ImageFX object via ownership rules.
+Reading the Bitmap field will return the @Bitmap that is being used as the image source.  A custom Bitmap is
+assigned by making the ImageFX object its owner prior to initialisation, as described in the class overview.
 
 If an image has been processed by setting the #Path, the Bitmap will refer to the content that has been
 processed.
