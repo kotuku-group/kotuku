@@ -23,6 +23,7 @@ struct AssignmentBinding {
    StaticBindingID binding_id{};
    uint16_t function_depth = 0;
    bool is_namespace = false;
+   const FunctionExprPayload *forward_declaration = nullptr;
    std::string registry_namespace;
 };
 
@@ -115,6 +116,24 @@ private:
    void declare(Identifier &Name)
    {
       this->publish_declaration(this->prepare_declaration(Name));
+   }
+
+   void declare_local_function(Identifier &Name, FunctionExprPayload *Function)
+   {
+      auto &bindings = this->scopes_.back().bindings;
+      auto previous = std::find_if(bindings.rbegin(), bindings.rend(), [&Name](const AssignmentBinding &Binding) {
+         return Binding.name IS Name.symbol;
+      });
+      if (Function and previous != bindings.rend() and previous->forward_declaration) {
+         Name.binding_id = previous->binding_id;
+         Function->forward_declaration = previous->forward_declaration;
+         previous->forward_declaration = Function->is_forward_declaration() ? Function : nullptr;
+      }
+      else {
+         auto binding = this->prepare_declaration(Name);
+         if (Function and Function->is_forward_declaration()) binding.forward_declaration = Function;
+         this->publish_declaration(std::move(binding));
+      }
    }
 
    void report_namespace_conflict(const Identifier &Name)
@@ -392,14 +411,14 @@ private:
             break;
          case AstNodeKind::LocalFunctionStmt: {
             auto &payload = std::get<LocalFunctionStmtPayload>(Statement.data);
-            this->declare(payload.name);
+            this->declare_local_function(payload.name, payload.function.get());
             if (payload.function) this->resolve_function(*payload.function);
             break;
          }
          case AstNodeKind::FunctionStmt: {
             auto &payload = std::get<FunctionStmtPayload>(Statement.data);
             bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1;
-            if (local) this->declare(payload.name.segments.front());
+            if (local) this->declare_local_function(payload.name.segments.front(), payload.function.get());
             else if (payload.name.is_explicit_global and not payload.name.segments.empty() and
                      payload.name.segments.front().symbol) {
                this->global_names_.push_back(payload.name.segments.front().symbol);

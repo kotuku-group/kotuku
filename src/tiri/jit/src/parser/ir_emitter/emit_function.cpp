@@ -1092,46 +1092,64 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
 {
    if (not Payload.function) return this->unsupported_stmt(AstNodeKind::LocalFunctionStmt, SourceSpan{});
 
-   GCstr *symbol = Payload.name.symbol ? Payload.name.symbol : NAME_BLANK;
+   return this->emit_local_function(Payload.name, *Payload.function);
+}
+
+//********************************************************************************************************************
+// A definition completing a forward declaration replaces the closure in the existing local slot.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_local_function(const Identifier &Name, const FunctionExprPayload &Function)
+{
+   GCstr *symbol = Name.symbol ? Name.symbol : NAME_BLANK;
    auto slot = BCReg(this->func_state.freereg);
-   this->lex_state.var_new(0, symbol, Payload.name.span.line, Payload.name.span.column);
-   RegisterAllocator allocator(&this->func_state);
-   allocator.reserve(BCReg(1));
-   this->lex_state.var_add(1);
-   ExpDesc variable;
-   variable.init(ExpKind::Local, slot);
-   variable.u.s.aux = this->func_state.varmap[slot];
+   if (Function.forward_declaration) {
+      auto existing = var_lookup_local(&this->func_state, symbol);
+      if (not existing or this->func_state.var_get(*existing).binding_id != Name.binding_id) {
+         return this->unsupported_stmt(AstNodeKind::LocalFunctionStmt, Name.span);
+      }
+      slot = BCReg(*existing);
+      this->func_state.var_at(slot).info |= VarInfoFlag::VarReadWrite;
+   }
+   else {
+      this->lex_state.var_new(0, symbol, Name.span.line, Name.span.column);
+      RegisterAllocator allocator(&this->func_state);
+      allocator.reserve(BCReg(1));
+      this->lex_state.var_add(1);
+   }
 
-   // Pass the function name for tostring() support
-
-   auto function_value = this->emit_function_expr(*Payload.function, Payload.name.symbol);
+   auto function_value = this->emit_function_expr(Function, Name.symbol);
    if (not function_value.ok()) return ParserResult<IrEmitUnit>::failure(function_value.error_ref());
 
    ExpDesc fn = function_value.value_ref();
    this->materialise_to_reg(fn, slot, "local function literal");
-   VarInfo &var_info = this->func_state.var_get(this->func_state.varmap.size() - 1);
-   var_info.startpc = this->func_state.pc;
-   var_info.fixed_type = TiriType::Func;  // Function declarations have known type
-   var_info.binding_id = Payload.name.binding_id;
-   var_info.static_value = Payload.name.static_value;
-   if (Payload.name.binding_id) {
-      const auto &binding = this->ctx.descriptors().binding(Payload.name.binding_id);
+   VarInfo &var_info = this->func_state.var_at(slot);
+   if (not Function.forward_declaration) var_info.startpc = this->func_state.pc;
+   var_info.fixed_type = TiriType::Func;
+   var_info.binding_id = Name.binding_id;
+   var_info.static_value = Name.static_value;
+   var_info.static_callable = {};
+   var_info.static_results = {};
+   if (Name.binding_id) {
+      const auto &binding = this->ctx.descriptors().binding(Name.binding_id);
       var_info.static_callable = binding.callable;
       if (binding.callable) var_info.static_results = this->ctx.descriptors().callable(binding.callable).results;
    }
-   if (Payload.name.symbol and not Payload.name.is_blank) this->update_local_binding(Payload.name.symbol, slot);
+   if (Name.symbol and not Name.is_blank and not Function.forward_declaration) {
+      this->update_local_binding(Name.symbol, slot);
+   }
 
    // Copy function return types to VarInfo for compile-time type checking at call sites
-   if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
-      for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
-         var_info.result_types[i] = Payload.function->return_types.types[i];
+   var_info.result_types = {};
+   if (Function.return_types.is_explicit or Function.return_types.is_inferred) {
+      for (size_t i = 0; i < Function.return_types.count and i < var_info.result_types.size(); ++i) {
+         var_info.result_types[i] = Function.return_types.types[i];
       }
    }
 
    // Register annotations if present
 
-   if (not Payload.function->annotations.empty()) {
-      auto anno_result = this->emit_annotation_registration(slot, Payload.function->annotations, Payload.name.symbol);
+   if (not Function.annotations.empty()) {
+      auto anno_result = this->emit_annotation_registration(slot, Function.annotations, Name.symbol);
       if (not anno_result.ok()) return anno_result;
    }
 
@@ -1182,55 +1200,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       funcname = Payload.name.segments.back().symbol;
    }
 
-   if (should_be_local) {
-      // Emit as a local function (same as local function foo())
-      GCstr *symbol = Payload.name.segments.front().symbol;
-      if (not symbol) return this->unsupported_stmt(AstNodeKind::FunctionStmt, SourceSpan{});
-
-      auto slot = BCReg(this->func_state.freereg);
-      auto& first_segment = Payload.name.segments.front();
-      this->lex_state.var_new(0, symbol, first_segment.span.line, first_segment.span.column);
-      RegisterAllocator allocator(&this->func_state);
-      allocator.reserve(BCReg(1));
-      this->lex_state.var_add(1);
-      ExpDesc variable;
-      variable.init(ExpKind::Local, slot);
-      variable.u.s.aux = this->func_state.varmap[slot];
-
-      // Pass the function name for tostring() support
-      auto function_value = this->emit_function_expr(*Payload.function, funcname);
-      if (not function_value.ok()) return ParserResult<IrEmitUnit>::failure(function_value.error_ref());
-
-      ExpDesc fn = function_value.value_ref();
-      this->materialise_to_reg(fn, slot, "function literal");
-      VarInfo &var_info = this->func_state.var_get(this->func_state.varmap.size() - 1);
-      var_info.startpc = this->func_state.pc;
-      var_info.fixed_type = TiriType::Func;  // Function declarations have known type
-      var_info.binding_id = first_segment.binding_id;
-      var_info.static_value = first_segment.static_value;
-      if (first_segment.binding_id) {
-         const auto &binding = this->ctx.descriptors().binding(first_segment.binding_id);
-         var_info.static_callable = binding.callable;
-         if (binding.callable) var_info.static_results = this->ctx.descriptors().callable(binding.callable).results;
-      }
-      this->update_local_binding(symbol, slot);
-
-      // Copy function return types to VarInfo for compile-time type checking at call sites
-      if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
-         for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
-            var_info.result_types[i] = Payload.function->return_types.types[i];
-         }
-      }
-
-      // Register annotations if present
-      if (not Payload.function->annotations.empty()) {
-         auto anno_result = this->emit_annotation_registration(slot, Payload.function->annotations, funcname);
-         if (not anno_result.ok()) return anno_result;
-      }
-
-      this->func_state.reset_freereg();
-      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-   }
+   if (should_be_local) return this->emit_local_function(Payload.name.segments.front(), *Payload.function);
 
    // Original behaviour: store to global or table field
    auto target_result = this->emit_function_lvalue(Payload.name);

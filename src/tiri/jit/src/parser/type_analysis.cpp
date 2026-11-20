@@ -124,11 +124,6 @@
    return literal.string_value;
 }
 
-[[nodiscard]] static bool is_function_forward_declaration(const FunctionExprPayload &Function)
-{
-   return Function.body and Function.body->statements.empty();
-}
-
 [[nodiscard]] static std::optional<std::string> function_signature_mismatch(
    const FunctionExprPayload &Expected, const FunctionExprPayload &Actual)
 {
@@ -289,7 +284,7 @@ private:
    void discover_global_decl_policy(const GlobalDeclStmtPayload &, bool PublishStaticPolicy);
    void analyse_local_function(const LocalFunctionStmtPayload &);
    void analyse_function_stmt(const FunctionStmtPayload &);
-   void declare_local_function(GCstr *, const FunctionExprPayload *, SourceSpan);
+   void declare_local_function(const Identifier &, const FunctionExprPayload *);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
    void analyse_expression(const ExprNode &);
    void analyse_call_expr(const CallExprPayload &, SourceSpan);
@@ -319,7 +314,7 @@ private:
    // Symbol resolution - looks up variables and functions in scope stack
    [[nodiscard]] std::optional<InferredType> resolve_identifier(GCstr *, bool ForRead = true) const;
    [[nodiscard]] const FunctionExprPayload * resolve_call_target(const CallExprPayload &) const;
-   [[nodiscard]] const FunctionExprPayload * resolve_function(GCstr *) const;
+   [[nodiscard]] const FunctionExprPayload * resolve_function(const NameRef &) const;
 
    // Const checking - checks if a local variable has <const> attribute
    [[nodiscard]] bool is_local_const(GCstr *) const;
@@ -1106,7 +1101,7 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          auto *payload = std::get_if<LocalFunctionStmtPayload>(&Statement.data);
          if (payload and payload->function) {
             this->current_scope().declare_function(
-               payload->name.symbol, payload->function.get(), payload->name.span);
+               payload->name.symbol, payload->function.get(), payload->name.span, payload->name.binding_id);
             this->lower_unanalysed_function(*payload->function);
          }
          break;
@@ -2284,11 +2279,13 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
 void TypeAnalyser::analyse_local_function(const LocalFunctionStmtPayload &Payload)
 {
    #ifdef INCLUDE_TIPS
-   this->check_shadowing(Payload.name.symbol, Payload.name.span);
+   if (not Payload.function or not Payload.function->forward_declaration) {
+      this->check_shadowing(Payload.name.symbol, Payload.name.span);
+   }
    #endif
 
    const FunctionExprPayload* function = Payload.function.get();
-   this->declare_local_function(Payload.name.symbol, function, Payload.name.span);
+   this->declare_local_function(Payload.name, function);
 
    if (function) this->analyse_function_payload(*function, Payload.name.symbol);
 }
@@ -2297,21 +2294,20 @@ void TypeAnalyser::analyse_local_function(const LocalFunctionStmtPayload &Payloa
 // Local Function Declaration: Retains an empty declaration as a lexical-scope-local signature contract for the
 // next definition of the same simple name.
 
-void TypeAnalyser::declare_local_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location)
+void TypeAnalyser::declare_local_function(const Identifier &Name, const FunctionExprPayload *Function)
 {
-   const FunctionExprPayload *forward_declaration = this->current_scope().lookup_function(Name);
-   if (forward_declaration and Function and is_function_forward_declaration(*forward_declaration)) {
-      if (auto mismatch = function_signature_mismatch(*forward_declaration, *Function)) {
+   if (Function and Function->forward_declaration) {
+      if (auto mismatch = function_signature_mismatch(*Function->forward_declaration, *Function)) {
          TypeDiagnostic diag;
-         diag.location = Location;
+         diag.location = Name.span;
          diag.code = ParserErrorCode::FunctionSignatureMismatch;
          diag.message = std::format("signature for local function '{}' does not match its forward declaration: {}",
-            std::string_view(strdata(Name), Name->len), *mismatch);
+            std::string_view(strdata(Name.symbol), Name.symbol->len), *mismatch);
          this->record_diagnostic(std::move(diag));
       }
    }
 
-   this->current_scope().declare_function(Name, Function, Location);
+   this->current_scope().declare_function(Name.symbol, Function, Name.span, Name.binding_id);
 }
 
 //********************************************************************************************************************
@@ -2330,7 +2326,7 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
    if (not Payload.name.is_explicit_global) {
       if (not Payload.name.segments.empty()) {
          const Identifier& terminal = Payload.name.segments.back();
-         if (Payload.name.segments.size() IS 1) this->declare_local_function(terminal.symbol, function, terminal.span);
+         if (Payload.name.segments.size() IS 1) this->declare_local_function(terminal, function);
          else this->current_scope().declare_function(terminal.symbol, function, terminal.span);
          function_name = terminal.symbol;
          function_location = terminal.span;
@@ -3463,22 +3459,29 @@ const FunctionExprPayload * TypeAnalyser::resolve_call_target(const CallExprPayl
          }
          if (direct.callable->kind IS AstNodeKind::IdentifierExpr) {
             auto *payload = std::get_if<NameRef>(&direct.callable->data);
-            if (payload) return this->resolve_function(payload->identifier.symbol);
+            if (payload) return this->resolve_function(*payload);
          }
       }
    }
    return nullptr;
 }
 
-// Look up a function by name in the scope stack.
+// Use the lexical binding for forward declarations even when the current closure cannot be proved.
 
-const FunctionExprPayload * TypeAnalyser::resolve_function(GCstr *Name) const
+const FunctionExprPayload * TypeAnalyser::resolve_function(const NameRef &Reference) const
 {
+   GCstr *name = Reference.identifier.symbol;
+   StaticBindingID forward_binding{};
+   if (Reference.binding_id) {
+      const auto &binding = this->ctx_.descriptors().binding(Reference.binding_id);
+      if (binding.function and binding.function->is_forward_declaration()) forward_binding = Reference.binding_id;
+   }
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
-      const FunctionExprPayload* fn = it->lookup_function(Name);
+      const FunctionExprPayload* fn = it->lookup_function(name, forward_binding);
       if (fn) return fn;
    }
-   if (auto global = this->global_types_.find(Name); global != this->global_types_.end()) {
+   if (forward_binding) return nullptr;
+   if (auto global = this->global_types_.find(name); global != this->global_types_.end()) {
       return global->second.function;
    }
    return nullptr;
@@ -3623,7 +3626,7 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
       }
       forward_declaration = existing->second.forward_declaration;
       if (not forward_declaration and existing->second.function and
-          is_function_forward_declaration(*existing->second.function)) {
+          existing->second.function->is_forward_declaration()) {
          forward_declaration = existing->second.function;
       }
    }
@@ -3647,7 +3650,7 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    info.function = Function;
    info.forward_declaration = forward_declaration;
    info.contract_policy = GlobalContractPolicy::Enforced;
-   if (not info.forward_declaration and Function and is_function_forward_declaration(*Function)) {
+   if (not info.forward_declaration and Function and Function->is_forward_declaration()) {
       info.forward_declaration = Function;
    }
    this->global_types_[Name] = info;
@@ -3792,7 +3795,7 @@ void TypeAnalyser::invalidate_global_flow_policy(GCstr *Name, SourceSpan Locatio
       if (existing->second.contract_policy != GlobalContractPolicy::Advisory) return;
       forward_declaration = existing->second.forward_declaration;
       if (not forward_declaration and existing->second.function and
-          is_function_forward_declaration(*existing->second.function)) {
+          existing->second.function->is_forward_declaration()) {
          forward_declaration = existing->second.function;
       }
    }

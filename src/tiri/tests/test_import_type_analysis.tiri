@@ -210,6 +210,13 @@ end
 function contract.count(Value:num!):num
    return Value + 1
 end
+
+function make_forward():table end
+contract.stubForward = make_forward
+
+@NoDiscard
+function make_forward():table return { name='forward' } end
+contract.makeForward = make_forward
 ]])
    write_file(packages .. 'contract-ext/1/main.tiri', [[
 @Package(name="contract-ext", version="1")
@@ -288,6 +295,23 @@ print('CONTRACT_ALIAS:' .. alias.label(info))
 ]])
    assert(code is 0 and output.find('CONTRACT_ALIAS:label:c') != nil,
       'An aliased namespace must expose the same contracts on a cold import: ' .. output)
+end
+
+@Test function ColdForwardExportRetainsNoDiscard()
+   local code, output = run_cold([[
+import 'contract-base'
+contract.stubForward()
+local value = contract.makeForward()
+assert(value.name is 'forward')
+]])
+   assert(code is 0, 'The export must use the closure assigned to each member: ' .. output)
+
+   code, output = run_cold([[
+import 'contract-base'
+contract.makeForward()
+]])
+   assert(code != 0 and output.find("Result 1 of 'contract.makeForward' is marked @NoDiscard") != nil,
+      'The completed export must enforce @NoDiscard: ' .. output)
 end
 
 @Test function ColdNamespaceContractRejectsIncompatibleAssignment()

@@ -99,7 +99,8 @@ public:
    void declare_parameter(
       GCstr *, TiriType Type, struct_record *StructDef, bool Required, SourceSpan Location = {});
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
-   void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
+   void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {},
+      StaticBindingID Binding = {});
    void update_local_type(GCstr *, const InferredType &);
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
@@ -110,7 +111,7 @@ public:
 
    [[nodiscard]] std::optional<InferredType> lookup_parameter_type(GCstr *) const;
    [[nodiscard]] std::optional<InferredType> lookup_local_type(GCstr *) const;
-   [[nodiscard]] const FunctionExprPayload * lookup_function(GCstr *) const;
+   [[nodiscard]] const FunctionExprPayload * lookup_function(GCstr *, StaticBindingID Binding = {}) const;
 
    // Get all unused variables in this scope (for reporting on scope exit)
    [[nodiscard]] std::vector<UnusedVariableInfo> get_unused_variables() const;
@@ -127,6 +128,7 @@ private:
       bool is_used = false;
       bool is_const = false;  // True if declared with <const> attribute
       const FunctionExprPayload * function = nullptr;
+      StaticBindingID binding_id{};
    };
 
    std::vector<VariableInfo> variables_{};
