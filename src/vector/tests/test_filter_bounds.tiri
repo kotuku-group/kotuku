@@ -588,3 +588,32 @@ end
    local recovered <close> = draw(scene)
    assert(offset.target and (mGfx.ReadRGBPixel(recovered, 30, 30).red is 255), 'A repaired filter must render again')
 end
+
+@Test function CollapsedFilteredViewportKeepsItsSiblingInTheCapture()
+   local scene <close>, root = newScene()
+   local outer = scene.new('VectorFilter', { units=VUNIT_USERSPACE, x=0, y=0, width=PAGE, height=PAGE })
+   outer.new('OffsetFX', { xOffset=0 })
+   check scene.mtAddDef('outer', outer)
+   local group = root.new('VectorGroup', { filter='url(#outer)' })
+   local zoom = group.new('VectorViewport', { x=20, y=20, width=40, height=40, filter='url(#blue)' })
+   zoom.new('VectorRectangle', { width=40, height=40, fill='white' })
+   group.new('VectorRectangle', { x=80, y=20, width=40, height=40, fill='white' })
+
+   do
+      local initial <close> = draw(scene)
+      assert(mGfx.ReadRGBPixel(initial, 30, 30).blue is 255, 'The viewport must render before it collapses')
+      assert(mGfx.ReadRGBPixel(initial, 90, 30).red is 255, 'The capture must include the visible sibling')
+   end
+
+   local _, matrix = check zoom.mtNewMatrix()
+   check mVec.Scale(matrix, 0, 0)
+   do
+      local collapsed <close> = draw(scene)
+      assert(mGfx.ReadRGBPixel(collapsed, 30, 30).blue is 0, 'A viewport scaled to zero must leave no pixels')
+      assert(mGfx.ReadRGBPixel(collapsed, 90, 30).red is 255, 'The zero-scale frame must preserve the sibling')
+   end
+
+   check mVec.ResetMatrix(matrix)
+   local restored <close> = draw(scene)
+   assert(mGfx.ReadRGBPixel(restored, 30, 30).blue is 255, 'The viewport must render when scale is restored')
+end

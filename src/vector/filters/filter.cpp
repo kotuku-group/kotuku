@@ -32,6 +32,9 @@ Effects can read content that lies beyond the edges of the page, within the filt
 touches or crosses a page edge is processed as if the page were larger.  Samples outside of the filter region are
 transparent black.  The output is clipped to the page and any clipping imposed by container viewports.
 
+If the processing region or the pipeline exceeds an internal resource limit, the renderer logs the failure and
+omits the filter output.  Processing margins are preserved for successful renders.
+
 It is important to note that filter effects are CPU intensive tasks and real-time performance may be disappointing.
 If this is an issue, consider pre-rendering the filter effects in advance and caching the results in memory or files.
 
@@ -44,10 +47,29 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 #include <bs_thread_pool.h>
 #include "filter_sampling.h"
 
-//#define DEBUG_FILTER_BITMAP
 //#define EXPORT_FILTER_BITMAP
 
-constexpr int64_t MAX_FILTER_MARGIN_AREA = 4096 * 4096; // Processing regions with margins are limited to this area
+constexpr size_t MAX_FILTER_EFFECTS = 4096;
+constexpr size_t MAX_FILTER_INPUTS = 65536;
+constexpr size_t MAX_FILTER_SURFACE_BYTES = 256 * 1024 * 1024;
+constexpr size_t MAX_RETAINED_FILTER_BYTES = 64 * 1024 * 1024;
+
+// Slots own backing memory.  A bitmap is attached on demand when a slot holds an RGBA8 image.
+struct filter_surface {
+   filter_surface *Next = nullptr;
+   std::unique_ptr<uint8_t[]> Data;
+   size_t Bytes;
+   OBJECTID BitmapID = 0;
+
+   ~filter_surface() {
+      if (auto object = BitmapID ? GetObjectPtr(BitmapID) : nullptr; object) {
+         auto bitmap = (objBitmap *)object;
+         bitmap->Data = nullptr;
+         bitmap->CreatorMeta = nullptr;
+         FreeResource(bitmap);
+      }
+   }
+};
 
 enum class filter_input_role { INPUT, MIX, MERGE };
 enum class filter_inputs { GENERATOR, SINGLE, DUAL, MERGE };
@@ -91,7 +113,7 @@ struct filter_input {
    VSF Source;
    filter_input_role Role;
    size_t Slot;
-   const filter_step *Producer;
+   filter_step *Producer;
    filter_input_kind Kind;
    bool MapContributesRegion;
 };
@@ -102,15 +124,25 @@ struct filter_step {
    std::span<const filter_input> Inputs;
    TClipRectangle<double> Subregion = { 0.0 }; // Client user coordinates.
    size_t Consumers = 0;
+   filter_surface *Surface = nullptr;
    filter_surface_view Result = {};
+};
+
+struct filter_standard_source {
+   size_t Consumers = 0;
+   filter_surface *Surface = nullptr;
+   filter_surface_view View = {};
 };
 
 struct filter_plan {
    std::vector<filter_step> Steps;
    std::vector<filter_input> Inputs;
-   const filter_step *Final = nullptr;
-   bool ReadsSourceGraphic = false;
-   bool ReadsBackground = false;
+   filter_step *Final = nullptr;
+   std::array<filter_standard_source, size_t(VSF::BKGD_ALPHA) - size_t(VSF::GRAPHIC) + 1> StandardSources;
+
+   filter_standard_source & standard_source(VSF Source) {
+      return StandardSources[size_t(Source) - size_t(VSF::GRAPHIC)];
+   }
 };
 
 struct filter_render_context {
@@ -135,8 +167,11 @@ struct filter_render_context {
    agg::trans_affine ToScene; // Client user coordinates to scene coordinates.
    agg::trans_affine Transform; // Client user coordinates to local bitmap coordinates.
    agg::trans_affine Inverse; // Local bitmap coordinates to client user coordinates.
-   uint8_t BankIndex = 0;
-   filter_surface_view SourceGraphic, SourceAlpha, Background, BackgroundAlpha;
+   filter_surface *WorkingSurfaces = nullptr;
+   size_t BitmapBytes = 0;
+   size_t LiveBytes = 0, PeakLiveBytes = 0;
+   size_t LiveSurfaces = 0, PeakLiveSurfaces = 0;
+   size_t Allocations = 0, AllocatedBytes = 0, Reuses = 0;
 
    TClipRectangle<int> scratch_clip() const { return { 0, 0, VectorClip.width(), VectorClip.height() }; }
 
@@ -218,7 +253,9 @@ static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input
 static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
 static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
 static ERR draw_filter_capture(extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
-static ERR get_banked_bitmap(extVectorFilter *, objBitmap **);
+static ERR get_filter_bitmap(extVectorFilter *, filter_surface *&, objBitmap *&);
+template<class T> static ERR get_filter_scratch(extFilterEffect *, size_t, T *&);
+static void release_filter_surfaces(extVectorFilter *, filter_surface *&, const filter_surface * = nullptr);
 static void unlink_filter_effect(extFilterEffect *);
 static void clear_filter_references(extFilterEffect *, objFilterEffect * = nullptr);
 static void update_filter_links(extVectorFilter *);
@@ -550,6 +587,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
 {
    kt::Log log("FilterPlan");
    const auto &effects = Filter->Effects;
+   if (effects.size() > MAX_FILTER_EFFECTS) return log.warning(ERR::ArrayFull);
    filter_positions positions;
    positions.reserve(effects.size());
    Plan.Steps.reserve(effects.size());
@@ -574,12 +612,15 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       positions.emplace(effect, i);
       const auto operation = describe_filter_operation(effect->classID());
       Plan.Steps.push_back({ .Effect = effect, .Operation = operation, .Inputs = {} });
+      size_t count = 0;
       switch (operation.Inputs) {
          case filter_inputs::GENERATOR: break;
-         case filter_inputs::SINGLE: input_count++; break;
-         case filter_inputs::DUAL: input_count += 2; break;
-         case filter_inputs::MERGE: input_count += ((extMergeFX *)effect)->List.size(); break;
+         case filter_inputs::SINGLE: count = 1; break;
+         case filter_inputs::DUAL: count = 2; break;
+         case filter_inputs::MERGE: count = ((extMergeFX *)effect)->List.size(); break;
       }
+      if (count > MAX_FILTER_INPUTS - input_count) return log.warning(ERR::ArrayFull);
+      input_count += count;
    }
 
    Plan.Inputs.reserve(input_count);
@@ -605,13 +646,17 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                producer->Consumers++;
                break;
             }
-            case VSF::GRAPHIC:
-            case VSF::ALPHA:
-               Plan.ReadsSourceGraphic = true;
+            case VSF::ALPHA: {
+               // SourceAlpha derives from the shared capture once, regardless of how many effects use its alpha.
+               auto &alpha = Plan.standard_source(Type);
+               if (not alpha.Consumers) Plan.standard_source(VSF::GRAPHIC).Consumers++;
+               alpha.Consumers++;
                break;
+            }
+            case VSF::GRAPHIC:
             case VSF::BKGD:
             case VSF::BKGD_ALPHA:
-               Plan.ReadsBackground = true;
+               Plan.standard_source(Type).Consumers++;
                break;
             case VSF::NONE:
                if (Role IS filter_input_role::MERGE) break;
@@ -729,7 +774,11 @@ static ERR prepare_filter_geometry(extVectorFilter *Self)
    const auto client = render.ClientVector;
    render.ToScene = client->Transform;
    auto inverse = render.ToScene;
-   if (not invert_filter_transform(inverse)) return ERR::InvalidValue;
+   if (not invert_filter_transform(inverse)) {
+      // A finite transform can collapse a client to zero area during a zoom animation.
+      if (finite_transform(render.ToScene) and (render.ToScene.determinant() IS 0.0)) return ERR::NothingDone;
+      return ERR::InvalidValue;
+   }
 
    const TClipRectangle<double> initial_bounds { std::numeric_limits<double>::max(),
       std::numeric_limits<double>::max(), 0, 0 };
@@ -771,45 +820,168 @@ static ERR prepare_filter_geometry(extVectorFilter *Self)
 }
 
 //********************************************************************************************************************
-// Return a bitmap from the bank.  In order to save memory, bitmap data is managed internally so that it always
-// reflects the size of the clipping region.  The bitmap uses local coordinates, so (0,0) is the top-left of
-// VectorClip and the bitmap size matches the processing region.
-//
-// Effects can call this function while they are the current context, so the filter is set as the owner explicitly.
-// The bank frees its bitmaps, which must not be freed earlier with an effect.
+// Trim idle storage only.  The draw owns every checked-out slot, and the renderer owns the final slot until
+// composition returns.  Keep the most recently released slots first.
 
-static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
+static void trim_filter_surfaces(extVectorFilter *Self, size_t Limit)
 {
-   kt::Log log(__FUNCTION__);
+   const auto excess = Self->SurfaceBytes > Limit ? Self->SurfaceBytes - Limit : 0;
+   if (not excess) return;
 
-   auto &render = *Self->Render;
-   auto bi = render.BankIndex;
-   if (bi >= 255) return log.warning(ERR::ArrayFull);
+   size_t idle_bytes = 0;
+   for (auto slot = Self->FreeSurfaces; slot; slot = slot->Next) idle_bytes += slot->Bytes;
+   size_t keep = idle_bytes > excess ? idle_bytes - excess : 0;
 
-   if (bi >= Self->Bank.size()) Self->Bank.emplace_back(std::make_unique<filter_bitmap>());
-
-   auto clip = render.scratch_clip();
-   #ifdef DEBUG_FILTER_BITMAP
-      auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, true, Self->UID);
-   #else
-      auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, false, Self->UID);
-   #endif
-
-   if (bmp) {
-      bmp->ColourSpace = CS::SRGB;
-      bmp->BlendMode = BLM::AUTO;
-      bmp->Opacity = 255;
-      bmp->Flags &= ~BMF::PREMUL;
-      *BitmapResult = bmp;
-      render.BankIndex++;
-      return ERR::Okay;
+   for (auto link = &Self->FreeSurfaces; *link;) {
+      auto slot = *link;
+      if (slot->Bytes <= keep) {
+         keep -= slot->Bytes;
+         link = &slot->Next;
+      }
+      else {
+         *link = slot->Next;
+         Self->SurfaceBytes -= slot->Bytes;
+         delete slot;
+      }
    }
-   else return log.warning(ERR::CreateObject);
+}
+
+static ERR acquire_filter_surface(extVectorFilter *Self, size_t Bytes, filter_surface *&Surface)
+{
+   auto &render = *Self->Render;
+   if ((not Bytes) or (Bytes > MAX_FILTER_SURFACE_BYTES - render.LiveBytes)) {
+      kt::Log("FilterStorage").warning("Filter #%d needs %zu additional bytes with %zu live (limit %zu).",
+         Self->UID, Bytes, render.LiveBytes, MAX_FILTER_SURFACE_BYTES);
+      return ERR::AllocMemory;
+   }
+
+   auto link = &Self->FreeSurfaces;
+   while (*link and ((*link)->Bytes != Bytes)) link = &(*link)->Next;
+   if (*link) {
+      Surface = *link;
+      *link = Surface->Next;
+      render.Reuses++;
+   }
+   else {
+      trim_filter_surfaces(Self, MAX_FILTER_SURFACE_BYTES - Bytes);
+      auto surface = std::unique_ptr<filter_surface>(new (std::nothrow) filter_surface);
+      if (not surface) return ERR::AllocMemory;
+      surface->Data.reset(new (std::nothrow) uint8_t[Bytes]);
+      if (not surface->Data) return ERR::AllocMemory;
+      surface->Bytes = Bytes;
+      Self->SurfaceBytes += Bytes;
+      render.Allocations++;
+      render.AllocatedBytes += Bytes;
+      Surface = surface.release();
+   }
+
+   Surface->Next = nullptr;
+   render.LiveBytes += Bytes;
+   render.PeakLiveBytes = std::max(render.PeakLiveBytes, render.LiveBytes);
+   render.LiveSurfaces++;
+   render.PeakLiveSurfaces = std::max(render.PeakLiveSurfaces, render.LiveSurfaces);
+   return ERR::Okay;
+}
+
+static void release_filter_surface(extVectorFilter *Self, filter_surface *&Surface)
+{
+   if (not Surface) return;
+   auto slot = std::exchange(Surface, nullptr);
+   if (auto render = Self->Render; render) {
+      render->LiveBytes -= slot->Bytes;
+      render->LiveSurfaces--;
+   }
+   slot->Next = Self->FreeSurfaces;
+   Self->FreeSurfaces = slot;
+}
+
+static void release_filter_surfaces(extVectorFilter *Self, filter_surface *&List, const filter_surface *Stop)
+{
+   while (List != Stop) {
+      auto slot = List;
+      List = slot->Next;
+      release_filter_surface(Self, slot);
+   }
+}
+
+// Every bitmap exposes a fully initialised, tightly packed RGBA8 rectangle.  Targets in particular may blend or
+// write only a primitive subregion, so initialise the entire processing region before making it addressable.
+
+static ERR bind_filter_bitmap(extVectorFilter *Self, filter_surface &Surface, objBitmap *&Bitmap,
+   CSTRING Name = "dummy_fx_bitmap")
+{
+   const auto clip = Self->Render->scratch_clip();
+   Bitmap = Surface.BitmapID ? (objBitmap *)GetObjectPtr(Surface.BitmapID) : nullptr;
+   if (not Bitmap) {
+      Bitmap = objBitmap::create::local(fl::Name(Name), fl::Owner(Self->UID), fl::Width(clip.right),
+         fl::Height(clip.bottom), fl::BitsPerPixel(32), fl::Flags(BMF::ALPHA_CHANNEL|BMF::NO_DATA));
+      if (not Bitmap) return ERR::CreateObject;
+      Surface.BitmapID = Bitmap->UID;
+   }
+
+   Bitmap->Width = clip.right;
+   Bitmap->Height = clip.bottom;
+   Bitmap->Clip = { 0, 0, clip.right, clip.bottom };
+   Bitmap->ByteWidth = Bitmap->LineWidth = clip.right * 4;
+   Bitmap->Size = Bitmap->PlaneMod = int(Surface.Bytes);
+   Bitmap->ColourSpace = CS::SRGB;
+   Bitmap->BlendMode = BLM::AUTO;
+   Bitmap->Opacity = 255;
+   Bitmap->Flags &= ~BMF::PREMUL;
+   Bitmap->Data = Surface.Data.get();
+   Bitmap->CreatorMeta = Bitmap->Data;
+   std::memset(Bitmap->Data, 0, Surface.Bytes);
+   return ERR::Okay;
+}
+
+static ERR acquire_filter_bitmap(extVectorFilter *Self, filter_surface *&Surface, objBitmap *&Bitmap,
+   CSTRING Name = "dummy_fx_bitmap")
+{
+   if (auto error = acquire_filter_surface(Self, Self->Render->BitmapBytes, Surface); error != ERR::Okay) return error;
+   return bind_filter_bitmap(Self, *Surface, Bitmap, Name);
+}
+
+static ERR get_filter_bitmap(extVectorFilter *Self, filter_surface *&List, objBitmap *&Bitmap)
+{
+   filter_surface *surface = nullptr;
+   auto error = acquire_filter_bitmap(Self, surface, Bitmap);
+   if (surface) {
+      surface->Next = List;
+      List = surface;
+   }
+   return error;
+}
+
+static void consume_filter_source(extVectorFilter *Self, filter_standard_source &Source)
+{
+   if (not --Source.Consumers) {
+      Source.View = {};
+      release_filter_surface(Self, Source.Surface);
+   }
+}
+
+// Effect-local arrays must initialise every element they read.  They are released along with converted input views
+// after the current effect returns, including when the effect fails.
+
+template<class T>
+static ERR get_filter_scratch(extFilterEffect *Effect, size_t Count, T *&Data)
+{
+   if (not active_filter_step(Effect)) return ERR::InvalidState;
+   if (Count > MAX_FILTER_SURFACE_BYTES / sizeof(T)) return ERR::AllocMemory;
+
+   auto filter = Effect->Filter;
+   filter_surface *surface;
+   if (auto error = acquire_filter_surface(filter, Count * sizeof(T), surface); error != ERR::Okay) return error;
+   auto &working = filter->Render->WorkingSurfaces;
+   surface->Next = working;
+   working = surface;
+   if (not active_filter_step(Effect)) return ERR::InvalidState;
+   Data = (T *)surface->Data.get();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Inputs are published only for the duration of this draw.  Standard sources are populated lazily and shared by
-// readers, just like effect results.
+// Standard sources are populated lazily and shared by their readers until their last planned use.
 
 static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output, filter_input_role Role, size_t Slot)
 {
@@ -845,17 +1017,10 @@ static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output,
       return ERR::Okay;
    }
 
-   filter_surface_view *source;
-   switch (input.Source) {
-      case VSF::ALPHA:      source = &render.SourceAlpha; break;
-      case VSF::BKGD:       source = &render.Background; break;
-      case VSF::BKGD_ALPHA: source = &render.BackgroundAlpha; break;
-      default: return log.warning(ERR::NoSupport);
-   }
-
-   if (not source->Bitmap) {
+   auto &source = render.Plan.standard_source(input.Source);
+   if (not source.View.Bitmap) {
       objBitmap *bmp;
-      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return error;
+      if (auto error = acquire_filter_bitmap(filter, source.Surface, bmp); error != ERR::Okay) return error;
       if (not active_filter_step(Effect)) return ERR::InvalidState;
 
       if (input.Source IS VSF::ALPHA) {
@@ -867,10 +1032,9 @@ static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output,
             const auto dest = (uint32_t *)(bmp->Data + std::ptrdiff_t(y) * bmp->LineWidth);
             for (int x = graphic.Valid.left; x < graphic.Valid.right; x++) dest[x] = src[x] & 0xff000000;
          }
+         consume_filter_source(filter, render.Plan.standard_source(VSF::GRAPHIC));
       }
       else {
-         // The destination is initially transparent, including pixels outside the captured background.
-         gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0, BAF::FILL);
          auto background = render.BkgdBitmap;
          if (background and ((background->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
             const auto &clip = render.VectorClip;
@@ -900,10 +1064,10 @@ static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output,
          }
       }
 
-      *source = filter_view(render, bmp);
+      source.View = filter_view(render, bmp);
    }
 
-   Output = *source;
+   Output = source.View;
    return ERR::Okay;
 }
 
@@ -929,7 +1093,7 @@ static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_vie
 
    auto filter = Effect->Filter;
    objBitmap *work;
-   if (auto error = get_banked_bitmap(filter, &work); error != ERR::Okay) return error;
+   if (auto error = get_filter_bitmap(filter, filter->Render->WorkingSurfaces, work); error != ERR::Okay) return error;
    if (not active_filter_step(Effect)) return ERR::InvalidState;
 
    const auto &valid = Source.Valid;
@@ -981,19 +1145,18 @@ static ERR draw_filter_capture(extVectorFilter *Filter, extVectorScene *Scene, e
 static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output)
 {
    auto &render = *Self->Render;
-   if (render.SourceGraphic.Bitmap) {
-      Output = render.SourceGraphic;
+   auto &source = render.Plan.standard_source(VSF::GRAPHIC);
+   if (source.View.Bitmap) {
+      Output = source.View;
       return ERR::Okay;
    }
 
    kt::SwitchContext ctx(Self);
-   auto clip = render.scratch_clip();
-   #ifdef DEBUG_FILTER_BITMAP
-      auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, true, 0, "source_graphic");
-   #else
-      auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, false, 0, "source_graphic");
-   #endif
-   if (not sg) return ERR::CreateObject;
+   objBitmap *sg;
+   if (auto error = acquire_filter_bitmap(Self, source.Surface, sg, "source_graphic"); error != ERR::Okay) {
+      return error;
+   }
+   if ((Self->GraphRevision != render.Revision) or Self->collecting()) return ERR::InvalidState;
 
    const auto scene = render.ClientViewport->Scene;
    if (not Self->SourceScene) {
@@ -1019,9 +1182,6 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
    auto preference = render.BkgdBitmap ? render.BkgdBitmap->BlendMode : BLM::AUTO;
    if ((preference IS BLM::LINEAR) or (preference IS BLM::NONE)) preference = BLM::AUTO;
    sg->BlendMode = preference;
-   sg->ColourSpace = CS::SRGB;
-   sg->Flags &= ~BMF::PREMUL;
-   gfx::DrawRectangle(sg, 0, 0, sg->Width, sg->Height, 0, BAF::FILL);
 
    auto viewport = (extVectorViewport *)Self->SourceScene->Viewport;
    auto client = render.ClientVector;
@@ -1036,7 +1196,7 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
       return ERR::InvalidState;
    }
 
-   Output = render.SourceGraphic = filter_view(render, sg);
+   Output = source.View = filter_view(render, sg);
    return ERR::Okay;
 }
 
@@ -1135,14 +1295,17 @@ static ERR set_clip_region(extVectorFilter *Self)
          std::min(region.right, page_width + MarginX), std::min(region.bottom, page_height + MarginY) };
    };
    auto clip = limit_region(std::ceil(std::min(reach_x, max_margin)), std::ceil(std::min(reach_y, max_margin)));
-   const double area = clip.width() * clip.height();
-   if ((area > MAX_FILTER_MARGIN_AREA) and (area > page_width * page_height)) clip = limit_region(0, 0);
    if (not clip.valid()) return ERR::NothingDone;
-   if ((clip.right > std::numeric_limits<int>::max()) or (clip.bottom > std::numeric_limits<int>::max()) or
-       (clip.width() > 0xffff) or (clip.height() > 0xffff) or
-       (clip.width() * clip.height() * 4 > std::numeric_limits<int>::max())) return ERR::OutOfRange;
+   if ((clip.left < std::numeric_limits<int>::min()) or (clip.top < std::numeric_limits<int>::min()) or
+       (clip.right > std::numeric_limits<int>::max()) or (clip.bottom > std::numeric_limits<int>::max()) or
+       (clip.width() > 0xffff) or (clip.height() > 0xffff)) return ERR::OutOfRange;
 
    render.VectorClip = { int(clip.left), int(clip.top), int(clip.right), int(clip.bottom) };
+   const size_t stride = size_t(render.VectorClip.width()) * 4;
+   const size_t height = render.VectorClip.height();
+   if ((not stride) or (not height)) return ERR::NothingDone;
+   if (height > MAX_FILTER_SURFACE_BYTES / stride) return ERR::AllocMemory;
+   render.BitmapBytes = stride * height;
    render.Transform = render.ToScene;
    render.Transform.translate(-clip.left, -clip.top);
    render.Inverse = render.Transform;
@@ -1236,8 +1399,9 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    if ((not Vector) or (not Viewport)) return log.warning(ERR::NullArgs);
 
    if (Self->collecting()) return ERR::MarkedForDeletion;
-   if (Self->Render) return ERR::Recursion;
+   if (Self->Render or Self->Composing) return ERR::Recursion;
    kt::SwitchContext context(Self);
+   const bool diagnostics = GetResource(RES::LOG_LEVEL) >= 6;
 
    filter_render_context render = {};
    render.ClientVector = Vector;
@@ -1247,17 +1411,22 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    render.ClientColourSpace = ColourSpace;
    render.Revision = Self->GraphRevision;
 
+   for (auto effect : Self->Effects) effect->Target = nullptr;
+   release_filter_surface(Self, Self->LastOutput);
    Self->Render = &render;
    auto graph_changed = [&]() { return (Self->GraphRevision != render.Revision) or Self->collecting(); };
    bool completed = false;
    auto cleanup = kt::Defer([&]() {
-      Self->Render = nullptr;
       if (not completed) {
          for (auto effect : Self->Effects) effect->Target = nullptr;
+         for (auto &step : render.Plan.Steps) release_filter_surface(Self, step.Surface);
+         release_filter_surfaces(Self, render.WorkingSurfaces);
+         for (auto &source : render.Plan.StandardSources) release_filter_surface(Self, source.Surface);
+         trim_filter_surfaces(Self, std::min(render.PeakLiveBytes, MAX_RETAINED_FILTER_BYTES));
       }
+      Self->Render = nullptr;
    });
 
-   for (auto effect : Self->Effects) effect->Target = nullptr;
    if (Self->Effects.empty()) return log.warning(ERR::FieldNotSet);
    auto &plan = render.Plan;
    if (auto error = prepare_filter_plan(Self, plan); error != ERR::Okay) return error;
@@ -1269,31 +1438,30 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    log.msg(VLF::BRANCH|VLF::DETAIL, "Rendering '%s' filter content for %s #%d '%s'.", filter_name,
       Vector->Class->ClassName.c_str(), Vector->UID, vector_name);
 
-   render.BkgdBitmap = (plan.ReadsBackground or plan.ReadsSourceGraphic) ? BkgdBitmap : nullptr;
+   if (plan.standard_source(VSF::GRAPHIC).Consumers or plan.standard_source(VSF::BKGD).Consumers or
+       plan.standard_source(VSF::BKGD_ALPHA).Consumers) render.BkgdBitmap = BkgdBitmap;
 
    if (auto error = prepare_filter_geometry(Self); error != ERR::Okay) return error;
    if (graph_changed()) return log.warning(ERR::InvalidState);
    if (auto error = set_clip_region(Self); error != ERR::Okay) return error;
    if (graph_changed()) return log.warning(ERR::InvalidState);
 
-   objBitmap *unused = nullptr;
+   auto release_result = [&](filter_step &Step) {
+      Step.Effect->Target = nullptr;
+      Step.Result = {};
+      release_filter_surface(Self, Step.Surface);
+   };
+
    for (auto &step : plan.Steps) {
       const auto effect = step.Effect;
-      log.detail("Effect: %s #%u, Consumers: %zu", effect->className(), effect->UID, step.Consumers);
+      const auto started = diagnostics ? PreciseTime() : 0;
 
-      // Unconsumed intermediates can reuse one cleared scratch surface.  The authored final effect owns its
-      // output independently of the number of consumers on any other effect.
-      objBitmap *target = nullptr;
-      if ((&step IS plan.Final) or step.Consumers) {
-         if (auto error = get_banked_bitmap(Self, &target); error != ERR::Okay) return error;
+      if (auto error = acquire_filter_surface(Self, render.BitmapBytes, step.Surface); error != ERR::Okay) {
+         return error;
       }
-      else {
-         if (not unused) {
-            if (auto error = get_banked_bitmap(Self, &unused); error != ERR::Okay) return error;
-         }
-         target = unused;
-      }
-      gfx::DrawRectangle(target, 0, 0, target->Width, target->Height, 0x00000000, BAF::FILL);
+      if (graph_changed()) return log.warning(ERR::InvalidState);
+      objBitmap *target;
+      if (auto error = bind_filter_bitmap(Self, *step.Surface, target); error != ERR::Okay) return error;
       if (graph_changed()) return log.warning(ERR::InvalidState);
       effect->Target = target;
 
@@ -1315,39 +1483,72 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
          return log.warning(ERR::InvalidState);
       }
       if ((&step IS plan.Final) or step.Consumers) step.Result = filter_view(render, target);
+      else release_result(step);
+
+      // A reference is counted even if the current effect skips reading it.  Repeated inputs to the same
+      // effect each consume a binding, and the last binding releases the result.
+      for (const auto &input : step.Inputs) {
+         if (auto producer = input.Producer; producer) {
+            if (not --producer->Consumers) release_result(*producer);
+         }
+         else if (input.Source != VSF::NONE) {
+            auto &source = plan.standard_source(input.Source);
+            // The last alpha binding can complete without sampling (for example, an empty primitive).
+            if ((input.Source IS VSF::ALPHA) and (source.Consumers IS 1) and (not source.View.Bitmap)) {
+               consume_filter_source(Self, plan.standard_source(VSF::GRAPHIC));
+            }
+            consume_filter_source(Self, source);
+         }
+      }
+      release_filter_surfaces(Self, render.WorkingSurfaces);
+      if (diagnostics) {
+         log.detail("Filter effect: %s #%u elapsed_us=%" PRId64, effect->className(), effect->UID,
+            PreciseTime() - started);
+      }
+      if (graph_changed()) return log.warning(ERR::InvalidState);
    }
+
+   const auto final_bytes = plan.Final->Surface->Bytes;
+   const auto retain = std::min(render.PeakLiveBytes, MAX_RETAINED_FILTER_BYTES);
+   trim_filter_surfaces(Self, std::max(final_bytes, retain));
+   if (graph_changed()) return log.warning(ERR::InvalidState);
 
    const auto &result = plan.Final->Result;
    auto out = plan.Final->Effect->Target;
 
-   #if defined(EXPORT_FILTER_BITMAP) && defined (DEBUG_FILTER_BITMAP)
+   #ifdef EXPORT_FILTER_BITMAP
       save_bitmap(out, std::to_string(Self->UID) + "_" + std::to_string(Vector->UID) + "_output");
    #endif
 
-   #ifdef DEBUG_FILTER_BITMAP
-      gfx::DrawRectangle(out, out->Clip.Left, out->Clip.Top, out->Clip.Right-out->Clip.Left, out->Clip.Bottom-out->Clip.Top, 0xff0000ff, BAF::NIL);
-   #endif
-
-   #if !defined(NDEBUG) and !defined(DEBUG_FILTER_BITMAP)
-      if (GetResource(RES::LOG_LEVEL) >= 6) {
-         auto retained_bytes = Self->SourceGraphic.Data.capacity();
-         for (const auto &slot : Self->Bank) retained_bytes += slot->Data.capacity();
-
-         // Every acquired bank slot stays in use until the draw ends.  SourceGraphic is acquired at most once.
-         const auto peak_live_surfaces = int(render.BankIndex) + int(render.SourceGraphic.Bitmap != nullptr);
-         log.detail("Filter storage: retained_bytes=%zu peak_live_surfaces=%d", retained_bytes, peak_live_surfaces);
-      }
-   #endif
+   if (diagnostics) {
+      const auto retained = Self->SurfaceBytes - (final_bytes > retain ? final_bytes : 0);
+      log.detail("Filter storage: allocations=%zu allocated_bytes=%zu reuses=%zu retained_bytes=%zu "
+         "peak_live_bytes=%zu peak_live_surfaces=%zu", render.Allocations, render.AllocatedBytes, render.Reuses,
+         retained, render.PeakLiveBytes, render.PeakLiveSurfaces);
+   }
 
    if (graph_changed()) return log.warning(ERR::InvalidState);
+   Self->LastOutput = std::exchange(plan.Final->Surface, nullptr);
+   Self->Composing = true;
    Output = { out, result.OriginX, result.OriginY, Self->Opacity };
    completed = true;
    return ERR::Okay;
 }
 
+void finish_filter_composition(extVectorFilter *Self)
+{
+   if (Self->LastOutput->Bytes > MAX_RETAINED_FILTER_BYTES) {
+      for (auto effect : Self->Effects) effect->Target = nullptr;
+      auto slot = std::exchange(Self->LastOutput, nullptr);
+      Self->SurfaceBytes -= slot->Bytes;
+      delete slot;
+   }
+   Self->Composing = false;
+}
+
 /*********************************************************************************************************************
 -ACTION-
-Clear: Removes all filter effects.
+Clear: Removes all filter effects and releases their working storage.
 -END-
 *********************************************************************************************************************/
 
@@ -1355,7 +1556,7 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 {
    kt::Log log;
 
-   if (Self->Render) return log.warning(ERR::InUse);
+   if (Self->Render or Self->Composing) return log.warning(ERR::InUse);
 
    auto detached = std::exchange(Self->Effects, {});
    std::vector<OBJECTID> ids;
@@ -1369,7 +1570,16 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
    }
 
    Self->GraphRevision++;
-   Self->Bank.clear();
+   release_filter_surface(Self, Self->LastOutput);
+   auto surfaces = std::exchange(Self->FreeSurfaces, nullptr);
+   Self->SurfaceBytes = 0;
+   auto source_scene = std::exchange(Self->SourceScene, nullptr);
+   while (surfaces) {
+      auto slot = surfaces;
+      surfaces = slot->Next;
+      delete slot;
+   }
+   if (source_scene) FreeResource(source_scene);
 
    // Callbacks and deferred destruction can change ownership while the detached effects are being freed.
    for (auto id : ids) {
@@ -1382,7 +1592,6 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 extVectorFilter::~extVectorFilter()
 {
    VECTORFILTER_Clear(this);
-   if (SourceScene) FreeResource(SourceScene);
 }
 
 //********************************************************************************************************************

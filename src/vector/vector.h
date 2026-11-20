@@ -95,6 +95,7 @@ class extVector;
 class extVectorScene;
 class extFilterEffect;
 struct filter_render_context;
+struct filter_surface;
 class extVectorViewport;
 class extVectorClip;
 
@@ -727,11 +728,13 @@ class extVectorFilter : public objVectorFilter {
 
    extVectorScene *SourceScene = nullptr; // Internal scene for rendering SourceGraphic.
    extVectorScene *Scene;                 // Scene that owns the filter.
-   filter_bitmap SourceGraphic;          // Reusable backing storage for the current draw's SourceGraphic.
    filter_render_context *Render = nullptr;
    uint64_t GraphRevision = 0;
    std::vector<extFilterEffect *> Effects; // Authoritative order of owned effects.
-   std::vector<std::unique_ptr<filter_bitmap>> Bank;
+   filter_surface *FreeSurfaces = nullptr;
+   filter_surface *LastOutput = nullptr;
+   size_t SurfaceBytes = 0;
+   bool Composing = false;
 
    extVectorFilter(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorFilter(ClassPtr, ObjectID) {
       Units          = VUNIT::BOUNDING_BOX;
@@ -1307,6 +1310,7 @@ struct filter_render_result {
 
 extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS,
    filter_render_result &, int, int);
+extern void finish_filter_composition(extVectorFilter *);
 extern ERR scene_input_events(const InputEvent *, int);
 extern void send_feedback(extVector *, FM, OBJECTPTR = nullptr);
 extern void apply_focus(extVectorScene *, extVector *);

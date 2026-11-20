@@ -91,29 +91,7 @@ constexpr double SHADOW_PENUMBRA = 2.0;
 constexpr int SHADOW_LEVELS = 4;
 constexpr double MAX_SHADOW_LENGTH = 128;
 
-// Working buffers are kept between draws by each drawing thread, unless they grow beyond SCRATCH_LIMIT floats.
-
-constexpr size_t SCRATCH_LIMIT = 8 * 1024 * 1024;
-
-struct light_scratch {
-   std::vector<float> raw, heights, detail, curve, shadow;
-
-   static float * reserve(std::vector<float> &Buffer, size_t Size) {
-      if (Buffer.size() < Size) Buffer.resize(Size);
-      return Buffer.data();
-   }
-
-   void trim() {
-      if (raw.size() + heights.size() + detail.size() + curve.size() + shadow.size() > SCRATCH_LIMIT) {
-         for (auto *buffer : { &raw, &heights, &detail, &curve, &shadow }) {
-            buffer->clear();
-            buffer->shrink_to_fit();
-         }
-      }
-   }
-};
-
-static thread_local light_scratch glLightScratch;
+constexpr int LIGHT_ROW_BUFFERS = 24;
 
 struct lit_surface {
    const float *heights; // Padded, dequantised heights
@@ -177,7 +155,8 @@ static void gaussian_blur(const float *Source, float *Dest, float *Work, int Str
    auto ForRows, auto Finish)
 {
    const int radius = std::min(int(std::ceil(Sigma * 3.0)), (Stride - 1) / 2);
-   std::vector<float> weights(radius + 1);
+   std::array<float, int(MAX_SIGMA * 3.0) + 1> weight_storage;
+   auto weights = std::span(weight_storage).first(radius + 1);
    double total = 0;
    for (int i=0; i <= radius; ++i) {
       weights[i] = float(exp(-(i * i) / (2.0 * Sigma * Sigma)));
@@ -291,8 +270,8 @@ static inline void sweep_step(const float *Heights, float *const *Prev, float *c
 // The image is divided into bands across the sweep.  Each band reads one row of its upstream neighbour, which the
 // neighbour publishes as it goes, so the bands run concurrently as a wavefront.
 
-static void cast_shadows(const float *Heights, int Stride, int Width, int Height, float *Output,
-   const point3 &Direction, double Elevation, double LevelSlope, BS::thread_pool<> &Pool)
+static ERR cast_shadows(extLightingFX *Effect, const float *Heights, int Stride, int Width, int Height,
+   float *Output, const point3 &Direction, double Elevation, double LevelSlope, BS::thread_pool<> &Pool)
 {
    const bool x_major = std::abs(Direction.x) >= std::abs(Direction.y);
    const int along_n = x_major ? Width : Height;
@@ -315,8 +294,16 @@ static void cast_shadows(const float *Heights, int Stride, int Width, int Height
    }
 
    const int bands = std::clamp(cross_n / 16, 1, int(Pool.get_thread_count()));
-   std::vector<float> edges(size_t(bands) * along_n * SHADOW_LEVELS);
-   std::unique_ptr<std::atomic<int>[]> progress(new std::atomic<int>[bands]);
+   auto filter = Effect->Filter;
+   auto &working = filter->Render->WorkingSurfaces;
+   auto mark = working;
+   auto release = kt::Defer([&]() { release_filter_surfaces(filter, working, mark); });
+   float *edges;
+   if (auto error = get_filter_scratch(Effect, size_t(bands) * along_n * SHADOW_LEVELS, edges); error != ERR::Okay) {
+      return error;
+   }
+   auto progress = std::unique_ptr<std::atomic<int>[]>(new (std::nothrow) std::atomic<int>[bands]);
+   if (not progress) return ERR::AllocMemory;
    for (int b=0; b < bands; ++b) progress[b].store(0);
 
    // A band is processed in tiles of up to TILE steps.  The heights of a tile are copied into a buffer ordered by step,
@@ -324,6 +311,12 @@ static void cast_shadows(const float *Heights, int Stride, int Width, int Height
 
    constexpr int TILE = 32;
    constexpr float NO_VOLUME = -1e30f;
+   const int max_rows = (cross_n + bands - 1) / bands;
+   const size_t band_size = (max_rows + 2) * SHADOW_LEVELS * 2 + max_rows * TILE * 2;
+   float *band_buffers;
+   if (auto error = get_filter_scratch(Effect, size_t(bands) * band_size, band_buffers); error != ERR::Okay) {
+      return error;
+   }
 
    auto sweep_band = [&](int Band) {
       const int j0 = int(int64_t(cross_n) * Band / bands), j1 = int(int64_t(cross_n) * (Band + 1) / bands);
@@ -340,13 +333,14 @@ static void cast_shadows(const float *Heights, int Stride, int Width, int Height
       // Volumes for the previous and current step at each elevation, with a slot either side for the neighbouring
       // rows.  Index 0 is the slot before row 0.
 
-      std::vector<float> buffer(size_t(rows + 2) * SHADOW_LEVELS * 2 + size_t(rows) * TILE * 2, NO_VOLUME);
+      auto buffer = band_buffers + Band * band_size;
+      std::fill_n(buffer, (rows + 2) * SHADOW_LEVELS * 2, NO_VOLUME);
       float *prev[SHADOW_LEVELS], *cur[SHADOW_LEVELS];
       for (int k=0; k < SHADOW_LEVELS; ++k) {
-         prev[k] = buffer.data() + (rows + 2) * k;
-         cur[k] = buffer.data() + (rows + 2) * (SHADOW_LEVELS + k);
+         prev[k] = buffer + (rows + 2) * k;
+         cur[k] = buffer + (rows + 2) * (SHADOW_LEVELS + k);
       }
-      float *tile_heights = buffer.data() + (rows + 2) * SHADOW_LEVELS * 2;
+      float *tile_heights = buffer + (rows + 2) * SHADOW_LEVELS * 2;
       float *tile_light = tile_heights + rows * TILE;
 
       for (int p0=0; p0 < along_n; p0 += TILE) {
@@ -397,6 +391,7 @@ static void cast_shadows(const float *Heights, int Stride, int Width, int Height
       Pool.detach_task([&sweep_band, band]() { sweep_band(band); });
    }
    Pool.wait();
+   return ERR::Okay;
 }
 
 // Slopes and occlusion for one row of Width pixels.  H is the row of heights from which curvature is measured, and
@@ -504,8 +499,8 @@ static void row_toksvig(const float *__restrict X0, const float *__restrict X1, 
 // vector and Tint(stl) returns the colour of the light arriving from that direction.
 
 template <class DELTA, class COLOUR>
-void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Surface, int Width, DELTA Delta,
-   COLOUR Tint)
+void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Surface, int Width, float *Buffer,
+   DELTA Delta, COLOUR Tint)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
    const uint8_t G = Target->ColourFormat->GreenPos>>3;
@@ -522,15 +517,14 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
    // differences (dy) for the current row, including one pixel either side.
 
    const int span = Width + 2;
-   std::vector<float> buffer(size_t(span) * 24);
-   float *hx[3] = { buffer.data(), buffer.data() + span, buffer.data() + span * 2 };
-   float *hy = buffer.data() + span * 3;
-   float *dx[3] = { buffer.data() + span * 4, buffer.data() + span * 5, buffer.data() + span * 6 };
-   float *dy = buffer.data() + span * 7;
-   float *factor = buffer.data() + span * 8; // Toksvig factor for each pixel of the row
-   float *mean_x = buffer.data() + span * 21; // Normalised mean normal for each pixel of the row
-   float *mean_y = buffer.data() + span * 22;
-   float *mean_z = buffer.data() + span * 23;
+   float *hx[3] = { Buffer, Buffer + span, Buffer + span * 2 };
+   float *hy = Buffer + span * 3;
+   float *dx[3] = { Buffer + span * 4, Buffer + span * 5, Buffer + span * 6 };
+   float *dy = Buffer + span * 7;
+   float *factor = Buffer + span * 8; // Toksvig factor for each pixel of the row
+   float *mean_x = Buffer + span * 21; // Normalised mean normal for each pixel of the row
+   float *mean_y = Buffer + span * 22;
+   float *mean_z = Buffer + span * 23;
 
    // Surface normal and occlusion for each pixel, for three rows indexed by row number modulo 3.  Element 0 is the
    // pixel before the row, which replicates the first pixel, and element Width + 1 replicates the last.  Specular light
@@ -539,7 +533,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
    struct normal_row { float *x, *y, *z, *occlusion; };
    normal_row slots[3];
    for (int s=0; s < 3; ++s) {
-      float *base = buffer.data() + span * (9 + (s * 4));
+      float *base = Buffer + span * (9 + (s * 4));
       slots[s] = { base, base + span, base + span * 2, base + span * 3 };
    }
 
@@ -689,16 +683,19 @@ double extLightingFX::reach() const
 
 //********************************************************************************************************************
 
-void extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, double SpotHeight,
+ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, double SpotHeight,
    const map_height &NormalHeight, double UnitSize, int Width, int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
    const size_t size = size_t(stride) * rows;
-   auto &scratch = glLightScratch;
    const bool dequantise = (Features & LFX::DEQUANTISE) != LFX::NIL;
-   float *raw = light_scratch::reserve(scratch.raw, size);
-   float *heights = dequantise ? light_scratch::reserve(scratch.heights, size) : raw;
+   float *raw;
+   if (auto error = get_filter_scratch(this, size, raw); error != ERR::Okay) return error;
+   float *heights = raw;
+   if (dequantise) {
+      if (auto error = get_filter_scratch(this, size, heights); error != ERR::Okay) return error;
+   }
 
    const uint8_t A = Target->ColourFormat->AlphaPos>>3;
    const auto bpp = Bitmap->BytesPerPixel;
@@ -765,18 +762,23 @@ void extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, 
 
    float *detail = nullptr;
    const double sigma = std::min(MAX_SIGMA, DETAIL_SIGMA * UnitSize);
-   if (boost_detail(sigma)) {
-      detail = light_scratch::reserve(scratch.detail, size);
-      float *work = dequantise ? raw : light_scratch::reserve(scratch.heights, size);
+   const bool boost = boost_detail(sigma);
+   const double curve_sigma = cavity_sigma(UnitSize);
+   float *work = dequantise ? raw : nullptr;
+   if ((boost or (curve_sigma > 0)) and (not work)) {
+      if (auto error = get_filter_scratch(this, size, work); error != ERR::Okay) return error;
+   }
+   if (boost) {
+      if (auto error = get_filter_scratch(this, size, detail); error != ERR::Okay) return error;
       detail_layer(heights, detail, work, stride, rows, sigma, for_rows);
    }
 
    // Heights for measuring curvature, blurred to the scale of the kernel unit if it covers more than a pixel.
 
    const float *curve = heights;
-   if (const double curve_sigma = cavity_sigma(UnitSize); curve_sigma > 0) {
-      float *blurred = light_scratch::reserve(scratch.curve, size);
-      float *work = dequantise ? raw : light_scratch::reserve(scratch.heights, size);
+   if (curve_sigma > 0) {
+      float *blurred;
+      if (auto error = get_filter_scratch(this, size, blurred); error != ERR::Okay) return error;
       gaussian_blur(heights, blurred, work, stride, rows, curve_sigma, for_rows, [](int) { });
       curve = blurred;
    }
@@ -788,9 +790,10 @@ void extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, 
    const double elevation = Elevation * DEG2RAD;
    if ((LightSource IS LS::DISTANT) and ((Features & LFX::SHADOWS) != LFX::NIL) and (SpotHeight > 0) and
        (elevation > 0) and (elevation < 89.0 * DEG2RAD)) {
-      shadow = light_scratch::reserve(scratch.shadow, size_t(Width) * Height);
-      cast_shadows(heights + (LIGHT_PAD * stride) + LIGHT_PAD, stride, Width, Height, shadow, Direction, elevation,
-         SpotHeight * (1.0 / 255.0), pool);
+      if (auto error = get_filter_scratch(this, size_t(Width) * Height, shadow); error != ERR::Okay) return error;
+      auto error = cast_shadows(this, heights + (LIGHT_PAD * stride) + LIGHT_PAD, stride, Width, Height, shadow,
+         Direction, elevation, SpotHeight * (1.0 / 255.0), pool);
+      if (error != ERR::Okay) return error;
    }
 
    const lit_surface surface = {
@@ -798,21 +801,26 @@ void extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, 
       sharpen_weight(UnitSize)
    };
 
+   const size_t chunk_floats = size_t(Width + 2) * LIGHT_ROW_BUFFERS;
+   const size_t chunks = (Height + chunk_size - 1) / chunk_size;
+   float *row_buffers;
+   if (auto error = get_filter_scratch(this, chunks * chunk_floats, row_buffers); error != ERR::Okay) return error;
    for_rows(Height, [&](int Start, int End) {
+      auto buffer = row_buffers + (Start / chunk_size) * chunk_floats;
       if (LightSource IS LS::DISTANT) {
-         render_enhanced(Start, End, surface, Width,
+         render_enhanced(Start, End, surface, Width, buffer,
             [this](int, int, float) { return Direction; },
             [this](const point3 &) -> const FRGB & { return LightColour; });
       }
       else if (LightSource IS LS::SPOT) {
-         render_enhanced(Start, End, surface, Width, surface_delta,
+         render_enhanced(Start, End, surface, Width, buffer, surface_delta,
             [this](point3 &STL) { return colour_spot_light(STL); });
       }
       else if (LightSource IS LS::POINT) {
-         render_enhanced(Start, End, surface, Width, surface_delta,
+         render_enhanced(Start, End, surface, Width, buffer, surface_delta,
             [this](const point3 &) -> const FRGB & { return LightColour; });
       }
    });
 
-   scratch.trim();
+   return ERR::Okay;
 }

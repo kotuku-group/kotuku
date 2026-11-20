@@ -8,6 +8,10 @@ instantiated directly by the client.
 
 The documented fields and actions here are integral to all effects that utilise this class.
 
+The #Target bitmap is available while the effect renders and while a later effect still needs its result.
+After the last consumer finishes, the renderer clears #Target and can reuse the storage.  The final effect's
+target remains available through scene composition and can be retained internally until the next draw.
+
 -END-
 
 *********************************************************************************************************************/

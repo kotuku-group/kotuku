@@ -77,7 +77,7 @@ uint8_t const stack_blur_tables<T>::g_stack_blur8_shr[255] =
 };
 
 constexpr double MIN_BLUR_RADIUS = 0.5 / 256.0; // Below this, the blend weight rounds to zero
-constexpr double MAX_BLUR_RADIUS = 254.0;       // Limited by the size of the stack blur tables
+constexpr int MAX_BLUR_RADIUS = 254;            // Limited by the size of the stack blur tables
 
 class extBlurFX : public extFilterEffect {
    public:
@@ -108,8 +108,8 @@ class extBlurFX : public extFilterEffect {
          return { filter_access::FULL_INPUT, x >= MIN_BLUR_RADIUS ? filter_sampling::UNBOUNDED : 0,
             y >= MIN_BLUR_RADIUS ? filter_sampling::UNBOUNDED : 0 };
       }
-      return { filter_access::BOUNDED, std::ceil(std::clamp(x, 0.0, MAX_BLUR_RADIUS)) + 1,
-         std::ceil(std::clamp(y, 0.0, MAX_BLUR_RADIUS)) + 1 };
+      return { filter_access::BOUNDED, std::ceil(std::clamp(x, 0.0, double(MAX_BLUR_RADIUS))) + 1,
+         std::ceil(std::clamp(y, 0.0, double(MAX_BLUR_RADIUS))) + 1 };
    }
 };
 
@@ -179,7 +179,7 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
    int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum, const blur_edge &Edge)
 {
    const uint32_t div = (Radius * 2) + 1;
-   std::vector<uint32_t> stack(div);
+   std::array<uint32_t, MAX_BLUR_RADIUS * 2 + 1> stack;
 
    const auto mul = _mm_set1_epi32(int(MulSum));
    const auto shr = _mm_cvtsi32_si128(int(ShrSum));
@@ -242,7 +242,7 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
    int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum, const blur_edge &Edge)
 {
    const uint32_t div = (Radius * 2) + 1;
-   std::vector<std::array<uint8_t, 4>> stack(div);
+   std::array<std::array<uint8_t, 4>, MAX_BLUR_RADIUS * 2 + 1> stack;
 
    for (int line=0; line < Lines; line++) {
       const uint8_t *line_in = InData + (LineStep * line);
@@ -308,8 +308,8 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
 // Transparent addressing also allows InData and OutData to refer to the same region.
 
 
-static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8_t> &Temp, int Width, int Height,
-   int Stride, bool Vertical, double Radius, const blur_edge &Edge)
+static ERR blur_axis(extBlurFX *Effect, const uint8_t *InData, uint8_t *OutData, uint8_t *&Temp,
+   int Width, int Height, int Stride, bool Vertical, double Radius, const blur_edge &Edge)
 {
    const int line_step  = Vertical ? 4 : Stride;
    const int pixel_step = Vertical ? Stride : 4;
@@ -327,13 +327,15 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
 
    if (weight >= 256) {
       stack_blur(InData, OutData, lower + 1);
-      return;
+      return ERR::Okay;
    }
 
    uint8_t *upper = nullptr;
    if (weight > 0) { // The upper radius is rendered first because the lower pass may overwrite InData
-      Temp.resize(size_t(Stride) * Height);
-      upper = Temp.data();
+      if (not Temp) {
+         if (auto error = get_filter_scratch(Effect, size_t(Stride) * Height, Temp); error != ERR::Okay) return error;
+      }
+      upper = Temp;
       stack_blur(InData, upper, lower + 1);
    }
 
@@ -351,6 +353,7 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
          }
       }
    }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -437,15 +440,25 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    auto horizontal = out_data;
    if (blur_x and blur_y and (Self->EdgeMode != FEM::TRANSPARENT)) {
       // Addressing can revisit a sample that a pass would overwrite if it ran in place.
+      auto filter = Self->Filter;
       objBitmap *scratch;
-      if (auto error = get_banked_bitmap(Self->Filter, &scratch); error != ERR::Okay) return error;
+      if (auto error = get_filter_bitmap(filter, filter->Render->WorkingSurfaces, scratch); error != ERR::Okay) {
+         return error;
+      }
       if (not active_filter_step(Self)) return ERR::InvalidState;
       horizontal = bitmap_data(scratch);
    }
 
-   std::vector<uint8_t> temp;
-   if (blur_x) blur_axis(in_data, horizontal, temp, w, h, outBmp->LineWidth, false, rx, edge_x);
-   if (blur_y) blur_axis(blur_x ? horizontal : in_data, out_data, temp, w, h, outBmp->LineWidth, true, ry, edge_y);
+   uint8_t *temp = nullptr;
+   if (blur_x) {
+      auto error = blur_axis(Self, in_data, horizontal, temp, w, h, outBmp->LineWidth, false, rx, edge_x);
+      if (error != ERR::Okay) return error;
+   }
+   if (blur_y) {
+      auto error = blur_axis(Self, blur_x ? horizontal : in_data, out_data, temp, w, h,
+         outBmp->LineWidth, true, ry, edge_y);
+      if (error != ERR::Okay) return error;
+   }
 
    outBmp->Flags |= BMF::PREMUL; // Need to tell the bitmap it has premultiplied output before Demultiply()
    if (auto error = outBmp->demultiply(); error != ERR::Okay) return error;

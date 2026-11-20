@@ -993,7 +993,10 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             error = container ? render_filter(filter, container, shape, mBitmap, state.mColourSpace, output,
                mBitmapOriginX, mBitmapOriginY) : ERR::InvalidState;
          }
-         if (error IS ERR::Okay) copy_filter_bitmap(output, state.mBlendMode, state.mOpacity);
+         if (error IS ERR::Okay) {
+            copy_filter_bitmap(output, state.mBlendMode, state.mOpacity);
+            finish_filter_composition(filter);
+         }
          else if (error != ERR::NothingDone) {
             log.warning("Filter #%d for vector #%d skipped: %s.", filter_id, shape->UID, GetErrorMsg(error));
             if (auto capture = Scene->FilterCapture; capture and (capture->Error IS ERR::Okay)) {

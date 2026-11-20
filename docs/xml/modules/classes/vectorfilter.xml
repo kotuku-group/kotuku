@@ -20,6 +20,7 @@
 <p>Each reference must name an earlier effect owned by the same filter.  Before drawing the pipeline, the renderer validates the inputs and effect order.  If validation fails, it logs the affected effect and omits the filter's output.  The last effect supplies the rendered result.  Use <class name="MergeFX">MergeFX</class> to combine multiple branches.</p>
 <p>The filter's output is composited into the target with the blend mode resolved for the client vector, as described for <class name="Vector" field="ColourSpace">Vector.ColourSpace</class>, and the filter's <fl>Opacity</fl> is applied at the same time.  The filter's own <fl>ColourSpace</fl> governs effect processing only and does not affect how the output is composited.</p>
 <p>Effects can read content that lies beyond the edges of the page, within the filter region, so a filtered vector that touches or crosses a page edge is processed as if the page were larger.  Samples outside of the filter region are transparent black.  The output is clipped to the page and any clipping imposed by container viewports.</p>
+<p>If the processing region or the pipeline exceeds an internal resource limit, the renderer logs the failure and omits the filter output.  Processing margins are preserved for successful renders.</p>
 <p>It is important to note that filter effects are CPU intensive tasks and real-time performance may be disappointing. If this is an issue, consider pre-rendering the filter effects in advance and caching the results in memory or files.</p>
 <p>It is a requirement that VectorFilter objects are owned by the <class name="VectorScene">VectorScene</class> they are targeting.</p></description>
     <source>
@@ -30,7 +31,7 @@
   <actions>
     <action>
       <name>Clear</name>
-      <comment>Removes all filter effects.</comment>
+      <comment>Removes all filter effects and releases their working storage.</comment>
       <prototype>ERR acClear(*Object)</prototype>
       <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>

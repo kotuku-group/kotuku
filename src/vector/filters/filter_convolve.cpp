@@ -160,8 +160,9 @@ class extConvolveFX : public extFilterEffect {
       const size_t grid_pixels = size_t(grid_width) * size_t(grid_height);
       if (grid_pixels > size_t(4096) * size_t(4096)) return ERR::OutOfRange;
 
-      std::vector<uint8_t> grid_in(grid_pixels * 4);
-      std::vector<uint8_t> grid_out(grid_pixels * 4);
+      uint8_t *grid_in, *grid_out;
+      if (auto error = get_filter_scratch(this, grid_pixels * 4, grid_in); error != ERR::Okay) return error;
+      if (auto error = get_filter_scratch(this, grid_pixels * 4, grid_out); error != ERR::Okay) return error;
 
       const auto source = filter_sampler(InputBitmap);
       const double source_scale_x = double(width) / double(grid_width);
@@ -171,13 +172,13 @@ class extConvolveFX : public extFilterEffect {
          for (int x=0; x < grid_width; x++) {
             const double sx = double(pLeft) + (filter_pixel_centre(x) * source_scale_x) - 0.5;
             source.sample<filter_interpolation::BILINEAR, FEM::CLAMP>(
-               grid_in.data() + ((y * grid_width) + x) * 4, sx, sy);
+               grid_in + ((y * grid_width) + x) * 4, sx, sy);
          }
       }
 
-      convolveGrid(grid_in.data(), grid_out.data(), grid_width, grid_height, InputBitmap);
+      convolveGrid(grid_in, grid_out, grid_width, grid_height, InputBitmap);
 
-      const filter_rgba_sampler grid { grid_out.data(), grid_width * 4, 0, 0, grid_width, grid_height };
+      const filter_rgba_sampler grid { grid_out, grid_width * 4, 0, 0, grid_width, grid_height };
       const double grid_scale_x = double(grid_width) / double(width);
       const double grid_scale_y = double(grid_height) / double(height);
       const uint8_t A = InputBitmap->ColourFormat->AlphaPos>>3;
@@ -331,9 +332,6 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
 
    if (canvas_width * canvas_height > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
 
-   std::vector<uint8_t> data;
-   data.resize(canvas_width * canvas_height * Self->Target->BytesPerPixel);
-
    filter_surface_view source;
    if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
 
@@ -348,11 +346,12 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    const auto encoding = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? CS::LINEAR_RGB : CS::SRGB;
    if (auto error = premultiplied_input(Self, source, encoding, input); error != ERR::Okay) return error;
    auto in_bmp = input.Bitmap;
+   auto output = Self->Target->Data + (Self->Target->Clip.Top * Self->Target->LineWidth) +
+      Self->Target->Clip.Left * Self->Target->BytesPerPixel;
 
    if ((unit_x_pixel != 1.0) or (unit_y_pixel != 1.0)) {
-      auto error = Self->processResampled(in_bmp, data.data(), Self->Target->Clip.Left, Self->Target->Clip.Top,
+      return Self->processResampled(in_bmp, output, Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right, Self->Target->Clip.Bottom, unit_x_pixel, unit_y_pixel);
-      if (error != ERR::Okay) return error;
    }
    else {
       int thread_count = std::thread::hardware_concurrency();
@@ -369,7 +368,7 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
 
          // Calculate output offset for each thread to prevent race conditions
          int output_offset = i * lines_per_thread * canvas_width * Self->Target->BytesPerPixel;
-         auto thread_output = (uint8_t *)data.data() + output_offset;
+         auto thread_output = output + output_offset;
 
          const auto left = Self->Target->Clip.Left, right = Self->Target->Clip.Right;
          pool.detach_task([Self, in_bmp, thread_output, unit_x_pixel, unit_y_pixel, left, top, right, bottom]() {
@@ -378,16 +377,6 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
       }
 
       pool.wait();
-   }
-
-   // Copy the resulting output back to the bitmap.
-
-   auto pixel = (uint32_t *)(Self->Target->Data + (Self->Target->Clip.Left * Self->Target->BytesPerPixel) + (Self->Target->Clip.Top * Self->Target->LineWidth));
-   auto src   = (uint32_t *)data.data();
-   for (int y=0; y < canvas_height; y++) {
-      copymem(src, pixel, size_t(Self->Target->BytesPerPixel) * size_t(canvas_width));
-      pixel += Self->Target->LineWidth>>2;
-      src += canvas_width;
    }
 
    return ERR::Okay;
