@@ -37,7 +37,6 @@ class extImageFX : public extFilterEffect {
    VSM ResampleMethod = VSM::BILINEAR; // Resample method.
    objBitmap *Bitmap;    // Bitmap containing source image data.
    objImage *Image;      // Origin image if loading a source file.
-   OBJECTID ChildBitmapID = 0; // Child bitmap attached prior to initialisation; resolved by Init()
    bool BitmapPinned = false;  // True if the client's Bitmap holds a strong pin taken by Init()
 
    extImageFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
@@ -45,9 +44,6 @@ class extImageFX : public extFilterEffect {
    }
 
    ~extImageFX() {
-      // A client bitmap that was freed while pinned is collected by unpin(true).  Otherwise it remains a child and
-      // is freed with the other children once the destructor returns.
-
       if (BitmapPinned) { Bitmap->unpin(true); BitmapPinned = false; }
       if (Image) FreeResource(Image);
    }
@@ -65,28 +61,18 @@ static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
    return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod);
 }
 
+
 //********************************************************************************************************************
 
 static ERR IMAGEFX_Init(extImageFX *Self)
 {
    kt::Log log;
 
-   // A child bitmap is resolved and validated here rather than in NewChild(), which runs before the bitmap is
-   // initialised.  The ID is resolved because the bitmap may have been freed if its initialisation failed.
-
-   if ((not Self->Bitmap) and (Self->ChildBitmapID)) {
-      auto child = GetObjectPtr(Self->ChildBitmapID);
-      if ((child) and (child->classID() IS CLASSID::BITMAP) and (child->ownerID() IS Self->UID)) {
-         Self->Bitmap = (objBitmap *)child;
-      }
-      Self->ChildBitmapID = 0;
-   }
-
    if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
 
    if (not Self->Bitmap->initialised()) {
-      log.warning("The source bitmap #%d is not initialised.", Self->Bitmap->UID);
-      return ERR::NotInitialised;
+      if (Self->BitmapPinned) { Self->Bitmap->unpin(); Self->BitmapPinned = false; }
+      return log.warning(ERR::NotInitialised);
    }
 
    if (Self->Bitmap->BytesPerPixel != 4) {
@@ -95,38 +81,27 @@ static ERR IMAGEFX_Init(extImageFX *Self)
       return ERR::InvalidValue;
    }
 
-   // A client bitmap is strongly pinned so that it remains valid for the lifetime of the ImageFX.  If the client
-   // frees it (for instance through a script's garbage collector) the free is deferred until the pin is released.
-   // Bitmaps of a loaded Image are freed by the ImageFX and need no pin.
-
-   if (not Self->Image) {
-      Self->Bitmap->pin();
-      Self->BitmapPinned = true;
-   }
-
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// If the client attaches a bitmap as a child of our object, we use it as the primary image source.  NewChild() is
-// called when the bitmap is created, before it is initialised, so only its ID is recorded and Init() validates it.
-// A previously recorded child that no longer exists (e.g. its initialisation failed) is replaced.
+// If the client attaches a bitmap as a child of our object, we use it as the primary image source.
 
 static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
 {
+   kt::Log log;
    if (Args->Object->classID() IS CLASSID::BITMAP) {
-      if ((Self->initialised()) or (Self->Bitmap)) {
-         kt::Log().warning("Attached bitmap ignored; the Bitmap is already defined.");
+      if ((Self->initialised()) or (Self->Bitmap)) log.warning(ERR::AlreadyDefined);
+      else if (Self->Bitmap) log.warning(ERR::AlreadyDefined);
+      else {
+         Self->Bitmap = (objBitmap *)Args->Object;
+         Self->Bitmap->pin();
+         Self->BitmapPinned = true;
       }
-      else if ((Self->ChildBitmapID) and (GetObjectPtr(Self->ChildBitmapID))) {
-         kt::Log().warning("Attached bitmap ignored; bitmap #%d is already attached.", Self->ChildBitmapID);
-      }
-      else Self->ChildBitmapID = Args->Object->UID;
    }
 
    return ERR::Okay;
 }
-
 
 /*********************************************************************************************************************
 
@@ -157,7 +132,7 @@ static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
 
 static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
 {
-   if ((Self->Bitmap) or (Self->Image) or (Self->ChildBitmapID)) return ERR::Immutable;
+   if ((Self->Bitmap) or (Self->Image)) return ERR::Immutable;
 
    if ((Self->Image = objImage::create::local(fl::Path(Value), fl::BitsPerPixel(32), fl::Flags(PCF::FORCE_ALPHA_32)))) {
       Self->Bitmap = Self->Image->Bitmap;
