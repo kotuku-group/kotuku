@@ -105,7 +105,10 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
    int resolution = Self->Resolution & (~1);
    if (not resolution) {
       const auto &render = *Self->Filter->Render;
-      resolution = std::min(int(render.TargetWidth), int(render.TargetHeight)) & ~1;
+      const double size = std::min(render.FilterRegion.width(), render.FilterRegion.height());
+      if (size < 2) return ERR::Okay;
+      if (size > 0xffff) return ERR::OutOfRange;
+      resolution = int(size) & ~1;
    }
    const int half_res = resolution>>1;
 

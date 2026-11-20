@@ -155,8 +155,8 @@
     unit Height               # Height of filter area
     double Opacity            # Level of opacity from 0 - 1.0
     obj(VectorFilter) Inherit # Reference to another pattern from which to inherit attributes
-    int ResX                  # Width of the intermediate images in pixels
-    int ResY                  # Height of the intermediate images in pixels
+    int ResX                  # Requested horizontal filter resolution (compatibility only)
+    int ResY                  # Requested vertical filter resolution (compatibility only)
     int(VUNIT) Units          # VUNIT constant
     int(VUNIT) PrimitiveUnits # VUNIT constant
     int(VCS) ColourSpace      # Operating colour space for RGB values

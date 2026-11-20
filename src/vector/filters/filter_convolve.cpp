@@ -26,24 +26,11 @@ Note in the above formula that the values in the kernel matrix are applied such 
 180 degrees relative to the source and destination images in order to match convolution theory as described in many
 computer graphics textbooks.
 
-Because they operate on pixels, matrix convolutions are inherently resolution-dependent.  To make
-resolution-independent results, an explicit value should be provided for either the `ResX` and `ResY` attributes
-on the parent @VectorFilter and/or #UnitX and #UnitY.
+Convolution uses the device-pixel grid by default.  Set #UnitX and #UnitY to specify the kernel spacing in
+primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution
+and then resamples the result back to device pixels.
 
 -END-
-
-TODO: As per the SVG spec...
-
-Because they operate on pixels, matrix convolutions are inherently resolution-dependent.  To make convolve produce
-resolution-independent results, an explicit value should be provided for either the ResX/Y on the filter element
-and/or UnitX/Y.
-
-UnitX/Y, in combination with the other attributes, defines an implicit pixel grid in the filter
-effects coordinate system (i.e., the coordinate system established by the primitiveUnits attribute).
-If the pixel grid established by UnitX/Y is not scaled to match the pixel grid established by
-attribute filterRes (implicitly or explicitly), then the input image will be temporarily rescaled to
-match its pixels with UnitX/Y. The convolution happens on the resampled image. After applying
-the convolution, the image is resampled back to the original resolution.
 
 When the image must be resampled to match the coordinate system defined by UnitX/Y prior to
 convolution, or resampled to match the device coordinate system after convolution, it is recommended that
@@ -82,139 +69,30 @@ class extConvolveFX : public extFilterEffect {
 
    extConvolveFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
-   inline const uint8_t * getPixel(const objBitmap *Bitmap, int X, int Y) const {
-      if ((X >= Bitmap->Clip.Left) and (X < Bitmap->Clip.Right) and
-          (Y >= Bitmap->Clip.Top) and (Y < Bitmap->Clip.Bottom)) {
-         return Bitmap->Data + (Y * Bitmap->LineWidth) + (X * Bitmap->BytesPerPixel);
-      }
-
-      switch (EdgeMode) {
-         case EM::DUPLICATE:
-            if (X < Bitmap->Clip.Left) X = Bitmap->Clip.Left;
-            else if (X >= Bitmap->Clip.Right) X = Bitmap->Clip.Right - 1;
-            if (Y < Bitmap->Clip.Top) Y = Bitmap->Clip.Top;
-            else if (Y >= Bitmap->Clip.Bottom) Y = Bitmap->Clip.Bottom - 1;
-            return Bitmap->Data + (Y * Bitmap->LineWidth) + (X * Bitmap->BytesPerPixel);
-
-         case EM::WRAP: {
-            auto width = Bitmap->Clip.Right - Bitmap->Clip.Left;
-            auto height = Bitmap->Clip.Bottom - Bitmap->Clip.Top;
-
-            X -= Bitmap->Clip.Left;
-            Y -= Bitmap->Clip.Top;
-
-            if (X < 0) X = ((X % width) + width) % width;
-            else if (X >= width) X %= width;
-
-            if (Y < 0) Y = ((Y % height) + height) % height;
-            else if (Y >= height) Y %= height;
-
-            return Bitmap->Data + ((Y + Bitmap->Clip.Top)  * Bitmap->LineWidth) + ((X + Bitmap->Clip.Left) * Bitmap->BytesPerPixel);
-         }
-
-         default: return nullptr;
-      }
+   FEM edge_policy() const {
+      if (EdgeMode IS EM::DUPLICATE) return FEM::CLAMP;
+      if (EdgeMode IS EM::WRAP) return FEM::REPEAT;
+      return FEM::TRANSPARENT;
    }
 
-   inline double unitPixelSpacingX() const {
-      if (!UnitXProvided) return 1.0;
+   const uint8_t * getPixel(const objBitmap *Bitmap, int X, int Y) const {
+      return filter_sampler(Bitmap).pixel(X, Y, edge_policy());
+   }
 
-      double scale_x = 1.0;
-      if (Filter->Render->ClientVector) {
-         auto &t = Filter->Render->ClientVector->Transform;
-         scale_x = sqrt((t.sx * t.sx) + (t.shy * t.shy));
-         if (scale_x <= 0.0) scale_x = 1.0;
+   std::pair<double, double> unit_pixel_spacing() const {
+      const auto &render = *Filter->Render;
+      const auto [unit_x, unit_y] = render.primitive_scales(false);
+      const auto [scale_x, scale_y] = render.axis_scales();
+      return { UnitXProvided ? UnitX * unit_x * scale_x : 1.0, UnitYProvided ? UnitY * unit_y * scale_y : 1.0 };
+   }
+
+   filter_sampling sampling() const {
+      const auto [x, y] = unit_pixel_spacing();
+      if ((not std::isfinite(x)) or (not std::isfinite(y))) return { filter_access::BOUNDED, x, y };
+      if (EdgeMode IS EM::WRAP) {
+         return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED };
       }
-
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) return UnitX * Filter->Render->BoundWidth * scale_x;
-      else return UnitX * scale_x;
-   }
-
-   inline double unitPixelSpacingY() const {
-      if (!UnitYProvided) return 1.0;
-
-      double scale_y = 1.0;
-      if (Filter->Render->ClientVector) {
-         auto &t = Filter->Render->ClientVector->Transform;
-         scale_y = sqrt((t.shx * t.shx) + (t.sy * t.sy));
-         if (scale_y <= 0.0) scale_y = 1.0;
-      }
-
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) return UnitY * Filter->Render->BoundHeight * scale_y;
-      else return UnitY * scale_y;
-   }
-
-   inline const uint8_t * getClampedBitmapPixel(const objBitmap *Bitmap, int X, int Y) const {
-      X = std::clamp(X, Bitmap->Clip.Left, Bitmap->Clip.Right - 1);
-      Y = std::clamp(Y, Bitmap->Clip.Top, Bitmap->Clip.Bottom - 1);
-      return Bitmap->Data + (Y * Bitmap->LineWidth) + (X * Bitmap->BytesPerPixel);
-   }
-
-   void sampleBitmap(const objBitmap *Bitmap, double X, double Y, uint8_t *Output) const {
-      const int x0 = int(std::floor(X));
-      const int y0 = int(std::floor(Y));
-      const int x1 = x0 + 1;
-      const int y1 = y0 + 1;
-      const double tx = X - double(x0);
-      const double ty = Y - double(y0);
-
-      auto p00 = getClampedBitmapPixel(Bitmap, x0, y0);
-      auto p10 = getClampedBitmapPixel(Bitmap, x1, y0);
-      auto p01 = getClampedBitmapPixel(Bitmap, x0, y1);
-      auto p11 = getClampedBitmapPixel(Bitmap, x1, y1);
-
-      for (int i=0; i < Bitmap->BytesPerPixel; i++) {
-         const double top = (double(p00[i]) * (1.0 - tx)) + (double(p10[i]) * tx);
-         const double bottom = (double(p01[i]) * (1.0 - tx)) + (double(p11[i]) * tx);
-         Output[i] = uint8_t(std::clamp(int(std::lrint((top * (1.0 - ty)) + (bottom * ty))), 0, 255));
-      }
-   }
-
-   inline uint8_t * getGridPixel(uint8_t *Data, int Width, int Height, int X, int Y) const {
-      if ((X >= 0) and (X < Width) and (Y >= 0) and (Y < Height)) return Data + ((Y * Width) + X) * 4;
-
-      switch (EdgeMode) {
-         case EM::DUPLICATE:
-            X = std::clamp(X, 0, Width - 1);
-            Y = std::clamp(Y, 0, Height - 1);
-            return Data + ((Y * Width) + X) * 4;
-
-         case EM::WRAP:
-            if (X < 0) X = ((X % Width) + Width) % Width;
-            else if (X >= Width) X %= Width;
-            if (Y < 0) Y = ((Y % Height) + Height) % Height;
-            else if (Y >= Height) Y %= Height;
-            return Data + ((Y * Width) + X) * 4;
-
-         default:
-            return nullptr;
-      }
-   }
-
-   inline const uint8_t * getClampedGridPixel(const uint8_t *Data, int Width, int Height, int X, int Y) const {
-      X = std::clamp(X, 0, Width - 1);
-      Y = std::clamp(Y, 0, Height - 1);
-      return Data + ((Y * Width) + X) * 4;
-   }
-
-   void sampleGrid(const uint8_t *Data, int Width, int Height, double X, double Y, uint8_t *Output) const {
-      const int x0 = int(std::floor(X));
-      const int y0 = int(std::floor(Y));
-      const int x1 = x0 + 1;
-      const int y1 = y0 + 1;
-      const double tx = X - double(x0);
-      const double ty = Y - double(y0);
-
-      auto p00 = getClampedGridPixel(Data, Width, Height, x0, y0);
-      auto p10 = getClampedGridPixel(Data, Width, Height, x1, y0);
-      auto p01 = getClampedGridPixel(Data, Width, Height, x0, y1);
-      auto p11 = getClampedGridPixel(Data, Width, Height, x1, y1);
-
-      for (int i=0; i < 4; i++) {
-         const double top = (double(p00[i]) * (1.0 - tx)) + (double(p10[i]) * tx);
-         const double bottom = (double(p01[i]) * (1.0 - tx)) + (double(p11[i]) * tx);
-         Output[i] = uint8_t(std::clamp(int(std::lrint((top * (1.0 - ty)) + (bottom * ty))), 0, 255));
-      }
+      return { filter_access::BOUNDED, std::ceil(MatrixColumns * x) + 1, std::ceil(MatrixRows * y) + 1 };
    }
 
    void convolveGrid(const uint8_t *Input, uint8_t *Output, int Width, int Height, const objBitmap *SourceBitmap) {
@@ -227,7 +105,8 @@ class extConvolveFX : public extFilterEffect {
       const double alpha_bias = Bias * 255.0;
       const bool linear_rgb = Filter->ColourSpace IS VCS::LINEAR_RGB;
 
-      auto grid = (uint8_t *)Input;
+      const filter_rgba_sampler grid { Input, Width * 4, 0, 0, Width, Height };
+      const auto edge = edge_policy();
 
       for (int y=0; y < Height; y++) {
          for (int x=0; x < Width; x++) {
@@ -239,7 +118,7 @@ class extConvolveFX : public extFilterEffect {
                for (int fx=0; fx < MatrixColumns; fx++) {
                   int isrc_x = x - TargetX + fx;
                   int matrix_index = ((MatrixRows - fy - 1) * MatrixColumns) + (MatrixColumns - fx - 1);
-                  if (auto pixel = getGridPixel(grid, Width, Height, isrc_x, isrc_y)) {
+                  if (auto pixel = grid.pixel(isrc_x, isrc_y, edge)) {
                      r += pixel[R] * Matrix[matrix_index];
                      g += pixel[G] * Matrix[matrix_index];
                      b += pixel[B] * Matrix[matrix_index];
@@ -284,18 +163,21 @@ class extConvolveFX : public extFilterEffect {
       std::vector<uint8_t> grid_in(grid_pixels * 4);
       std::vector<uint8_t> grid_out(grid_pixels * 4);
 
+      const auto source = filter_sampler(InputBitmap);
       const double source_scale_x = double(width) / double(grid_width);
       const double source_scale_y = double(height) / double(grid_height);
       for (int y=0; y < grid_height; y++) {
+         const double sy = double(pTop) + (filter_pixel_centre(y) * source_scale_y) - 0.5;
          for (int x=0; x < grid_width; x++) {
-            const double sx = double(pLeft) + ((double(x) + 0.5) * source_scale_x) - 0.5;
-            const double sy = double(pTop) + ((double(y) + 0.5) * source_scale_y) - 0.5;
-            sampleBitmap(InputBitmap, sx, sy, grid_in.data() + ((y * grid_width) + x) * 4);
+            const double sx = double(pLeft) + (filter_pixel_centre(x) * source_scale_x) - 0.5;
+            source.sample<filter_interpolation::BILINEAR, FEM::CLAMP>(
+               grid_in.data() + ((y * grid_width) + x) * 4, sx, sy);
          }
       }
 
       convolveGrid(grid_in.data(), grid_out.data(), grid_width, grid_height, InputBitmap);
 
+      const filter_rgba_sampler grid { grid_out.data(), grid_width * 4, 0, 0, grid_width, grid_height };
       const double grid_scale_x = double(grid_width) / double(width);
       const double grid_scale_y = double(grid_height) / double(height);
       const uint8_t A = InputBitmap->ColourFormat->AlphaPos>>3;
@@ -303,10 +185,10 @@ class extConvolveFX : public extFilterEffect {
       const uint8_t *alpha_input = InputBitmap->Data + (pTop * InputBitmap->LineWidth);
       for (int y=0; y < height; y++) {
          auto out = outline;
+         const double gy = (filter_pixel_centre(y) * grid_scale_y) - 0.5;
          for (int x=0; x < width; x++) {
-            const double gx = ((double(x) + 0.5) * grid_scale_x) - 0.5;
-            const double gy = ((double(y) + 0.5) * grid_scale_y) - 0.5;
-            sampleGrid(grid_out.data(), grid_width, grid_height, gx, gy, out);
+            const double gx = (filter_pixel_centre(x) * grid_scale_x) - 0.5;
+            grid.sample<filter_interpolation::BILINEAR, FEM::CLAMP>(out, gx, gy);
             if (PreserveAlpha) out[A] = (alpha_input + ((pLeft + x) * InputBitmap->BytesPerPixel))[A];
             out += 4;
          }
@@ -455,9 +337,9 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    filter_surface_view source;
    if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
 
-   double unit_x_pixel = Self->unitPixelSpacingX();
-   double unit_y_pixel = Self->unitPixelSpacingY();
-   if ((unit_x_pixel <= 0.0) or (unit_y_pixel <= 0.0)) return ERR::InvalidValue;
+   auto [unit_x_pixel, unit_y_pixel] = Self->unit_pixel_spacing();
+   if ((not std::isfinite(unit_x_pixel)) or (not std::isfinite(unit_y_pixel)) or
+       (unit_x_pixel <= 0.0) or (unit_y_pixel <= 0.0)) return ERR::InvalidValue;
 
    if (std::abs(unit_x_pixel - 1.0) < 0.001) unit_x_pixel = 1.0;
    if (std::abs(unit_y_pixel - 1.0) < 0.001) unit_y_pixel = 1.0;
@@ -721,14 +603,10 @@ static ERR CONVOLVEFX_SET_TargetY(extConvolveFX *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-UnitX: The distance in filter units between rows in the Matrix.
+UnitX: The distance between successive columns of the Matrix.
 
-Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits)
-between successive columns and rows, respectively, in the #Matrix.  By specifying value(s) for #UnitX, the kernel
-becomes defined in a scalable, abstract coordinate system.  If #UnitX is not specified, the default value is one pixel
-in the offscreen bitmap, which is a pixel-based coordinate system, and thus potentially not scalable.  For some level
-of consistency across display media and user agents, it is necessary that a value be provided for at least one of
-ResX and #UnitX.
+This spacing uses @VectorFilter.PrimitiveUnits.  It lets the kernel scale with the client.  If omitted, spacing
+on this axis defaults to one device pixel.
 
 The most consistent results and the fastest performance will be achieved if the pixel grid of the offscreen bitmap
 aligns with the pixel grid of the kernel.
@@ -747,14 +625,10 @@ static ERR CONVOLVEFX_SET_UnitX(extConvolveFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-UnitY: The distance in filter units between columns in the Matrix.
+UnitY: The distance between successive rows of the Matrix.
 
-Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits)
-between successive columns and rows, respectively, in the #Matrix.  By specifying value(s) for #UnitY, the kernel
-becomes defined in a scalable, abstract coordinate system.  If #UnitY is not specified, the default value is one pixel
-in the offscreen bitmap, which is a pixel-based coordinate system, and thus potentially not scalable.  For some level
-of consistency across display media and user agents, it is necessary that a value be provided for at least one of
-ResY and #UnitY.
+This spacing uses @VectorFilter.PrimitiveUnits.  It lets the kernel scale with the client.  If omitted, spacing
+on this axis defaults to one device pixel.
 
 The most consistent results and the fastest performance will be achieved if the pixel grid of the offscreen bitmap
 aligns with the pixel grid of the kernel.

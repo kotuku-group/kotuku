@@ -42,19 +42,32 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 *********************************************************************************************************************/
 
 #include <bs_thread_pool.h>
+#include "filter_sampling.h"
 
 //#define DEBUG_FILTER_BITMAP
 //#define EXPORT_FILTER_BITMAP
 
 constexpr int64_t MAX_FILTER_MARGIN_AREA = 4096 * 4096; // Processing regions with margins are limited to this area
 
-struct target {
-   double bound_x, bound_y, bound_width, bound_height;
-   double x, y, width, height;
+enum class filter_input_role { INPUT, MIX, MERGE };
+enum class filter_inputs { GENERATOR, SINGLE, DUAL, MERGE };
+enum class filter_input_kind { IMAGE, PARAMETER_MAP };
+enum class filter_access { POINTWISE, BOUNDED, FULL_INPUT };
+
+struct filter_sampling {
+   static constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
+   filter_access Access = filter_access::POINTWISE;
+   double X = 0, Y = 0; // Conservative device-pixel reach.  Full input may apply along only one axis.
 };
 
-enum class filter_input_role { INPUT, MIX, MERGE };
-enum class filter_operation { GENERATOR, SINGLE, DUAL, MERGE };
+struct filter_operation {
+   filter_inputs Inputs;
+   filter_sampling (*Sampling)(const extFilterEffect *) = [](const extFilterEffect *) -> filter_sampling {
+      return {};
+   };
+   filter_input_kind MixKind = filter_input_kind::IMAGE;
+   bool MapContributesRegion = false;
+};
 
 enum class filter_alpha { STRAIGHT, PREMULTIPLIED };
 
@@ -67,7 +80,7 @@ struct filter_surface_view {
    int OriginX = 0, OriginY = 0;
    CS Encoding = CS::SRGB;
    filter_alpha Alpha = filter_alpha::STRAIGHT;
-   TClipRectangle<int> Valid = {};
+   TClipRectangle<int> Valid = { 0 };
 
    const uint8_t * row(int Y) const { return Data + std::ptrdiff_t(Y) * Stride; }
 };
@@ -79,11 +92,15 @@ struct filter_input {
    filter_input_role Role;
    size_t Slot;
    const filter_step *Producer;
+   filter_input_kind Kind;
+   bool MapContributesRegion;
 };
 
 struct filter_step {
    extFilterEffect *Effect;
+   filter_operation Operation;
    std::span<const filter_input> Inputs;
+   TClipRectangle<double> Subregion = { 0.0 }; // Client user coordinates.
    size_t Consumers = 0;
    filter_surface_view Result = {};
 };
@@ -105,15 +122,86 @@ struct filter_render_context {
    uint64_t Revision;
    filter_plan Plan;
    const filter_step *ActiveStep = nullptr;
-   TClipRectangle<int> VectorClip = {}; // Processing region in scene coordinates.
-   agg::trans_affine Transform;       // Client user coordinates to local bitmap coordinates.
-   double BoundWidth = 0, BoundHeight = 0;
-   double TargetX = 0, TargetY = 0, TargetWidth = 0, TargetHeight = 0;
+   TClipRectangle<int> VectorClip = { 0 }; // Processing rectangle in scene pixels.  Left/top are the bitmap origin.
+   TClipRectangle<double> ClientBounds = { 0.0 }; // Unrounded bounds of the subtree in client user coordinates.
+   TClipRectangle<double> ClientPathBounds = { 0.0 }; // Client path alone in user coordinates.
+   TClipRectangle<double> SceneBounds = { 0.0 }; // Unrounded subtree bounds in scene coordinates for per-axis units.
+   TClipRectangle<double> FilterRegion = { 0.0 }; // Default primitive region in client user coordinates.
+   double BoundWidth = 0, BoundHeight = 0; // Rounded subtree dimensions used by legacy distance scaling.
+   double ViewportWidth = 0, ViewportHeight = 0; // Viewport dimensions in its user coordinates (viewBox if set).
+   double ContainerWidth = 0, ContainerHeight = 0; // Fixed viewport dimensions used by legacy filter region lengths.
+   VUNIT FilterUnits, PrimitiveUnits;
+   VFA AspectRatio;
+   agg::trans_affine ToScene; // Client user coordinates to scene coordinates.
+   agg::trans_affine Transform; // Client user coordinates to local bitmap coordinates.
+   agg::trans_affine Inverse; // Local bitmap coordinates to client user coordinates.
    uint8_t BankIndex = 0;
    filter_surface_view SourceGraphic, SourceAlpha, Background, BackgroundAlpha;
 
    TClipRectangle<int> scratch_clip() const { return { 0, 0, VectorClip.width(), VectorClip.height() }; }
+
+   std::pair<double, double> primitive_scales(bool AllowDiagonal) const {
+      if (PrimitiveUnits != VUNIT::BOUNDING_BOX) return { 1, 1 };
+      if (AllowDiagonal and (AspectRatio IS VFA::NONE)) {
+         const auto diagonal = normalised_diagonal(BoundWidth, BoundHeight);
+         return { diagonal, diagonal };
+      }
+      return { BoundWidth, BoundHeight };
+   }
+
+   static double normalised_diagonal(double Width, double Height) {
+      return sqrt((Width * Width) + (Height * Height)) * INV_SQRT2;
+   }
+
+   std::pair<double, double> axis_scales() const {
+      return { std::hypot(ToScene.sx, ToScene.shy), std::hypot(ToScene.shx, ToScene.sy) };
+   }
 };
+
+static bool finite_transform(const agg::trans_affine &Transform)
+{
+   return std::isfinite(Transform.sx) and std::isfinite(Transform.sy) and
+      std::isfinite(Transform.shx) and std::isfinite(Transform.shy) and
+      std::isfinite(Transform.tx) and std::isfinite(Transform.ty);
+}
+
+static bool invert_filter_transform(agg::trans_affine &Transform)
+{
+   const double determinant = Transform.determinant();
+   if ((not finite_transform(Transform)) or (not std::isfinite(determinant)) or (determinant IS 0)) return false;
+   Transform.invert();
+   return finite_transform(Transform);
+}
+
+static bool finite_region(const TClipRectangle<double> &Region)
+{
+   return std::isfinite(Region.left) and std::isfinite(Region.top) and
+      std::isfinite(Region.right) and std::isfinite(Region.bottom) and
+      std::isfinite(Region.width()) and std::isfinite(Region.height());
+}
+
+static bool transform_filter_region(TClipRectangle<double> &, const agg::trans_affine &);
+
+static bool filter_raster_bounds(const TClipRectangle<double> &Bounds)
+{
+   // Reserve headroom for additions and differences in the rasteriser's fixed-point arithmetic.
+   constexpr double limit = double(agg::poly_max_coord) / agg::poly_subpixel_scale;
+   return (Bounds.left >= -limit) and (Bounds.top >= -limit) and
+      (Bounds.right <= limit) and (Bounds.bottom <= limit);
+}
+
+static void map_filter_pixel_centre(const agg::trans_affine &Transform, int X, int Y, double &PX, double &PY)
+{
+   PX = filter_pixel_centre(X);
+   PY = filter_pixel_centre(Y);
+   Transform.transform(&PX, &PY);
+}
+
+static filter_rgba_sampler filter_sampler(const objBitmap *Bitmap)
+{
+   const auto &clip = Bitmap->Clip;
+   return { Bitmap->Data, Bitmap->LineWidth, clip.Left, clip.Top, clip.Right, clip.Bottom };
+}
 
 static filter_surface_view filter_view(const filter_render_context &Render, const objBitmap *Bitmap)
 {
@@ -198,13 +286,17 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
 
 static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
 {
-   auto filter = Self->Filter;
+   const auto step = active_filter_step(Self);
+   if (not step) return ERR::InvalidState;
+   const auto &subregion = step->Subregion;
 
    // The image is fitted to the primitive subregion, which render_filter() computes before drawing the effect.  In
    // objectBoundingBox mode the subregion is measured against the bounding box of the client vector, as per SVG.
 
-   double p_x = std::round(Self->Subregion.left), p_y = std::round(Self->Subregion.top);
-   double p_width = std::round(Self->Subregion.width()), p_height = std::round(Self->Subregion.height());
+   double p_x = std::round(subregion.left), p_y = std::round(subregion.top);
+   double p_width = std::round(subregion.width()), p_height = std::round(subregion.height());
+
+   if ((p_width <= 0) or (p_height <= 0)) return ERR::Okay;
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
    calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap->Width, Bitmap->Height, align_x, align_y, x_scale, y_scale);
@@ -215,8 +307,14 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
    agg::trans_affine img_transform;
    img_transform.scale(x_scale, y_scale);
    img_transform.translate(p_x, p_y);
-   img_transform *= filter->Render->Transform;
-   img_transform.invert();
+   img_transform *= Self->Filter->Render->Transform;
+   if (not invert_filter_transform(img_transform)) return ERR::InvalidValue;
+   const auto &clip = Self->Target->Clip;
+   TClipRectangle<double> samples { filter_pixel_centre(clip.Left), filter_pixel_centre(clip.Top),
+      filter_pixel_centre(clip.Right), filter_pixel_centre(clip.Bottom) };
+   if ((not transform_filter_region(samples, img_transform)) or (not filter_raster_bounds(samples))) {
+      return ERR::OutOfRange;
+   }
 
    if (img_transform.is_complex()) {
       // The transform maps destination pixels back to the source, so upscale factors are at most one.
@@ -371,22 +469,37 @@ extFilterEffect::~extFilterEffect()
 
 //********************************************************************************************************************
 
+template<class Effect>
+static filter_sampling effect_sampling(const extFilterEffect *Instance)
+{
+   return ((const Effect *)Instance)->sampling();
+}
+
 static filter_operation describe_filter_operation(CLASSID Class)
 {
+   using enum filter_inputs;
    switch (Class) {
-      case CLASSID::MERGEFX:
-         return filter_operation::MERGE;
-      case CLASSID::COMPOSITEFX:
+      case CLASSID::BLURFX:         return { SINGLE, effect_sampling<extBlurFX> };
+      case CLASSID::COLOURFX:       return { SINGLE };
+      case CLASSID::COMPOSITEFX:    return { DUAL };
+      case CLASSID::CONVOLVEFX:     return { SINGLE, effect_sampling<extConvolveFX> };
       case CLASSID::DISPLACEMENTFX:
-         return filter_operation::DUAL;
-      case CLASSID::FLOODFX:
-      case CLASSID::IMAGEFX:
-      case CLASSID::SOURCEFX:
-      case CLASSID::TURBULENCEFX:
-      case CLASSID::WAVEFUNCTIONFX:
-         return filter_operation::GENERATOR;
+         // The legacy SVG Mix slot contributes to the default region even though it contains a parameter map.
+         return { DUAL, effect_sampling<extDisplacementFX>, filter_input_kind::PARAMETER_MAP, true };
+      case CLASSID::FLOODFX:        return { GENERATOR };
+      case CLASSID::IMAGEFX:        return { GENERATOR };
+      case CLASSID::LIGHTINGFX:     return { SINGLE, effect_sampling<extLightingFX> };
+      case CLASSID::MERGEFX:        return { MERGE };
+      case CLASSID::MORPHOLOGYFX:   return { SINGLE, effect_sampling<extMorphologyFX> };
+      case CLASSID::OFFSETFX:       return { SINGLE, effect_sampling<extOffsetFX> };
+      case CLASSID::REMAPFX:        return { SINGLE };
+      case CLASSID::SOURCEFX:       return { GENERATOR };
+      case CLASSID::TURBULENCEFX:   return { GENERATOR };
+      case CLASSID::WAVEFUNCTIONFX: return { GENERATOR };
       default:
-         return filter_operation::SINGLE;
+         return { SINGLE, [](const extFilterEffect *) -> filter_sampling {
+            return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED };
+         } };
    }
 }
 
@@ -459,12 +572,13 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       }
 
       positions.emplace(effect, i);
-      Plan.Steps.push_back({ .Effect = effect, .Inputs = {} });
-      switch (describe_filter_operation(effect->classID())) {
-         case filter_operation::GENERATOR: break;
-         case filter_operation::SINGLE: input_count++; break;
-         case filter_operation::DUAL: input_count += 2; break;
-         case filter_operation::MERGE: input_count += ((extMergeFX *)effect)->List.size(); break;
+      const auto operation = describe_filter_operation(effect->classID());
+      Plan.Steps.push_back({ .Effect = effect, .Operation = operation, .Inputs = {} });
+      switch (operation.Inputs) {
+         case filter_inputs::GENERATOR: break;
+         case filter_inputs::SINGLE: input_count++; break;
+         case filter_inputs::DUAL: input_count += 2; break;
+         case filter_inputs::MERGE: input_count += ((extMergeFX *)effect)->List.size(); break;
       }
    }
 
@@ -476,7 +590,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
    for (size_t i = 0; i < Plan.Steps.size(); i++) {
       auto &step = Plan.Steps[i];
       auto effect = step.Effect;
-      const auto operation = describe_filter_operation(effect->classID());
+      const auto &operation = step.Operation;
       const size_t first = Plan.Inputs.size();
 
       auto add_input = [&](VSF Type, objFilterEffect *Reference, filter_input_role Role, size_t Slot = 0) -> ERR {
@@ -508,7 +622,10 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                return filter_input_error(effect, Role, Slot, ERR::NoSupport, reason);
             }
          }
-         const auto &input = Plan.Inputs.emplace_back(Type, Role, Slot, producer);
+         const bool mix = Role IS filter_input_role::MIX;
+         const auto kind = mix ? operation.MixKind : filter_input_kind::IMAGE;
+         const auto &input = Plan.Inputs.emplace_back(Type, Role, Slot, producer, kind,
+            mix and operation.MapContributesRegion);
          if (producer and (producer > &step) and (not forward_input)) {
             forward_consumer = effect;
             forward_input = &input;
@@ -516,20 +633,20 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
          return ERR::Okay;
       };
 
-      switch (operation) {
-         case filter_operation::GENERATOR:
+      switch (operation.Inputs) {
+         case filter_inputs::GENERATOR:
             break;
-         case filter_operation::DUAL:
-         case filter_operation::SINGLE:
+         case filter_inputs::DUAL:
+         case filter_inputs::SINGLE:
             if (auto error = add_input(effect->SourceType, effect->Input, filter_input_role::INPUT);
                 error != ERR::Okay) return error;
-            if (operation IS filter_operation::DUAL) {
+            if (operation.Inputs IS filter_inputs::DUAL) {
                if (auto error = add_input(effect->MixType, effect->Mix, filter_input_role::MIX); error != ERR::Okay) {
                   return error;
                }
             }
             break;
-         case filter_operation::MERGE: {
+         case filter_inputs::MERGE: {
             const auto &sources = ((extMergeFX *)effect)->List;
             for (size_t j = 0; j < sources.size(); j++) {
                if (auto error = add_input(sources[j].SourceType, sources[j].Effect, filter_input_role::MERGE, j);
@@ -550,10 +667,10 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
 // measured against the normalised diagonal, so that the margin around the content is the same on every side for any
 // shape.  The default region of (-10%, -10%, 120%, 120%) adds 10% of the diagonal to each side.
 
-static TClipRectangle<double> diagonal_region(extVectorFilter *Self, double Left, double Top, double Width,
+static TClipRectangle<double> diagonal_region(const extVectorFilter *Self, double Left, double Top, double Width,
    double Height)
 {
-   double diag = dist(0, 0, Width, Height) * INV_SQRT2;
+   double diag = filter_render_context::normalised_diagonal(Width, Height);
    double x = Self->X.defined() ? double(Self->X) : 0.0;
    double y = Self->Y.defined() ? double(Self->Y) : 0.0;
    double width  = std::max(0.0, Width + (((Self->Width.defined() ? double(Self->Width) : 1.0) - 1.0) * diag));
@@ -564,65 +681,93 @@ static TClipRectangle<double> diagonal_region(extVectorFilter *Self, double Left
 }
 
 //********************************************************************************************************************
-// Compute the Target* and Bound* values, which are used by filter effect algorithms to determine placement.  They
-// reflect positions *without* transforms.  The caller is expected to apply ClientVector->Transform after making
-// normalised coordinate calculations.
-//
-// The Target* values tell the effects exactly where to render to.
-//
-// BoundsWidth/Height reflect the bounds of the client vector and its children.  These values are to
-// be used by effects to compute their area when PrimitiveUnits = BOUNDING_BOX.
-//
-// The bounds are measured in the client vector's coordinate system.  Children that are transformed relative to the
-// client, e.g. by a nested viewBox, are mapped into that system so that the area matches the rendered content.
+// Bounding box filter lengths use the dimensions of Bounds, with optional diagonal margins.
 
-static void compute_target_area(extVectorFilter *Self)
+static TClipRectangle<double> box_filter_region(const extVectorFilter *Self, const TClipRectangle<double> &Bounds)
+{
+   const double bound_width = Bounds.width(), bound_height = Bounds.height();
+   if (Self->AspectRatio IS VFA::NONE) {
+      const auto region = diagonal_region(Self, Bounds.left, Bounds.top, bound_width, bound_height);
+      const double left = std::round(region.left), top = std::round(region.top);
+      return { left, top, left + std::round(region.width()), top + std::round(region.height()) };
+   }
+
+   const double left = std::round(Bounds.left + (Self->X.defined() ? Self->X * bound_width : 0.0));
+   const double top = std::round(Bounds.top + (Self->Y.defined() ? Self->Y * bound_height : 0.0));
+   const double width = std::round(Self->Width.defined() ? Self->Width * bound_width : bound_width);
+   const double height = std::round(Self->Height.defined() ? Self->Height * bound_height : bound_height);
+   return { left, top, left + width, top + height };
+}
+
+static double filter_length(const Unit &Length, double Reference, double Default)
+{
+   if (Length.scaled()) return Length * Reference;
+   return Length.defined() ? double(Length) : Default;
+}
+
+static ERR prepare_filter_geometry(extVectorFilter *Self)
 {
    auto &render = *Self->Render;
-   TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-   calc_local_boundary(render.ClientVector, bounds);
-   double boundX = std::round(bounds.left);
-   double boundY = std::round(bounds.top);
-   render.BoundWidth  = std::round(bounds.width());
+   const auto viewport = render.ClientViewport;
+   render.ContainerWidth = viewport->vpFixedWidth;
+   render.ContainerHeight = viewport->vpFixedHeight;
+   render.ViewportWidth = viewport_coordinate_width(viewport);
+   render.ViewportHeight = viewport_coordinate_height(viewport);
+   render.FilterUnits = Self->Units;
+   render.PrimitiveUnits = Self->PrimitiveUnits;
+   render.AspectRatio = Self->AspectRatio;
+   if ((not std::isfinite(render.ContainerWidth)) or (not std::isfinite(render.ContainerHeight)) or
+       (not std::isfinite(render.ViewportWidth)) or (not std::isfinite(render.ViewportHeight))) {
+      return ERR::InvalidValue;
+   }
+   if ((render.ContainerWidth < 1) or (render.ContainerHeight < 1)) return ERR::NothingDone;
+
+   for (const auto &length : { Self->X, Self->Y, Self->Width, Self->Height }) {
+      if (length.defined() and (not std::isfinite(double(length)))) return ERR::InvalidValue;
+   }
+
+   const auto client = render.ClientVector;
+   render.ToScene = client->Transform;
+   auto inverse = render.ToScene;
+   if (not invert_filter_transform(inverse)) return ERR::InvalidValue;
+
+   const TClipRectangle<double> initial_bounds { std::numeric_limits<double>::max(),
+      std::numeric_limits<double>::max(), 0, 0 };
+   auto bounds = initial_bounds;
+   calc_local_boundary(client, bounds);
+   if ((Self->GraphRevision != render.Revision) or Self->collecting() or client->collecting()) {
+      return ERR::InvalidState;
+   }
+   if (not finite_region(bounds)) return ERR::InvalidValue;
+
+   // A pathless client has no content dimensions.  Its processing rectangle can still fall back to the viewport.
+   if ((bounds.right < bounds.left) or (bounds.bottom < bounds.top)) bounds = { 0.0 };
+   render.ClientBounds = bounds;
+   render.ClientPathBounds = client->Bounds;
+   if ((render.FilterUnits IS VUNIT::BOUNDING_BOX) and (render.AspectRatio != VFA::NONE)) {
+      render.SceneBounds = initial_bounds;
+      calc_full_boundary(client, render.SceneBounds, false, true);
+   }
+
+   const double bound_x = std::round(bounds.left), bound_y = std::round(bounds.top);
+   render.BoundWidth = std::round(bounds.width());
    render.BoundHeight = std::round(bounds.height());
 
-   if ((Self->Units IS VUNIT::BOUNDING_BOX) and (Self->AspectRatio IS VFA::NONE)) {
-      auto region = diagonal_region(Self, boundX, boundY, render.BoundWidth, render.BoundHeight);
-      render.TargetX      = std::round(region.left);
-      render.TargetY      = std::round(region.top);
-      render.TargetWidth  = std::round(region.width());
-      render.TargetHeight = std::round(region.height());
+   if (render.FilterUnits IS VUNIT::BOUNDING_BOX) {
+      render.FilterRegion = box_filter_region(Self, { bound_x, bound_y,
+         bound_x + render.BoundWidth, bound_y + render.BoundHeight });
    }
-   else if (Self->Units IS VUNIT::BOUNDING_BOX) {
-      if (Self->X.defined()) render.TargetX = std::round(boundX + (Self->X * render.BoundWidth));
-      else render.TargetX = boundX;
-
-      if (Self->Y.defined()) render.TargetY = std::round(boundY + (Self->Y * render.BoundHeight));
-      else render.TargetY = boundY;
-
-      if (Self->Width.defined()) render.TargetWidth = std::round(Self->Width * render.BoundWidth);
-      else render.TargetWidth = render.BoundWidth;
-
-      if (Self->Height.defined()) render.TargetHeight = std::round(Self->Height * render.BoundHeight);
-      else render.TargetHeight = render.BoundHeight;
+   else {
+      const double x = std::round(filter_length(Self->X, render.ContainerWidth, bound_x));
+      const double y = std::round(filter_length(Self->Y, render.ContainerHeight, bound_y));
+      const double width = Self->Width.scaled() ? std::round(Self->Width * render.ContainerWidth) :
+         filter_length(Self->Width, render.ContainerWidth, render.ContainerWidth);
+      const double height = Self->Height.scaled() ? std::round(Self->Height * render.ContainerHeight) :
+         filter_length(Self->Height, render.ContainerHeight, render.ContainerHeight);
+      render.FilterRegion = { x, y, x + width, y + height };
    }
-   else { // USERSPACE: Scaled dimensions are measured against the client's viewport rather than the vector.
-      if (Self->X.scaled()) render.TargetX = std::round(Self->X * render.ClientViewport->vpFixedWidth);
-      else if (Self->X.defined()) render.TargetX = std::round(Self->X);
-      else render.TargetX = boundX;
 
-      if (Self->Y.scaled()) render.TargetY = std::round(Self->Y * render.ClientViewport->vpFixedHeight);
-      else if (Self->Y.defined()) render.TargetY = std::round(Self->Y);
-      else render.TargetY = boundY;
-
-      if (Self->Width.scaled()) render.TargetWidth = std::round(Self->Width * render.ClientViewport->vpFixedWidth);
-      else if (Self->Width.defined()) render.TargetWidth = Self->Width;
-      else render.TargetWidth = render.ClientViewport->vpFixedWidth;
-
-      if (Self->Height.scaled()) render.TargetHeight = std::round(Self->Height * render.ClientViewport->vpFixedHeight);
-      else if (Self->Height.defined()) render.TargetHeight = Self->Height;
-      else render.TargetHeight = render.ClientViewport->vpFixedHeight;
-   }
+   return finite_region(render.FilterRegion) ? ERR::Okay : ERR::InvalidValue;
 }
 
 //********************************************************************************************************************
@@ -896,302 +1041,181 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
 }
 
 //********************************************************************************************************************
-// Estimates the distance, in bitmap pixels, over which the effect pipeline can move content or sample neighbouring
-// pixels.  Pixels further than this from the page cannot affect the visible output.  The estimate is the sum over
-// every effect, so it is safe for any arrangement of the pipeline.  Effects with no fixed limit, such as a wrapping
-// convolution or a displacement map, return infinity.
+// Sum the per-effect bounds across the whole pipeline.  Only the page and this conservative margin constrain
+// processing.  The scene composites the final output using the actual drawing clip.
 
-static void filter_reach(extVectorFilter *Self, double &ReachX, double &ReachY)
+static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
 {
-   constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
-
    ReachX = ReachY = 0;
-   for (auto e : Self->Effects) {
-      double x = 0, y = 0;
-      switch (e->classID()) {
-         case CLASSID::BLURFX: {
-            auto blur = (extBlurFX *)e;
-            blur->radii(x, y);
-            if (blur->EdgeMode != FEM::TRANSPARENT) {
-               x = (x >= MIN_BLUR_RADIUS) ? UNBOUNDED : 0;
-               y = (y >= MIN_BLUR_RADIUS) ? UNBOUNDED : 0;
-            }
-            else {
-               x = std::ceil(std::min(std::max(0.0, x), MAX_BLUR_RADIUS)) + 1;
-               y = std::ceil(std::min(std::max(0.0, y), MAX_BLUR_RADIUS)) + 1;
-            }
-            break;
-         }
-
-         case CLASSID::OFFSETFX: {
-            int dx, dy;
-            ((extOffsetFX *)e)->pixel_offset(dx, dy);
-            x = std::abs(dx);
-            y = std::abs(dy);
-            break;
-         }
-
-         case CLASSID::LIGHTINGFX:
-            x = y = ((extLightingFX *)e)->reach();
-            break;
-
-         case CLASSID::MORPHOLOGYFX:
-            x = std::max(((extMorphologyFX *)e)->RadiusX, 0) + 1;
-            y = std::max(((extMorphologyFX *)e)->RadiusY, 0) + 1;
-            break;
-
-         case CLASSID::CONVOLVEFX: {
-            auto convolve = (extConvolveFX *)e;
-            if (convolve->EdgeMode IS EM::WRAP) x = y = UNBOUNDED;
-            else {
-               x = std::ceil(convolve->MatrixColumns * convolve->unitPixelSpacingX()) + 1;
-               y = std::ceil(convolve->MatrixRows * convolve->unitPixelSpacingY()) + 1;
-            }
-            break;
-         }
-
-         // Effects that process each pixel independently of its neighbours
-
-         case CLASSID::COLOURFX:
-         case CLASSID::COMPOSITEFX:
-         case CLASSID::FLOODFX:
-         case CLASSID::IMAGEFX:
-         case CLASSID::MERGEFX:
-         case CLASSID::REMAPFX:
-         case CLASSID::SOURCEFX:
-         case CLASSID::TURBULENCEFX:
-         case CLASSID::WAVEFUNCTIONFX:
-            break;
-
-         default: // Including DISPLACEMENTFX, which can sample at any distance
-            x = y = UNBOUNDED;
-            break;
+   for (const auto &step : Plan.Steps) {
+      const auto sampling = step.Operation.Sampling(step.Effect);
+      const auto valid = [&](double Reach) {
+         return (Reach >= 0) and (std::isfinite(Reach) or (sampling.Access IS filter_access::FULL_INPUT));
+      };
+      if ((not valid(sampling.X)) or (not valid(sampling.Y))) {
+         kt::Log("FilterGeometry").warning("%s #%d has invalid sampling reach.", step.Effect->className(),
+            step.Effect->UID);
+         return ERR::InvalidValue;
       }
-
-      ReachX += x;
-      ReachY += y;
+      ReachX += sampling.X;
+      ReachY += sampling.Y;
    }
+   return ERR::Okay;
 }
 
-//********************************************************************************************************************
-// Defines the VectorClip values utilised by the filter renderers.  The processing region is the filter region,
-// limited to the scene page and a margin around it.  The margin allows effects such as blurs and offsets to read
-// content that lies beyond the page edges, and it retains source pixels outside the drawing clip that effects may move
-// into it.  The scene renderer clips the final composite to the drawable area, including any clipping imposed by
-// container viewports.
-//
-// VectorClip is measured in scene coordinates and can extend beyond the page on every side.  Filter bitmaps are
-// addressed in local coordinates relative to its top-left corner.
+static bool transform_filter_region(TClipRectangle<double> &Region, const agg::trans_affine &Transform)
+{
+   const auto rect = Region;
+   Region = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
+      std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
+   for (double x : { rect.left, rect.right }) {
+      for (double y : { rect.top, rect.bottom }) {
+         double px = x, py = y;
+         Transform.transform(&px, &py);
+         if ((not std::isfinite(px)) or (not std::isfinite(py))) return false;
+         Region.left = std::min(Region.left, px);
+         Region.top = std::min(Region.top, py);
+         Region.right = std::max(Region.right, px);
+         Region.bottom = std::max(Region.bottom, py);
+      }
+   }
+   return finite_region(Region);
+}
 
-static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector)
+static ERR set_clip_region(extVectorFilter *Self)
 {
    auto &render = *Self->Render;
-   kt::Log log(__FUNCTION__);
+   const auto viewport = render.ClientViewport;
+   TClipRectangle<double> region;
 
-   const double container_width  = Viewport->vpFixedWidth;
-   const double container_height = Viewport->vpFixedHeight;
-
-   if ((container_width < 1) or (container_height < 1)) {
-      log.warning("Viewport #%d has no size.", Viewport->UID);
-      return ERR::NothingDone;
-   }
-
-   if (Self->Units IS VUNIT::BOUNDING_BOX) {
-      // Diagonal margins are measured in the client's coordinate system before applying its transform.
-
-      TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-      bool transform_region = Self->AspectRatio IS VFA::NONE;
-      if (transform_region) calc_local_boundary(Vector, bounds);
-      else calc_full_boundary(Vector, bounds, false /* siblings */, true /* transforms */);
-
-      if ((bounds.right <= bounds.left) or (bounds.bottom <= bounds.top)) {
-         // No child vector defines a path for a SourceGraphic.  Default back to the viewport.
-         bounds = Viewport->vpBounds;
-         transform_region = false;
+   if (render.FilterUnits IS VUNIT::BOUNDING_BOX) {
+      bool transform = render.AspectRatio IS VFA::NONE;
+      auto bounds = transform ? render.ClientBounds : render.SceneBounds;
+      if (not finite_region(bounds)) return ERR::InvalidValue;
+      if (not bounds.valid()) {
+         bounds = viewport->vpBounds;
+         transform = false;
       }
-      auto const bound_width  = bounds.width();
-      auto const bound_height = bounds.height();
-
-      if (Self->AspectRatio IS VFA::NONE) {
-         // Match the rounded target region used by effects, then map all four corners to the scene.
-         auto region = diagonal_region(Self, std::round(bounds.left), std::round(bounds.top),
-            std::round(bound_width), std::round(bound_height));
-         render.VectorClip.left   = std::round(region.left);
-         render.VectorClip.top    = std::round(region.top);
-         render.VectorClip.right  = render.VectorClip.left + std::round(region.width());
-         render.VectorClip.bottom = render.VectorClip.top + std::round(region.height());
-         if (transform_region) {
-            agg::path_storage rect;
-            rect.move_to(render.VectorClip.left, render.VectorClip.top);
-            rect.line_to(render.VectorClip.right, render.VectorClip.top);
-            rect.line_to(render.VectorClip.right, render.VectorClip.bottom);
-            rect.line_to(render.VectorClip.left, render.VectorClip.bottom);
-            rect.close_polygon();
-
-            agg::conv_transform<agg::path_storage, agg::trans_affine> path(rect, Vector->Transform);
-            auto clip = get_bounds(path);
-            render.VectorClip = { int(std::floor(clip.left)), int(std::floor(clip.top)),
-               int(std::ceil(clip.right)), int(std::ceil(clip.bottom)) };
-         }
+      if (render.AspectRatio IS VFA::NONE) {
+         const double left = std::round(bounds.left), top = std::round(bounds.top);
+         bounds = { left, top, left + std::round(bounds.width()), top + std::round(bounds.height()) };
       }
-      else {
-         if (Self->X.defined()) render.VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
-         else render.VectorClip.left = std::round(bounds.left);
-
-         if (Self->Y.defined()) render.VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
-         else render.VectorClip.top = std::round(bounds.top);
-
-         if (Self->Width.defined()) {
-            render.VectorClip.right = render.VectorClip.left + std::round(Self->Width * bound_width);
-         }
-         else render.VectorClip.right = render.VectorClip.left + std::round(bound_width);
-
-         if (Self->Height.defined()) {
-            render.VectorClip.bottom = render.VectorClip.top + std::round(Self->Height * bound_height);
-         }
-         else render.VectorClip.bottom = render.VectorClip.top + std::round(bound_height);
+      region = box_filter_region(Self, bounds);
+      if (transform and region.valid()) {
+         if (not transform_filter_region(region, render.ToScene)) return ERR::InvalidValue;
+         region = { std::floor(region.left), std::floor(region.top),
+            std::ceil(region.right), std::ceil(region.bottom) };
       }
    }
-   else { // USERSPACE
-      double x, y, w, h;
-      if (Self->X.scaled()) x = std::round(Self->X * container_width);
-      else if (Self->X.defined()) x = std::round(Self->X);
-      else x = 0;
-
-      if (Self->Y.scaled()) y = std::round(Self->Y * container_height);
-      else if (Self->Y.defined()) y = std::round(Self->Y);
-      else y = 0;
-
-      if (Self->Width.scaled()) w = std::round(Self->Width * container_width);
-      else if (Self->Width.defined()) w = std::round(Self->Width);
-      else w = std::round(container_width);
-
-      if (Self->Height.scaled()) h = std::round(Self->Height * container_height);
-      else if (Self->Height.defined()) h = std::round(Self->Height);
-      else h = std::round(container_height);
-
-      agg::path_storage rect;
-      rect.move_to(x, y);
-      rect.line_to(x + w, y);
-      rect.line_to(x + w, y + h);
-      rect.line_to(x, y + h);
-      rect.close_polygon();
-
-      agg::conv_transform<agg::path_storage, agg::trans_affine> path(rect, Vector->Transform);
-      render.VectorClip = get_bounds<agg::conv_transform<agg::path_storage, agg::trans_affine>, int>(path);
+   else {
+      const double x = std::round(filter_length(Self->X, render.ContainerWidth, 0));
+      const double y = std::round(filter_length(Self->Y, render.ContainerHeight, 0));
+      const double width = std::round(filter_length(Self->Width, render.ContainerWidth, render.ContainerWidth));
+      const double height = std::round(filter_length(Self->Height, render.ContainerHeight, render.ContainerHeight));
+      if ((width <= 0) or (height <= 0)) return ERR::NothingDone;
+      region = { x, y, x + width, y + height };
+      if ((not finite_region(region)) or (not transform_filter_region(region, render.ToScene))) {
+         return ERR::InvalidValue;
+      }
+      region = { std::trunc(region.left), std::trunc(region.top),
+         std::trunc(region.right), std::trunc(region.bottom) };
    }
+   if (not finite_region(region)) return ERR::InvalidValue;
+   if (not region.valid()) return ERR::NothingDone;
 
-   // The margin is limited so that unbounded effects do not process an excessive area around the page, and it is
-   // dropped if the processing region would become unreasonably large.
-
-   const int page_width  = Viewport->Scene->PageWidth;
-   const int page_height = Viewport->Scene->PageHeight;
-   const double max_margin = std::max(page_width, page_height);
+   const double page_width = viewport->Scene->PageWidth, page_height = viewport->Scene->PageHeight;
+   if ((page_width <= 0) or (page_height <= 0)) return ERR::NothingDone;
 
    double reach_x, reach_y;
-   filter_reach(Self, reach_x, reach_y);
+   if (auto error = filter_reach(render.Plan, reach_x, reach_y); error != ERR::Okay) return error;
+   const double max_margin = std::max(page_width, page_height);
 
-   const auto region = render.VectorClip;
-   auto limit_region = [&](int MarginX, int MarginY) {
-      render.VectorClip.left   = std::max(region.left, -MarginX);
-      render.VectorClip.top    = std::max(region.top, -MarginY);
-      render.VectorClip.right  = std::min(region.right, page_width + MarginX);
-      render.VectorClip.bottom = std::min(region.bottom, page_height + MarginY);
+   auto limit_region = [&](double MarginX, double MarginY) -> TClipRectangle<double> {
+      return { std::max(region.left, -MarginX), std::max(region.top, -MarginY),
+         std::min(region.right, page_width + MarginX), std::min(region.bottom, page_height + MarginY) };
    };
+   auto clip = limit_region(std::ceil(std::min(reach_x, max_margin)), std::ceil(std::min(reach_y, max_margin)));
+   const double area = clip.width() * clip.height();
+   if ((area > MAX_FILTER_MARGIN_AREA) and (area > page_width * page_height)) clip = limit_region(0, 0);
+   if (not clip.valid()) return ERR::NothingDone;
+   if ((clip.right > std::numeric_limits<int>::max()) or (clip.bottom > std::numeric_limits<int>::max()) or
+       (clip.width() > 0xffff) or (clip.height() > 0xffff) or
+       (clip.width() * clip.height() * 4 > std::numeric_limits<int>::max())) return ERR::OutOfRange;
 
-   limit_region(int(std::ceil(std::min(reach_x, max_margin))), int(std::ceil(std::min(reach_y, max_margin))));
-
-   const int64_t area = int64_t(render.VectorClip.width()) * int64_t(render.VectorClip.height());
-   if ((area > MAX_FILTER_MARGIN_AREA) and (area > int64_t(page_width) * int64_t(page_height))) {
-      limit_region(0, 0);
+   render.VectorClip = { int(clip.left), int(clip.top), int(clip.right), int(clip.bottom) };
+   render.Transform = render.ToScene;
+   render.Transform.translate(-clip.left, -clip.top);
+   render.Inverse = render.Transform;
+   TClipRectangle<double> local = { 0, 0, clip.width(), clip.height() };
+   if ((not invert_filter_transform(render.Inverse)) or (not transform_filter_region(local, render.Inverse))) {
+      return ERR::InvalidValue;
    }
-
-   if ((render.VectorClip.bottom <= render.VectorClip.top) or (render.VectorClip.right <= render.VectorClip.left)) {
-      // An empty intersection has no visible output.
-      return ERR::NothingDone;
-   }
-
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Compute the primitive subregion of an effect in the client's user space, which is the coordinate system of the
-// Target* values.  Any of x, y, width and height that are undefined default to the union of the subregions of the
-// referenced effects.  If there are no referenced effects, or any input is a standard input such as SourceGraphic,
-// the filter region is the default.  Effects are rendered in sequence, so referenced effects are always computed
-// before the effects that use them.  Bounds are only required if PrimitiveUnits is BOUNDING_BOX.
+// Resolve the primitive subregion in client user coordinates.  With only producer images it defaults to their
+// union.  A qualifying standard source or the absence of qualifying inputs uses the filter region.
 
-static void compute_subregion(extVectorFilter *Self, const filter_step &Step, const TClipRectangle<double> &Bounds)
+static ERR compute_subregion(const filter_render_context &Render, filter_step &Step)
 {
-   auto &render = *Self->Render;
-   const TClipRectangle<double> filter_region = { render.TargetX, render.TargetY,
-      render.TargetX + render.TargetWidth, render.TargetY + render.TargetHeight };
-
    TClipRectangle<double> inputs = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
       std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
    bool referenced = false, standard = false;
-
    for (const auto &input : Step.Inputs) {
+      if ((input.Kind IS filter_input_kind::PARAMETER_MAP) and (not input.MapContributesRegion)) continue;
       if (input.Producer) {
-         inputs.expanding(input.Producer->Effect->Subregion);
+         inputs.expanding(input.Producer->Subregion);
          referenced = true;
       }
       else if (input.Source != VSF::NONE) standard = true;
    }
+
+   const auto &region = (referenced and (not standard)) ? inputs : Render.FilterRegion;
    const auto effect = Step.Effect;
 
-   auto region = (referenced and (not standard)) ? inputs : filter_region;
-
    double x = region.left, y = region.top, width = region.width(), height = region.height();
-   if (Self->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (effect->X.defined()) x = Bounds.left + (effect->X * Bounds.width());
-      if (effect->Y.defined()) y = Bounds.top + (effect->Y * Bounds.height());
-      if (effect->Width.defined()) width = effect->Width * Bounds.width();
-      if (effect->Height.defined()) height = effect->Height * Bounds.height();
+   if (Render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      const auto &bounds = Render.ClientBounds;
+      if (effect->X.defined()) x = bounds.left + (effect->X * bounds.width());
+      if (effect->Y.defined()) y = bounds.top + (effect->Y * bounds.height());
+      if (effect->Width.defined()) width = effect->Width * bounds.width();
+      if (effect->Height.defined()) height = effect->Height * bounds.height();
    }
-   else { // Explicit percentages are relative to the client's viewport in user space.
-      const double viewport_width = viewport_coordinate_width(render.ClientViewport);
-      const double viewport_height = viewport_coordinate_height(render.ClientViewport);
-      if (effect->X.scaled()) x = effect->X * viewport_width;
-      else if (effect->X.defined()) x = effect->X;
-      if (effect->Y.scaled()) y = effect->Y * viewport_height;
-      else if (effect->Y.defined()) y = effect->Y;
-      if (effect->Width.scaled()) width = effect->Width * viewport_width;
-      else if (effect->Width.defined()) width = effect->Width;
-      if (effect->Height.scaled()) height = effect->Height * viewport_height;
-      else if (effect->Height.defined()) height = effect->Height;
+   else {
+      x = filter_length(effect->X, Render.ViewportWidth, x);
+      y = filter_length(effect->Y, Render.ViewportHeight, y);
+      width = filter_length(effect->Width, Render.ViewportWidth, width);
+      height = filter_length(effect->Height, Render.ViewportHeight, height);
    }
 
-   effect->Subregion = { x, y, x + width, y + height };
+   Step.Subregion = { x, y, x + width, y + height };
+   auto local = Step.Subregion;
+   if ((not finite_region(local)) or (local.valid() and (not transform_filter_region(local, Render.Transform)))) {
+      kt::Log("FilterGeometry").warning("%s #%d has an invalid subregion.", effect->className(), effect->UID);
+      return ERR::InvalidValue;
+   }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Clear the pixels of an effect's output that fall outside of its primitive subregion.  Pixels are tested at their
-// centres in user space, which matches the sampling used by TurbulenceFX.  Nothing is done if the subregion covers
-// the filter region, which is the most common case.
+// Test the pixel centres in user space.  The common case covers the entire filter region.
 
-static void clip_to_subregion(extVectorFilter *Self, extFilterEffect *Effect)
+static void clip_to_subregion(const filter_render_context &Render, const filter_step &Step)
 {
-   auto &render = *Self->Render;
-   const auto &sub = Effect->Subregion;
-   if ((sub.left <= render.TargetX) and (sub.top <= render.TargetY) and
-       (sub.right >= render.TargetX + render.TargetWidth) and (sub.bottom >= render.TargetY + render.TargetHeight)) {
-      return;
-   }
+   const auto &sub = Step.Subregion;
+   const auto &region = Render.FilterRegion;
+   if ((sub.left <= region.left) and (sub.top <= region.top) and
+       (sub.right >= region.right) and (sub.bottom >= region.bottom)) return;
 
-   auto bmp = Effect->Target;
+   auto bmp = Step.Effect->Target;
    if ((not bmp) or (bmp->BytesPerPixel != 4)) return;
 
-   auto inverse = render.Transform;
-   const double determinant = inverse.determinant();
-   if ((not std::isfinite(determinant)) or (determinant IS 0)) return;
-   inverse.invert();
-
    for (int y=bmp->Clip.Top; y < bmp->Clip.Bottom; y++) {
-      auto pixel = (uint32_t *)(bmp->Data + (y * bmp->LineWidth));
+      auto pixel = (uint32_t *)(bmp->Data + std::ptrdiff_t(y) * bmp->LineWidth);
       for (int x=bmp->Clip.Left; x < bmp->Clip.Right; x++) {
-         double px = x + 0.5, py = y + 0.5;
-         inverse.transform(&px, &py);
+         double px, py;
+         map_filter_pixel_centre(Render.Inverse, x, y, px, py);
          if (not sub.hit_test(px, py)) pixel[x] = 0;
       }
    }
@@ -1247,28 +1271,10 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
    render.BkgdBitmap = (plan.ReadsBackground or plan.ReadsSourceGraphic) ? BkgdBitmap : nullptr;
 
-   // Calculate the target and client bounds.  The reach of the effects depends on these, so they are
-   // computed before the clip region.
-
-   compute_target_area(Self);
-
-   if (auto error = set_clip_region(Self, Viewport, Vector); error != ERR::Okay) return error;
-
-   render.Transform = Vector->Transform;
-   render.Transform.translate(-render.VectorClip.left, -render.VectorClip.top);
-
-   // Effect subregions in objectBoundingBox units are relative to the unrounded bounds of the client.
-
-   TClipRectangle<double> bounds = { 0, 0, 0, 0 };
-   if (Self->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-      calc_local_boundary(render.ClientVector, bounds);
-   }
-
-   if (graph_changed()) {
-      log.warning("Filter #%d changed while preparing its bounds.", Self->UID);
-      return ERR::InvalidState;
-   }
+   if (auto error = prepare_filter_geometry(Self); error != ERR::Okay) return error;
+   if (graph_changed()) return log.warning(ERR::InvalidState);
+   if (auto error = set_clip_region(Self); error != ERR::Okay) return error;
+   if (graph_changed()) return log.warning(ERR::InvalidState);
 
    objBitmap *unused = nullptr;
    for (auto &step : plan.Steps) {
@@ -1291,17 +1297,20 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       if (graph_changed()) return log.warning(ERR::InvalidState);
       effect->Target = target;
 
-      compute_subregion(Self, step, bounds);
+      // Earlier draw and bitmap allocation callbacks can edit this primitive's dimensions.
+      if (auto error = compute_subregion(render, step); error != ERR::Okay) return error;
       render.ActiveStep = &step;
       auto finish_step = kt::Defer([&]() { render.ActiveStep = nullptr; });
-      if (auto error = acDraw(effect); error != ERR::Okay) return log.warning(error);
+      if (step.Subregion.valid()) {
+         if (auto error = acDraw(effect); error != ERR::Okay) return log.warning(error);
+      }
       if (graph_changed() or effect->collecting()) {
          log.warning("Filter #%d changed while drawing.", Self->UID);
          return ERR::InvalidState;
       }
 
       effect->Target = target;
-      clip_to_subregion(Self, effect);
+      if (step.Subregion.valid()) clip_to_subregion(render, step);
       if ((target->ColourSpace != CS::SRGB) or ((target->Flags & BMF::PREMUL) != BMF::NIL)) {
          return log.warning(ERR::InvalidState);
       }
@@ -1560,18 +1569,14 @@ PrimitiveUnits alters the behaviour of some effects when their dimensions are ca
 using a scaled coordinate space of `(0, 0, 100%, 100%)`.
 
 -FIELD-
-ResX: Width of the intermediate images, measured in pixels.
+ResX: Stores the requested horizontal filter resolution for compatibility.
 
-The combination of ResX and #ResY define the available space for rendering of filter effects.  It is recommended that
-the client does not set these values because the default `1:1` pixel ratio is appropriate in the majority of
-circumstances.
+Filter surfaces are sized in scene device pixels.  This field and #ResY have no effect on rendering.
 
 -FIELD-
-ResY: Height of the intermediate images, measured in pixels.
+ResY: Stores the requested vertical filter resolution for compatibility.
 
-The combination of #ResX and ResY define the available space for rendering of filter effects.  It is recommended that
-the client does not set these values because the default `1:1` pixel ratio is appropriate in the majority of
-circumstances.
+Filter surfaces are sized in scene device pixels.  This field and #ResX have no effect on rendering.
 
 -FIELD-
 Units: Defines the coordinate system for #X, #Y, #Width and #Height.

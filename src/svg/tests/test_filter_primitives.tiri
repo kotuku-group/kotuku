@@ -147,6 +147,20 @@ end
    assert(mGfx.ReadRGBPixel(bmp, 8, 8).alpha is 0, 'Noise must stay inside its primitive subregion')
 end
 
+@Test function OffPageTurbulenceSubregionKeepsVisibleNoise()
+   local noise_tag = '<feTurbulence type="fractalNoise" baseFrequency="1.025" numOctaves="10"'
+   local svg <close> = document(noise_tag .. '/>', nil, 64)
+   local oversized <close> = document(noise_tag .. ' width="1000000"/>', nil, 64)
+   local reference <close> = draw(svg, 64)
+   local bmp <close> = draw(oversized, 64)
+   assert(mGfx.ReadRGBPixel(reference, 20, 20).red > 0, 'The reference must contain noise')
+   for y in {0 to 64} do
+      for x in {0 to 64} do
+         assertSame(bmp, reference, x, y, x, y)
+      end
+   end
+end
+
 @Test function BoundingBoxTurbulenceUsesNormalisedCoordinates()
    local effects = noise().replace('0.05 0.11', '3.2 7.04')
    local svg <close> = document(effects, nil, 64, nil, 'primitiveUnits="objectBoundingBox"')
@@ -182,6 +196,20 @@ end
          assertSame(bmp, reference, x, y, x, y)
       end
    end
+end
+
+@Test function StitchCountersMustFitForOffPageTiles()
+   local svg <close> = document('<feTurbulence type="fractalNoise" baseFrequency="1" numOctaves="10" ' ..
+      'width="10000000" stitchTiles="stitch"/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local turbulence = obj.find(filter.children('TurbulenceFX')[0])
+   local bmp <close> = draw(svg, 64)
+   assert(turbulence.target is nil, 'An overflowing stitch period must reject the draw')
+   assert(mGfx.ReadRGBPixel(bmp, 20, 20).red is 0, 'The rejected filter must leave the destination untouched')
+
+   turbulence.width = 64
+   local recovered <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(recovered, 20, 20).red > 0, 'A representable stitch period must render again')
 end
 
 @Test function MatrixOffsetsUseTheSelectedColourSpace()
@@ -398,6 +426,24 @@ end
    assert(p[3].alpha is 0, 'Pixels after the subregion must be transparent')
 end
 
+@Test function DrawCallbackUpdatesLaterSubregionInTheSameFrame()
+   local svg <close> = document('<feFlood flood-color="red"/><feOffset/><feOffset/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local flood = obj.find(filter.children('FloodFX')[0])
+   local offset = obj.find(filter.children('OffsetFX')[0])
+   offset.width = 8
+
+   local initial <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(initial, 30, 20).alpha is 0, 'The original subregion must clip at eight pixels')
+   flood.subscribe('Draw', function() offset.width = 40 end)
+   defer flood.unsubscribe('Draw') end
+
+   local bmp <close> = draw(svg, 64)
+   assert(offset.width is 40, 'The draw callback must widen the offset')
+   assert(mGfx.ReadRGBPixel(bmp, 30, 20).red is 255, 'Both offsets must use the widened region on this draw')
+   assert(mGfx.ReadRGBPixel(bmp, 40, 20).alpha is 0, 'The result must be clipped to the new region')
+end
+
 -- Without x, y, width and height, a primitive's subregion is the union of its referenced inputs' subregions.  A
 -- standard input such as SourceGraphic widens the default to the filter region.
 
@@ -477,4 +523,33 @@ end
       assert(mGfx.ReadRGBPixel(bmp, offset - 4, 40).alpha is 0,
          'The vector source must not use the filter region origin')
    end
+end
+
+@Test function FilterResKeepsDevicePixelSampling()
+   local effects = '<feGaussianBlur stdDeviation="2"/>'
+   local content = '<rect x="16" y="16" width="32" height="32" fill="red" filter="url(#f)"/>'
+   local default_svg <close> = document(effects, content, 64)
+   local sized_svg <close> = document(effects, content, 64, nil, 'filterRes="7 11"')
+   local _, filter = check sized_svg.scene.mtFindDef('f')
+   assert((filter.resX is 7) and (filter.resY is 11), 'The authored resolution is retained')
+   local expected <close> = draw(default_svg, 64)
+   local actual <close> = draw(sized_svg, 64)
+   assert(mGfx.ReadRGBPixel(actual, 32, 32).alpha is 255, 'The filter must produce the control output')
+   for y in {11 to 53} do
+      for x in {11 to 53} do
+         assertSame(actual, expected, x, y, x, y)
+      end
+   end
+end
+
+@Test function DisplacementMapContributesToTheDefaultSubregion()
+   local svg <close> = document([[
+      <feFlood x="20" y="16" width="4" height="8" flood-color="red" result="image"/>
+      <feFlood x="12" y="16" width="4" height="8" flood-color="#ff8000" result="map"/>
+      <feDisplacementMap in="image" in2="map" scale="16" xChannelSelector="R" yChannelSelector="G"/>
+   ]], nil, 64)
+   local bmp <close> = draw(svg, 64)
+   local moved = mGfx.ReadRGBPixel(bmp, 13, 20)
+   assert((moved.red is 255) and (moved.alpha is 255), 'The map moves the image into its own subregion')
+   assert(mGfx.ReadRGBPixel(bmp, 11, 20).alpha is 0, 'Displacement output stays inside the input union')
 end

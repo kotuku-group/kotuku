@@ -76,6 +76,9 @@ uint8_t const stack_blur_tables<T>::g_stack_blur8_shr[255] =
    24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24
 };
 
+constexpr double MIN_BLUR_RADIUS = 0.5 / 256.0; // Below this, the blend weight rounds to zero
+constexpr double MAX_BLUR_RADIUS = 254.0;       // Limited by the size of the stack blur tables
+
 class extBlurFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::BLURFX;
@@ -90,26 +93,23 @@ class extBlurFX : public extFilterEffect {
    // Computes the stack blur radius of each axis in bitmap pixels.  The radius is twice the standard deviation.
 
    void radii(double &RX, double &RY) const {
-      double scale = 1.0;
-      if (Filter->Render->ClientVector) scale = Filter->Render->ClientVector->Transform.scale();
+      const auto &render = *Filter->Render;
+      const auto [unit_x, unit_y] = render.primitive_scales(true);
+      const double scale = render.ToScene.scale();
+      RX = SX * unit_x * 2 * scale;
+      RY = SY * unit_y * 2 * scale;
+   }
 
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-         if (Filter->AspectRatio IS VFA::NONE) {
-            // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
-            double diag = dist(0, 0, Filter->Render->BoundWidth, Filter->Render->BoundHeight) * INV_SQRT2;
-            RX = SX * diag * 2 * scale;
-            RY = SY * diag * 2 * scale;
-         }
-         else {
-            // Scaling is stretched independently of each axis
-            RX = SX * Filter->Render->BoundWidth * 2 * scale;
-            RY = SY * Filter->Render->BoundHeight * 2 * scale;
-         }
+   filter_sampling sampling() const {
+      double x, y;
+      radii(x, y);
+      if ((not std::isfinite(x)) or (not std::isfinite(y))) return { filter_access::BOUNDED, x, y };
+      if (EdgeMode != FEM::TRANSPARENT) {
+         return { filter_access::FULL_INPUT, x >= MIN_BLUR_RADIUS ? filter_sampling::UNBOUNDED : 0,
+            y >= MIN_BLUR_RADIUS ? filter_sampling::UNBOUNDED : 0 };
       }
-      else {
-         RX = SX * 2 * scale;
-         RY = SY * 2 * scale;
-      }
+      return { filter_access::BOUNDED, std::ceil(std::clamp(x, 0.0, MAX_BLUR_RADIUS)) + 1,
+         std::ceil(std::clamp(y, 0.0, MAX_BLUR_RADIUS)) + 1 };
    }
 };
 
@@ -120,16 +120,7 @@ struct blur_edge {
    FEM Mode;
 
    int address(int64_t Index) const {
-      if ((Index >= Start) and (Index < End)) return int(Index);
-      if ((Mode IS FEM::TRANSPARENT) or (Start >= End)) return -1;
-      if (Mode IS FEM::CLAMP) return (Index < Start) ? Start : End - 1;
-
-      const int64_t length = End - Start;
-      const int64_t period = (Mode IS FEM::MIRROR) ? 2 * length : length;
-      auto offset = (Index - Start) % period;
-      if (offset < 0) offset += period;
-      if (offset >= length) offset = period - 1 - offset;
-      return Start + int(offset);
+      return filter_edge_index(Index, Start, End, Mode);
    }
 };
 
@@ -316,8 +307,6 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
 //
 // Transparent addressing also allows InData and OutData to refer to the same region.
 
-constexpr double MIN_BLUR_RADIUS = 0.5 / 256.0; // Below this, the blend weight rounds to zero
-constexpr double MAX_BLUR_RADIUS = 254.0;       // Limited by the size of the stack blur tables
 
 static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8_t> &Temp, int Width, int Height,
    int Stride, bool Vertical, double Radius, const blur_edge &Edge)
@@ -374,7 +363,7 @@ static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const filter
       return clip;
    }
 
-   const auto &sub = Producer->Effect->Subregion;
+   const auto &sub = Producer->Subregion;
    const TClipRectangle<int> empty = { clip.left, clip.top, clip.left, clip.top };
    if (not sub.valid()) return empty;
 

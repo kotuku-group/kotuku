@@ -162,7 +162,8 @@ Draw: Render the effect to the target bitmap.
 
 static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 {
-   if ((not active_filter_step(Self)) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
+   const auto step = active_filter_step(Self);
+   if ((not step) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
 
    auto filter = Self->Filter;
    const auto &render = *filter->Render;
@@ -175,9 +176,8 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
    // samples the noise at its centre in that coordinate system, independently of the filter bitmap's origin.
 
    double origin_x = 0, origin_y = 0, unit_width = 1, unit_height = 1;
-   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-      calc_local_boundary(render.ClientVector, bounds);
+   if (render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      const auto &bounds = render.ClientBounds;
       origin_x = bounds.left;
       origin_y = bounds.top;
       unit_width = bounds.width();
@@ -185,19 +185,25 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       if ((unit_width <= 0) or (unit_height <= 0)) return ERR::Okay;
    }
 
-   const double region_x = (Self->Subregion.left - origin_x) / unit_width;
-   const double region_y = (Self->Subregion.top - origin_y) / unit_height;
-   const double region_width = Self->Subregion.width() / unit_width;
-   const double region_height = Self->Subregion.height() / unit_height;
+   const double region_x = (step->Subregion.left - origin_x) / unit_width;
+   const double region_y = (step->Subregion.top - origin_y) / unit_height;
+   const double region_width = step->Subregion.width() / unit_width;
+   const double region_height = step->Subregion.height() / unit_height;
    const TClipRectangle<double> region = { region_x, region_y, region_x + region_width, region_y + region_height };
 
    agg::trans_affine sampling;
    sampling.scale(unit_width, unit_height);
    sampling.translate(origin_x, origin_y);
    sampling *= render.Transform;
-   const double determinant = sampling.determinant();
-   if ((not std::isfinite(determinant)) or (determinant IS 0)) return ERR::Okay;
-   sampling.invert();
+   TClipRectangle<double> samples = { filter_pixel_centre(0), filter_pixel_centre(0),
+      filter_pixel_centre(width - 1), filter_pixel_centre(height - 1) };
+   if ((not finite_region(region)) or (not invert_filter_transform(sampling)) or
+       (not transform_filter_region(samples, sampling))) return ERR::InvalidValue;
+
+   // Only pixel centres inside both the processing bitmap and the primitive can reach the lattice.
+   if ((not region.valid()) or (samples.right < region.left) or (samples.bottom < region.top) or
+       (samples.left >= region.right) or (samples.top >= region.bottom)) return ERR::Okay;
+   samples.shrinking(region);
 
    if (!Self->Bitmap) {
       Self->Dirty = true;
@@ -222,8 +228,9 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       const bool linear_rgb = filter->ColourSpace IS VCS::LINEAR_RGB;
       double fx = Self->FX, fy = Self->FY;
       int stitch_width = 0, stitch_height = 0, wrap_x = PerlinN, wrap_y = PerlinN;
-      if (Self->Stitch and (region_width > 0) and (region_height > 0)) {
-         // Adjust frequencies and wrap at the primitive subregion's edges, measured in primitive units.
+      if (Self->Stitch) {
+         // The tile origin is the primitive subregion's top-left and its period is its width and height,
+         // both in primitive units.  Neither depends on the processing bitmap's clip or origin.
          auto stitch_frequency = [](double Frequency, double Size) {
             if (Frequency IS 0) return Frequency;
             const double low = std::floor(Size * Frequency) / Size;
@@ -232,10 +239,31 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
          };
          fx = stitch_frequency(fx, region_width);
          fy = stitch_frequency(fy, region_height);
-         stitch_width = int(region_width * fx + 0.5);
-         stitch_height = int(region_height * fy + 0.5);
-         wrap_x = int(region_x * fx + PerlinN + stitch_width);
-         wrap_y = int(region_y * fy + PerlinN + stitch_height);
+      }
+
+      const int octaves = std::max(Self->Octaves, 0);
+      // Leave room for PerlinN, the adjacent lattice point and the stitched subtraction.
+      constexpr double limit = std::numeric_limits<int>::max() / 4.0;
+      const auto lattice_fits = [octaves](double Start, double End, double Frequency) {
+         const double extent = std::max(std::abs(Start), std::abs(End)) * std::abs(Frequency);
+         return std::ldexp(extent, std::max(octaves - 1, 0)) < limit;
+      };
+      if ((not lattice_fits(samples.left, samples.right, fx)) or
+          (not lattice_fits(samples.top, samples.bottom, fy))) return ERR::OutOfRange;
+
+      if (Self->Stitch) {
+         // The counters use the full authored tile and are doubled even after the final sample.
+         const auto prepare_axis = [octaves](double Origin, double Size, double Frequency, int &Period, int &Wrap) {
+            const double period = std::trunc(Size * Frequency + 0.5);
+            const double wrap = std::trunc(Origin * Frequency + PerlinN + period);
+            if ((not (std::ldexp(std::abs(period), octaves) < limit)) or
+                (not (std::ldexp(std::abs(wrap - PerlinN), octaves) < limit))) return false;
+            Period = int(period);
+            Wrap = int(wrap);
+            return true;
+         };
+         if ((not prepare_axis(region_x, region_width, fx, stitch_width, wrap_x)) or
+             (not prepare_axis(region_y, region_height, fy, stitch_height, wrap_y))) return ERR::OutOfRange;
       }
 
       int thread_count = std::thread::hardware_concurrency();
@@ -253,8 +281,8 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
             for (int y=Start; y < End; y++) {
                auto pixel = Self->Bitmap->Data + (Self->Bitmap->LineWidth * y);
                for (int x=0; x < Self->Bitmap->Width; x++, pixel += 4) {
-                  double px = x + 0.5, py = y + 0.5;
-                  sampling.transform(&px, &py);
+                  double px, py;
+                  map_filter_pixel_centre(sampling, x, y, px, py);
                   if ((px < region.left) or (px >= region.right) or (py < region.top) or (py >= region.bottom)) {
                      pixel[r] = pixel[g] = pixel[b] = pixel[a] = 0;
                      continue;

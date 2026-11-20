@@ -121,21 +121,21 @@
 
     <field>
       <name>ResX</name>
-      <comment>Width of the intermediate images, measured in pixels.</comment>
+      <comment>Stores the requested horizontal filter resolution for compatibility.</comment>
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>The combination of ResX and <fl>ResY</fl> define the available space for rendering of filter effects.  It is recommended that the client does not set these values because the default <code>1:1</code> pixel ratio is appropriate in the majority of circumstances.</p>
+<p>Filter surfaces are sized in scene device pixels.  This field and <fl>ResY</fl> have no effect on rendering.</p>
       </description>
     </field>
 
     <field>
       <name>ResY</name>
-      <comment>Height of the intermediate images, measured in pixels.</comment>
+      <comment>Stores the requested vertical filter resolution for compatibility.</comment>
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>The combination of <fl>ResX</fl> and ResY define the available space for rendering of filter effects.  It is recommended that the client does not set these values because the default <code>1:1</code> pixel ratio is appropriate in the majority of circumstances.</p>
+<p>Filter surfaces are sized in scene device pixels.  This field and <fl>ResX</fl> have no effect on rendering.</p>
       </description>
     </field>
 

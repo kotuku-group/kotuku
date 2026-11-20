@@ -48,6 +48,10 @@ class extMorphologyFX : public extFilterEffect {
    MOP Operator = MOP::ERODE;
 
    extMorphologyFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
+   filter_sampling sampling() const {
+      return { filter_access::BOUNDED, double(std::max(RadiusX, 0)) + 1, double(std::max(RadiusY, 0)) + 1 };
+   }
 };
 
 //********************************************************************************************************************

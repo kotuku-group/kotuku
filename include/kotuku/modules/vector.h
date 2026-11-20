@@ -3606,8 +3606,8 @@ class objVectorFilter : public Object {
    Unit   Height;                // The height of the filter area.  Can be expressed as a fixed or scaled coordinate.
    double Opacity;               // The opacity of the filter.
    objVectorFilter * Inherit;    // Inherit attributes from a VectorFilter referenced here.
-   int    ResX;                  // Width of the intermediate images, measured in pixels.
-   int    ResY;                  // Height of the intermediate images, measured in pixels.
+   int    ResX;                  // Stores the requested horizontal filter resolution for compatibility.
+   int    ResY;                  // Stores the requested vertical filter resolution for compatibility.
    VUNIT  Units;                 // Defines the coordinate system for X, Y, Width and Height.
    VUNIT  PrimitiveUnits;        // Alters the behaviour of some effects that support alternative position calculations.
    VCS    ColourSpace;           // The colour space of the filter graphics (SRGB or linear RGB).

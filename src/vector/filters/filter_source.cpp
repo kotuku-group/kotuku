@@ -63,7 +63,8 @@ Draw: Render the source vector to the target bitmap.
 
 static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 {
-   if (not active_filter_step(Self)) return ERR::InvalidState;
+   const auto step = active_filter_step(Self);
+   if (not step) return ERR::InvalidState;
    validate_object_link(Self->Source);
    if (not Self->Source) return ERR::Okay; // A missing vector produces transparent pixels.
 
@@ -83,7 +84,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
    // Use the current primitive subregion and filter transform to place the source.  A source subtree may contain
    // live paint servers or filters, so render it on every draw with the current parameters.
    auto viewport = (extVectorViewport *)scene->Viewport;
-   const auto &sub = Self->Subregion;
+   const auto &sub = step->Subregion;
    if (auto error = scene->Viewport->setX(sub.left); error != ERR::Okay) return error;
    if (auto error = scene->Viewport->setY(sub.top); error != ERR::Okay) return error;
    if (auto error = scene->Viewport->setWidth(sub.width()); error != ERR::Okay) return error;
