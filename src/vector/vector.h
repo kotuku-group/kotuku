@@ -94,6 +94,7 @@ extern const int * small_text_gamma();
 class extVector;
 class extVectorScene;
 class extFilterEffect;
+struct filter_step;
 class extVectorViewport;
 class extVectorClip;
 
@@ -347,7 +348,15 @@ public:
          Bitmap->LineWidth = Clip.width() * Bitmap->BytesPerPixel;
 
          if (Data.size() < Bitmap->LineWidth * Clip.height()) {
+            #ifndef NDEBUG
+               const auto old_capacity = Data.capacity();
+            #endif
             Data.resize(Bitmap->LineWidth * Clip.height());
+            #ifndef NDEBUG
+               if (Data.capacity() > old_capacity) {
+                  log.detail("Surface storage: name=%s allocated_bytes=%zu", Name, Data.capacity());
+               }
+            #endif
          }
 
          Bitmap->Data = Data.data() - (Clip.left * Bitmap->BytesPerPixel) - (Clip.top * Bitmap->LineWidth);
@@ -728,9 +737,10 @@ class extVectorFilter : public objVectorFilter {
    objBitmap *BkgdBitmap;              // Target bitmap supplied by Scene.acDraw()
    int BkgdOriginX = 0, BkgdOriginY = 0; // Scene coordinates of the background bitmap origin.
    VCS ClientColourSpace = VCS::INHERIT; // Colour space the client resolves to in the scene graph renderer
-   extFilterEffect *ActiveEffect;      // Current effect being processed by the pipeline.
-   extFilterEffect *Effects;           // Pointer to the first effect in the chain.
-   extFilterEffect *LastEffect;
+   const filter_step *ActiveStep = nullptr;
+   uint64_t GraphRevision = 0;
+   uint64_t ActiveRevision = 0;
+   std::vector<extFilterEffect *> Effects; // Authoritative order of owned effects.
    std::vector<std::unique_ptr<filter_bitmap>> Bank;
    TClipRectangle<int> VectorClip;     // Processing region in scene coordinates.  Can extend beyond the page.
    agg::trans_affine Transform;        // ClientVector->Transform, offset so that VectorClip's top-left is (0,0)
@@ -739,7 +749,7 @@ class extVectorFilter : public objVectorFilter {
    double TargetX, TargetY, TargetWidth, TargetHeight; // Target boundary, computed on acDraw()
    bool Rendered;
    bool Disabled;
-   bool ReqBkgd; // True if the filter requires a background bitmap for one or more effects.
+   bool Drawing = false;
 
    extVectorFilter(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorFilter(ClassPtr, ObjectID) {
       Units          = VUNIT::BOUNDING_BOX;
@@ -767,38 +777,20 @@ class extFilterEffect : public objFilterEffect {
    public:
    using create = kt::Create<extFilterEffect>;
 
-   extVectorFilter *Filter; // Direct reference to the parent filter
+   extVectorFilter *Filter = nullptr; // Direct reference to the parent filter
    TClipRectangle<double> Subregion; // Primitive subregion in the client's user space, computed by render_filter()
-   uint16_t UsageCount;     // Total number of other effects utilising this effect to build a pipeline
-
-#ifdef KOTUKU_CXX_REUSES_BASE_TAIL_PADDING // Padding for the alignment of derived classes
-   uint8_t TailPadding[alignof(APTR) - sizeof(uint16_t)];
-#endif
+   uint8_t Reserved[alignof(APTR)]; // Preserve the base size and the starting offset of derived fields.
 
    extFilterEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
    }
 
-   ~extFilterEffect() {
-      // Release the effects used as inputs, so that they can render to the filter's output again.
-
-      if ((SourceType IS VSF::REFERENCE) and (Input)) ((extFilterEffect *)Input)->UsageCount--;
-      if ((MixType IS VSF::REFERENCE) and (Mix)) ((extFilterEffect *)Mix)->UsageCount--;
-
-      if (Filter) {
-         for (auto e = Filter->Effects; (e) and (UsageCount > 0); e = (extFilterEffect *)e->Next) {
-            if (e->Input IS this) { e->Input = nullptr; UsageCount--; }
-            if (e->Mix IS this) { e->Mix = nullptr; UsageCount--; }
-         }
-
-         if (Filter->Effects IS this) Filter->Effects = (extFilterEffect *)Next;
-         if (Filter->LastEffect IS this) Filter->LastEffect = (extFilterEffect *)Prev;
-      }
-
-      if (Prev) Prev->Next = Next;
-      if (Next) Next->Prev = Prev;
-   }
+   ~extFilterEffect();
 };
+
+#if defined(_WIN32) or (defined(__linux__) and not defined(__ANDROID__))
+   static_assert(sizeof(extFilterEffect) IS CLASS_OFFSET_FILTEREFFECT);
+#endif
 
 class extPainter : public VectorPainter {
 public:
@@ -982,12 +974,6 @@ class extVectorScene : public objVectorScene {
    std::array<int, 256> GammaLUT; // Lazily built; valid only when GammaLUTValue matches Gamma
    double GammaLUTValue = 1.0;
 };
-
-inline extVectorFilter::~extVectorFilter()
-{
-   acClear(this);
-   if (SourceScene) FreeResource(SourceScene);
-}
 
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
@@ -1328,7 +1314,6 @@ extern void gen_vector_path(extVector *);
 extern void gen_vector_tree(extVector *);
 extern GRADIENT_TABLE * get_fill_gradient_table(extPainter &, double);
 extern GRADIENT_TABLE * get_stroke_gradient_table(extVector &);
-extern objBitmap * get_source_graphic(extVectorFilter *);
 extern ERR read_path(std::vector<PathCommand> &, std::string_view, bool EdgeOffsets);
 extern bool valid_path_commands(std::span<const PathCommand>);
 extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS, objBitmap **, int, int);

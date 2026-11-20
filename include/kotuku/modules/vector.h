@@ -604,6 +604,16 @@ enum class MOP : int {
    DILATE = 1,
 };
 
+// Filter input edge addressing modes.
+
+enum class FEM : int {
+   NIL = 0,
+   TRANSPARENT = 0,
+   CLAMP = 1,
+   REPEAT = 2,
+   MIRROR = 3,
+};
+
 // Operators for CompositionFX.
 
 enum class OP : int {
@@ -2551,6 +2561,11 @@ class objBlurFX : public objFilterEffect {
 
    // Customised field getting
 
+   inline ERR getEdgeMode(FEM &Value) noexcept {
+      Value = *((FEM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
+      return ERR::Okay;
+   }
+
    inline ERR getSX(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
@@ -2568,6 +2583,11 @@ class objBlurFX : public objFilterEffect {
 
 
    // Customised field setting
+
+   inline ERR setEdgeMode(const FEM Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
 
    inline ERR setSX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];

@@ -55,7 +55,8 @@
       <type class="FilterEffect">*FilterEffect</type>
       <description>
 <p>If another effect should be used as a source input, it must be referenced here.  The <fl>SourceType</fl> will be automatically set to <code>REFERENCE</code> as a result.</p>
-<p>This field is the SVG equivalent to <code>in</code>.  If the Input is not defined by the client then it will default to the previous effect if available, otherwise the source graphic is used.</p>
+<p>This field is the SVG equivalent to <code>in</code>.  If the Input is not defined by the client then it will default to the previous effect at initialisation if available, otherwise the source graphic is used.</p>
+<p>Attach both effects to the same filter before setting this field.  The referenced effect must precede its consumer when the pipeline is drawn.  If the producer is removed, this field is cleared and <fl>SourceType</fl> retains <code>REFERENCE</code>.  Set a new input or a supported standard source to repair the pipeline.</p>
       </description>
     </field>
 
@@ -66,7 +67,7 @@
       <type class="FilterEffect">*FilterEffect</type>
       <description>
 <p>If another effect should be used as a mixed source input, it must be referenced here.  The <fl>MixType</fl> will be automatically set to <code>REFERENCE</code> as a result.</p>
-<p>This field is the SVG equivalent to <code>in2</code>.  It does nothing if the effect does not supported a mixed source input.</p>
+<p>This field is the SVG equivalent to <code>in2</code>.  Effects that support a mixed source require an earlier producer in the same filter or a standard source selected through <fl>MixType</fl>.  Removing a referenced producer clears this field and leaves <fl>MixType</fl> set to <code>REFERENCE</code> until the input is repaired.</p>
       </description>
     </field>
 

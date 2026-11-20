@@ -302,7 +302,7 @@ class extLightingFX : public extFilterEffect {
       return sqrt(std::abs((Unit.x * Unit.y) - (Unit.xy * Unit.xy)));
    }
 
-   void draw();
+   ERR draw();
    FRGB colour_spot_light(point3 &Point);
    inline void diffuse_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double Occlusion = 1.0);
@@ -670,15 +670,19 @@ Draw: Render the effect to the target bitmap.
 
 static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
 {
-   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
-   Self->draw();
-   return ERR::Okay;
+   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
+   return Self->draw();
 }
 
 //*********************************************************************************************************************
 
-void extLightingFX::draw()
+ERR extLightingFX::draw()
 {
+   objBitmap *bmp;
+   if (auto error = get_source_bitmap(this, &bmp, filter_input_role::INPUT); error != ERR::Okay) {
+      return error;
+   }
+
    // Light is computed in the filter's colour space.  Bitmaps are always sRGB encoded, so linear results are encoded
    // on output.
 
@@ -736,9 +740,6 @@ void extLightingFX::draw()
    lt.x -= Target->Clip.Left; // Re-orient the light source coordinates to (0,0)
    lt.y -= Target->Clip.Top;
 
-   objBitmap *bmp;
-   if (get_source_bitmap(Filter, &bmp, SourceType, Input, false) != ERR::Okay) return;
-
    // Note! Linear conversion of the source bitmap is unnecessary because only the alpha channel is used.
 
    // The alpha channel of the source bitmap will function as the Z value for the bump map.  The RGB components
@@ -748,7 +749,7 @@ void extLightingFX::draw()
    int height = Target->Clip.Bottom - Target->Clip.Top;
    if (bmp->Clip.Right - bmp->Clip.Left < width) width = bmp->Clip.Right - bmp->Clip.Left;
    if (bmp->Clip.Bottom - bmp->Clip.Top < height) height = bmp->Clip.Bottom - bmp->Clip.Top;
-   if ((width < 1) or (height < 1)) return;
+   if ((width < 1) or (height < 1)) return ERR::Okay;
 
    // The surface height is in client units, converted to pixels for locating the surface relative to the light.  The
    // Sobel gradients are measured per pixel, so the heights for the surface normal are expressed per kernel unit
@@ -764,7 +765,7 @@ void extLightingFX::draw()
    if (enhanced()) {
       const double unit_size = unit_length(unit);
       draw_enhanced(bmp, lt, spot_height, normal_height, unit_size, width, height);
-      return;
+      return ERR::Okay;
    }
 
    int num_threads = std::min(int(std::thread::hardware_concurrency()), height);
@@ -793,6 +794,7 @@ void extLightingFX::draw()
    }
 
    pool.wait();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

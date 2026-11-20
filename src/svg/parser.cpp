@@ -1431,11 +1431,14 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
    SetOwner(fx, Filter);
 
    std::string result_name;
+   auto edge_mode = FEM::TRANSPARENT;
+   bool mirror_edge = false;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
-      auto &val = Tag.Attribs[a].Value;
+      const auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
-      switch(strhash(Tag.Attribs[a].Name)) {
+      const std::string_view name(Tag.Attribs[a].Name);
+      switch (strhash(name)) {
          case SVF_stdDeviation: { // Y is optional, if not set then it is equivalent to X.
             double x = -1, y = -1;
             read_numseq(val, { &x, &y });
@@ -1445,15 +1448,34 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
             break;
          }
 
+         case SVF_edgeMode:
+            if (iequals("duplicate", val)) edge_mode = FEM::CLAMP;
+            else if (iequals("wrap", val)) edge_mode = FEM::REPEAT;
+            else if (iequals("none", val)) edge_mode = FEM::TRANSPARENT;
+            break;
+
          case SVF_x:      fx->setX(SVGUnit(val)); break;
          case SVF_y:      fx->setY(SVGUnit(val)); break;
          case SVF_width:  fx->setWidth(SVGUnit(val)); break;
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
          case SVF_in:     parse_input_source(Self, fx, val); break;
          case SVF_result: result_name = val; break;
+
+         default: {
+            if (not iequals("mirror", val)) break;
+            const auto colon = name.find(':');
+            if ((colon IS std::string_view::npos) or (colon IS 0) or (name.substr(colon + 1) != "edgeMode")) break;
+
+            uint32_t uri;
+            if (Self->XML->resolvePrefix(name.substr(0, colon), Tag.ID, &uri) IS ERR::Okay) {
+               if ((uri IS glKotukuSVGNamespace) or (uri IS glKotukuNamespace)) mirror_edge = true;
+            }
+            break;
+         }
       }
    }
 
+   fx->setEdgeMode(mirror_edge ? FEM::MIRROR : edge_mode);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -1539,7 +1561,10 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
                         if (Self->Effects.contains(ref)) {
                            list.emplace_back(VSF::REFERENCE, Self->Effects[ref]);
                         }
-                        else log.warning("Invalid 'in' reference '%s'", ref);
+                        else {
+                           log.warning("Invalid 'in' reference '%s'", ref);
+                           list.emplace_back(VSF::REFERENCE);
+                        }
                      }
                      else log.warning("'in' reference is an empty string.");
 

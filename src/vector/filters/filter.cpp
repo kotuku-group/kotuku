@@ -20,6 +20,10 @@ will be supporting them.  The VectorFilter will detect the filter objects and th
 in which they are added.  It is most optimal to create each pipeline in advance, and a new VectorFilter object should
 be created for each pipeline as necessary.
 
+Each reference must name an earlier effect owned by the same filter.  Before drawing the pipeline, the renderer
+validates the inputs and effect order.  If validation fails, it logs the affected effect and omits the filter's
+output.  The last effect supplies the rendered result.  Use @MergeFX to combine multiple branches.
+
 The filter's output is composited into the target with the blend mode resolved for the client vector, as described
 for @Vector.ColourSpace, and the filter's #Opacity is applied at the same time.  The filter's own #ColourSpace
 governs effect processing only and does not affect how the output is composited.
@@ -47,8 +51,51 @@ struct target {
    double x, y, width, height;
 };
 
-static ERR get_source_bitmap(extVectorFilter *, objBitmap **, VSF, objFilterEffect *, bool);
+enum class filter_input_role { INPUT, MIX, MERGE };
+enum class filter_operation { GENERATOR, SINGLE, DUAL, MERGE };
+
+struct filter_step;
+
+struct filter_input {
+   VSF Source;
+   filter_input_role Role;
+   size_t Slot;
+   const filter_step *Producer;
+};
+
+struct filter_step {
+   extFilterEffect *Effect;
+   std::span<const filter_input> Inputs;
+   size_t Consumers = 0;
+   objBitmap *Result = nullptr;
+};
+
+struct filter_plan {
+   std::vector<filter_step> Steps;
+   std::vector<filter_input> Inputs;
+   const filter_step *Final = nullptr;
+   bool ReadsSourceGraphic = false;
+   bool ReadsBackground = false;
+};
+
+using filter_positions = std::unordered_map<objFilterEffect *, size_t>;
+
+static ERR get_source_bitmap(extFilterEffect *, objBitmap **, filter_input_role, size_t = 0);
+static objBitmap * get_source_graphic(extVectorFilter *);
 static ERR get_banked_bitmap(extVectorFilter *, objBitmap **);
+static void unlink_filter_effect(extFilterEffect *);
+static void clear_filter_references(extFilterEffect *, objFilterEffect * = nullptr);
+static void update_filter_links(extVectorFilter *);
+static ERR check_filter_reference(extFilterEffect *, objFilterEffect *, filter_input_role, size_t = 0,
+   const filter_positions * = nullptr);
+
+static const filter_step * active_filter_step(const extFilterEffect *Effect)
+{
+   const auto filter = Effect->Filter;
+   if ((not filter) or (not filter->ActiveStep) or (filter->ActiveStep->Effect != Effect) or
+       (filter->GraphRevision != filter->ActiveRevision)) return nullptr;
+   return filter->ActiveStep;
+}
 
 //********************************************************************************************************************
 // Universal function for rendering a filter's Bitmap to the target region.
@@ -137,6 +184,261 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
 #include "filter_source.cpp"
 #include "filter_turbulence.cpp"
 #include "filter_wavefunction.cpp"
+
+//********************************************************************************************************************
+
+static ERR filter_input_error(const extFilterEffect *Effect, filter_input_role Role, size_t Slot, ERR Error,
+   CSTRING Reason, OBJECTID Producer = 0)
+{
+   kt::Log log("FilterPlan");
+   const auto class_name = Effect->Class->ClassName.c_str();
+   const auto field = (Role IS filter_input_role::MIX) ? "Mix" :
+      ((Role IS filter_input_role::MERGE) ? "SourceList" : "Input");
+   if (Role IS filter_input_role::MERGE) {
+      log.warning("%s #%d %s[%zu]: %s (producer #%d).", class_name, Effect->UID, field, Slot, Reason,
+         Producer);
+   }
+   else log.warning("%s #%d %s: %s (producer #%d).", class_name, Effect->UID, field, Reason, Producer);
+   return Error;
+}
+
+static ERR check_filter_reference(extFilterEffect *Effect, objFilterEffect *Producer, filter_input_role Role,
+   size_t Slot, const filter_positions *Positions)
+{
+   if (not Producer) {
+      return filter_input_error(Effect, Role, Slot, ERR::FieldNotSet, "missing reference");
+   }
+   if (Producer IS Effect) {
+      return filter_input_error(Effect, Role, Slot, ERR::Recursion, "self-reference", Effect->UID);
+   }
+   const auto filter = Effect->Filter;
+   const bool member = filter and (Positions ? Positions->contains(Producer) :
+      std::ranges::find(filter->Effects, Producer) != filter->Effects.end());
+   if (not member) {
+      return filter_input_error(Effect, Role, Slot, ERR::InvalidValue, "reference must name a live sibling");
+   }
+   if ((Producer->Owner != filter) or Producer->collecting()) {
+      return filter_input_error(Effect, Role, Slot, ERR::InvalidValue, "producer is no longer a live sibling",
+         Producer->UID);
+   }
+   return ERR::Okay;
+}
+
+static void clear_filter_references(extFilterEffect *Effect, objFilterEffect *Producer)
+{
+   // Also detach dormant references.  A later SourceType or MixType write can reactivate them.
+   if ((not Producer) or (Effect->Input IS Producer)) Effect->Input = nullptr;
+   if ((not Producer) or (Effect->Mix IS Producer)) Effect->Mix = nullptr;
+   if (Effect->classID() IS CLASSID::MERGEFX) {
+      for (auto &source : ((extMergeFX *)Effect)->List) {
+         if ((not Producer) or (source.Effect IS Producer)) source.Effect = nullptr;
+      }
+   }
+}
+
+static void update_filter_links(extVectorFilter *Filter)
+{
+   auto &effects = Filter->Effects;
+   for (size_t i = 0; i < effects.size(); i++) {
+      effects[i]->Prev = i ? effects[i - 1] : nullptr;
+      effects[i]->Next = (i + 1 < effects.size()) ? effects[i + 1] : nullptr;
+   }
+   Filter->GraphRevision++;
+}
+
+static void unlink_filter_effect(extFilterEffect *Effect)
+{
+   auto filter = Effect->Filter;
+   if (not filter) return;
+
+   std::erase(filter->Effects, Effect);
+   for (auto consumer : filter->Effects) clear_filter_references(consumer, Effect);
+   Effect->Filter = nullptr;
+   Effect->Prev = Effect->Next = nullptr;
+   Effect->Target = nullptr;
+   update_filter_links(filter);
+}
+
+extFilterEffect::~extFilterEffect()
+{
+   unlink_filter_effect(this);
+}
+
+//********************************************************************************************************************
+
+static filter_operation describe_filter_operation(CLASSID Class)
+{
+   switch (Class) {
+      case CLASSID::MERGEFX:
+         return filter_operation::MERGE;
+      case CLASSID::COMPOSITEFX:
+      case CLASSID::DISPLACEMENTFX:
+         return filter_operation::DUAL;
+      case CLASSID::FLOODFX:
+      case CLASSID::IMAGEFX:
+      case CLASSID::SOURCEFX:
+      case CLASSID::TURBULENCEFX:
+      case CLASSID::WAVEFUNCTIONFX:
+         return filter_operation::GENERATOR;
+      default:
+         return filter_operation::SINGLE;
+   }
+}
+
+// Any cycle includes a forward edge.  Walk the dependencies only when the authored order is already invalid,
+// so successful draws do not need a second graph pass.
+
+static ERR diagnose_filter_order(const filter_plan &Plan, const extFilterEffect *Consumer, const filter_input &Forward)
+{
+   enum class visit { UNSEEN, ACTIVE, DONE };
+   struct frame {
+      const filter_step *Step;
+      size_t NextInput = 0;
+   };
+
+   const auto first = Plan.Steps.data();
+   std::vector<visit> visited(Plan.Steps.size(), visit::UNSEEN);
+   std::vector<frame> stack;
+   for (const auto &step : Plan.Steps) {
+      if (visited[&step - first] != visit::UNSEEN) continue;
+      visited[&step - first] = visit::ACTIVE;
+      stack.push_back({ &step });
+
+      while (not stack.empty()) {
+         auto &current = stack.back();
+         if (current.NextInput IS current.Step->Inputs.size()) {
+            visited[current.Step - first] = visit::DONE;
+            stack.pop_back();
+            continue;
+         }
+         const auto &input = current.Step->Inputs[current.NextInput++];
+         if (not input.Producer) continue;
+         auto &state = visited[input.Producer - first];
+         if (state IS visit::ACTIVE) {
+            return filter_input_error(current.Step->Effect, input.Role, input.Slot, ERR::Recursion,
+               "dependency cycle", input.Producer->Effect->UID);
+         }
+         if (state IS visit::UNSEEN) {
+            state = visit::ACTIVE;
+            stack.push_back({ input.Producer });
+         }
+      }
+   }
+   return filter_input_error(Consumer, Forward.Role, Forward.Slot, ERR::InvalidValue,
+      "producer must precede its consumer", Forward.Producer->Effect->UID);
+}
+
+static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
+{
+   kt::Log log("FilterPlan");
+   const auto &effects = Filter->Effects;
+   filter_positions positions;
+   positions.reserve(effects.size());
+   Plan.Steps.reserve(effects.size());
+   size_t input_count = 0;
+
+   for (size_t i = 0; i < effects.size(); i++) {
+      auto effect = effects[i];
+      if ((effect->Filter != Filter) or (effect->Owner != Filter) or effect->collecting() or
+          (not effect->initialised())) {
+         log.warning("%s #%d is not an initialised, live child of filter #%d.", effect->className(), effect->UID,
+            Filter->UID);
+         return ERR::InvalidState;
+      }
+      const auto prev = i ? effects[i - 1] : nullptr;
+      const auto next = (i + 1 < effects.size()) ? effects[i + 1] : nullptr;
+      if ((effect->Prev != prev) or (effect->Next != next)) {
+         log.warning("%s #%d has an invalid %s link.", effect->className(), effect->UID,
+            (effect->Prev != prev) ? "Prev" : "Next");
+         return ERR::InvalidState;
+      }
+
+      positions.emplace(effect, i);
+      Plan.Steps.push_back({ .Effect = effect, .Inputs = {} });
+      switch (describe_filter_operation(effect->classID())) {
+         case filter_operation::GENERATOR: break;
+         case filter_operation::SINGLE: input_count++; break;
+         case filter_operation::DUAL: input_count += 2; break;
+         case filter_operation::MERGE: input_count += ((extMergeFX *)effect)->List.size(); break;
+      }
+   }
+
+   Plan.Inputs.reserve(input_count);
+   Plan.Final = &Plan.Steps.back();
+   const extFilterEffect *forward_consumer = nullptr;
+   const filter_input *forward_input = nullptr;
+
+   for (size_t i = 0; i < Plan.Steps.size(); i++) {
+      auto &step = Plan.Steps[i];
+      auto effect = step.Effect;
+      const auto operation = describe_filter_operation(effect->classID());
+      const size_t first = Plan.Inputs.size();
+
+      auto add_input = [&](VSF Type, objFilterEffect *Reference, filter_input_role Role, size_t Slot = 0) -> ERR {
+         filter_step *producer = nullptr;
+         switch (Type) {
+            case VSF::REFERENCE: {
+               if (auto error = check_filter_reference(effect, Reference, Role, Slot, &positions);
+                   error != ERR::Okay) {
+                  return error;
+               }
+               producer = &Plan.Steps[positions.find(Reference)->second];
+               producer->Consumers++;
+               break;
+            }
+            case VSF::GRAPHIC:
+            case VSF::ALPHA:
+               Plan.ReadsSourceGraphic = true;
+               break;
+            case VSF::BKGD:
+            case VSF::BKGD_ALPHA:
+               Plan.ReadsBackground = true;
+               break;
+            case VSF::NONE:
+               if (Role IS filter_input_role::MERGE) break;
+               return filter_input_error(effect, Role, Slot, ERR::FieldNotSet, "input is required");
+            default: {
+               char reason[64];
+               std::snprintf(reason, sizeof(reason), "unsupported source kind %d", int(Type));
+               return filter_input_error(effect, Role, Slot, ERR::NoSupport, reason);
+            }
+         }
+         const auto &input = Plan.Inputs.emplace_back(Type, Role, Slot, producer);
+         if (producer and (producer > &step) and (not forward_input)) {
+            forward_consumer = effect;
+            forward_input = &input;
+         }
+         return ERR::Okay;
+      };
+
+      switch (operation) {
+         case filter_operation::GENERATOR:
+            break;
+         case filter_operation::DUAL:
+         case filter_operation::SINGLE:
+            if (auto error = add_input(effect->SourceType, effect->Input, filter_input_role::INPUT);
+                error != ERR::Okay) return error;
+            if (operation IS filter_operation::DUAL) {
+               if (auto error = add_input(effect->MixType, effect->Mix, filter_input_role::MIX); error != ERR::Okay) {
+                  return error;
+               }
+            }
+            break;
+         case filter_operation::MERGE: {
+            const auto &sources = ((extMergeFX *)effect)->List;
+            for (size_t j = 0; j < sources.size(); j++) {
+               if (auto error = add_input(sources[j].SourceType, sources[j].Effect, filter_input_role::MERGE, j);
+                   error != ERR::Okay) return error;
+            }
+            break;
+         }
+      }
+      step.Inputs = std::span(Plan.Inputs).subspan(first);
+   }
+
+   if (forward_input) return diagnose_filter_order(Plan, forward_consumer, *forward_input);
+   return ERR::Okay;
+}
 
 //********************************************************************************************************************
 // Compute a bounding box region when the AspectRatio is NONE.  The region extends from the bounds by distances
@@ -256,69 +558,78 @@ static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
 // reference will be returned.  Otherwise a new bitmap is allocated and rendered with the effect.  The bitmap must
 // not be freed as they are permanently maintained until the VectorFilter is destroyed.
 
-static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VSF SourceType, objFilterEffect *Effect, bool Premultiply)
+static ERR get_source_bitmap(extFilterEffect *Effect, objBitmap **BitmapResult, filter_input_role Role,
+   size_t Slot)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!BitmapResult) return log.warning(ERR::NullArgs);
+   if (not BitmapResult) return log.warning(ERR::NullArgs);
+   *BitmapResult = nullptr;
+   const auto step = active_filter_step(Effect);
+   const size_t index = (Role IS filter_input_role::MIX) ? 1 : Slot;
+   if ((not step) or (index >= step->Inputs.size()) or (step->Inputs[index].Role != Role)) {
+      return log.warning(ERR::InvalidState);
+   }
 
-   kt::SwitchContext ctx(Self);
-
-   log.msg(VLF::BRANCH|VLF::DETAIL, "%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName.c_str(),
-      Self->ActiveEffect->UID, Effect ? Effect->UID : 0, int(SourceType));
+   auto filter = Effect->Filter;
+   kt::SwitchContext ctx(filter);
+   const auto &input = step->Inputs[index];
+   const auto source_type = input.Source;
+   log.msg(VLF::BRANCH|VLF::DETAIL, "%s #%d <- ID: #%u, Type: %d", Effect->className(), Effect->UID,
+      input.Producer ? input.Producer->Effect->UID : 0, int(source_type));
+   if (not active_filter_step(Effect)) return ERR::InvalidState;
 
    objBitmap *bmp = nullptr;
-   if (SourceType IS VSF::GRAPHIC) { // SourceGraphic: Render the source vector without transformations (transforms will be applied in the final steps).
-      if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
-      if (auto sg = get_source_graphic(Self)) {
-         gfx::CopyArea(sg, bmp, BAF::NIL, sg->Clip.Left, sg->Clip.Top,
-            sg->Clip.Right - sg->Clip.Left, sg->Clip.Bottom - sg->Clip.Top,
-            bmp->Clip.Left, bmp->Clip.Top);
+   if (source_type IS VSF::GRAPHIC) {
+      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
+      auto sg = get_source_graphic(filter);
+      if ((not sg) or (not active_filter_step(Effect))) return log.warning(ERR::NoData);
+      gfx::CopyArea(sg, bmp, BAF::NIL, sg->Clip.Left, sg->Clip.Top,
+         sg->Clip.Right - sg->Clip.Left, sg->Clip.Bottom - sg->Clip.Top, bmp->Clip.Left, bmp->Clip.Top);
+   }
+   else if (source_type IS VSF::ALPHA) { // SourceAlpha
+      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
+      auto sg = get_source_graphic(filter);
+      if ((not sg) or (not active_filter_step(Effect))) return log.warning(ERR::NoData);
+      int dy = bmp->Clip.Top;
+      for (int sy = sg->Clip.Top; sy < sg->Clip.Bottom; sy++) {
+         const auto src = (const uint32_t *)(sg->Data + (sy * sg->LineWidth));
+         auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
+         int dx = bmp->Clip.Left;
+         for (int sx = sg->Clip.Left; sx < sg->Clip.Right; sx++) dest[dx++] = src[sx] & 0xff000000;
+         dy++;
       }
    }
-   else if (SourceType IS VSF::ALPHA) { // SourceAlpha
-      if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
-      if (auto sg = get_source_graphic(Self)) {
-         int dy = bmp->Clip.Top;
-         for (int sy=sg->Clip.Top; sy < sg->Clip.Bottom; sy++) {
-            uint32_t *src = (uint32_t *)(sg->Data + (sy * sg->LineWidth));
-            uint32_t *dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
-            int dx = bmp->Clip.Left;
-            for (int sx=sg->Clip.Left; sx < sg->Clip.Right; sx++) {
-               dest[dx++] = src[sx] & 0xff000000;
-            }
-            dy++;
-         }
-      }
-   }
-   else if (SourceType IS VSF::BKGD) {
+   else if (source_type IS VSF::BKGD) {
       // "Represents an image snapshot of the canvas under the filter region at the time that the filter element is invoked."
       // NOTE: The client needs to specify 'enable-background' in the nearest container element in order to indicate where the background is coming from;
       // additionally it serves as a marker for graphics to be rendered to a separate bitmap (essential for coping with any transformations in the scene graph).
       //
       // Refer to enable-background support in scene_draw.cpp
 
-      if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
+      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
 
-      if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
+      gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0x00000000, BAF::FILL);
+      if ((filter->BkgdBitmap) and ((filter->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
          // The renderer shifts Data for scene-coordinate drawing.  CopyArea expects local bitmap coordinates.
-         auto save_data = Self->BkgdBitmap->offset(Self->BkgdOriginX, Self->BkgdOriginY);
-         gfx::CopyArea(Self->BkgdBitmap, bmp, BAF::NIL,
-            Self->VectorClip.left - Self->BkgdOriginX, Self->VectorClip.top - Self->BkgdOriginY,
-            Self->VectorClip.width(), Self->VectorClip.height(), bmp->Clip.Left, bmp->Clip.Top);
-         Self->BkgdBitmap->Data = save_data;
+         auto save_data = filter->BkgdBitmap->offset(filter->BkgdOriginX, filter->BkgdOriginY);
+         gfx::CopyArea(filter->BkgdBitmap, bmp, BAF::NIL,
+            filter->VectorClip.left - filter->BkgdOriginX, filter->VectorClip.top - filter->BkgdOriginY,
+            filter->VectorClip.width(), filter->VectorClip.height(), bmp->Clip.Left, bmp->Clip.Top);
+         filter->BkgdBitmap->Data = save_data;
       }
    }
-   else if (SourceType IS VSF::BKGD_ALPHA) {
-      if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
-      if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         int src_left = std::max(Self->VectorClip.left, Self->BkgdBitmap->Clip.Left + Self->BkgdOriginX);
-         int src_top = std::max(Self->VectorClip.top, Self->BkgdBitmap->Clip.Top + Self->BkgdOriginY);
-         int src_right = std::min(Self->VectorClip.right, Self->BkgdBitmap->Clip.Right + Self->BkgdOriginX);
-         int src_bottom = std::min(Self->VectorClip.bottom, Self->BkgdBitmap->Clip.Bottom + Self->BkgdOriginY);
+   else if (source_type IS VSF::BKGD_ALPHA) {
+      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
+      gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0x00000000, BAF::FILL);
+      if ((filter->BkgdBitmap) and ((filter->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
+         int src_left = std::max(filter->VectorClip.left, filter->BkgdBitmap->Clip.Left + filter->BkgdOriginX);
+         int src_top = std::max(filter->VectorClip.top, filter->BkgdBitmap->Clip.Top + filter->BkgdOriginY);
+         int src_right = std::min(filter->VectorClip.right, filter->BkgdBitmap->Clip.Right + filter->BkgdOriginX);
+         int src_bottom = std::min(filter->VectorClip.bottom, filter->BkgdBitmap->Clip.Bottom + filter->BkgdOriginY);
 
-         int dest_x = bmp->Clip.Left + (src_left - Self->VectorClip.left);
-         int dest_y = bmp->Clip.Top + (src_top - Self->VectorClip.top);
+         int dest_x = bmp->Clip.Left + (src_left - filter->VectorClip.left);
+         int dest_y = bmp->Clip.Top + (src_top - filter->VectorClip.top);
 
          if (dest_x < bmp->Clip.Left) {
             src_left += bmp->Clip.Left - dest_x;
@@ -336,7 +647,7 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
          if ((width > 0) and (height > 0)) {
             int dy = dest_y;
             for (int sy=src_top; sy < src_top + height; sy++) {
-               auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
+               auto src = (uint32_t *)(filter->BkgdBitmap->Data + (sy * filter->BkgdBitmap->LineWidth));
                auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
                int dx = dest_x;
                for (int sx=src_left; sx < src_left + width; sx++) {
@@ -347,41 +658,27 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
          }
       }
    }
-   else if (SourceType IS VSF::REFERENCE) {
-      if (auto e = Effect) {
-         // Find first effect in the hierarchy that outputs a bitmap.
-
-         while ((!bmp) and (e)) {
-            bmp = e->Target;
-            e = e->Input;
-         }
-
-         if (!bmp) {
-            log.warning("%s has dependency on %s effect #%u and does not output a bitmap.",
-               Self->ActiveEffect->Class->ClassName.c_str(), Effect->Class->ClassName.c_str(), Effect->UID);
-            return ERR::NoData;
-         }
+   else if (source_type IS VSF::REFERENCE) {
+      bmp = input.Producer->Result;
+      if (not bmp) {
+         return filter_input_error(Effect, Role, Slot, ERR::NoData, "producer has no result in this draw",
+            input.Producer->Effect->UID);
       }
-      else {
-         log.warning("%s source reference has not provided an effect.", Self->ActiveEffect->Class->ClassName.c_str());
-         return ERR::NoData;
-      }
-  }
-   else if (SourceType IS VSF::NONE) {
+   }
+   else if (source_type IS VSF::NONE) {
       *BitmapResult = nullptr;
       return ERR::Continue;
    }
    else {
-      log.warning("Effect source %d is not supported.", int(SourceType));
+      log.warning("Effect source %d is not supported.", int(source_type));
       return ERR::NoSupport;
    }
 
    #if defined(EXPORT_FILTER_BITMAP) && defined (DEBUG_FILTER_BITMAP)
-      save_bitmap(bmp, std::to_string(Self->UID) + "_" + std::to_string(Self->ClientVector->UID) + "_source");
+      save_bitmap(bmp, std::to_string(filter->UID) + "_" + std::to_string(filter->ClientVector->UID) + "_source");
    #endif
 
-   if (Premultiply) bmp->premultiply();
-
+   if (not active_filter_step(Effect)) return ERR::InvalidState;
    *BitmapResult = bmp;
    return ERR::Okay;
 }
@@ -394,12 +691,12 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
 // TODO: It would be efficient to hook into the dirty markers of the client vector so that re-rendering
 // occurs only in the event that the client has been modified.
 
-objBitmap * get_source_graphic(extVectorFilter *Self)
+static objBitmap * get_source_graphic(extVectorFilter *Self)
 {
    kt::Log log(__FUNCTION__);
 
    if (!Self->ClientVector) {
-      log.warning("%s No ClientVector defined.", Self->ActiveEffect->Class->ClassName.c_str());
+      log.warning("No client vector defined.");
       return nullptr;
    }
 
@@ -482,14 +779,22 @@ static void filter_reach(extVectorFilter *Self, double &ReachX, double &ReachY)
    constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
 
    ReachX = ReachY = 0;
-   for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
+   for (auto e : Self->Effects) {
       double x = 0, y = 0;
       switch (e->classID()) {
-         case CLASSID::BLURFX:
-            ((extBlurFX *)e)->radii(x, y);
-            x = std::ceil(std::min(x, MAX_BLUR_RADIUS)) + 1;
-            y = std::ceil(std::min(y, MAX_BLUR_RADIUS)) + 1;
+         case CLASSID::BLURFX: {
+            auto blur = (extBlurFX *)e;
+            blur->radii(x, y);
+            if (blur->EdgeMode != FEM::TRANSPARENT) {
+               x = (x >= MIN_BLUR_RADIUS) ? UNBOUNDED : 0;
+               y = (y >= MIN_BLUR_RADIUS) ? UNBOUNDED : 0;
+            }
+            else {
+               x = std::ceil(std::min(std::max(0.0, x), MAX_BLUR_RADIUS)) + 1;
+               y = std::ceil(std::min(std::max(0.0, y), MAX_BLUR_RADIUS)) + 1;
+            }
             break;
+         }
 
          case CLASSID::OFFSETFX: {
             int dx, dy;
@@ -688,7 +993,7 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
 // the filter region is the default.  Effects are rendered in sequence, so referenced effects are always computed
 // before the effects that use them.  Bounds are only required if PrimitiveUnits is BOUNDING_BOX.
 
-static void compute_subregion(extVectorFilter *Self, extFilterEffect *Effect, const TClipRectangle<double> &Bounds)
+static void compute_subregion(extVectorFilter *Self, const filter_step &Step, const TClipRectangle<double> &Bounds)
 {
    const TClipRectangle<double> filter_region = { Self->TargetX, Self->TargetY,
       Self->TargetX + Self->TargetWidth, Self->TargetY + Self->TargetHeight };
@@ -697,46 +1002,38 @@ static void compute_subregion(extVectorFilter *Self, extFilterEffect *Effect, co
       std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
    bool referenced = false, standard = false;
 
-   auto include = [&](VSF Type, objFilterEffect *Input) {
-      if (Type IS VSF::NONE) return;
-      else if ((Type IS VSF::REFERENCE) and (Input)) {
-         inputs.expanding(((extFilterEffect *)Input)->Subregion);
+   for (const auto &input : Step.Inputs) {
+      if (input.Producer) {
+         inputs.expanding(input.Producer->Effect->Subregion);
          referenced = true;
       }
-      else standard = true;
-   };
-
-   if (Effect->classID() IS CLASSID::MERGEFX) {
-      for (auto &source : ((extMergeFX *)Effect)->List) include(source.SourceType, source.Effect);
+      else if (input.Source != VSF::NONE) standard = true;
    }
-   else if (Effect->classID() != CLASSID::IMAGEFX) { // ImageFX does not read from its input
-      include(Effect->SourceType, Effect->Input);
-      include(Effect->MixType, Effect->Mix);
-   }
+   const auto effect = Step.Effect;
 
    auto region = (referenced and (not standard)) ? inputs : filter_region;
 
    double x = region.left, y = region.top, width = region.width(), height = region.height();
    if (Self->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (Effect->X.defined()) x = Bounds.left + (Effect->X * Bounds.width());
-      if (Effect->Y.defined()) y = Bounds.top + (Effect->Y * Bounds.height());
-      if (Effect->Width.defined()) width = Effect->Width * Bounds.width();
-      if (Effect->Height.defined()) height = Effect->Height * Bounds.height();
+      if (effect->X.defined()) x = Bounds.left + (effect->X * Bounds.width());
+      if (effect->Y.defined()) y = Bounds.top + (effect->Y * Bounds.height());
+      if (effect->Width.defined()) width = effect->Width * Bounds.width();
+      if (effect->Height.defined()) height = effect->Height * Bounds.height();
    }
    else { // Explicit percentages are relative to the client's viewport in user space.
       const double viewport_width = viewport_coordinate_width(Self->ClientViewport);
       const double viewport_height = viewport_coordinate_height(Self->ClientViewport);
-      if (Effect->X.scaled()) x = Effect->X * viewport_width;
-      else if (Effect->X.defined()) x = Effect->X;
-      if (Effect->Y.scaled()) y = Effect->Y * viewport_height;
-      else if (Effect->Y.defined()) y = Effect->Y;
-      if (Effect->Width.scaled()) width = Effect->Width * viewport_width;
-      else if (Effect->Width.defined()) width = Effect->Width;
-      if (Effect->Height.scaled()) height = Effect->Height * viewport_height;
-      else if (Effect->Height.defined()) height = Effect->Height;
+      if (effect->X.scaled()) x = effect->X * viewport_width;
+      else if (effect->X.defined()) x = effect->X;
+      if (effect->Y.scaled()) y = effect->Y * viewport_height;
+      else if (effect->Y.defined()) y = effect->Y;
+      if (effect->Width.scaled()) width = effect->Width * viewport_width;
+      else if (effect->Width.defined()) width = effect->Width;
+      if (effect->Height.scaled()) height = effect->Height * viewport_height;
+      else if (effect->Height.defined()) height = effect->Height;
    }
 
-   Effect->Subregion = { x, y, x + width, y + height };
+   effect->Subregion = { x, y, x + width, y + height };
 }
 
 //********************************************************************************************************************
@@ -780,11 +1077,33 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Vector) or (!Viewport)) return log.warning(ERR::NullArgs);
+   if ((not Vector) or (not Viewport) or (not Output)) return log.warning(ERR::NullArgs);
+   *Output = nullptr;
    if (Self->Disabled) return ERR::NothingDone;
-   if (!Self->Effects) return log.warning(ERR::FieldNotSet);
+   if (Self->Drawing) return log.warning(ERR::Recursion);
 
+   SharedObjectAccess access(Self);
+   if (not access.granted()) return access.error;
    kt::SwitchContext context(Self);
+
+   Self->Drawing = true;
+   Self->ActiveRevision = Self->GraphRevision;
+   auto graph_changed = [&]() {
+      return (Self->GraphRevision != Self->ActiveRevision) or Self->collecting();
+   };
+   bool completed = false;
+   auto cleanup = kt::Defer([&]() {
+      Self->ActiveStep = nullptr;
+      Self->Drawing = false;
+      if (not completed) {
+         for (auto effect : Self->Effects) effect->Target = nullptr;
+      }
+   });
+
+   for (auto effect : Self->Effects) effect->Target = nullptr;
+   if (Self->Effects.empty()) return log.warning(ERR::FieldNotSet);
+   filter_plan plan;
+   if (auto error = prepare_filter_plan(Self, plan); error != ERR::Okay) return error;
 
    CSTRING filter_name = Self->Name;
    if ((!filter_name) or (!filter_name[0])) filter_name = "Unnamed";
@@ -795,7 +1114,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
    Self->ClientViewport = Viewport;
    Self->ClientVector   = Vector;
-   Self->BkgdBitmap     = BkgdBitmap; // For VSF::BKGD and VSF::BKGD_ALPHA
+   Self->BkgdBitmap     = (plan.ReadsBackground or plan.ReadsSourceGraphic) ? BkgdBitmap : nullptr;
    Self->BkgdOriginX = BkgdOriginX;
    Self->BkgdOriginY = BkgdOriginY;
    Self->ClientColourSpace = ColourSpace;
@@ -812,15 +1131,6 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    Self->Transform = Vector->Transform;
    Self->Transform.translate(-Self->VectorClip.left, -Self->VectorClip.top);
 
-   // Render the effect pipeline in sequence.  Linked effects get their own bitmap, everything else goes to a shared
-   // output bitmap.  After all effects are rendered, the shared output bitmap is returned for rendering to the scene graph.
-   //
-   // * Effects may request the SourceGraphic, in which case we render the client vector to a separate scene graph
-   //   and without transforms.
-   //
-   // TODO: Effects that don't have dependencies could be threaded.  Big pipelines could benefit from effects
-   // being rendered to independent bitmaps in threads, then composited at the last stage.
-
    // Effect subregions in objectBoundingBox units are relative to the unrounded bounds of the client.
 
    TClipRectangle<double> bounds = { 0, 0, 0, 0 };
@@ -829,41 +1139,46 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       calc_local_boundary(Self->ClientVector, bounds);
    }
 
-   objBitmap *out = nullptr;
-   for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
-      log.detail("Effect: %s #%u, Pipelined: %c; Use Count: %d", e->Class->ClassName.c_str(), e->UID,
-         e->UsageCount > 0 ? 'Y' : 'N', e->UsageCount);
+   if (graph_changed()) {
+      log.warning("Filter #%d changed while preparing its bounds.", Self->UID);
+      return ERR::InvalidState;
+   }
 
-      Self->ActiveEffect = e;
+   objBitmap *unused = nullptr;
+   for (auto &step : plan.Steps) {
+      const auto effect = step.Effect;
+      log.detail("Effect: %s #%u, Consumers: %zu", effect->className(), effect->UID, step.Consumers);
+      Self->ActiveStep = &step;
 
-      if (e->UsageCount > 0) { // This effect is an input to something else
-         if (auto error = get_banked_bitmap(Self, &e->Target); error != ERR::Okay) return error;
-         gfx::DrawRectangle(e->Target, 0, 0, e->Target->Width, e->Target->Height, 0x00000000, BAF::FILL);
+      // Unconsumed intermediates can reuse one cleared scratch surface.  The authored final effect owns its
+      // output independently of the number of consumers on any other effect.
+      objBitmap *target = nullptr;
+      if ((&step IS plan.Final) or step.Consumers) {
+         if (auto error = get_banked_bitmap(Self, &target); error != ERR::Okay) return error;
       }
-      else { // This effect can render directly to the shared output bitmap
-         if (!out) {
-            if (auto error = get_banked_bitmap(Self, &out); error != ERR::Okay) return error;
-            gfx::DrawRectangle(out, 0, 0, out->Width, out->Height, 0x00000000, BAF::FILL);
+      else {
+         if (not unused) {
+            if (auto error = get_banked_bitmap(Self, &unused); error != ERR::Okay) return error;
          }
-         e->Target = out;
+         target = unused;
+      }
+      gfx::DrawRectangle(target, 0, 0, target->Width, target->Height, 0x00000000, BAF::FILL);
+      if (graph_changed()) return log.warning(ERR::InvalidState);
+      effect->Target = target;
+
+      compute_subregion(Self, step, bounds);
+      if (auto error = acDraw(effect); error != ERR::Okay) return log.warning(error);
+      if (graph_changed() or effect->collecting()) {
+         log.warning("Filter #%d changed while drawing.", Self->UID);
+         return ERR::InvalidState;
       }
 
-      compute_subregion(Self, e, bounds);
-
-      if (auto error = acDraw(e); error != ERR::Okay) {
-         Self->ActiveEffect = nullptr;
-         return error;
-      }
-
-      clip_to_subregion(Self, e);
+      effect->Target = target;
+      clip_to_subregion(Self, effect);
+      step.Result = target;
    }
-   Self->ActiveEffect = nullptr;
 
-   if (!out) {
-      log.warning("Effect pipeline did not produce an output bitmap.");
-      if (auto error = get_banked_bitmap(Self, &out); error != ERR::Okay) return error;
-      gfx::DrawRectangle(out, 0, 0, out->Width, out->Height, 0x00000000, BAF::FILL);
-   }
+   auto out = plan.Final->Result;
 
    #if defined(EXPORT_FILTER_BITMAP) && defined (DEBUG_FILTER_BITMAP)
       save_bitmap(out, std::to_string(Self->UID) + "_" + std::to_string(Vector->UID) + "_output");
@@ -873,7 +1188,20 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       gfx::DrawRectangle(out, out->Clip.Left, out->Clip.Top, out->Clip.Right-out->Clip.Left, out->Clip.Bottom-out->Clip.Top, 0xff0000ff, BAF::NIL);
    #endif
 
+   #if !defined(NDEBUG) and !defined(DEBUG_FILTER_BITMAP)
+      if (GetResource(RES::LOG_LEVEL) >= 6) {
+         auto retained_bytes = Self->SourceGraphic.Data.capacity();
+         for (const auto &slot : Self->Bank) retained_bytes += slot->Data.capacity();
+
+         // Every acquired bank slot stays in use until the draw ends.  SourceGraphic is acquired at most once.
+         const auto peak_live_surfaces = int(Self->BankIndex) + int(Self->Rendered);
+         log.detail("Filter storage: retained_bytes=%zu peak_live_surfaces=%d", retained_bytes, peak_live_surfaces);
+      }
+   #endif
+
+   if (graph_changed()) return log.warning(ERR::InvalidState);
    *Output = out;
+   completed = true;
    return ERR::Okay;
 }
 
@@ -887,13 +1215,35 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 {
    kt::Log log;
 
-   log.branch();
-   while (Self->Effects) FreeResource(Self->Effects);
+   if (Self->Drawing) return log.warning(ERR::InUse);
 
+   auto detached = std::exchange(Self->Effects, {});
+   std::vector<OBJECTID> ids;
+   ids.reserve(detached.size());
+   for (auto effect : detached) {
+      ids.push_back(effect->UID);
+      clear_filter_references(effect);
+      effect->Filter = nullptr;
+      effect->Prev = effect->Next = nullptr;
+      effect->Target = nullptr;
+   }
+
+   Self->GraphRevision++;
    Self->Bank.clear();
    Self->BankIndex = 0;
 
+   // Callbacks and deferred destruction can change ownership while the detached effects are being freed.
+   for (auto id : ids) {
+      if (auto effect = GetObjectPtr(id); effect and (effect->Owner IS Self)) FreeResource(id);
+   }
+
    return ERR::Okay;
+}
+
+extVectorFilter::~extVectorFilter()
+{
+   VECTORFILTER_Clear(this);
+   if (SourceScene) FreeResource(SourceScene);
 }
 
 //********************************************************************************************************************
@@ -918,17 +1268,24 @@ static ERR VECTORFILTER_Init(extVectorFilter *Self)
 
 static ERR VECTORFILTER_NewChild(extVectorFilter *Self, struct acNewChild *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if ((not Args) or (not Args->Object)) return ERR::NullArgs;
+   if (Self->collecting()) return ERR::MarkedForDeletion;
 
    if (Args->Object->Class->BaseClassID IS CLASSID::FILTEREFFECT) {
       auto effect = (extFilterEffect *)Args->Object;
+      if (effect->Filter IS Self) return ERR::Okay;
+      if (effect->Filter) {
+         clear_filter_references(effect);
+         unlink_filter_effect(effect);
+      }
 
-      if (!Self->Effects) Self->Effects = effect;
-      else if (Self->LastEffect) Self->LastEffect->Next = effect;
-
-      effect->Prev = Self->LastEffect;
+      auto prev = Self->Effects.empty() ? nullptr : Self->Effects.back();
+      Self->Effects.push_back(effect);
+      effect->Filter = Self;
+      effect->Prev = prev;
       effect->Next = nullptr;
-      Self->LastEffect = effect;
+      if (prev) prev->Next = effect;
+      Self->GraphRevision++;
    }
 
    return ERR::Okay;
@@ -992,7 +1349,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
 {
    std::stringstream ss;
 
-   for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
+   for (auto e : Self->Effects) {
       ss << "<";
       std::string def;
       if (!e->getXMLDef(def)) {

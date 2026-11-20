@@ -52,7 +52,7 @@ class extOffsetFX : public extFilterEffect {
 static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 {
    objBitmap *inBmp;
-   if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
+   if (!get_source_bitmap(Self, &inBmp, filter_input_role::INPUT)) {
       int dx, dy;
       Self->pixel_offset(dx, dy);
       gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height, dx, dy);

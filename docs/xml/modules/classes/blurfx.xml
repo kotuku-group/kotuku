@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The BlurFX class performs a Gaussian blur, or approximation thereof, on the input source.  The Gaussian blur kernel is an approximation of the normalized convolution <code>G(x,y) = H(x)I(y)</code> where <code>H(x) = exp(-x2/ (2s2)) / sqrt(2* pi*s2)</code> and <code>I(y) = exp(-y2/ (2t2)) / sqrt(2* pi*t2)</code> with 's' being the standard deviation in the x direction and 't' being the standard deviation in the y direction, as specified by <fl>SX</fl> and <fl>SY</fl>.</p>
-<p>At least one of <fl>SX</fl> or <fl>SY</fl> should be greater than 0, otherwise no rendering is performed.</p>
+<p>If both <fl>SX</fl> and <fl>SY</fl> are zero, the effect copies its input.</p>
 <p>The blur is not restricted to whole pixels.  It changes continuously with the standard deviation and the display scale, so a blur that covers less than a pixel still softens the input.</p></description>
     <source>
       <file path="filters/">filter_blur.cpp</file>
@@ -39,6 +39,19 @@
 
   <fields>
     <field>
+      <name>EdgeMode</name>
+      <comment>Controls how the blur samples beyond the edges of its input.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FEM">FEM</type>
+      <description>
+<p><code>TRANSPARENT</code> (the default) uses transparent black.  <code>CLAMP</code> uses the nearest edge sample, <code>REPEAT</code> wraps to the opposite edge and <code>MIRROR</code> reflects alternate copies of the input with the edge sample repeated at each join.</p>
+<p>For standard inputs the sampling rectangle is the filter bitmap.  For a referenced effect the non-transparent modes use the pixel-aligned bounding rectangle of its transformed primitive subregion, intersected with the filter bitmap. The addressing mode applies along each axis with an active blur.</p>
+<p>SVG reads and writes <code>CLAMP</code> as <code>edgeMode=&quot;duplicate&quot;</code> and <code>REPEAT</code> as <code>edgeMode=&quot;wrap&quot;</code>. <code>MIRROR</code> uses the Kōtuku extension <code>kotuku:edgeMode=&quot;mirror&quot;</code>.</p>
+<types lookup="FEM"/>
+      </description>
+    </field>
+
+    <field>
       <name>SX</name>
       <comment>The standard deviation of the blur on the x axis.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -51,7 +64,7 @@
 
     <field>
       <name>SY</name>
-      <comment>The standard deviation of the blur on the x axis.</comment>
+      <comment>The standard deviation of the blur on the y axis.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
@@ -69,6 +82,15 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="FEM" comment="Filter input edge addressing modes.">
+      <const name="CLAMP">Extend the nearest edge sample.</const>
+      <const name="MIRROR">Reflect alternating copies of the input, repeating the edge sample at each join.</const>
+      <const name="REPEAT">Wrap samples to the opposite edge.</const>
+      <const name="TRANSPARENT">Sample transparent black outside the input.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

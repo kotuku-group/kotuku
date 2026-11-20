@@ -117,24 +117,16 @@ end
    assertRegion(blueRegion(draw(nestedFilter(VOF_HIDDEN))), 50, 50, 149, 149, 'Hidden container')
 end
 
-@Test function PartialRedrawRetainsOffsetInputs()
-   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
-   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
-   local filter = scene.new('VectorFilter', { x='-50%', y='-50%', width='200%', height='200%' })
-   filter.new('OffsetFX', { xOffset=20, yOffset=20 })
-   check scene.mtAddDef('offset', filter)
-   root.new('VectorRectangle', { x=60, y=60, width=80, height=80, fill='white', filter='url(#offset)' })
-
-   local full <close> = draw(scene)
+function assertPartialRedraw(Scene:obj, Full:obj)
    local partial <close> = obj.new('bitmap', { width=PAGE, height=PAGE, bitsPerPixel=32, bkgd='0,0,0,255' })
-   partial.acClear()
+   check partial.acClear()
    check partial.mtSetClipRegion(100, 100, 150, 150)
-   scene.bitmap = partial
-   check scene.acDraw()
+   Scene.bitmap = partial
+   check Scene.acDraw()
 
    for y in {100 to 150} do
       for x in {100 to 150} do
-         local expected = mGfx.ReadRGBPixel(full, x, y).red
+         local expected = mGfx.ReadRGBPixel(Full, x, y).red
          local actual = mGfx.ReadRGBPixel(partial, x, y).red
          assert(actual is expected, f'Partial redraw differs at {x},{y}: expected {expected}, got {actual}')
       end
@@ -144,6 +136,38 @@ end
    for probe in values(array<table> { {x=90,y=110}, {x=110,y=90}, {x=155,y=110}, {x=110,y=155} }) do
       assert(mGfx.ReadRGBPixel(partial, probe.x, probe.y).red is 0, 'The final copy must respect the drawing clip')
    end
+end
+
+@Test function PartialRedrawRetainsOffsetInputs()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
+   local filter = scene.new('VectorFilter', { x='-50%', y='-50%', width='200%', height='200%' })
+   filter.new('OffsetFX', { xOffset=20, yOffset=20 })
+   check scene.mtAddDef('offset', filter)
+   root.new('VectorRectangle', { x=60, y=60, width=80, height=80, fill='white', filter='url(#offset)' })
+
+   local full <close> = draw(scene)
+   assertPartialRedraw(scene, full)
+end
+
+@Test function PartialRedrawRetainsBothBranches()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
+   local nested = root.new('VectorViewport', { x=10, y=10, width=180, height=180 })
+   local filter = scene.new('VectorFilter', { x='-50%', y='-50%', width='200%', height='200%' })
+   local producer = filter.new('OffsetFX', { xOffset=20, yOffset=20 })
+   local left = filter.new('OffsetFX', { input=producer, xOffset=-20 })
+   local right = filter.new('OffsetFX', { input=producer, xOffset=55 })
+   filter.new('CompositeFX', { input=left, mix=right, operator=OP_OVER })
+   check scene.mtAddDef('branches', filter)
+   nested.new('VectorRectangle', { x=50, y=50, width=80, height=80, fill='#ffffff80', filter='url(#branches)' })
+
+   local full <close> = draw(scene)
+   for x in values(array<int> { 105, 145 }) do
+      local red = mGfx.ReadRGBPixel(full, x, 110).red
+      assert(red > 0 and red < 255, f'Expected one translucent branch at {x},110, got {red}')
+   end
+   assertPartialRedraw(scene, full)
 end
 
 @Test function ScaledClient()

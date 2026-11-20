@@ -599,193 +599,133 @@ Draw: Render the effect to the target bitmap.
 
 static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
 {
-   kt::Log log;
+   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
 
-   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
+   objBitmap *in_bmp, *mix_bmp;
+   if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) {
+      return error;
+   }
+   if (auto error = get_source_bitmap(Self, &mix_bmp, filter_input_role::MIX); error != ERR::Okay) {
+      return error;
+   }
 
-   objBitmap *inBmp;
-
-   uint8_t *dest = Self->Target->Data + (Self->Target->Clip.Left * 4) +
+   auto dest = Self->Target->Data + (Self->Target->Clip.Left * 4) +
       (Self->Target->Clip.Top * Self->Target->LineWidth);
+   auto in = in_bmp->Data + (in_bmp->Clip.Left * 4) + (in_bmp->Clip.Top * in_bmp->LineWidth);
+   auto mix = mix_bmp->Data + (mix_bmp->Clip.Left * 4) + (mix_bmp->Clip.Top * mix_bmp->LineWidth);
 
    switch (Self->Operator) {
-      case OP::OVER: {
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-            objBitmap *mixBmp;
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               Self->doMix<composite_over>(inBmp, mixBmp, dest, in, mix);
-            }
-         }
-         break;
-      }
-
-      case OP::IN: {
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-            objBitmap *mixBmp;
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               Self->doMix<composite_in>(inBmp, mixBmp, dest, in, mix);
-            }
-         }
-         break;
-      }
-
-      case OP::OUT: {
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-            objBitmap *mixBmp;
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               Self->doMix<composite_out>(inBmp, mixBmp, dest, in, mix);
-            }
-         }
-         break;
-      }
-
-      case OP::ATOP: {
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-            objBitmap *mixBmp;
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               Self->doMix<composite_atop>(inBmp, mixBmp, dest, in, mix);
-            }
-         }
-         break;
-      }
-
-      case OP::XOR: {
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-            objBitmap *mixBmp;
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               Self->doMix<composite_xor>(inBmp, mixBmp, dest, in, mix);
-            }
-         }
-         break;
-      }
+      case OP::OVER: Self->doMix<composite_over>(in_bmp, mix_bmp, dest, in, mix); break;
+      case OP::IN:   Self->doMix<composite_in>(in_bmp, mix_bmp, dest, in, mix); break;
+      case OP::OUT:  Self->doMix<composite_out>(in_bmp, mix_bmp, dest, in, mix); break;
+      case OP::ATOP: Self->doMix<composite_atop>(in_bmp, mix_bmp, dest, in, mix); break;
+      case OP::XOR:  Self->doMix<composite_xor>(in_bmp, mix_bmp, dest, in, mix); break;
 
       case OP::ARITHMETIC: {
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-            objBitmap *mixBmp;
-            int height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
-            int width  = Self->Target->Clip.Right - Self->Target->Clip.Left;
-            if (inBmp->Clip.Right - inBmp->Clip.Left < width) width = inBmp->Clip.Right - inBmp->Clip.Left;
-            if (inBmp->Clip.Bottom - inBmp->Clip.Top < height) height = inBmp->Clip.Bottom - inBmp->Clip.Top;
+         int height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
+         int width  = Self->Target->Clip.Right - Self->Target->Clip.Left;
+         if (in_bmp->Clip.Right - in_bmp->Clip.Left < width) width = in_bmp->Clip.Right - in_bmp->Clip.Left;
+         if (in_bmp->Clip.Bottom - in_bmp->Clip.Top < height) height = in_bmp->Clip.Bottom - in_bmp->Clip.Top;
 
-            const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
-            const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
-            const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
-            const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
+         const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
+         const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
+         const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
+         const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
 
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               constexpr double alpha_scale = 1.0 / 255.0;
+         constexpr double alpha_scale = 1.0 / 255.0;
 
-               // The arithmetic is performed in the filter's colour space.  Bitmaps are always sRGB encoded, so
-               // linear processing decodes the inputs and encodes the result.
+         // The arithmetic is performed in the filter's colour space.  Bitmaps are always sRGB encoded, so
+         // linear processing decodes the inputs and encodes the result.
 
-               const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+         const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
 
-               auto decode = [linear](uint8_t Value) -> double {
-                  if (linear) return double(glLinearRGB.convert16(Value)) * (1.0 / 65535.0);
-                  else return double(Value) * alpha_scale;
-               };
+         auto decode = [linear](uint8_t Value) -> double {
+            if (linear) return double(glLinearRGB.convert16(Value)) * (1.0 / 65535.0);
+            else return double(Value) * alpha_scale;
+         };
 
-               auto encode = [linear](double Value) -> uint8_t {
-                  if (linear) {
-                     const int v = int(Value * 65535.0);
-                     if (v > 0xffff) return 0xff;
-                     else if (v < 0) return 0;
-                     else return glLinearRGB.invert16(v);
-                  }
-                  else if (Value >= 1.0) return 0xff;
-                  else if (Value <= 0.0) return 0;
-                  else return uint8_t(std::lround(Value * 255.0));
-               };
-
-               for (int y=0; y < height; y++) {
-                  auto dp = dest;
-                  auto sp = in;
-                  auto mp = mix;
-                  for (int x=0; x < width; x++) {
-                     if ((mp[A]) or (sp[A])) {
-                        // Scale RGB to 0 - 1.0 and premultiply the values.
-                        const double sA = double(sp[A]) * alpha_scale;
-                        const double sR = decode(sp[R]) * sA;
-                        const double sG = decode(sp[G]) * sA;
-                        const double sB = decode(sp[B]) * sA;
-
-                        const double mA = double(mp[A]) * alpha_scale;
-                        const double mR = decode(mp[R]) * mA;
-                        const double mG = decode(mp[G]) * mA;
-                        const double mB = decode(mp[B]) * mA;
-
-                        double dA = (Self->K1 * sA * mA) + (Self->K2 * sA) + (Self->K3 * mA) + Self->K4;
-
-                        if (dA > 0.0) {
-                           if (dA > 1.0) dA = 1.0;
-
-                           double demul = 1.0 / dA;
-                           dp[R] = encode(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) *
-                              demul);
-                           dp[G] = encode(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) *
-                              demul);
-                           dp[B] = encode(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) *
-                              demul);
-                           dp[A] = int(dA * 255.0);
-                        }
-                     }
-
-                     dp += 4;
-                     sp += 4;
-                     mp += 4;
-                  }
-                  dest += Self->Target->LineWidth;
-                  in   += inBmp->LineWidth;
-                  mix  += mixBmp->LineWidth;
-               }
+         auto encode = [linear](double Value) -> uint8_t {
+            if (linear) {
+               const int v = int(Value * 65535.0);
+               if (v > 0xffff) return 0xff;
+               else if (v < 0) return 0;
+               else return glLinearRGB.invert16(v);
             }
+            else if (Value >= 1.0) return 0xff;
+            else if (Value <= 0.0) return 0;
+            else return uint8_t(std::lround(Value * 255.0));
+         };
+
+         for (int y=0; y < height; y++) {
+            auto dp = dest;
+            auto sp = in;
+            auto mp = mix;
+            for (int x=0; x < width; x++) {
+               if ((mp[A]) or (sp[A])) {
+                  // Scale RGB to 0 - 1.0 and premultiply the values.
+                  const double sA = double(sp[A]) * alpha_scale;
+                  const double sR = decode(sp[R]) * sA;
+                  const double sG = decode(sp[G]) * sA;
+                  const double sB = decode(sp[B]) * sA;
+
+                  const double mA = double(mp[A]) * alpha_scale;
+                  const double mR = decode(mp[R]) * mA;
+                  const double mG = decode(mp[G]) * mA;
+                  const double mB = decode(mp[B]) * mA;
+
+                  double dA = (Self->K1 * sA * mA) + (Self->K2 * sA) + (Self->K3 * mA) + Self->K4;
+
+                  if (dA > 0.0) {
+                     if (dA > 1.0) dA = 1.0;
+
+                     double demul = 1.0 / dA;
+                     dp[R] = encode(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) *
+                        demul);
+                     dp[G] = encode(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) *
+                        demul);
+                     dp[B] = encode(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) *
+                        demul);
+                     dp[A] = int(dA * 255.0);
+                  }
+               }
+
+               dp += 4;
+               sp += 4;
+               mp += 4;
+            }
+            dest += Self->Target->LineWidth;
+            in   += in_bmp->LineWidth;
+            mix  += mix_bmp->LineWidth;
          }
          break;
       }
 
       default: { // These mix routines use pre-multiplied content.
-         if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, true)) {
-            objBitmap *mixBmp;
-            if (!get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, true)) {
-               uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
-               uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
-               #pragma GCC diagnostic ignored "-Wswitch"
-               switch(Self->Operator) {
-                  case OP::MULTIPLY:    Self->doMix<blend_multiply>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::SCREEN:      Self->doMix<blend_screen>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::DARKEN:      Self->doMix<blend_darken>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::LIGHTEN:     Self->doMix<blend_lighten>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::OVERLAY:     Self->doMix<blend_overlay>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::BURN:        Self->doMix<blend_burn>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::DODGE:       Self->doMix<blend_dodge>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::HARD_LIGHT:  Self->doMix<blend_hard_light>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::SOFT_LIGHT:  Self->doMix<blend_soft_light>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::DIFFERENCE:  Self->doMix<blend_difference>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::EXCLUSION:   Self->doMix<blend_exclusion>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::PLUS:        Self->doMix<blend_plus>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::MINUS:       Self->doMix<blend_minus>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::CONTRAST:    Self->doMix<blend_contrast>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::INVERT:      Self->doMix<blend_invert>(inBmp, mixBmp, dest, in, mix); break;
-                  case OP::INVERT_RGB:  Self->doMix<blend_invert_rgb>(inBmp, mixBmp, dest, in, mix); break;
-               }
-
-                mixBmp->demultiply();
-            }
-            inBmp->demultiply();
+         in_bmp->premultiply();
+         mix_bmp->premultiply();
+         auto restore_alpha = kt::Defer([&]() {
+            mix_bmp->demultiply();
+            in_bmp->demultiply();
+         });
+         switch (Self->Operator) {
+            case OP::MULTIPLY:    Self->doMix<blend_multiply>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::SCREEN:      Self->doMix<blend_screen>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::DARKEN:      Self->doMix<blend_darken>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::LIGHTEN:     Self->doMix<blend_lighten>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::OVERLAY:     Self->doMix<blend_overlay>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::BURN:        Self->doMix<blend_burn>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::DODGE:       Self->doMix<blend_dodge>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::HARD_LIGHT:  Self->doMix<blend_hard_light>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::SOFT_LIGHT:  Self->doMix<blend_soft_light>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::DIFFERENCE:  Self->doMix<blend_difference>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::EXCLUSION:   Self->doMix<blend_exclusion>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::PLUS:        Self->doMix<blend_plus>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::MINUS:       Self->doMix<blend_minus>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::CONTRAST:    Self->doMix<blend_contrast>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::INVERT:      Self->doMix<blend_invert>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::INVERT_RGB:  Self->doMix<blend_invert_rgb>(in_bmp, mix_bmp, dest, in, mix); break;
+            default: return ERR::NoSupport;
          }
-
          break;
       }
    }
