@@ -14,7 +14,8 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects must not be instantiated directly by the client.</p>
-<p>The documented fields and actions here are integral to all effects that utilise this class.</p></description>
+<p>The documented fields and actions here are integral to all effects that utilise this class.</p>
+<p>The <fl>Target</fl> bitmap is available while the effect renders and while a later effect still needs its result. After the last consumer finishes, the renderer clears <fl>Target</fl> and can reuse the storage.  The final effect's target remains available through scene composition and can be retained internally until the next draw.</p></description>
     <source>
       <file path="filters/">filter_effect.cpp</file>
     </source>

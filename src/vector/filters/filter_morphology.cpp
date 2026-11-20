@@ -136,8 +136,8 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    // directly write to the target bitmap.
 
    if ((Self->RadiusX > 0) and (Self->RadiusY > 0)) {
-      buffer = new (std::nothrow) uint8_t[canvasWidth * canvasHeight * 4];
-      if (!buffer) return ERR::Memory;
+      auto error = get_filter_scratch(Self, size_t(canvasWidth) * canvasHeight * 4, buffer);
+      if (error != ERR::Okay) return error;
       out_line = buffer;
       out_linewidth = canvasWidth * 4;
       buffer_as_input = true;
@@ -214,8 +214,6 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
          }
       }
    }
-
-   if (buffer) delete [] buffer;
 
    return ERR::Okay;
 }

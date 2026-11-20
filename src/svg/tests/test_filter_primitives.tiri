@@ -370,7 +370,7 @@ end
    local _, filter = check svg.scene.mtFindDef('f')
    local blur = filter.new('BlurFX', { sx=.5, sy=.5 })
 
-   -- Prime the bitmap bank. The two-axis wrap pass will need one additional bitmap.
+   -- Prime the surface pool. The two-axis wrap pass will need one additional bitmap.
    local bmp <close> = draw(svg, 64)
    assert(mGfx.ReadRGBPixel(bmp, 20, 20).red is 255, 'The initial filter must render')
 
@@ -382,6 +382,22 @@ end
    check svg.scene.acDraw()
    assert(blur.owner?.id is svg.scene.id, 'The scratch allocation callback must move the blur out of the filter')
    assert(mGfx.ReadRGBPixel(bmp, 20, 20).red is 0, 'The interrupted filter draw must leave no output')
+end
+
+@Test function BlurFitsAfterSourceGraphicIsConsumed()
+   local size <const> = 4096
+   local content = f'<rect width="{size}" height="{size}" fill="white" filter="url(#f)"/>'
+   local svg <close> = document(
+      '<feOffset in="SourceGraphic"/><feGaussianBlur stdDeviation=".75 0"/>', content, size)
+   local bmp <close> = obj.new('bitmap', { width=32, height=32, bitsPerPixel=32,
+      flags=BMF_ALPHA_CHANNEL, blendMode=BLM_NONE, bkgd='0,0,0,0' })
+   check bmp.acClear()
+   svg.scene.{ pageWidth=size, pageHeight=size, bitmap=bmp }
+   check svg.scene.acDraw()
+
+   local p = mGfx.ReadRGBPixel(bmp, 20, 20)
+   assert((p.red is 255) and (p.alpha is 255),
+      f'The blur must fit in four 64 MiB surfaces after SourceGraphic is consumed, got {p.red},{p.alpha}')
 end
 
 -- feComponentTransfer applies to every pixel including transparent ones, so inverting alpha must make empty areas

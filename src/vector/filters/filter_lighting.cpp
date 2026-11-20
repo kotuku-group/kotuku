@@ -321,9 +321,9 @@ class extLightingFX : public extFilterEffect {
    bool boost_detail(double Sigma) const;
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
-   void draw_enhanced(const objBitmap *, const point3 &, double, const map_height &, double, int, int);
+   ERR draw_enhanced(const objBitmap *, const point3 &, double, const map_height &, double, int, int);
    template <class DELTA, class COLOUR>
-   void render_enhanced(int, int, const struct lit_surface &, int, DELTA, COLOUR);
+   void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR);
 };
 
 //********************************************************************************************************************
@@ -764,8 +764,7 @@ ERR extLightingFX::draw()
 
    if (enhanced()) {
       const double unit_size = unit_length(unit);
-      draw_enhanced(bmp, lt, spot_height, normal_height, unit_size, width, height);
-      return ERR::Okay;
+      return draw_enhanced(bmp, lt, spot_height, normal_height, unit_size, width, height);
    }
 
    int num_threads = std::min(int(std::thread::hardware_concurrency()), height);
