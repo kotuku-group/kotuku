@@ -82,7 +82,7 @@ class extConvolveFX : public extFilterEffect {
 
    extConvolveFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
-   inline uint8_t * getPixel(objBitmap *Bitmap, int X, int Y) const {
+   inline const uint8_t * getPixel(const objBitmap *Bitmap, int X, int Y) const {
       if ((X >= Bitmap->Clip.Left) and (X < Bitmap->Clip.Right) and
           (Y >= Bitmap->Clip.Top) and (Y < Bitmap->Clip.Bottom)) {
          return Bitmap->Data + (Y * Bitmap->LineWidth) + (X * Bitmap->BytesPerPixel);
@@ -120,13 +120,13 @@ class extConvolveFX : public extFilterEffect {
       if (!UnitXProvided) return 1.0;
 
       double scale_x = 1.0;
-      if (Filter->ClientVector) {
-         auto &t = Filter->ClientVector->Transform;
+      if (Filter->Render->ClientVector) {
+         auto &t = Filter->Render->ClientVector->Transform;
          scale_x = sqrt((t.sx * t.sx) + (t.shy * t.shy));
          if (scale_x <= 0.0) scale_x = 1.0;
       }
 
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) return UnitX * Filter->BoundWidth * scale_x;
+      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) return UnitX * Filter->Render->BoundWidth * scale_x;
       else return UnitX * scale_x;
    }
 
@@ -134,23 +134,23 @@ class extConvolveFX : public extFilterEffect {
       if (!UnitYProvided) return 1.0;
 
       double scale_y = 1.0;
-      if (Filter->ClientVector) {
-         auto &t = Filter->ClientVector->Transform;
+      if (Filter->Render->ClientVector) {
+         auto &t = Filter->Render->ClientVector->Transform;
          scale_y = sqrt((t.shx * t.shx) + (t.sy * t.sy));
          if (scale_y <= 0.0) scale_y = 1.0;
       }
 
-      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) return UnitY * Filter->BoundHeight * scale_y;
+      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) return UnitY * Filter->Render->BoundHeight * scale_y;
       else return UnitY * scale_y;
    }
 
-   inline const uint8_t * getClampedBitmapPixel(objBitmap *Bitmap, int X, int Y) const {
+   inline const uint8_t * getClampedBitmapPixel(const objBitmap *Bitmap, int X, int Y) const {
       X = std::clamp(X, Bitmap->Clip.Left, Bitmap->Clip.Right - 1);
       Y = std::clamp(Y, Bitmap->Clip.Top, Bitmap->Clip.Bottom - 1);
       return Bitmap->Data + (Y * Bitmap->LineWidth) + (X * Bitmap->BytesPerPixel);
    }
 
-   void sampleBitmap(objBitmap *Bitmap, double X, double Y, uint8_t *Output) const {
+   void sampleBitmap(const objBitmap *Bitmap, double X, double Y, uint8_t *Output) const {
       const int x0 = int(std::floor(X));
       const int y0 = int(std::floor(Y));
       const int x1 = x0 + 1;
@@ -217,7 +217,7 @@ class extConvolveFX : public extFilterEffect {
       }
    }
 
-   void convolveGrid(const uint8_t *Input, uint8_t *Output, int Width, int Height, objBitmap *SourceBitmap) {
+   void convolveGrid(const uint8_t *Input, uint8_t *Output, int Width, int Height, const objBitmap *SourceBitmap) {
       const uint8_t A = SourceBitmap->ColourFormat->AlphaPos>>3;
       const uint8_t R = SourceBitmap->ColourFormat->RedPos>>3;
       const uint8_t G = SourceBitmap->ColourFormat->GreenPos>>3;
@@ -262,7 +262,7 @@ class extConvolveFX : public extFilterEffect {
       }
    }
 
-   ERR processResampled(objBitmap *InputBitmap, uint8_t *Output, int pLeft, int pTop, int pRight, int pBottom,
+   ERR processResampled(const objBitmap *InputBitmap, uint8_t *Output, int pLeft, int pTop, int pRight, int pBottom,
       double UnitXPixel, double UnitYPixel) {
 
       const int width = pRight - pLeft;
@@ -300,7 +300,7 @@ class extConvolveFX : public extFilterEffect {
       const double grid_scale_y = double(grid_height) / double(height);
       const uint8_t A = InputBitmap->ColourFormat->AlphaPos>>3;
       uint8_t *outline = Output;
-      uint8_t *alpha_input = InputBitmap->Data + (pTop * InputBitmap->LineWidth);
+      const uint8_t *alpha_input = InputBitmap->Data + (pTop * InputBitmap->LineWidth);
       for (int y=0; y < height; y++) {
          auto out = outline;
          for (int x=0; x < width; x++) {
@@ -324,7 +324,7 @@ class extConvolveFX : public extFilterEffect {
    // pixels retain the per-tap getPixel() edge handling.  Both paths accumulate taps in the same order with
    // the same double-precision operations, so the output is bit-identical to the original implementation.
 
-   void processClipped(objBitmap *InputBitmap, uint8_t *output, int pLeft, int pTop, int pRight, int pBottom,
+   void processClipped(const objBitmap *InputBitmap, uint8_t *output, int pLeft, int pTop, int pRight, int pBottom,
       double UnitXPixel, double UnitYPixel) {
       if ((pRight <= pLeft) or (pBottom <= pTop)) return;
 
@@ -356,7 +356,7 @@ class extConvolveFX : public extFilterEffect {
       const int x_lo = InputBitmap->Clip.Left + TargetX;
       const int x_hi = InputBitmap->Clip.Right - MatrixColumns + TargetX;
 
-      uint8_t *alpha_input = InputBitmap->Data + (pTop * stride);
+      const uint8_t *alpha_input = InputBitmap->Data + (pTop * stride);
       uint8_t *outline = output;
       for (int y=pTop; y < pBottom; y++) {
          uint8_t *out = outline;
@@ -452,11 +452,8 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    std::vector<uint8_t> data;
    data.resize(canvas_width * canvas_height * Self->Target->BytesPerPixel);
 
-   objBitmap *inBmp;
-   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
-
-   // Note: The inBmp->Data pointer is pre-adjusted to match the Clip Left and Top values (i.e. add
-   // (Clip.Left * BPP) + (Clip.Top * LineWidth) to Data in order to get its true value)
+   filter_surface_view source;
+   if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
 
    double unit_x_pixel = Self->unitPixelSpacingX();
    double unit_y_pixel = Self->unitPixelSpacingY();
@@ -465,17 +462,15 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    if (std::abs(unit_x_pixel - 1.0) < 0.001) unit_x_pixel = 1.0;
    if (std::abs(unit_y_pixel - 1.0) < 0.001) unit_y_pixel = 1.0;
 
-   if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToLinear();
-   inBmp->premultiply();
+   filter_surface_view input;
+   const auto encoding = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? CS::LINEAR_RGB : CS::SRGB;
+   if (auto error = premultiplied_input(Self, source, encoding, input); error != ERR::Okay) return error;
+   auto in_bmp = input.Bitmap;
 
    if ((unit_x_pixel != 1.0) or (unit_y_pixel != 1.0)) {
-      auto error = Self->processResampled(inBmp, data.data(), Self->Target->Clip.Left, Self->Target->Clip.Top,
+      auto error = Self->processResampled(in_bmp, data.data(), Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right, Self->Target->Clip.Bottom, unit_x_pixel, unit_y_pixel);
-      if (error != ERR::Okay) {
-         if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToRGB();
-         inBmp->demultiply();
-         return error;
-      }
+      if (error != ERR::Okay) return error;
    }
    else {
       int thread_count = std::thread::hardware_concurrency();
@@ -494,8 +489,9 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
          int output_offset = i * lines_per_thread * canvas_width * Self->Target->BytesPerPixel;
          auto thread_output = (uint8_t *)data.data() + output_offset;
 
-         pool.detach_task([Self, inBmp, thread_output, unit_x_pixel, unit_y_pixel, L = Self->Target->Clip.Left, T = top, R = Self->Target->Clip.Right, B = bottom]() {
-            Self->processClipped(inBmp, thread_output, L, T, R, B, unit_x_pixel, unit_y_pixel);
+         const auto left = Self->Target->Clip.Left, right = Self->Target->Clip.Right;
+         pool.detach_task([Self, in_bmp, thread_output, unit_x_pixel, unit_y_pixel, left, top, right, bottom]() {
+            Self->processClipped(in_bmp, thread_output, left, top, right, bottom, unit_x_pixel, unit_y_pixel);
          });
       }
 
@@ -512,9 +508,6 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
       src += canvas_width;
    }
 
-   if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToRGB();
-
-   inBmp->demultiply();
    return ERR::Okay;
 }
 

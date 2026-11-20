@@ -37,7 +37,8 @@ Draw: Render the effect to the target bitmap.
 
 static ERR FLOODFX_Draw(extFloodFX *Self, struct acDraw *Args)
 {
-   auto &filter = Self->Filter;
+   if (not active_filter_step(Self)) return ERR::InvalidState;
+   const auto &render = *Self->Filter->Render;
 
    // Draw to destination.  No anti-aliasing is applied and the alpha channel remains constant.
    // Note: There seems to be a quirk in the SVG standards in that flooding does not honour the
@@ -53,14 +54,14 @@ static ERR FLOODFX_Draw(extFloodFX *Self, struct acDraw *Args)
    renderBase.attach(format);
 
    agg::path_storage path;
-   path.move_to(filter->TargetX, filter->TargetY);
-   path.line_to(filter->TargetX + filter->TargetWidth, filter->TargetY);
-   path.line_to(filter->TargetX + filter->TargetWidth, filter->TargetY + filter->TargetHeight);
-   path.line_to(filter->TargetX, filter->TargetY + filter->TargetHeight);
+   path.move_to(render.TargetX, render.TargetY);
+   path.line_to(render.TargetX + render.TargetWidth, render.TargetY);
+   path.line_to(render.TargetX + render.TargetWidth, render.TargetY + render.TargetHeight);
+   path.line_to(render.TargetX, render.TargetY + render.TargetHeight);
    path.close_polygon();
 
    agg::renderer_scanline_bin_solid< agg::renderer_base<agg::pixfmt_psl> > solid_render(renderBase);
-   agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(path, filter->Transform);
+   agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(path, render.Transform);
    raster.add_path(final_path);
    renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right - 1, Self->Target->Clip.Bottom - 1);
    solid_render.color(col);

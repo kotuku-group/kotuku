@@ -670,7 +670,7 @@ double extLightingFX::reach() const
 {
    if (not enhanced()) return 2;
 
-   const double scale = Filter->ClientVector ? Filter->ClientVector->Transform.scale() : 1.0;
+   const double scale = Filter->Render->ClientVector ? Filter->Render->ClientVector->Transform.scale() : 1.0;
    const double unit_size = unit_length(kernel_unit_pixels(scale));
    const double sigma = std::min(MAX_SIGMA, DETAIL_SIGMA * unit_size);
    double blur = cavity_sigma(unit_size);
@@ -689,7 +689,7 @@ double extLightingFX::reach() const
 
 //********************************************************************************************************************
 
-void extLightingFX::draw_enhanced(objBitmap *Bitmap, const point3 &Light, double SpotHeight,
+void extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, double SpotHeight,
    const map_height &NormalHeight, double UnitSize, int Width, int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
@@ -702,7 +702,8 @@ void extLightingFX::draw_enhanced(objBitmap *Bitmap, const point3 &Light, double
 
    const uint8_t A = Target->ColourFormat->AlphaPos>>3;
    const auto bpp = Bitmap->BytesPerPixel;
-   auto input_base = (uint8_t *)(Bitmap->Data + (Bitmap->Clip.Left * bpp) + (Bitmap->Clip.Top * Bitmap->LineWidth));
+   const uint8_t *input_base = Bitmap->Data + (Bitmap->Clip.Left * bpp) +
+      (Bitmap->Clip.Top * Bitmap->LineWidth);
 
    int num_threads = std::min(int(std::thread::hardware_concurrency()), Height);
    if (num_threads < 1) num_threads = 1;

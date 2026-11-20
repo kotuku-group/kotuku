@@ -27,37 +27,33 @@ class extSourceFX : public extFilterEffect {
    using create = kt::Create<extSourceFX>;
 
    ARF  AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // Aspect ratio flags.
-   objBitmap *Bitmap = nullptr;     // Rendered image cache.
-   objVector *Source = nullptr;     // The vector branch to render as source graphic.
-   objVectorScene *Scene = nullptr; // Internal scene for rendering.
-   std::vector<uint8_t> BitmapData;
-   agg::trans_affine CacheTransform; // The filter transform used for rendering the cache.
-   TClipRectangle<int> CacheClip = { 0, 0, 0, 0 }; // The filter clip region used for rendering the cache.
-   bool Render = true;              // Must be true if the bitmap cache needs to be rendered.
+   objVector *Source = nullptr; // The vector branch to render as source graphic.
+   extVectorScene *Scene = nullptr;
 
    extSourceFX(objMetaClass *ClassPtr, OBJECTID ObjectID) : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
-      if ((Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
-         if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Scene->UID))) {
-            if ((Bitmap = objBitmap::create::local(fl::Name("fx_src_cache"),
-                  fl::Width(1),
-                  fl::Height(1),
-                  fl::BitsPerPixel(32),
-                  fl::Flags(BMF::ALPHA_CHANNEL|BMF::NO_DATA)))) {
-            }
-            else kt::Log().fatal(ERR::CreateObject);
-         }
-         else kt::Log().fatal(ERR::CreateObject);
-      }
-      else kt::Log().fatal(ERR::CreateObject);
    }
 
    ~extSourceFX() {
-      if (Bitmap)     FreeResource(Bitmap);
-      if (Source)     Source->unpinWeak();
-      if (Scene)      FreeResource(Scene);
+      if (Scene) FreeResource(Scene);
+      if (Source) Source->unpinWeak();
    }
 };
+
+// Descendants under a viewport already have the right nearest viewport.  Only the outer branch inherits the
+// temporary viewport's dimensions while SourceFX is drawing it.
+
+static void set_source_parent_view(extVector *Vector, extVectorViewport *View)
+{
+   Vector->ParentView = View;
+   if (Vector->classID() IS CLASSID::VECTORVIEWPORT) return;
+
+   for (auto child = (extVector *)Vector->Child; child; child = (extVector *)child->Next) {
+      set_source_parent_view(child, View);
+   }
+}
+
+//********************************************************************************************************************
 
 /*********************************************************************************************************************
 -ACTION-
@@ -67,106 +63,62 @@ Draw: Render the source vector to the target bitmap.
 
 static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 {
-   validate_object_link(Self->Source); // The source is weak-pinned; drop the link if it has been terminated.
-   if (!Self->Source) return ERR::Okay;
+   if (not active_filter_step(Self)) return ERR::InvalidState;
+   validate_object_link(Self->Source);
+   if (not Self->Source) return ERR::Okay; // A missing vector produces transparent pixels.
 
-   auto &filter = Self->Filter;
+   auto filter = Self->Filter;
+   auto &render = *filter->Render;
+   auto source = (extVector *)Self->Source;
+   SharedObjectAccess access(source);
+   if (not access.granted()) return access.error;
 
-   // Use the same primitive subregion for placement and clipping as ImageFX.
-
-   const double img_x = Self->Subregion.left;
-   const double img_y = Self->Subregion.top;
-   const double img_width = Self->Subregion.width();
-   const double img_height = Self->Subregion.height();
-
-   if ((filter->ClientViewport->Scene->PageWidth > Self->Scene->PageWidth) or
-       (filter->ClientViewport->Scene->PageHeight > Self->Scene->PageHeight)) {
-      acResize(Self->Scene, filter->ClientViewport->Scene->PageWidth, filter->ClientViewport->Scene->PageHeight, 0);
+   auto scene = Self->Scene;
+   const auto client_scene = render.ClientViewport->Scene;
+   if ((client_scene->PageWidth != scene->PageWidth) or (client_scene->PageHeight != scene->PageHeight)) {
+      if (auto error = acResize(scene, client_scene->PageWidth, client_scene->PageHeight, 0);
+          error != ERR::Okay) return error;
    }
 
-   // The cache uses the filter's local bitmap coordinates.
+   // Use the current primitive subregion and filter transform to place the source.  A source subtree may contain
+   // live paint servers or filters, so render it on every draw with the current parameters.
+   auto viewport = (extVectorViewport *)scene->Viewport;
+   const auto &sub = Self->Subregion;
+   if (auto error = scene->Viewport->setX(sub.left); error != ERR::Okay) return error;
+   if (auto error = scene->Viewport->setY(sub.top); error != ERR::Okay) return error;
+   if (auto error = scene->Viewport->setWidth(sub.width()); error != ERR::Okay) return error;
+   if (auto error = scene->Viewport->setHeight(sub.height()); error != ERR::Okay) return error;
+   if (auto error = scene->Viewport->setAspectRatio(Self->AspectRatio); error != ERR::Okay) return error;
+   if (not active_filter_step(Self)) return ERR::InvalidState;
 
-   const auto clip = filter->scratch_clip();
-   if ((clip.right > Self->Bitmap->Width) or (clip.bottom > Self->Bitmap->Height)) {
-      acResize(Self->Bitmap, std::max(clip.right, Self->Bitmap->Width), std::max(clip.bottom, Self->Bitmap->Height), 0);
-   }
+   auto saved_colour = std::exchange(viewport->ColourSpace, filter->ColourSpace);
+   auto saved_matrices = std::move(viewport->Matrices);
+   auto saved_parent_view = source->ParentView;
+   auto saved_parent = std::exchange(source->Parent, (objVector *)viewport);
+   auto restore = kt::Defer([&]() {
+      source->Parent = saved_parent;
+      set_source_parent_view(source, saved_parent_view);
+      viewport->Matrices = std::move(saved_matrices);
+      viewport->ColourSpace = saved_colour;
+      mark_dirty(source, RC::DIRTY);
+   });
 
-   auto vp = (extVectorViewport *)Self->Scene->Viewport;
-   if ((img_x != vp->vpViewX) or (img_y != vp->vpViewY) or (img_width != vp->vpViewWidth) or (img_height != vp->vpViewHeight)) {
-      Self->Render = true;
-   }
+   const auto &t = render.Transform;
+   auto &matrix = viewport->Matrices.emplace_back();
+   matrix.Vector = viewport;
+   matrix.ScaleX = t.sx;
+   matrix.ShearY = t.shy;
+   matrix.ShearX = t.shx;
+   matrix.ScaleY = t.sy;
+   matrix.TranslateX = t.tx;
+   matrix.TranslateY = t.ty;
+   mark_dirty(viewport, RC::TRANSFORM);
+   set_source_parent_view(source, viewport);
+   mark_children(source, RC::DIRTY);
 
-   if ((not Self->CacheTransform.is_equal(filter->Transform)) or
-       (Self->CacheClip.right != clip.right) or (Self->CacheClip.bottom != clip.bottom)) {
-      Self->Render = true;
-   }
-
-   if (Self->Render) {
-      auto &cache = Self->Bitmap;
-      cache->Clip = { clip.left, clip.top, clip.right, clip.bottom };
-      Self->CacheTransform = filter->Transform;
-      Self->CacheClip = clip;
-
-      // Manual data management - bitmap data is restricted to the clipping region.
-
-      const int canvas_width  = cache->Clip.Right - cache->Clip.Left;
-      const int canvas_height = cache->Clip.Bottom - cache->Clip.Top;
-      cache->LineWidth = canvas_width * cache->BytesPerPixel;
-
-      if (Self->BitmapData.size() < size_t(cache->LineWidth * canvas_height)) {
-         Self->BitmapData.resize(cache->LineWidth * canvas_height);
-      }
-
-      cache->Data = Self->BitmapData.data() - (cache->Clip.Left * cache->BytesPerPixel) -
-         (cache->Clip.Top * cache->LineWidth);
-
-      Self->Scene->Viewport->setX(img_x);
-      Self->Scene->Viewport->setY(img_y);
-      Self->Scene->Viewport->setWidth(img_width);
-      Self->Scene->Viewport->setHeight(img_height);
-      Self->Scene->Viewport->setAspectRatio(Self->AspectRatio);
-
-      auto &t = filter->Transform;
-      auto viewport = (extVectorViewport *)Self->Scene->Viewport;
-
-      // Temporarily inject the client's transform as the viewport's sole matrix for the duration of the render.
-
-      viewport->Matrices.clear();
-      auto &matrix = viewport->Matrices.emplace_back();
-      matrix.Vector     = Self->Scene->Viewport;
-      matrix.ScaleX     = t.sx;
-      matrix.ShearY     = t.shy;
-      matrix.ShearX     = t.shx;
-      matrix.ScaleY     = t.sy;
-      matrix.TranslateX = t.tx;
-      matrix.TranslateY = t.ty;
-
-      auto save_parent = Self->Source->Parent;
-      auto const save_next = Self->Source->Next;
-      Self->Scene->Viewport->Child = Self->Source;
-      Self->Source->Parent = Self->Scene->Viewport;
-      Self->Source->Next = nullptr;
-
-      filter->Disabled = true; // Turning off the filter is required to prevent infinite recursion.
-
-      mark_dirty(Self->Scene->Viewport, RC::TRANSFORM);
-
-      Self->Scene->Bitmap = cache;
-      gfx::DrawRectangle(cache, 0, 0, cache->Width, cache->Height, 0x00000000, BAF::FILL);
-      acDraw(Self->Scene);
-
-      filter->Disabled = false;
-      Self->Scene->Viewport->Child = nullptr;
-      Self->Source->Parent = save_parent;
-      Self->Source->Next   = save_next;
-      viewport->Matrices.clear();
-      mark_dirty(Self->Source, RC::DIRTY);
-   }
-
-   gfx::CopyArea(Self->Bitmap, Self->Target, BAF::NIL, 0, 0, Self->Bitmap->Width, Self->Bitmap->Height, 0, 0);
-
-   Self->Render = false;
-   return ERR::Okay;
+   auto error = draw_filter_capture(filter, scene, source, Self->Target, 0, 0);
+   if (error != ERR::Okay) return error;
+   return source->collecting() ? ERR::InvalidState : ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -178,7 +130,13 @@ static ERR SOURCEFX_Init(extSourceFX *Self)
    validate_object_link(Self->Source);
    if (!Self->Source) return log.warning(ERR::FieldNotSet);
 
-   Self->Scene->Viewport->setColourSpace(Self->Filter->ColourSpace);
+   auto scene = extVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1));
+   if (not scene) return log.warning(ERR::CreateObject);
+   if (not extVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(scene->UID))) {
+      FreeResource(scene);
+      return log.warning(ERR::CreateObject);
+   }
+   Self->Scene = scene;
 
    return ERR::Okay;
 }
@@ -194,7 +152,6 @@ Lookup: ARF
 static ERR SOURCEFX_SET_AspectRatio(extSourceFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
-   Self->Render = true;
    return ERR::Okay;
 }
 
@@ -217,7 +174,6 @@ static ERR SOURCEFX_SET_Source(extSourceFX *Self, objVector *Value)
    if (Self->Source) Self->Source->unpinWeak();
    Value->pinWeak();
    Self->Source = Value;
-   Self->Render = true;
    return ERR::Okay;
 }
 
@@ -257,7 +213,6 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Va
       if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
       src->pinWeak();
       Self->Source = src;
-      Self->Render = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::Search);

@@ -51,12 +51,13 @@ static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
    BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
 
    for (size_t i = 0; i < step->Inputs.size(); i++) {
-      objBitmap *bmp = nullptr;
+      const objBitmap *bmp;
       auto error = get_source_bitmap(Self, &bmp, filter_input_role::MERGE, i);
       if ((error != ERR::Okay) and (error != ERR::Continue)) return error;
       if (!bmp) continue;
 
-      gfx::CopyArea(bmp, Self->Target, copy_flags, 0, 0, bmp->Width, bmp->Height, 0, 0);
+      if (error = copy_filter_bitmap(bmp, Self->Target, copy_flags, 0, 0, bmp->Width, bmp->Height, 0, 0);
+          error != ERR::Okay) return error;
 
       copy_flags |= BAF::BLEND|BAF::COPY; // Any subsequent copies are to be blended
    }

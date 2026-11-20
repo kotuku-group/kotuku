@@ -54,6 +54,22 @@ struct target {
 enum class filter_input_role { INPUT, MIX, MERGE };
 enum class filter_operation { GENERATOR, SINGLE, DUAL, MERGE };
 
+enum class filter_alpha { STRAIGHT, PREMULTIPLIED };
+
+// RGBA8 in the bitmap's channel order.  Valid is a half-open rectangle in bitmap coordinates and Origin
+// locates (0,0) in the scene.  Every pixel in Valid is initialised, including transparent padding.
+struct filter_surface_view {
+   const objBitmap *Bitmap = nullptr; // Adapter for bitmap-based readers.
+   const uint8_t *Data = nullptr;
+   int Width = 0, Height = 0, Stride = 0;
+   int OriginX = 0, OriginY = 0;
+   CS Encoding = CS::SRGB;
+   filter_alpha Alpha = filter_alpha::STRAIGHT;
+   TClipRectangle<int> Valid = {};
+
+   const uint8_t * row(int Y) const { return Data + std::ptrdiff_t(Y) * Stride; }
+};
+
 struct filter_step;
 
 struct filter_input {
@@ -67,7 +83,7 @@ struct filter_step {
    extFilterEffect *Effect;
    std::span<const filter_input> Inputs;
    size_t Consumers = 0;
-   objBitmap *Result = nullptr;
+   filter_surface_view Result = {};
 };
 
 struct filter_plan {
@@ -78,10 +94,40 @@ struct filter_plan {
    bool ReadsBackground = false;
 };
 
+struct filter_render_context {
+   extVector *ClientVector;
+   extVectorViewport *ClientViewport;
+   objBitmap *BkgdBitmap;
+   int BkgdOriginX, BkgdOriginY;
+   VCS ClientColourSpace;
+   uint64_t Revision;
+   filter_plan Plan;
+   const filter_step *ActiveStep = nullptr;
+   TClipRectangle<int> VectorClip = {}; // Processing region in scene coordinates.
+   agg::trans_affine Transform;       // Client user coordinates to local bitmap coordinates.
+   double BoundWidth = 0, BoundHeight = 0;
+   double TargetX = 0, TargetY = 0, TargetWidth = 0, TargetHeight = 0;
+   uint8_t BankIndex = 0;
+   filter_surface_view SourceGraphic, SourceAlpha, Background, BackgroundAlpha;
+
+   TClipRectangle<int> scratch_clip() const { return { 0, 0, VectorClip.width(), VectorClip.height() }; }
+};
+
+static filter_surface_view filter_view(const filter_render_context &Render, const objBitmap *Bitmap)
+{
+   return { Bitmap, Bitmap->Data, Bitmap->Width, Bitmap->Height, Bitmap->LineWidth,
+      Render.VectorClip.left, Render.VectorClip.top, Bitmap->ColourSpace,
+      ((Bitmap->Flags & BMF::PREMUL) != BMF::NIL) ? filter_alpha::PREMULTIPLIED : filter_alpha::STRAIGHT,
+      { Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom } };
+}
+
 using filter_positions = std::unordered_map<objFilterEffect *, size_t>;
 
-static ERR get_source_bitmap(extFilterEffect *, objBitmap **, filter_input_role, size_t = 0);
-static objBitmap * get_source_graphic(extVectorFilter *);
+static ERR get_source_view(extFilterEffect *, filter_surface_view &, filter_input_role, size_t = 0);
+static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input_role, size_t = 0);
+static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
+static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
+static ERR draw_filter_capture(extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
 static ERR get_banked_bitmap(extVectorFilter *, objBitmap **);
 static void unlink_filter_effect(extFilterEffect *);
 static void clear_filter_references(extFilterEffect *, objFilterEffect * = nullptr);
@@ -92,9 +138,18 @@ static ERR check_filter_reference(extFilterEffect *, objFilterEffect *, filter_i
 static const filter_step * active_filter_step(const extFilterEffect *Effect)
 {
    const auto filter = Effect->Filter;
-   if ((not filter) or (not filter->ActiveStep) or (filter->ActiveStep->Effect != Effect) or
-       (filter->GraphRevision != filter->ActiveRevision)) return nullptr;
-   return filter->ActiveStep;
+   const auto render = filter ? filter->Render : nullptr;
+   if ((not render) or (not render->ActiveStep) or (render->ActiveStep->Effect != Effect) or
+       (filter->GraphRevision != render->Revision) or filter->collecting()) return nullptr;
+   return render->ActiveStep;
+}
+
+// The display blitter takes a mutable source object but only reads from it.
+
+static ERR copy_filter_bitmap(const objBitmap *Source, objBitmap *Dest, BAF Flags,
+   int X, int Y, int Width, int Height, int DestX, int DestY)
+{
+   return gfx::CopyArea(const_cast<objBitmap *>(Source), Dest, Flags, X, Y, Width, Height, DestX, DestY);
 }
 
 //********************************************************************************************************************
@@ -103,7 +158,7 @@ static const filter_step * active_filter_step(const extFilterEffect *Effect)
 // No blending is performed because this is intended for use when there is no former input.  Copying is done
 // with only the transforms applied (if any).  Linear RGB interpolation will wait until post processing.
 
-template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectRatio = ARF::NONE, VSM SampleMethod = VSM::AUTO)
+static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
 {
    auto filter = Self->Filter;
 
@@ -122,7 +177,7 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
    agg::trans_affine img_transform;
    img_transform.scale(x_scale, y_scale);
    img_transform.translate(p_x, p_y);
-   img_transform *= filter->Transform;
+   img_transform *= filter->Render->Transform;
    img_transform.invert();
 
    if (img_transform.is_complex()) {
@@ -153,7 +208,10 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
          renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
       }
    }
-   else gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height, -img_transform.tx, -img_transform.ty);
+   else return gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height,
+      -img_transform.tx, -img_transform.ty);
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -473,49 +531,50 @@ static TClipRectangle<double> diagonal_region(extVectorFilter *Self, double Left
 
 static void compute_target_area(extVectorFilter *Self)
 {
+   auto &render = *Self->Render;
    TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-   calc_local_boundary(Self->ClientVector, bounds);
+   calc_local_boundary(render.ClientVector, bounds);
    double boundX = std::round(bounds.left);
    double boundY = std::round(bounds.top);
-   Self->BoundWidth  = std::round(bounds.width());
-   Self->BoundHeight = std::round(bounds.height());
+   render.BoundWidth  = std::round(bounds.width());
+   render.BoundHeight = std::round(bounds.height());
 
    if ((Self->Units IS VUNIT::BOUNDING_BOX) and (Self->AspectRatio IS VFA::NONE)) {
-      auto region = diagonal_region(Self, boundX, boundY, Self->BoundWidth, Self->BoundHeight);
-      Self->TargetX      = std::round(region.left);
-      Self->TargetY      = std::round(region.top);
-      Self->TargetWidth  = std::round(region.width());
-      Self->TargetHeight = std::round(region.height());
+      auto region = diagonal_region(Self, boundX, boundY, render.BoundWidth, render.BoundHeight);
+      render.TargetX      = std::round(region.left);
+      render.TargetY      = std::round(region.top);
+      render.TargetWidth  = std::round(region.width());
+      render.TargetHeight = std::round(region.height());
    }
    else if (Self->Units IS VUNIT::BOUNDING_BOX) {
-      if (Self->X.defined()) Self->TargetX = std::round(boundX + (Self->X * Self->BoundWidth));
-      else Self->TargetX = boundX;
+      if (Self->X.defined()) render.TargetX = std::round(boundX + (Self->X * render.BoundWidth));
+      else render.TargetX = boundX;
 
-      if (Self->Y.defined()) Self->TargetY = std::round(boundY + (Self->Y * Self->BoundHeight));
-      else Self->TargetY = boundY;
+      if (Self->Y.defined()) render.TargetY = std::round(boundY + (Self->Y * render.BoundHeight));
+      else render.TargetY = boundY;
 
-      if (Self->Width.defined()) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
-      else Self->TargetWidth = Self->BoundWidth;
+      if (Self->Width.defined()) render.TargetWidth = std::round(Self->Width * render.BoundWidth);
+      else render.TargetWidth = render.BoundWidth;
 
-      if (Self->Height.defined()) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
-      else Self->TargetHeight = Self->BoundHeight;
+      if (Self->Height.defined()) render.TargetHeight = std::round(Self->Height * render.BoundHeight);
+      else render.TargetHeight = render.BoundHeight;
    }
    else { // USERSPACE: Scaled dimensions are measured against the client's viewport rather than the vector.
-      if (Self->X.scaled()) Self->TargetX = std::round(Self->X * Self->ClientViewport->vpFixedWidth);
-      else if (Self->X.defined()) Self->TargetX = std::round(Self->X);
-      else Self->TargetX = boundX;
+      if (Self->X.scaled()) render.TargetX = std::round(Self->X * render.ClientViewport->vpFixedWidth);
+      else if (Self->X.defined()) render.TargetX = std::round(Self->X);
+      else render.TargetX = boundX;
 
-      if (Self->Y.scaled()) Self->TargetY = std::round(Self->Y * Self->ClientViewport->vpFixedHeight);
-      else if (Self->Y.defined()) Self->TargetY = std::round(Self->Y);
-      else Self->TargetY = boundY;
+      if (Self->Y.scaled()) render.TargetY = std::round(Self->Y * render.ClientViewport->vpFixedHeight);
+      else if (Self->Y.defined()) render.TargetY = std::round(Self->Y);
+      else render.TargetY = boundY;
 
-      if (Self->Width.scaled()) Self->TargetWidth = std::round(Self->Width * Self->ClientViewport->vpFixedWidth);
-      else if (Self->Width.defined()) Self->TargetWidth = Self->Width;
-      else Self->TargetWidth = Self->ClientViewport->vpFixedWidth;
+      if (Self->Width.scaled()) render.TargetWidth = std::round(Self->Width * render.ClientViewport->vpFixedWidth);
+      else if (Self->Width.defined()) render.TargetWidth = Self->Width;
+      else render.TargetWidth = render.ClientViewport->vpFixedWidth;
 
-      if (Self->Height.scaled()) Self->TargetHeight = std::round(Self->Height * Self->ClientViewport->vpFixedHeight);
-      else if (Self->Height.defined()) Self->TargetHeight = Self->Height;
-      else Self->TargetHeight = Self->ClientViewport->vpFixedHeight;
+      if (Self->Height.scaled()) render.TargetHeight = std::round(Self->Height * render.ClientViewport->vpFixedHeight);
+      else if (Self->Height.defined()) render.TargetHeight = Self->Height;
+      else render.TargetHeight = render.ClientViewport->vpFixedHeight;
    }
 }
 
@@ -531,12 +590,13 @@ static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
 {
    kt::Log log(__FUNCTION__);
 
-   auto bi = Self->BankIndex;
+   auto &render = *Self->Render;
+   auto bi = render.BankIndex;
    if (bi >= 255) return log.warning(ERR::ArrayFull);
 
    if (bi >= Self->Bank.size()) Self->Bank.emplace_back(std::make_unique<filter_bitmap>());
 
-   auto clip = Self->scratch_clip();
+   auto clip = render.scratch_clip();
    #ifdef DEBUG_FILTER_BITMAP
       auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, true, Self->UID);
    #else
@@ -545,26 +605,24 @@ static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
 
    if (bmp) {
       bmp->ColourSpace = CS::SRGB;
+      bmp->BlendMode = BLM::AUTO;
+      bmp->Opacity = 255;
       bmp->Flags &= ~BMF::PREMUL;
       *BitmapResult = bmp;
-      Self->BankIndex++;
+      render.BankIndex++;
       return ERR::Okay;
    }
    else return log.warning(ERR::CreateObject);
 }
 
 //********************************************************************************************************************
-// Returns a rendered bitmap that represents the source.  Where possible, if a bitmap is being referenced then that
-// reference will be returned.  Otherwise a new bitmap is allocated and rendered with the effect.  The bitmap must
-// not be freed as they are permanently maintained until the VectorFilter is destroyed.
+// Inputs are published only for the duration of this draw.  Standard sources are populated lazily and shared by
+// readers, just like effect results.
 
-static ERR get_source_bitmap(extFilterEffect *Effect, objBitmap **BitmapResult, filter_input_role Role,
-   size_t Slot)
+static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output, filter_input_role Role, size_t Slot)
 {
    kt::Log log(__FUNCTION__);
-
-   if (not BitmapResult) return log.warning(ERR::NullArgs);
-   *BitmapResult = nullptr;
+   Output = {};
    const auto step = active_filter_step(Effect);
    const size_t index = (Role IS filter_input_role::MIX) ? 1 : Slot;
    if ((not step) or (index >= step->Inputs.size()) or (step->Inputs[index].Role != Role)) {
@@ -572,200 +630,222 @@ static ERR get_source_bitmap(extFilterEffect *Effect, objBitmap **BitmapResult, 
    }
 
    auto filter = Effect->Filter;
+   auto &render = *filter->Render;
    kt::SwitchContext ctx(filter);
    const auto &input = step->Inputs[index];
-   const auto source_type = input.Source;
    log.msg(VLF::BRANCH|VLF::DETAIL, "%s #%d <- ID: #%u, Type: %d", Effect->className(), Effect->UID,
-      input.Producer ? input.Producer->Effect->UID : 0, int(source_type));
+      input.Producer ? input.Producer->Effect->UID : 0, int(input.Source));
    if (not active_filter_step(Effect)) return ERR::InvalidState;
 
-   objBitmap *bmp = nullptr;
-   if (source_type IS VSF::GRAPHIC) {
-      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
-      auto sg = get_source_graphic(filter);
-      if ((not sg) or (not active_filter_step(Effect))) return log.warning(ERR::NoData);
-      gfx::CopyArea(sg, bmp, BAF::NIL, sg->Clip.Left, sg->Clip.Top,
-         sg->Clip.Right - sg->Clip.Left, sg->Clip.Bottom - sg->Clip.Top, bmp->Clip.Left, bmp->Clip.Top);
-   }
-   else if (source_type IS VSF::ALPHA) { // SourceAlpha
-      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
-      auto sg = get_source_graphic(filter);
-      if ((not sg) or (not active_filter_step(Effect))) return log.warning(ERR::NoData);
-      int dy = bmp->Clip.Top;
-      for (int sy = sg->Clip.Top; sy < sg->Clip.Bottom; sy++) {
-         const auto src = (const uint32_t *)(sg->Data + (sy * sg->LineWidth));
-         auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
-         int dx = bmp->Clip.Left;
-         for (int sx = sg->Clip.Left; sx < sg->Clip.Right; sx++) dest[dx++] = src[sx] & 0xff000000;
-         dy++;
-      }
-   }
-   else if (source_type IS VSF::BKGD) {
-      // "Represents an image snapshot of the canvas under the filter region at the time that the filter element is invoked."
-      // NOTE: The client needs to specify 'enable-background' in the nearest container element in order to indicate where the background is coming from;
-      // additionally it serves as a marker for graphics to be rendered to a separate bitmap (essential for coping with any transformations in the scene graph).
-      //
-      // Refer to enable-background support in scene_draw.cpp
-
-      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
-
-      gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0x00000000, BAF::FILL);
-      if ((filter->BkgdBitmap) and ((filter->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         // The renderer shifts Data for scene-coordinate drawing.  CopyArea expects local bitmap coordinates.
-         auto save_data = filter->BkgdBitmap->offset(filter->BkgdOriginX, filter->BkgdOriginY);
-         gfx::CopyArea(filter->BkgdBitmap, bmp, BAF::NIL,
-            filter->VectorClip.left - filter->BkgdOriginX, filter->VectorClip.top - filter->BkgdOriginY,
-            filter->VectorClip.width(), filter->VectorClip.height(), bmp->Clip.Left, bmp->Clip.Top);
-         filter->BkgdBitmap->Data = save_data;
-      }
-   }
-   else if (source_type IS VSF::BKGD_ALPHA) {
-      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return log.warning(error);
-      gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0x00000000, BAF::FILL);
-      if ((filter->BkgdBitmap) and ((filter->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         int src_left = std::max(filter->VectorClip.left, filter->BkgdBitmap->Clip.Left + filter->BkgdOriginX);
-         int src_top = std::max(filter->VectorClip.top, filter->BkgdBitmap->Clip.Top + filter->BkgdOriginY);
-         int src_right = std::min(filter->VectorClip.right, filter->BkgdBitmap->Clip.Right + filter->BkgdOriginX);
-         int src_bottom = std::min(filter->VectorClip.bottom, filter->BkgdBitmap->Clip.Bottom + filter->BkgdOriginY);
-
-         int dest_x = bmp->Clip.Left + (src_left - filter->VectorClip.left);
-         int dest_y = bmp->Clip.Top + (src_top - filter->VectorClip.top);
-
-         if (dest_x < bmp->Clip.Left) {
-            src_left += bmp->Clip.Left - dest_x;
-            dest_x = bmp->Clip.Left;
-         }
-
-         if (dest_y < bmp->Clip.Top) {
-            src_top += bmp->Clip.Top - dest_y;
-            dest_y = bmp->Clip.Top;
-         }
-
-         int width = std::min(src_right - src_left, bmp->Clip.Right - dest_x);
-         int height = std::min(src_bottom - src_top, bmp->Clip.Bottom - dest_y);
-
-         if ((width > 0) and (height > 0)) {
-            int dy = dest_y;
-            for (int sy=src_top; sy < src_top + height; sy++) {
-               auto src = (uint32_t *)(filter->BkgdBitmap->Data + (sy * filter->BkgdBitmap->LineWidth));
-               auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
-               int dx = dest_x;
-               for (int sx=src_left; sx < src_left + width; sx++) {
-                  dest[dx++] = src[sx] & 0xff000000;
-               }
-               dy++;
-            }
-         }
-      }
-   }
-   else if (source_type IS VSF::REFERENCE) {
-      bmp = input.Producer->Result;
-      if (not bmp) {
+   if (input.Source IS VSF::REFERENCE) {
+      if (not input.Producer->Result.Bitmap) {
          return filter_input_error(Effect, Role, Slot, ERR::NoData, "producer has no result in this draw",
             input.Producer->Effect->UID);
       }
+      Output = input.Producer->Result;
+      return ERR::Okay;
    }
-   else if (source_type IS VSF::NONE) {
-      *BitmapResult = nullptr;
-      return ERR::Continue;
-   }
-   else {
-      log.warning("Effect source %d is not supported.", int(source_type));
-      return ERR::NoSupport;
+   if (input.Source IS VSF::NONE) return ERR::Continue;
+   if (input.Source IS VSF::GRAPHIC) {
+      auto error = get_source_graphic(filter, Output);
+      if (error != ERR::Okay) return error;
+      if (not active_filter_step(Effect)) return ERR::InvalidState;
+      return ERR::Okay;
    }
 
-   #if defined(EXPORT_FILTER_BITMAP) && defined (DEBUG_FILTER_BITMAP)
-      save_bitmap(bmp, std::to_string(filter->UID) + "_" + std::to_string(filter->ClientVector->UID) + "_source");
-   #endif
+   filter_surface_view *source;
+   switch (input.Source) {
+      case VSF::ALPHA:      source = &render.SourceAlpha; break;
+      case VSF::BKGD:       source = &render.Background; break;
+      case VSF::BKGD_ALPHA: source = &render.BackgroundAlpha; break;
+      default: return log.warning(ERR::NoSupport);
+   }
 
-   if (not active_filter_step(Effect)) return ERR::InvalidState;
-   *BitmapResult = bmp;
+   if (not source->Bitmap) {
+      objBitmap *bmp;
+      if (auto error = get_banked_bitmap(filter, &bmp); error != ERR::Okay) return error;
+      if (not active_filter_step(Effect)) return ERR::InvalidState;
+
+      if (input.Source IS VSF::ALPHA) {
+         filter_surface_view graphic;
+         if (auto error = get_source_graphic(filter, graphic); error != ERR::Okay) return error;
+         if (not active_filter_step(Effect)) return ERR::InvalidState;
+         for (int y = graphic.Valid.top; y < graphic.Valid.bottom; y++) {
+            const auto src = (const uint32_t *)graphic.row(y);
+            const auto dest = (uint32_t *)(bmp->Data + std::ptrdiff_t(y) * bmp->LineWidth);
+            for (int x = graphic.Valid.left; x < graphic.Valid.right; x++) dest[x] = src[x] & 0xff000000;
+         }
+      }
+      else {
+         // The destination is initially transparent, including pixels outside the captured background.
+         gfx::DrawRectangle(bmp, 0, 0, bmp->Width, bmp->Height, 0, BAF::FILL);
+         auto background = render.BkgdBitmap;
+         if (background and ((background->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
+            const auto &clip = render.VectorClip;
+            auto save_data = background->offset(render.BkgdOriginX, render.BkgdOriginY);
+            auto restore_data = kt::Defer([&]() { background->Data = save_data; });
+            const int left = clip.left - render.BkgdOriginX;
+            const int top = clip.top - render.BkgdOriginY;
+            if (input.Source IS VSF::BKGD) {
+               if (auto error = copy_filter_bitmap(background, bmp, BAF::NIL, left, top,
+                   clip.width(), clip.height(), 0, 0); error != ERR::Okay) return error;
+               if (background->ColourSpace IS CS::LINEAR_RGB) {
+                  bmp->ColourSpace = CS::LINEAR_RGB;
+                  if (auto error = bmp->convertToRGB(); error != ERR::Okay) return error;
+               }
+            }
+            else {
+               const int x0 = std::max(left, background->Clip.Left);
+               const int x1 = std::min(left + clip.width(), background->Clip.Right);
+               const int y0 = std::max(top, background->Clip.Top);
+               const int y1 = std::min(top + clip.height(), background->Clip.Bottom);
+               for (int y = y0; y < y1; y++) {
+                  const auto src = (const uint32_t *)(background->Data + std::ptrdiff_t(y) * background->LineWidth);
+                  const auto dest = (uint32_t *)(bmp->Data + std::ptrdiff_t(y - top) * bmp->LineWidth);
+                  for (int x = x0; x < x1; x++) dest[x - left] = src[x] & 0xff000000;
+               }
+            }
+         }
+      }
+
+      *source = filter_view(render, bmp);
+   }
+
+   Output = *source;
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-// Render the vector client(s) to an internal bitmap that can be used for SourceGraphic and SourceAlpha input.
-// If the referenced vector has no content then the result is a bitmap cleared to 0x00000000, as per SVG specs.
-// Rendering will occur only once to SourceGraphic, so multiple calls to this function in a filter pipeline are OK.
-//
-// TODO: It would be efficient to hook into the dirty markers of the client vector so that re-rendering
-// occurs only in the event that the client has been modified.
-
-static objBitmap * get_source_graphic(extVectorFilter *Self)
+static ERR get_source_bitmap(extFilterEffect *Effect, const objBitmap **Bitmap, filter_input_role Role, size_t Slot)
 {
-   kt::Log log(__FUNCTION__);
+   filter_surface_view source;
+   auto error = get_source_view(Effect, source, Role, Slot);
+   *Bitmap = (error IS ERR::Okay) ? source.Bitmap : nullptr;
+   return error;
+}
 
-   if (!Self->ClientVector) {
-      log.warning("No client vector defined.");
-      return nullptr;
+// Decode before premultiplying.  The filter bank uses a common RGBA8 layout, so a working copy preserves the
+// source bytes exactly before the bitmap conversion routines perform their usual rounding.
+
+static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_view &Source, CS Encoding,
+   filter_surface_view &Output)
+{
+   if (not active_filter_step(Effect)) return ERR::InvalidState;
+   if ((Source.Alpha IS filter_alpha::PREMULTIPLIED) and (Source.Encoding IS Encoding)) {
+      Output = Source;
+      return ERR::Okay;
    }
 
-   if (Self->Rendered) return Self->SourceGraphic.Bitmap; // Source bitmap already drawn at the correct size.
+   auto filter = Effect->Filter;
+   objBitmap *work;
+   if (auto error = get_banked_bitmap(filter, &work); error != ERR::Okay) return error;
+   if (not active_filter_step(Effect)) return ERR::InvalidState;
+
+   const auto &valid = Source.Valid;
+   for (int y = valid.top; y < valid.bottom; y++) {
+      constexpr int pixel_size = 4;
+      const auto start = valid.left * pixel_size;
+      copymem(Source.row(y) + start, work->Data + std::ptrdiff_t(y) * work->LineWidth + start,
+         size_t(valid.width()) * pixel_size);
+   }
+   work->ColourSpace = Source.Encoding;
+   if (Source.Alpha IS filter_alpha::PREMULTIPLIED) {
+      work->Flags |= BMF::PREMUL;
+      if (auto error = work->demultiply(); error != ERR::Okay) return error;
+   }
+   if (Source.Encoding != Encoding) {
+      auto error = (Encoding IS CS::LINEAR_RGB) ? work->convertToLinear() : work->convertToRGB();
+      if (error != ERR::Okay) return error;
+   }
+   if (auto error = work->premultiply(); error != ERR::Okay) return error;
+   Output = filter_view(*filter->Render, work);
+   return ERR::Okay;
+}
+
+// Suppress only this pipeline in the private scene that is drawing its raw input.  A request from any other
+// scene will still detect an active instance, including indirect recursion through another filter.
+
+static ERR draw_filter_capture(extVectorFilter *Filter, extVectorScene *Scene, extVector *Root,
+   objBitmap *Bitmap, int X, int Y)
+{
+   filter_capture capture { Filter, Root };
+   auto saved_capture = std::exchange(Scene->FilterCapture, &capture);
+   auto saved_bitmap = std::exchange(Scene->Bitmap, Bitmap);
+   auto saved_x = std::exchange(Scene->RenderOriginX, X);
+   auto saved_y = std::exchange(Scene->RenderOriginY, Y);
+   auto restore = kt::Defer([&]() {
+      Scene->RenderOriginX = saved_x;
+      Scene->RenderOriginY = saved_y;
+      Scene->Bitmap = saved_bitmap;
+      Scene->FilterCapture = saved_capture;
+   });
+
+   if (auto error = acDraw(Scene); error != ERR::Okay) return error;
+   return capture.Error;
+}
+
+//********************************************************************************************************************
+// Render the client once per draw for SourceGraphic and SourceAlpha.  A failed capture is never published.
+
+static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output)
+{
+   auto &render = *Self->Render;
+   if (render.SourceGraphic.Bitmap) {
+      Output = render.SourceGraphic;
+      return ERR::Okay;
+   }
 
    kt::SwitchContext ctx(Self);
-
-   // The bitmap covers the processing region only, using the same local coordinates as the banked bitmaps.  The
-   // client is rendered with a matching origin, which allows content to the left of or above the page to be drawn.
-
-   auto clip = Self->scratch_clip();
+   auto clip = render.scratch_clip();
    #ifdef DEBUG_FILTER_BITMAP
       auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, true, 0, "source_graphic");
    #else
       auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, false, 0, "source_graphic");
    #endif
+   if (not sg) return ERR::CreateObject;
 
-   if (!sg) return nullptr;
-
-   // The SourceGraphic is an sRGB-encoded intermediate, so it inherits the target's preference but not its encoding
-   // (LINEAR and NONE).  An explicit Vector.ColourSpace on the client or its ancestors still applies, which is how
-   // SVG content resolves to SRGB.
-
-   auto preference = Self->BkgdBitmap ? Self->BkgdBitmap->BlendMode : BLM::AUTO;
-   if ((preference IS BLM::LINEAR) or (preference IS BLM::NONE)) preference = BLM::AUTO;
-
-   sg->BlendMode   = preference;
-   sg->ColourSpace = CS::SRGB;
-
-   if (!Self->SourceScene) {
-      if ((Self->SourceScene = extVectorScene::create::local(
-            fl::PageWidth(Self->ClientViewport->Scene->PageWidth),
-            fl::PageHeight(Self->ClientViewport->Scene->PageHeight)))) {
-
-         if (!extVectorViewport::create::global(fl::Owner(Self->SourceScene->UID))) return nullptr;
+   const auto scene = render.ClientViewport->Scene;
+   if (not Self->SourceScene) {
+      auto source_scene = extVectorScene::create::local(fl::PageWidth(scene->PageWidth),
+         fl::PageHeight(scene->PageHeight));
+      if (not source_scene) return ERR::CreateObject;
+      if (not extVectorViewport::create::global(fl::Owner(source_scene->UID))) {
+         FreeResource(source_scene);
+         return ERR::CreateObject;
       }
-      else return nullptr;
+      Self->SourceScene = source_scene;
    }
-   else if ((Self->ClientViewport->Scene->PageWidth > Self->SourceScene->PageWidth) or
-            (Self->ClientViewport->Scene->PageHeight > Self->SourceScene->PageHeight)) {
-      acResize(Self->SourceScene, Self->ClientViewport->Scene->PageWidth, Self->ClientViewport->Scene->PageHeight, 0);
+   else if ((scene->PageWidth != Self->SourceScene->PageWidth) or
+            (scene->PageHeight != Self->SourceScene->PageHeight)) {
+      if (auto error = acResize(Self->SourceScene, scene->PageWidth, scene->PageHeight, 0); error != ERR::Okay) {
+         return error;
+      }
+      mark_dirty(Self->SourceScene->Viewport, RC::DIRTY);
    }
 
-   // The client is drawn outside of its scene graph, so the viewport supplies the colour space that the client
-   // resolved to in the renderer.  The filter's own ColourSpace applies to effect processing only.
+   // The source is sRGB encoded.  It inherits the destination's blending preference and the client's resolved
+   // colour space, independently of the colour space requested for filter arithmetic.
+   auto preference = render.BkgdBitmap ? render.BkgdBitmap->BlendMode : BLM::AUTO;
+   if ((preference IS BLM::LINEAR) or (preference IS BLM::NONE)) preference = BLM::AUTO;
+   sg->BlendMode = preference;
+   sg->ColourSpace = CS::SRGB;
+   sg->Flags &= ~BMF::PREMUL;
+   gfx::DrawRectangle(sg, 0, 0, sg->Width, sg->Height, 0, BAF::FILL);
 
-   ((extVector *)Self->SourceScene->Viewport)->ColourSpace = Self->ClientColourSpace;
+   auto viewport = (extVectorViewport *)Self->SourceScene->Viewport;
+   auto client = render.ClientVector;
+   SharedObjectAccess access(client);
+   if (not access.granted()) return access.error;
+   auto saved_colour = std::exchange(viewport->ColourSpace, render.ClientColourSpace);
+   auto restore_colour = kt::Defer([&]() { viewport->ColourSpace = saved_colour; });
 
-   auto const save_child = Self->SourceScene->Viewport->Child;
-   Self->SourceScene->Viewport->Child = Self->ClientVector;
+   auto error = draw_filter_capture(Self, Self->SourceScene, client, sg, render.VectorClip.left, render.VectorClip.top);
+   if (error != ERR::Okay) return error;
+   if ((Self->GraphRevision != render.Revision) or Self->collecting() or client->collecting()) {
+      return ERR::InvalidState;
+   }
 
-   auto const save_vector = Self->ClientVector->Next; // Switch off the Next pointer to prevent processing of siblings.
-   Self->ClientVector->Next = nullptr;
-   Self->Disabled = true; // Turning off the filter is required to prevent infinite recursion.
-
-   gfx::DrawRectangle(sg, 0, 0, sg->Width, sg->Height, 0x00000000, BAF::FILL);
-   Self->SourceScene->Bitmap = sg;
-   Self->SourceScene->RenderOriginX = Self->VectorClip.left;
-   Self->SourceScene->RenderOriginY = Self->VectorClip.top;
-   acDraw(Self->SourceScene);
-   Self->SourceScene->RenderOriginX = 0;
-   Self->SourceScene->RenderOriginY = 0;
-
-   Self->Disabled = false;
-   Self->ClientVector->Next = save_vector;
-   Self->SourceScene->Viewport->Child = save_child;
-
-   Self->Rendered = true;
-   return sg;
+   Output = render.SourceGraphic = filter_view(render, sg);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -858,6 +938,7 @@ static void filter_reach(extVectorFilter *Self, double &ReachX, double &ReachY)
 
 static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector)
 {
+   auto &render = *Self->Render;
    kt::Log log(__FUNCTION__);
 
    const double container_width  = Viewport->vpFixedWidth;
@@ -888,40 +969,40 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
          // Match the rounded target region used by effects, then map all four corners to the scene.
          auto region = diagonal_region(Self, std::round(bounds.left), std::round(bounds.top),
             std::round(bound_width), std::round(bound_height));
-         Self->VectorClip.left   = std::round(region.left);
-         Self->VectorClip.top    = std::round(region.top);
-         Self->VectorClip.right  = Self->VectorClip.left + std::round(region.width());
-         Self->VectorClip.bottom = Self->VectorClip.top + std::round(region.height());
+         render.VectorClip.left   = std::round(region.left);
+         render.VectorClip.top    = std::round(region.top);
+         render.VectorClip.right  = render.VectorClip.left + std::round(region.width());
+         render.VectorClip.bottom = render.VectorClip.top + std::round(region.height());
          if (transform_region) {
             agg::path_storage rect;
-            rect.move_to(Self->VectorClip.left, Self->VectorClip.top);
-            rect.line_to(Self->VectorClip.right, Self->VectorClip.top);
-            rect.line_to(Self->VectorClip.right, Self->VectorClip.bottom);
-            rect.line_to(Self->VectorClip.left, Self->VectorClip.bottom);
+            rect.move_to(render.VectorClip.left, render.VectorClip.top);
+            rect.line_to(render.VectorClip.right, render.VectorClip.top);
+            rect.line_to(render.VectorClip.right, render.VectorClip.bottom);
+            rect.line_to(render.VectorClip.left, render.VectorClip.bottom);
             rect.close_polygon();
 
             agg::conv_transform<agg::path_storage, agg::trans_affine> path(rect, Vector->Transform);
             auto clip = get_bounds(path);
-            Self->VectorClip = { int(std::floor(clip.left)), int(std::floor(clip.top)),
+            render.VectorClip = { int(std::floor(clip.left)), int(std::floor(clip.top)),
                int(std::ceil(clip.right)), int(std::ceil(clip.bottom)) };
          }
       }
       else {
-         if (Self->X.defined()) Self->VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
-         else Self->VectorClip.left = std::round(bounds.left);
+         if (Self->X.defined()) render.VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
+         else render.VectorClip.left = std::round(bounds.left);
 
-         if (Self->Y.defined()) Self->VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
-         else Self->VectorClip.top = std::round(bounds.top);
+         if (Self->Y.defined()) render.VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
+         else render.VectorClip.top = std::round(bounds.top);
 
          if (Self->Width.defined()) {
-            Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
+            render.VectorClip.right = render.VectorClip.left + std::round(Self->Width * bound_width);
          }
-         else Self->VectorClip.right = Self->VectorClip.left + std::round(bound_width);
+         else render.VectorClip.right = render.VectorClip.left + std::round(bound_width);
 
          if (Self->Height.defined()) {
-            Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
+            render.VectorClip.bottom = render.VectorClip.top + std::round(Self->Height * bound_height);
          }
-         else Self->VectorClip.bottom = Self->VectorClip.top + std::round(bound_height);
+         else render.VectorClip.bottom = render.VectorClip.top + std::round(bound_height);
       }
    }
    else { // USERSPACE
@@ -950,7 +1031,7 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
       rect.close_polygon();
 
       agg::conv_transform<agg::path_storage, agg::trans_affine> path(rect, Vector->Transform);
-      Self->VectorClip = get_bounds<agg::conv_transform<agg::path_storage, agg::trans_affine>, int>(path);
+      render.VectorClip = get_bounds<agg::conv_transform<agg::path_storage, agg::trans_affine>, int>(path);
    }
 
    // The margin is limited so that unbounded effects do not process an excessive area around the page, and it is
@@ -963,24 +1044,24 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
    double reach_x, reach_y;
    filter_reach(Self, reach_x, reach_y);
 
-   const auto region = Self->VectorClip;
+   const auto region = render.VectorClip;
    auto limit_region = [&](int MarginX, int MarginY) {
-      Self->VectorClip.left   = std::max(region.left, -MarginX);
-      Self->VectorClip.top    = std::max(region.top, -MarginY);
-      Self->VectorClip.right  = std::min(region.right, page_width + MarginX);
-      Self->VectorClip.bottom = std::min(region.bottom, page_height + MarginY);
+      render.VectorClip.left   = std::max(region.left, -MarginX);
+      render.VectorClip.top    = std::max(region.top, -MarginY);
+      render.VectorClip.right  = std::min(region.right, page_width + MarginX);
+      render.VectorClip.bottom = std::min(region.bottom, page_height + MarginY);
    };
 
    limit_region(int(std::ceil(std::min(reach_x, max_margin))), int(std::ceil(std::min(reach_y, max_margin))));
 
-   const int64_t area = int64_t(Self->VectorClip.width()) * int64_t(Self->VectorClip.height());
+   const int64_t area = int64_t(render.VectorClip.width()) * int64_t(render.VectorClip.height());
    if ((area > MAX_FILTER_MARGIN_AREA) and (area > int64_t(page_width) * int64_t(page_height))) {
       limit_region(0, 0);
    }
 
-   if ((Self->VectorClip.bottom <= Self->VectorClip.top) or (Self->VectorClip.right <= Self->VectorClip.left)) {
-      // This is a common error, and typically triggers from resizing to small coverage areas.
-      return ERR::InvalidDimension;
+   if ((render.VectorClip.bottom <= render.VectorClip.top) or (render.VectorClip.right <= render.VectorClip.left)) {
+      // An empty intersection has no visible output.
+      return ERR::NothingDone;
    }
 
    return ERR::Okay;
@@ -995,8 +1076,9 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
 
 static void compute_subregion(extVectorFilter *Self, const filter_step &Step, const TClipRectangle<double> &Bounds)
 {
-   const TClipRectangle<double> filter_region = { Self->TargetX, Self->TargetY,
-      Self->TargetX + Self->TargetWidth, Self->TargetY + Self->TargetHeight };
+   auto &render = *Self->Render;
+   const TClipRectangle<double> filter_region = { render.TargetX, render.TargetY,
+      render.TargetX + render.TargetWidth, render.TargetY + render.TargetHeight };
 
    TClipRectangle<double> inputs = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
       std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
@@ -1021,8 +1103,8 @@ static void compute_subregion(extVectorFilter *Self, const filter_step &Step, co
       if (effect->Height.defined()) height = effect->Height * Bounds.height();
    }
    else { // Explicit percentages are relative to the client's viewport in user space.
-      const double viewport_width = viewport_coordinate_width(Self->ClientViewport);
-      const double viewport_height = viewport_coordinate_height(Self->ClientViewport);
+      const double viewport_width = viewport_coordinate_width(render.ClientViewport);
+      const double viewport_height = viewport_coordinate_height(render.ClientViewport);
       if (effect->X.scaled()) x = effect->X * viewport_width;
       else if (effect->X.defined()) x = effect->X;
       if (effect->Y.scaled()) y = effect->Y * viewport_height;
@@ -1043,16 +1125,17 @@ static void compute_subregion(extVectorFilter *Self, const filter_step &Step, co
 
 static void clip_to_subregion(extVectorFilter *Self, extFilterEffect *Effect)
 {
+   auto &render = *Self->Render;
    const auto &sub = Effect->Subregion;
-   if ((sub.left <= Self->TargetX) and (sub.top <= Self->TargetY) and
-       (sub.right >= Self->TargetX + Self->TargetWidth) and (sub.bottom >= Self->TargetY + Self->TargetHeight)) {
+   if ((sub.left <= render.TargetX) and (sub.top <= render.TargetY) and
+       (sub.right >= render.TargetX + render.TargetWidth) and (sub.bottom >= render.TargetY + render.TargetHeight)) {
       return;
    }
 
    auto bmp = Effect->Target;
    if ((not bmp) or (bmp->BytesPerPixel != 4)) return;
 
-   auto inverse = Self->Transform;
+   auto inverse = render.Transform;
    const double determinant = inverse.determinant();
    if ((not std::isfinite(determinant)) or (determinant IS 0)) return;
    inverse.invert();
@@ -1069,32 +1152,35 @@ static void clip_to_subregion(extVectorFilter *Self, extFilterEffect *Effect)
 
 //********************************************************************************************************************
 // Main rendering routine for filter effects.  Called by the scene graph renderer whenever a vector uses a filter.
-// ColourSpace is the client's resolved colour space in the renderer, which can be inherited from a vector that is not
+// The caller holds the filter lock through rendering and composition.  ColourSpace is the client's resolved
+// colour space in the renderer, which can be inherited from a vector that is not
 // a physical ancestor, e.g. the viewport that consumes a live pattern.
 
 ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
-   objBitmap *BkgdBitmap, VCS ColourSpace, objBitmap **Output, int BkgdOriginX, int BkgdOriginY)
+   objBitmap *BkgdBitmap, VCS ColourSpace, filter_render_result &Output, int BkgdOriginX, int BkgdOriginY)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Vector) or (not Viewport) or (not Output)) return log.warning(ERR::NullArgs);
-   *Output = nullptr;
-   if (Self->Disabled) return ERR::NothingDone;
-   if (Self->Drawing) return log.warning(ERR::Recursion);
+   Output = {};
+   if ((not Vector) or (not Viewport)) return log.warning(ERR::NullArgs);
 
-   SharedObjectAccess access(Self);
-   if (not access.granted()) return access.error;
+   if (Self->collecting()) return ERR::MarkedForDeletion;
+   if (Self->Render) return ERR::Recursion;
    kt::SwitchContext context(Self);
 
-   Self->Drawing = true;
-   Self->ActiveRevision = Self->GraphRevision;
-   auto graph_changed = [&]() {
-      return (Self->GraphRevision != Self->ActiveRevision) or Self->collecting();
-   };
+   filter_render_context render = {};
+   render.ClientVector = Vector;
+   render.ClientViewport = Viewport;
+   render.BkgdOriginX = BkgdOriginX;
+   render.BkgdOriginY = BkgdOriginY;
+   render.ClientColourSpace = ColourSpace;
+   render.Revision = Self->GraphRevision;
+
+   Self->Render = &render;
+   auto graph_changed = [&]() { return (Self->GraphRevision != render.Revision) or Self->collecting(); };
    bool completed = false;
    auto cleanup = kt::Defer([&]() {
-      Self->ActiveStep = nullptr;
-      Self->Drawing = false;
+      Self->Render = nullptr;
       if (not completed) {
          for (auto effect : Self->Effects) effect->Target = nullptr;
       }
@@ -1102,7 +1188,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
    for (auto effect : Self->Effects) effect->Target = nullptr;
    if (Self->Effects.empty()) return log.warning(ERR::FieldNotSet);
-   filter_plan plan;
+   auto &plan = render.Plan;
    if (auto error = prepare_filter_plan(Self, plan); error != ERR::Okay) return error;
 
    CSTRING filter_name = Self->Name;
@@ -1112,31 +1198,24 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    log.msg(VLF::BRANCH|VLF::DETAIL, "Rendering '%s' filter content for %s #%d '%s'.", filter_name,
       Vector->Class->ClassName.c_str(), Vector->UID, vector_name);
 
-   Self->ClientViewport = Viewport;
-   Self->ClientVector   = Vector;
-   Self->BkgdBitmap     = (plan.ReadsBackground or plan.ReadsSourceGraphic) ? BkgdBitmap : nullptr;
-   Self->BkgdOriginX = BkgdOriginX;
-   Self->BkgdOriginY = BkgdOriginY;
-   Self->ClientColourSpace = ColourSpace;
-   Self->Rendered       = false; // Set to true when SourceGraphic is rendered
-   Self->BankIndex      = 0;
+   render.BkgdBitmap = (plan.ReadsBackground or plan.ReadsSourceGraphic) ? BkgdBitmap : nullptr;
 
-   // Calculate Self->Target* and Self->Bound* values.  The reach of the effects depends on these, so they are
+   // Calculate the target and client bounds.  The reach of the effects depends on these, so they are
    // computed before the clip region.
 
    compute_target_area(Self);
 
    if (auto error = set_clip_region(Self, Viewport, Vector); error != ERR::Okay) return error;
 
-   Self->Transform = Vector->Transform;
-   Self->Transform.translate(-Self->VectorClip.left, -Self->VectorClip.top);
+   render.Transform = Vector->Transform;
+   render.Transform.translate(-render.VectorClip.left, -render.VectorClip.top);
 
    // Effect subregions in objectBoundingBox units are relative to the unrounded bounds of the client.
 
    TClipRectangle<double> bounds = { 0, 0, 0, 0 };
    if (Self->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
       bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-      calc_local_boundary(Self->ClientVector, bounds);
+      calc_local_boundary(render.ClientVector, bounds);
    }
 
    if (graph_changed()) {
@@ -1148,7 +1227,6 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    for (auto &step : plan.Steps) {
       const auto effect = step.Effect;
       log.detail("Effect: %s #%u, Consumers: %zu", effect->className(), effect->UID, step.Consumers);
-      Self->ActiveStep = &step;
 
       // Unconsumed intermediates can reuse one cleared scratch surface.  The authored final effect owns its
       // output independently of the number of consumers on any other effect.
@@ -1167,6 +1245,8 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       effect->Target = target;
 
       compute_subregion(Self, step, bounds);
+      render.ActiveStep = &step;
+      auto finish_step = kt::Defer([&]() { render.ActiveStep = nullptr; });
       if (auto error = acDraw(effect); error != ERR::Okay) return log.warning(error);
       if (graph_changed() or effect->collecting()) {
          log.warning("Filter #%d changed while drawing.", Self->UID);
@@ -1175,10 +1255,14 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
       effect->Target = target;
       clip_to_subregion(Self, effect);
-      step.Result = target;
+      if ((target->ColourSpace != CS::SRGB) or ((target->Flags & BMF::PREMUL) != BMF::NIL)) {
+         return log.warning(ERR::InvalidState);
+      }
+      if ((&step IS plan.Final) or step.Consumers) step.Result = filter_view(render, target);
    }
 
-   auto out = plan.Final->Result;
+   const auto &result = plan.Final->Result;
+   auto out = plan.Final->Effect->Target;
 
    #if defined(EXPORT_FILTER_BITMAP) && defined (DEBUG_FILTER_BITMAP)
       save_bitmap(out, std::to_string(Self->UID) + "_" + std::to_string(Vector->UID) + "_output");
@@ -1194,13 +1278,13 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
          for (const auto &slot : Self->Bank) retained_bytes += slot->Data.capacity();
 
          // Every acquired bank slot stays in use until the draw ends.  SourceGraphic is acquired at most once.
-         const auto peak_live_surfaces = int(Self->BankIndex) + int(Self->Rendered);
+         const auto peak_live_surfaces = int(render.BankIndex) + int(render.SourceGraphic.Bitmap != nullptr);
          log.detail("Filter storage: retained_bytes=%zu peak_live_surfaces=%d", retained_bytes, peak_live_surfaces);
       }
    #endif
 
    if (graph_changed()) return log.warning(ERR::InvalidState);
-   *Output = out;
+   Output = { out, result.OriginX, result.OriginY, Self->Opacity };
    completed = true;
    return ERR::Okay;
 }
@@ -1215,7 +1299,7 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 {
    kt::Log log;
 
-   if (Self->Drawing) return log.warning(ERR::InUse);
+   if (Self->Render) return log.warning(ERR::InUse);
 
    auto detached = std::exchange(Self->Effects, {});
    std::vector<OBJECTID> ids;
@@ -1230,7 +1314,6 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 
    Self->GraphRevision++;
    Self->Bank.clear();
-   Self->BankIndex = 0;
 
    // Callbacks and deferred destruction can change ownership while the detached effects are being freed.
    for (auto id : ids) {

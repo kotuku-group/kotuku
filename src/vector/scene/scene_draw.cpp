@@ -189,9 +189,9 @@ private:
 
    void render_fill(VectorState &, extVector &, agg::rasterizer_scanline_aa<> &, extPainter &);
    void render_stroke(VectorState &, extVector &);
-   void copy_filter_bitmap(objBitmap *, extVectorFilter *, BLM, double);
+   void copy_filter_bitmap(const filter_render_result &, BLM, double);
    bool shape_intersects_clip(extVector *);
-   void draw_vectors(extVector *, VectorState &);
+   void draw_vectors(extVector *, VectorState &, bool = true);
    static const agg::trans_affine build_fill_transform(extVector &, bool,  VectorState &);
 
 public:
@@ -632,7 +632,9 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
 
    if ((Bitmap->Clip.Bottom > Bitmap->Height) or (Bitmap->Clip.Right > Bitmap->Width)) {
       // NB: Any code that triggers this warning needs to be fixed.
-      log.warning("Invalid Bitmap clip region: %d %d %d %d; W/H: %dx%d", Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom, Bitmap->Width, Bitmap->Height);
+      log.warning("Invalid Bitmap clip region: %d %d %d %d; W/H: %dx%d", Bitmap->Clip.Left, Bitmap->Clip.Top,
+         Bitmap->Clip.Right, Bitmap->Clip.Bottom, Bitmap->Width, Bitmap->Height);
+      if (Scene->FilterCapture) Scene->FilterCapture->Error = ERR::InvalidDimension;
       return;
    }
 
@@ -643,6 +645,10 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
       mBitmapOriginX = Scene->RenderOriginX;
       mBitmapOriginY = Scene->RenderOriginY;
       auto save_data = Bitmap->offset(-mBitmapOriginX, -mBitmapOriginY);
+      auto restore_origin = kt::Defer([&]() {
+         Bitmap->Data = save_data;
+         mBitmapOriginX = mBitmapOriginY = 0;
+      });
 
       mBitmap = Bitmap;
       mFormat.setBitmap(*Bitmap);
@@ -663,10 +669,6 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
       if (mBitmapOriginX < 0) state.mClip.left = mBitmapOriginX;
       if (mBitmapOriginY < 0) state.mClip.top = mBitmapOriginY;
       draw_vectors((extVector *)Viewport, state);
-
-      Bitmap->Data = save_data;
-      mBitmapOriginX = 0;
-      mBitmapOriginY = 0;
 
       Scene->InputBoundaries = std::move(mInputBounds);
       Scene->SubtreeDirty = false;
@@ -849,43 +851,43 @@ bool SceneRenderer::shape_intersects_clip(extVector *Shape)
 //********************************************************************************************************************
 // Composites a filter's output into the render target.  The output is an sRGB-encoded source image that is drawn 1:1
 // through the render target with the vector's resolved blend mode, so the result is the same whether or not a mask
-// applies.  Filter bitmaps use local coordinates in which (0,0) is the top-left of Filter->VectorClip.  The render
+// applies.  Filter bitmaps use local coordinates in which (0,0) is the result origin in scene coordinates.  The render
 // target is addressed in absolute scene coordinates, including buffered viewport targets because their Data pointer
 // is shifted for rasterisation.
 
-void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filter, BLM BlendMode, double Opacity)
+void SceneRenderer::copy_filter_bitmap(const filter_render_result &Result, BLM BlendMode, double Opacity)
 {
    // Restrict only the final copy.  Filter inputs must retain pixels outside this clip for offsets and blur kernels.
    // The (dest_x, dest_y) values are absolute scene coordinates and (src_x, src_y) are local to the filter bitmap.
 
-   const int origin_x = Filter->VectorClip.left;
-   const int origin_y = Filter->VectorClip.top;
+   auto bitmap = Result.Bitmap;
+   const int origin_x = Result.OriginX;
+   const int origin_y = Result.OriginY;
    const auto &clip = mRenderBase.clip_box();
-   const int dest_x = std::max(Bitmap->Clip.Left + origin_x, clip.x1);
-   const int dest_y = std::max(Bitmap->Clip.Top + origin_y, clip.y1);
-   const int width = std::min(Bitmap->Clip.Right + origin_x, clip.x2 + 1) - dest_x;
-   const int height = std::min(Bitmap->Clip.Bottom + origin_y, clip.y2 + 1) - dest_y;
+   const int dest_x = std::max(bitmap->Clip.Left + origin_x, clip.x1);
+   const int dest_y = std::max(bitmap->Clip.Top + origin_y, clip.y1);
+   const int width = std::min(bitmap->Clip.Right + origin_x, clip.x2 + 1) - dest_x;
+   const int height = std::min(bitmap->Clip.Bottom + origin_y, clip.y2 + 1) - dest_y;
    const int src_x = dest_x - origin_x;
    const int src_y = dest_y - origin_y;
 
    if ((width <= 0) or (height <= 0)) return;
 
    // The source graphic already includes the client's opacity; only ancestor and filter opacity remain.
-   const double opacity = std::clamp(Filter->Opacity * Opacity, 0.0, 1.0);
+   const double opacity = std::clamp(Result.Opacity * Opacity, 0.0, 1.0);
 
    // Fast path: CopyArea() blends sRGB with SIMD and is pixel-identical to the pixel format's SRGB blend.  Its
    // BAF::COPY mode ignores the source opacity, so it is limited to fully opaque, unmasked output.
 
    if ((BlendMode IS BLM::SRGB) and (mClipStack.empty()) and (opacity >= 1.0)) {
-      Bitmap->Opacity = 255;
       if (mBitmapOriginX or mBitmapOriginY) {
          // CopyArea() clips against the bitmap dimensions, so a buffered target is addressed in local coordinates.
          auto save_data = mBitmap->offset(mBitmapOriginX, mBitmapOriginY);
-         gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height,
+         auto restore_data = kt::Defer([&]() { mBitmap->Data = save_data; });
+         gfx::CopyArea(bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height,
             dest_x - mBitmapOriginX, dest_y - mBitmapOriginY);
-         mBitmap->Data = save_data;
       }
-      else gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height, dest_x, dest_y);
+      else gfx::CopyArea(bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height, dest_x, dest_y);
       return;
    }
 
@@ -899,7 +901,7 @@ void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filte
       basic_path(raster, dest_x, dest_y, dest_x + width, dest_y + height);
       auto alpha_mask = mClipStack.top().mask();
       agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
-      drawBitmap(masked_scanline, VSM::NEIGHBOUR, mRenderBase, raster, Bitmap, VSPREAD::CLIP, opacity, nullptr,
+      drawBitmap(masked_scanline, VSM::NEIGHBOUR, mRenderBase, raster, bitmap, VSPREAD::CLIP, opacity, nullptr,
          -origin_x, -origin_y);
       return;
    }
@@ -908,7 +910,7 @@ void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filte
    // pixel-aligned rectangle (a 1:1 NEIGHBOUR copy at full coverage, with the alpha scaled by the opacity as in
    // drawBitmapRender()), without the cost of rasterising the rectangle and generating spans.
 
-   agg::pixfmt_psl source(*Bitmap); // Filter bitmaps are always 32-bit
+   agg::pixfmt_psl source(*bitmap); // Filter bitmaps are always 32-bit
    const auto order = source.mPixelOrder;
    agg::span_allocator<agg::rgba8> span_alloc;
    agg::rgba8 *span = span_alloc.allocate(width);
@@ -932,8 +934,9 @@ void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filte
 
 // This is the main routine for parsing the vector tree for drawing.
 
-void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentState) {
-   for (auto shape=CurrentVector; shape; shape=(extVector *)shape->Next) {
+void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentState, bool IncludeSiblings)
+{
+   for (auto shape = CurrentVector; shape; shape = IncludeSiblings ? (extVector *)shape->Next : nullptr) {
       kt::Log log(__FUNCTION__);
       VectorState state = VectorState(ParentState);
 
@@ -972,7 +975,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       state.mBlendMode = resolve_blend_mode(*mBitmap, state.mColourSpace);
 
       auto filter = (extVectorFilter *)shape->Filter;
-      if ((filter) and (not filter->Disabled)) {
+      if (filter and ((not Scene->FilterCapture) or (Scene->FilterCapture->SuppressedFilter != filter))) {
          #ifdef DBG_DRAW
             log.traceBranch("Rendering filter for %s.", get_name(shape));
          #endif
@@ -982,10 +985,20 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          auto container = mView;
          if ((not container) and (shape->classID() IS CLASSID::VECTORVIEWPORT)) container = (extVectorViewport *)shape;
 
-         objBitmap *bmp;
-         if ((container) and (not render_filter(filter, container, shape, mBitmap, state.mColourSpace, &bmp,
-               mBitmapOriginX, mBitmapOriginY))) {
-            copy_filter_bitmap(bmp, filter, state.mBlendMode, state.mOpacity);
+         filter_render_result output;
+         const auto filter_id = filter->UID;
+         ScopedObjectAccess access(filter);
+         auto error = access.error;
+         if (access.granted()) {
+            error = container ? render_filter(filter, container, shape, mBitmap, state.mColourSpace, output,
+               mBitmapOriginX, mBitmapOriginY) : ERR::InvalidState;
+         }
+         if (error IS ERR::Okay) copy_filter_bitmap(output, state.mBlendMode, state.mOpacity);
+         else if (error != ERR::NothingDone) {
+            log.warning("Filter #%d for vector #%d skipped: %s.", filter_id, shape->UID, GetErrorMsg(error));
+            if (auto capture = Scene->FilterCapture; capture and (capture->Error IS ERR::Okay)) {
+               capture->Error = error;
+            }
          }
          continue;
       }
@@ -1050,9 +1063,11 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          if ((not has_fill_pattern) and shape->ExtFill) {
             has_fill_pattern = std::ranges::any_of(*shape->ExtFill, [](const auto &Fill) { return Fill.Pattern; });
          }
-         if ((shape->Child) or (has_input_boundary(shape)) or has_fill_pattern) {
-            auto view = (extVectorViewport *)shape;
-
+         auto view = (extVectorViewport *)shape;
+         auto capture_root = (Scene->FilterCapture and (view IS (extVectorViewport *)Scene->Viewport)) ?
+            Scene->FilterCapture->Root : nullptr;
+         auto child = capture_root ? capture_root : (extVector *)view->Child;
+         if (child or has_input_boundary(shape) or has_fill_pattern) {
             if (view->vpOverflowX != VOF::INHERIT) state.mOverflowX = view->vpOverflowX;
             if (view->vpOverflowY != VOF::INHERIT) state.mOverflowY = view->vpOverflowY;
 
@@ -1176,7 +1191,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   }
                }
 
-               if (view->Child) {
+               if (child) {
                   constexpr int MAX_AREA = 4096 * 4096; // Maximum allowable area for enabling a viewport buffer
 
                   // The buffer covers the viewport's device-space bounds, aligned to whole pixels, so that it can be
@@ -1280,7 +1295,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                         std::stack<ClipBuffer> save_clip_stack;
                         save_clip_stack.swap(mClipStack);
 
-                        draw_vectors((extVector *)view->Child, child_state);
+                        draw_vectors(child, child_state, not capture_root);
 
                         mClipStack.swap(save_clip_stack);
 
@@ -1335,7 +1350,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                            &transform);
                      }
                   }
-                  else draw_vectors((extVector *)view->Child, state);
+                  else draw_vectors(child, state, not capture_root);
                }
 
                if (view->ClipMask) mClipStack.pop();

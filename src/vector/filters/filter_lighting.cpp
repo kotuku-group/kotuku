@@ -263,7 +263,7 @@ class extLightingFX : public extFilterEffect {
       map_height result = { Scale, Scale, 0.0 };
       if (not (UnitXProvided or UnitYProvided)) return result;
 
-      auto &t = Filter->ClientVector->Transform;
+      auto &t = Filter->Render->ClientVector->Transform;
       double scale_x = sqrt((t.sx * t.sx) + (t.shy * t.shy));
       double scale_y = sqrt((t.shx * t.shx) + (t.sy * t.sy));
       if (scale_x <= 0.0) scale_x = 1.0;
@@ -272,11 +272,11 @@ class extLightingFX : public extFilterEffect {
       double bound_x = 1.0, bound_y = 1.0;
       if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
          if (Filter->AspectRatio IS VFA::NONE) {
-            bound_x = bound_y = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            bound_x = bound_y = dist(0, 0, Filter->Render->BoundWidth, Filter->Render->BoundHeight) * INV_SQRT2;
          }
          else {
-            bound_x = Filter->BoundWidth;
-            bound_y = Filter->BoundHeight;
+            bound_x = Filter->Render->BoundWidth;
+            bound_y = Filter->Render->BoundHeight;
          }
       }
 
@@ -308,9 +308,9 @@ class extLightingFX : public extFilterEffect {
       uint8_t, double Occlusion = 1.0);
    inline void specular_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double Occlusion = 1.0, double Exponent = 0);
-   void render_distant(int, int, objBitmap *, const point3 &, double, const map_height &, int, int);
-   void render_spotlight(int, int, objBitmap *, const point3 &, double, const map_height &, int, int);
-   void render_point(int, int, objBitmap *, const point3 &, double, const map_height &, int, int);
+   void render_distant(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
+   void render_spotlight(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
+   void render_point(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
    double reach() const;
 
    // True if the enhanced pipeline is used: the scene is not bound to an SVG standard and a feature is enabled.
@@ -324,7 +324,7 @@ class extLightingFX : public extFilterEffect {
    bool boost_detail(double Sigma) const;
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
-   void draw_enhanced(objBitmap *, const point3 &, double, const map_height &, double, int, int);
+   void draw_enhanced(const objBitmap *, const point3 &, double, const map_height &, double, int, int);
    template <class DELTA, class COLOUR>
    void render_enhanced(int, int, const struct lit_surface &, int, DELTA, COLOUR);
 };
@@ -410,8 +410,8 @@ inline void extLightingFX::specular_light(const point3 &Normal, const point3 &ST
 
 //********************************************************************************************************************
 
-void extLightingFX::render_distant(int StartY, int EndY, objBitmap *Bitmap, const point3 &Light, double spot_height,
-   const map_height &NormalHeight, int Width, int Height)
+void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap, const point3 &Light,
+   double SpotHeight, const map_height &NormalHeight, int Width, int Height)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
    const uint8_t G = Target->ColourFormat->GreenPos>>3;
@@ -419,11 +419,12 @@ void extLightingFX::render_distant(int StartY, int EndY, objBitmap *Bitmap, cons
    const uint8_t A = Target->ColourFormat->AlphaPos>>3;
    const auto bpp = Bitmap->BytesPerPixel;
 
-   auto input_base = (uint8_t *)(Bitmap->Data + (Bitmap->Clip.Left * bpp) + (Bitmap->Clip.Top * Bitmap->LineWidth));
+   const uint8_t *input_base = Bitmap->Data + (Bitmap->Clip.Left * bpp) +
+      (Bitmap->Clip.Top * Bitmap->LineWidth);
    auto dest_base = (uint8_t *)(Target->Data + (Target->Clip.Left * bpp) + (Target->Clip.Top * Target->LineWidth));
 
    for (int y=StartY; y < EndY; ++y) {
-      uint8_t *input_row = input_base + y * Bitmap->LineWidth;
+      const uint8_t *input_row = input_base + y * Bitmap->LineWidth;
       uint8_t *dest_row = dest_base + y * Target->LineWidth;
 
       // Prefetch the next few rows while processing current row
@@ -488,8 +489,8 @@ void extLightingFX::render_distant(int StartY, int EndY, objBitmap *Bitmap, cons
 
 //********************************************************************************************************************
 
-void extLightingFX::render_spotlight(int StartY, int EndY, objBitmap *Bitmap, const point3 &Light, double spot_height,
-   const map_height &NormalHeight, int Width, int Height)
+void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitmap, const point3 &Light,
+   double SpotHeight, const map_height &NormalHeight, int Width, int Height)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
    const uint8_t G = Target->ColourFormat->GreenPos>>3;
@@ -497,18 +498,19 @@ void extLightingFX::render_spotlight(int StartY, int EndY, objBitmap *Bitmap, co
    const uint8_t A = Target->ColourFormat->AlphaPos>>3;
    const auto bpp = Bitmap->BytesPerPixel;
 
-   auto input_base = (uint8_t *)(Bitmap->Data + (Bitmap->Clip.Left * bpp) + (Bitmap->Clip.Top * Bitmap->LineWidth));
+   const uint8_t *input_base = Bitmap->Data + (Bitmap->Clip.Left * bpp) +
+      (Bitmap->Clip.Top * Bitmap->LineWidth);
    auto dest_base = (uint8_t *)(Target->Data + (Target->Clip.Left * bpp) + (Target->Clip.Top * Target->LineWidth));
 
    // Compute the light direction vector based on the light source position and the alpha value of the pixel.
-   auto read_light_delta = [&Light, spot_height](double X, double Y, uint8_t alpha_val) -> point3 {
-      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(alpha_val) * (1.0 / 255.0) * spot_height));
+   auto read_light_delta = [&Light, SpotHeight](double X, double Y, uint8_t alpha_val) -> point3 {
+      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(alpha_val) * (1.0 / 255.0) * SpotHeight));
       direction.normalise();
       return direction;
    };
 
    for (int y=StartY; y < EndY; ++y) {
-      uint8_t *input_row = input_base + y * Bitmap->LineWidth;
+      const uint8_t *input_row = input_base + y * Bitmap->LineWidth;
       uint8_t *dest_row = dest_base + y * Target->LineWidth;
 
       // Prefetch the next few rows while processing current row
@@ -576,8 +578,8 @@ void extLightingFX::render_spotlight(int StartY, int EndY, objBitmap *Bitmap, co
 
 //********************************************************************************************************************
 
-void extLightingFX::render_point(int StartY, int EndY, objBitmap *Bitmap, const point3 &Light, double spot_height,
-   const map_height &NormalHeight, int Width, int height)
+void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, const point3 &Light,
+   double SpotHeight, const map_height &NormalHeight, int Width, int Height)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
    const uint8_t G = Target->ColourFormat->GreenPos>>3;
@@ -585,27 +587,28 @@ void extLightingFX::render_point(int StartY, int EndY, objBitmap *Bitmap, const 
    const uint8_t A = Target->ColourFormat->AlphaPos>>3;
    const auto bpp = Bitmap->BytesPerPixel;
 
-   auto input_base = (uint8_t *)(Bitmap->Data + (Bitmap->Clip.Left * bpp) + (Bitmap->Clip.Top * Bitmap->LineWidth));
+   const uint8_t *input_base = Bitmap->Data + (Bitmap->Clip.Left * bpp) +
+      (Bitmap->Clip.Top * Bitmap->LineWidth);
    auto dest_base = (uint8_t *)(Target->Data + (Target->Clip.Left * bpp) + (Target->Clip.Top * Target->LineWidth));
 
    // Compute the light direction vector based on the light source position and the alpha value of the pixel.
-   auto read_light_delta = [&Light, spot_height](double X, double Y, uint8_t alpha_val) -> point3 {
-      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(alpha_val) * (1.0 / 255.0) * spot_height));
+   auto read_light_delta = [&Light, SpotHeight](double X, double Y, uint8_t alpha_val) -> point3 {
+      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(alpha_val) * (1.0 / 255.0) * SpotHeight));
       direction.normalise();
       return direction;
    };
 
    for (int y=StartY; y < EndY; ++y) {
-      uint8_t *input_row = input_base + y * Bitmap->LineWidth;
+      const uint8_t *input_row = input_base + y * Bitmap->LineWidth;
       uint8_t *dest_row = dest_base + y * Target->LineWidth;
 
       // Prefetch the next few rows while processing current row
-      if (y + 2 < std::min(height, EndY)) prefetchNextRow(input_base + (y + 2) * Bitmap->LineWidth, Width, Bitmap->BytesPerPixel);
-      if (y + 3 < std::min(height, EndY)) prefetchNextRow(input_base + (y + 3) * Bitmap->LineWidth, Width, Bitmap->BytesPerPixel);
+      if (y + 2 < std::min(Height, EndY)) prefetchNextRow(input_base + (y + 2) * Bitmap->LineWidth, Width, bpp);
+      if (y + 3 < std::min(Height, EndY)) prefetchNextRow(input_base + (y + 3) * Bitmap->LineWidth, Width, bpp);
 
       const uint8_t *row0 = (y IS 0) ? input_row : input_row - Bitmap->LineWidth;
       const uint8_t *row1 = input_row;
-      const uint8_t *row2 = (y IS height-1) ? input_row : input_row + Bitmap->LineWidth;
+      const uint8_t *row2 = (y IS Height-1) ? input_row : input_row + Bitmap->LineWidth;
 
       auto dptr = dest_row;
       std::array<uint8_t, 9> m;
@@ -678,7 +681,7 @@ static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
 
 ERR extLightingFX::draw()
 {
-   objBitmap *bmp;
+   const objBitmap *bmp;
    if (auto error = get_source_bitmap(this, &bmp, filter_input_role::INPUT); error != ERR::Okay) {
       return error;
    }
@@ -694,7 +697,7 @@ ERR extLightingFX::draw()
 
    if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
       // Light source coordinates are expressed as relative to the client vector's bounding box in this mode.
-      auto &client = Filter->ClientVector;
+      auto &client = Filter->Render->ClientVector;
       const double c_width  = client->Bounds.width();
       const double c_height = client->Bounds.height();
 
@@ -709,7 +712,7 @@ ERR extLightingFX::draw()
       }
    }
 
-   auto &t = Filter->Transform; // Maps the client's coordinates to the filter bitmaps
+   auto &t = Filter->Render->Transform; // Maps the client's coordinates to the filter bitmaps
 
    const double scale = (t.sx IS t.sy) ? t.sx : sqrt((t.sx*t.sx) + (t.sy*t.sy)) * SQRT2DIV2;
 

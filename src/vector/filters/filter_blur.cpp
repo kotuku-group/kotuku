@@ -91,19 +91,19 @@ class extBlurFX : public extFilterEffect {
 
    void radii(double &RX, double &RY) const {
       double scale = 1.0;
-      if (Filter->ClientVector) scale = Filter->ClientVector->Transform.scale();
+      if (Filter->Render->ClientVector) scale = Filter->Render->ClientVector->Transform.scale();
 
       if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
          if (Filter->AspectRatio IS VFA::NONE) {
             // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
-            double diag = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            double diag = dist(0, 0, Filter->Render->BoundWidth, Filter->Render->BoundHeight) * INV_SQRT2;
             RX = SX * diag * 2 * scale;
             RY = SY * diag * 2 * scale;
          }
          else {
             // Scaling is stretched independently of each axis
-            RX = SX * Filter->BoundWidth * 2 * scale;
-            RY = SY * Filter->BoundHeight * 2 * scale;
+            RX = SX * Filter->Render->BoundWidth * 2 * scale;
+            RY = SY * Filter->Render->BoundHeight * 2 * scale;
          }
       }
       else {
@@ -366,20 +366,19 @@ static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8
 
 //********************************************************************************************************************
 
-static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const objBitmap *Bitmap,
+static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const filter_surface_view &Source,
    const filter_step *Producer)
 {
-   const auto &clip = Bitmap->Clip;
-   const TClipRectangle<int> bitmap_region = { clip.Left, clip.Top, clip.Right, clip.Bottom };
+   const auto &clip = Source.Valid;
    if ((Self->EdgeMode IS FEM::TRANSPARENT) or (not Producer)) {
-      return bitmap_region;
+      return clip;
    }
 
    const auto &sub = Producer->Effect->Subregion;
-   const TClipRectangle<int> empty = { clip.Left, clip.Top, clip.Left, clip.Top };
+   const TClipRectangle<int> empty = { clip.left, clip.top, clip.left, clip.top };
    if (not sub.valid()) return empty;
 
-   const auto &transform = Self->Filter->Transform;
+   const auto &transform = Self->Filter->Render->Transform;
    auto path = sub.as_path(transform);
    const auto bounds = get_bounds(path);
    if (not bounds.valid()) return empty;
@@ -392,10 +391,10 @@ static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const objBit
       return int(std::clamp(index, double(Low), double(High)));
    };
    const TClipRectangle<int> region = {
-      limit(bounds.left, (transform.sx < 0) or (transform.shx < 0), clip.Left, clip.Right),
-      limit(bounds.top, (transform.shy < 0) or (transform.sy < 0), clip.Top, clip.Bottom),
-      limit(bounds.right, (transform.sx <= 0) and (transform.shx <= 0), clip.Left, clip.Right),
-      limit(bounds.bottom, (transform.shy <= 0) and (transform.sy <= 0), clip.Top, clip.Bottom)
+      limit(bounds.left, (transform.sx < 0) or (transform.shx < 0), clip.left, clip.right),
+      limit(bounds.top, (transform.shy < 0) or (transform.sy < 0), clip.top, clip.bottom),
+      limit(bounds.right, (transform.sx <= 0) and (transform.shx <= 0), clip.left, clip.right),
+      limit(bounds.bottom, (transform.shy <= 0) and (transform.sy <= 0), clip.top, clip.bottom)
    };
    return region.valid() ? region : empty;
 }
@@ -421,33 +420,20 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    const bool blur_x = rx >= MIN_BLUR_RADIUS;
    const bool blur_y = ry >= MIN_BLUR_RADIUS;
 
-   objBitmap *inBmp;
-   if (get_source_bitmap(Self, &inBmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
+   filter_surface_view source;
+   if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
 
+   const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
    if ((not blur_x) and (not blur_y)) {
-      BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
-      gfx::CopyArea(inBmp, outBmp, copy_flags, 0, 0, inBmp->Width, inBmp->Height, 0, 0);
-      return ERR::Okay;
+      const auto flags = linear ? BAF::LINEAR : BAF::NIL;
+      return copy_filter_bitmap(source.Bitmap, outBmp, flags, 0, 0, source.Width, source.Height, 0, 0);
    }
 
-   if (producer) {
-      objBitmap *copy_bmp;
-      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); !error) {
-         if (not active_filter_step(Self)) return ERR::InvalidState;
-         gfx::CopyArea(inBmp, copy_bmp, BAF::NIL,
-            inBmp->Clip.Left,
-            inBmp->Clip.Top,
-            inBmp->Clip.Right - inBmp->Clip.Left,
-            inBmp->Clip.Bottom - inBmp->Clip.Top,
-            copy_bmp->Clip.Left,
-            copy_bmp->Clip.Top);
+   filter_surface_view input;
+   const auto encoding = linear ? CS::LINEAR_RGB : CS::SRGB;
+   if (auto error = premultiplied_input(Self, source, encoding, input); error != ERR::Okay) return error;
 
-         inBmp = copy_bmp;
-      }
-      else return error;
-   }
-
-   const auto region = blur_input_region(Self, inBmp, producer);
+   const auto region = blur_input_region(Self, source, producer);
    const auto &clip = outBmp->Clip;
    const int w = clip.Right - clip.Left;
    const int h = clip.Bottom - clip.Top;
@@ -457,7 +443,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    auto bitmap_data = [&](objBitmap *Bitmap) {
       return Bitmap->Data + (std::ptrdiff_t(clip.Top) * Bitmap->LineWidth) + (std::ptrdiff_t(clip.Left) * 4);
    };
-   auto in_data = bitmap_data(inBmp);
+   auto in_data = input.row(clip.Top) + std::ptrdiff_t(clip.Left) * 4;
    auto out_data = bitmap_data(outBmp);
    auto horizontal = out_data;
    if (blur_x and blur_y and (Self->EdgeMode != FEM::TRANSPARENT)) {
@@ -468,19 +454,15 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
       horizontal = bitmap_data(scratch);
    }
 
-   if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToLinear();
-   inBmp->premultiply();
-
    std::vector<uint8_t> temp;
    if (blur_x) blur_axis(in_data, horizontal, temp, w, h, outBmp->LineWidth, false, rx, edge_x);
    if (blur_y) blur_axis(blur_x ? horizontal : in_data, out_data, temp, w, h, outBmp->LineWidth, true, ry, edge_y);
 
    outBmp->Flags |= BMF::PREMUL; // Need to tell the bitmap it has premultiplied output before Demultiply()
-   outBmp->demultiply();
-
-   if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) {
+   if (auto error = outBmp->demultiply(); error != ERR::Okay) return error;
+   if (linear) {
       outBmp->ColourSpace = CS::LINEAR_RGB;
-      outBmp->convertToRGB();
+      return outBmp->convertToRGB();
    }
 
    return ERR::Okay;

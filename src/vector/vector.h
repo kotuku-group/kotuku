@@ -94,7 +94,7 @@ extern const int * small_text_gamma();
 class extVector;
 class extVectorScene;
 class extFilterEffect;
-struct filter_step;
+struct filter_render_context;
 class extVectorViewport;
 class extVectorClip;
 
@@ -284,10 +284,6 @@ public:
    std::vector<double> values;
 
    DashedStroke(agg::path_storage &pPath, int Elements=2) : path(pPath), stroke(path), values(Elements) { }
-};
-
-class filter_state {
-public:
 };
 
 class filter_bitmap {
@@ -729,27 +725,13 @@ class extVectorFilter : public objVectorFilter {
    public:
    using create = kt::Create<extVectorFilter>;
 
-   extVector *ClientVector;            // Client vector or viewport supplied by Scene.acDraw()
-   extVectorViewport *ClientViewport;  // The nearest viewport containing the vector.
-   extVectorScene *SourceScene;        // Internal scene for rendering SourceGraphic
-   extVectorScene *Scene;              // Scene that the filter belongs to.
-   filter_bitmap SourceGraphic;        // Rendering of the vector client for SourceGraphic and SourceAlpha.  Clip-sized.
-   objBitmap *BkgdBitmap;              // Target bitmap supplied by Scene.acDraw()
-   int BkgdOriginX = 0, BkgdOriginY = 0; // Scene coordinates of the background bitmap origin.
-   VCS ClientColourSpace = VCS::INHERIT; // Colour space the client resolves to in the scene graph renderer
-   const filter_step *ActiveStep = nullptr;
+   extVectorScene *SourceScene = nullptr; // Internal scene for rendering SourceGraphic.
+   extVectorScene *Scene;                 // Scene that owns the filter.
+   filter_bitmap SourceGraphic;          // Reusable backing storage for the current draw's SourceGraphic.
+   filter_render_context *Render = nullptr;
    uint64_t GraphRevision = 0;
-   uint64_t ActiveRevision = 0;
    std::vector<extFilterEffect *> Effects; // Authoritative order of owned effects.
    std::vector<std::unique_ptr<filter_bitmap>> Bank;
-   TClipRectangle<int> VectorClip;     // Processing region in scene coordinates.  Can extend beyond the page.
-   agg::trans_affine Transform;        // ClientVector->Transform, offset so that VectorClip's top-left is (0,0)
-   uint8_t BankIndex;
-   double BoundWidth, BoundHeight;     // Filter boundary, computed on acDraw()
-   double TargetX, TargetY, TargetWidth, TargetHeight; // Target boundary, computed on acDraw()
-   bool Rendered;
-   bool Disabled;
-   bool Drawing = false;
 
    extVectorFilter(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objVectorFilter(ClassPtr, ObjectID) {
       Units          = VUNIT::BOUNDING_BOX;
@@ -765,12 +747,6 @@ class extVectorFilter : public objVectorFilter {
 
    ~extVectorFilter();
 
-   // Filter bitmaps use local coordinates, in which (0,0) is the top-left of VectorClip.  This allows the processing
-   // region to extend beyond the top and left edges of the page.
-
-   TClipRectangle<int> scratch_clip() const {
-      return { 0, 0, VectorClip.right - VectorClip.left, VectorClip.bottom - VectorClip.top };
-   }
 };
 
 class extFilterEffect : public objFilterEffect {
@@ -913,6 +889,12 @@ inline bool TabOrderedVector::operator()(const extVector *a, const extVector *b)
    else return a->TabOrder < b->TabOrder;
 }
 
+struct filter_capture {
+   const extVectorFilter *SuppressedFilter;
+   extVector *Root; // Draw only this branch under the private viewport.
+   ERR Error = ERR::Okay;
+};
+
 class extVectorScene : public objVectorScene {
    public:
    using create = kt::Create<extVectorScene>;
@@ -947,6 +929,7 @@ class extVectorScene : public objVectorScene {
    bool BorderlessSurface;
    bool DropRouting; // True if the scene is the drop router for its surface.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
+   filter_capture *FilterCapture = nullptr; // Set only while drawing the raw content for a filter.
    int RenderOriginX = 0, RenderOriginY = 0; // Scene coordinates that map to (0,0) of the target bitmap.
 
    extVectorScene(objMetaClass *ClassPtr, OBJECTID ObjectID) :
@@ -1316,7 +1299,14 @@ extern GRADIENT_TABLE * get_fill_gradient_table(extPainter &, double);
 extern GRADIENT_TABLE * get_stroke_gradient_table(extVector &);
 extern ERR read_path(std::vector<PathCommand> &, std::string_view, bool EdgeOffsets);
 extern bool valid_path_commands(std::span<const PathCommand>);
-extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS, objBitmap **, int, int);
+struct filter_render_result {
+   objBitmap *Bitmap = nullptr;
+   int OriginX = 0, OriginY = 0;
+   double Opacity = 0;
+};
+
+extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS,
+   filter_render_result &, int, int);
 extern ERR scene_input_events(const InputEvent *, int);
 extern void send_feedback(extVector *, FM, OBJECTPTR = nullptr);
 extern void apply_focus(extVectorScene *, extVector *);

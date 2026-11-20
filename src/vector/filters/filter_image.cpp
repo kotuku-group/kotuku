@@ -11,9 +11,12 @@ ImageFX: Renders a bitmap image in the effect pipeline.
 The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The
 client has the option of providing a pre-allocated @Bitmap or the path to a @Image file as the source.
 
-If a pre-allocated @Bitmap is to be used, it must be created under the ownership of the ImageFX object, and this must
-be configured prior to initialisation.  It is required that the bitmap uses 32 bits per pixel and that the alpha
-channel is enabled.
+If a pre-allocated @Bitmap is to be used, it must be owned by the ImageFX object before the ImageFX is initialised.
+The bitmap can be created as a child of the uninitialised ImageFX, or an existing bitmap can be assigned to it with
+~Core.SetOwner().  The bitmap must be initialised before the ImageFX, and it is required to use 32 bits per pixel with
+the alpha channel enabled.  The bitmap is retained for the lifetime of the ImageFX; an attempt to free it earlier is
+deferred until the ImageFX is freed.  Changes to the content of the bitmap are rendered on the next draw of the filter.
+Call @Vector.Refresh() on the filtered vector to ensure that it is redrawn.
 
 If a source image file is referenced, it will be upscaled to meet the requirements automatically as needed.
 
@@ -34,12 +37,18 @@ class extImageFX : public extFilterEffect {
    VSM ResampleMethod = VSM::BILINEAR; // Resample method.
    objBitmap *Bitmap;    // Bitmap containing source image data.
    objImage *Image;      // Origin image if loading a source file.
+   OBJECTID ChildBitmapID = 0; // Child bitmap attached prior to initialisation; resolved by Init()
+   bool BitmapPinned = false;  // True if the client's Bitmap holds a strong pin taken by Init()
 
    extImageFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS;
    }
 
    ~extImageFX() {
+      // A client bitmap that was freed while pinned is collected by unpin(true).  Otherwise it remains a child and
+      // is freed with the other children once the destructor returns.
+
+      if (BitmapPinned) { Bitmap->unpin(true); BitmapPinned = false; }
       if (Image) FreeResource(Image);
    }
 };
@@ -52,31 +61,67 @@ Draw: Render the effect to the target bitmap.
 
 static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
 {
-   render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod);
-   return ERR::Okay;
+   if (not active_filter_step(Self)) return ERR::InvalidState;
+   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod);
 }
 
 //********************************************************************************************************************
 
 static ERR IMAGEFX_Init(extImageFX *Self)
 {
-   if (!Self->Bitmap) return kt::Log().warning(ERR::FieldNotSet);
+   kt::Log log;
+
+   // A child bitmap is resolved and validated here rather than in NewChild(), which runs before the bitmap is
+   // initialised.  The ID is resolved because the bitmap may have been freed if its initialisation failed.
+
+   if ((not Self->Bitmap) and (Self->ChildBitmapID)) {
+      auto child = GetObjectPtr(Self->ChildBitmapID);
+      if ((child) and (child->classID() IS CLASSID::BITMAP) and (child->ownerID() IS Self->UID)) {
+         Self->Bitmap = (objBitmap *)child;
+      }
+      Self->ChildBitmapID = 0;
+   }
+
+   if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
+
+   if (not Self->Bitmap->initialised()) {
+      log.warning("The source bitmap #%d is not initialised.", Self->Bitmap->UID);
+      return ERR::NotInitialised;
+   }
+
+   if (Self->Bitmap->BytesPerPixel != 4) {
+      log.warning("The source bitmap #%d has %d bytes per pixel; 4 are required.", Self->Bitmap->UID,
+         Self->Bitmap->BytesPerPixel);
+      return ERR::InvalidValue;
+   }
+
+   // A client bitmap is strongly pinned so that it remains valid for the lifetime of the ImageFX.  If the client
+   // frees it (for instance through a script's garbage collector) the free is deferred until the pin is released.
+   // Bitmaps of a loaded Image are freed by the ImageFX and need no pin.
+
+   if (not Self->Image) {
+      Self->Bitmap->pin();
+      Self->BitmapPinned = true;
+   }
+
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// If the client attaches a bitmap as a child of our object, we use it as the primary image source.
+// If the client attaches a bitmap as a child of our object, we use it as the primary image source.  NewChild() is
+// called when the bitmap is created, before it is initialised, so only its ID is recorded and Init() validates it.
+// A previously recorded child that no longer exists (e.g. its initialisation failed) is replaced.
 
 static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
 {
-   kt::Log log;
-
    if (Args->Object->classID() IS CLASSID::BITMAP) {
-      if (!Self->Bitmap) {
-         if (((objBitmap *)Args->Object)->BytesPerPixel IS 4) Self->Bitmap = (objBitmap *)Args->Object;
-         else log.warning("Attached bitmap ignored; BPP of %d != 4", ((objBitmap *)Args->Object)->BytesPerPixel);
+      if ((Self->initialised()) or (Self->Bitmap)) {
+         kt::Log().warning("Attached bitmap ignored; the Bitmap is already defined.");
       }
-      else log.warning("Attached bitmap ignored; Bitmap field already defined.");
+      else if ((Self->ChildBitmapID) and (GetObjectPtr(Self->ChildBitmapID))) {
+         kt::Log().warning("Attached bitmap ignored; bitmap #%d is already attached.", Self->ChildBitmapID);
+      }
+      else Self->ChildBitmapID = Args->Object->UID;
    }
 
    return ERR::Okay;
@@ -92,8 +137,8 @@ Lookup: ARF
 -FIELD-
 Bitmap: The @Bitmap being used as the image source.
 
-Reading the Bitmap field will return the @Bitmap that is being used as the image source.  Note that if a custom
-Bitmap is to be used, the correct way to do this as to assign it to the ImageFX object via ownership rules.
+Reading the Bitmap field will return the @Bitmap that is being used as the image source.  A custom Bitmap is
+assigned by making the ImageFX object its owner prior to initialisation, as described in the class overview.
 
 If an image has been processed by setting the #Path, the Bitmap will refer to the content that has been
 processed.
@@ -112,7 +157,7 @@ static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
 
 static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
 {
-   if ((Self->Bitmap) or (Self->Image)) return ERR::Immutable;
+   if ((Self->Bitmap) or (Self->Image) or (Self->ChildBitmapID)) return ERR::Immutable;
 
    if ((Self->Image = objImage::create::local(fl::Path(Value), fl::BitsPerPixel(32), fl::Flags(PCF::FORCE_ALPHA_32)))) {
       Self->Bitmap = Self->Image->Bitmap;

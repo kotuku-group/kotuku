@@ -156,10 +156,10 @@ Draw: Render the effect to the target bitmap.
 
 static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
 {
-   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
+   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
 
-   objBitmap *bmp;
-   if (get_source_bitmap(Self, &bmp, filter_input_role::INPUT) != ERR::Okay) return ERR::NoData;
+   const objBitmap *bmp;
+   if (auto error = get_source_bitmap(Self, &bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
 
    int height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
    int width  = Self->Target->Clip.Right - Self->Target->Clip.Left;
@@ -184,7 +184,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    empty[A] = Self->Alpha.Lookup[0];
    const uint32_t empty_pixel = std::bit_cast<uint32_t>(empty);
 
-   uint8_t *in = bmp->Data + (bmp->Clip.Left * 4) + (bmp->Clip.Top * bmp->LineWidth);
+   const uint8_t *in = bmp->Data + (bmp->Clip.Left * 4) + (bmp->Clip.Top * bmp->LineWidth);
    uint8_t *dest = Self->Target->Data + (Self->Target->Clip.Left * 4) + (Self->Target->Clip.Top * Self->Target->LineWidth);
    for (int y=0; y < height; y++) {
       auto dp = (uint32_t *)dest;
