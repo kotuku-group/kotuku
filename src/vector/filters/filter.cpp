@@ -41,6 +41,8 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 
 *********************************************************************************************************************/
 
+#include <bs_thread_pool.h>
+
 //#define DEBUG_FILTER_BITMAP
 //#define EXPORT_FILTER_BITMAP
 
@@ -153,6 +155,42 @@ static ERR copy_filter_bitmap(const objBitmap *Source, objBitmap *Dest, BAF Flag
 }
 
 //********************************************************************************************************************
+
+static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const agg::trans_affine &Transform,
+   const agg::image_filter_lut &Filter)
+{
+   const int left = Target.Clip.Left, top = Target.Clip.Top, bottom = Target.Clip.Bottom;
+   const int width = Target.Clip.Right - left, height = bottom - top;
+
+   // The destination rectangle covers every pixel in the clip.  Generate one full span per row, as the
+   // rasteriser does, so the sampler keeps the same interpolation endpoints and edge behaviour.
+   auto render_rows = [&](int StartY, int EndY) {
+      agg::pixfmt_psl pix_source(Bitmap), pix_dest(Target);
+      agg::span_interpolator_linear<> interpolator(Transform);
+      agg::span_once<agg::pixfmt_psl> source(pix_source, 0, 0);
+      agg::span_image_filter_rgba<decltype(source), decltype(interpolator)> sampler(source, interpolator, Filter, false);
+      agg::span_allocator<agg::rgba8> span_alloc;
+      auto colours = span_alloc.allocate(width);
+
+      for (int y=StartY; y < EndY; y++) {
+         sampler.generate(colours, left, y, width);
+         pix_dest.copy_color_hspan(left, y, width, colours);
+      }
+   };
+
+   constexpr size_t MIN_PIXELS_PER_WORKER = 32 * 1024;
+   constexpr int MIN_ROWS_PER_WORKER = 4;
+   const size_t thread_count = std::min({ size_t(std::thread::hardware_concurrency()),
+      size_t(height / MIN_ROWS_PER_WORKER), (size_t(width) * height) / MIN_PIXELS_PER_WORKER });
+   if (thread_count < 2) render_rows(top, bottom);
+   else {
+      BS::thread_pool pool(thread_count);
+      pool.detach_blocks(top, bottom, render_rows);
+      pool.wait();
+   }
+}
+
+//********************************************************************************************************************
 // Universal function for rendering a filter's Bitmap to the target region.
 //
 // No blending is performed because this is intended for use when there is no former input.  Copying is done
@@ -181,6 +219,15 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
    img_transform.invert();
 
    if (img_transform.is_complex()) {
+      // The transform maps destination pixels back to the source, so upscale factors are at most one.
+      if (((SampleMethod IS VSM::BILINEAR) or (SampleMethod IS VSM::AUTO)) and
+          (img_transform.shx IS 0.0) and (img_transform.shy IS 0.0) and
+          (img_transform.sx > 0.0) and (img_transform.sx <= 1.0) and
+          (img_transform.sy > 0.0) and (img_transform.sy <= 1.0)) {
+         render_bilinear_upscale(*Bitmap, *Self->Target, img_transform, get_filter(SampleMethod, img_transform));
+         return ERR::Okay;
+      }
+
       agg::rasterizer_scanline_aa<> raster;
       agg::renderer_base<agg::pixfmt_psl> renderBase;
       agg::pixfmt_psl pixDest(*Self->Target);

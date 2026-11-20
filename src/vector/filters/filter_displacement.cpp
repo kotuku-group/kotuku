@@ -43,6 +43,8 @@ image.  The Input image must remain in its current color space.
 
 *********************************************************************************************************************/
 
+#include <bs_thread_pool.h>
+
 class extDisplacementFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::DISPLACEMENTFX;
@@ -100,6 +102,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    const int in_height  = in_bmp->Clip.Bottom  - in_bmp->Clip.Top;
    const int draw_width = (mix_width < width) ? mix_width : width;
    const int draw_height = (mix_height < height) ? mix_height : height;
+   if ((draw_width < 1) or (draw_height < 1)) return ERR::Okay;
 
    auto &client = Self->Filter->Render->ClientVector;
    const double c_width  = client->Bounds.width();
@@ -121,8 +124,10 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
       sy = scale * double(mix_height) * (1.0 / 255.0);
    }
 
-   const uint8_t x_type = RGBA[int(Self->XChannel)];
-   const uint8_t y_type = RGBA[int(Self->YChannel)];
+   const auto x_channel = Self->XChannel;
+   const auto y_channel = Self->YChannel;
+   const uint8_t x_type = RGBA[int(x_channel)];
+   const uint8_t y_type = RGBA[int(y_channel)];
    const bool linear_mix = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
 
    auto sample_mix = [linear_mix](const uint8_t *Pixel, CMP Channel, uint8_t Type) -> uint8_t {
@@ -174,32 +179,49 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
 
    constexpr double HALF8BIT = 255.0 * 0.5;
    const bool nearest = Self->ResampleMethod IS VSM::NEIGHBOUR;
-   for (int y=0; y < draw_height; y++) {
-      auto m = mix;
-      auto d = dest;
-      for (int x=0; x < draw_width; x++, m += mix_bmp->BytesPerPixel, d += Self->Target->BytesPerPixel) {
-         auto dx = sample_mix(m, Self->XChannel, x_type);
-         auto dy = sample_mix(m, Self->YChannel, y_type);
-         const double sample_x = double(x) + (sx * (double(dx) - HALF8BIT));
-         const double sample_y = double(y) + (sy * (double(dy) - HALF8BIT));
+   const int mix_stride = mix_bmp->LineWidth, dest_stride = Self->Target->LineWidth;
+   const int mix_pixel_size = mix_bmp->BytesPerPixel, dest_pixel_size = Self->Target->BytesPerPixel;
 
-         if (nearest) {
-            const int cx = std::lrint(sample_x);
-            const int cy = std::lrint(sample_y);
-            if ((cx < 0) or (cx >= in_width) or (cy < 0) or (cy >= in_height)) {
+   auto render_rows = [&](int StartY, int EndY) {
+      for (int y=StartY; y < EndY; y++) {
+         auto m = mix + std::ptrdiff_t(y) * mix_stride;
+         auto d = dest + std::ptrdiff_t(y) * dest_stride;
+         for (int x=0; x < draw_width; x++, m += mix_pixel_size, d += dest_pixel_size) {
+            auto dx = sample_mix(m, x_channel, x_type);
+            auto dy = sample_mix(m, y_channel, y_type);
+            const double sample_x = double(x) + (sx * (double(dx) - HALF8BIT));
+            const double sample_y = double(y) + (sy * (double(dy) - HALF8BIT));
+
+            if (nearest) {
+               const int cx = std::lrint(sample_x);
+               const int cy = std::lrint(sample_y);
+               if ((cx < 0) or (cx >= in_width) or (cy < 0) or (cy >= in_height)) {
+                  ((uint32_t *)d)[0] = 0;
+               }
+               else ((uint32_t *)d)[0] = ((const uint32_t *)(input + (cx * 4) + (cy * in_bmp->LineWidth)))[0];
+            }
+            else if ((sample_x < 0.0) or (sample_x >= double(in_width)) or
+                     (sample_y < 0.0) or (sample_y >= double(in_height))) {
                // The source pixel is outside of retrievable bounds
                ((uint32_t *)d)[0] = 0;
             }
-            else ((uint32_t *)d)[0] = ((uint32_t *)(input + (cx * 4) + (cy * in_bmp->LineWidth)))[0];
+            else sample_input_bilinear(d, sample_x, sample_y);
          }
-         else if ((sample_x < 0.0) or (sample_x >= double(in_width)) or (sample_y < 0.0) or (sample_y >= double(in_height))) {
-            // The source pixel is outside of retrievable bounds
-            ((uint32_t *)d)[0] = 0;
-         }
-         else sample_input_bilinear(d, sample_x, sample_y);
       }
-      mix  += mix_bmp->LineWidth;
-      dest += Self->Target->LineWidth;
+   };
+
+   // Keep small draws on the caller thread to avoid paying for a pool with little work per worker.
+   constexpr size_t MIN_PIXELS_PER_WORKER = 32 * 1024;
+   constexpr int MIN_ROWS_PER_WORKER = 4;
+   const size_t thread_count = std::min({ size_t(std::thread::hardware_concurrency()),
+      size_t(draw_height / MIN_ROWS_PER_WORKER), (size_t(draw_width) * draw_height) / MIN_PIXELS_PER_WORKER });
+
+   if (thread_count < 2) render_rows(0, draw_height);
+   else {
+      // The sources are read-only and each block writes to distinct target rows.
+      BS::thread_pool pool(thread_count);
+      pool.detach_blocks(0, draw_height, render_rows);
+      pool.wait();
    }
 
    return ERR::Okay;
