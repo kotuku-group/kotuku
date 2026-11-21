@@ -529,6 +529,11 @@ Transform: Applies a transform to the gradient.
 
 A transform can be applied to the gradient by setting this field with an SVG compliant transform string.
 
+The transform operates in the coordinate system defined by @Gradient.Units.  For `BOUNDING_BOX` that is the normalised
+space of the target's bounding box, as for SVG's `gradientTransform` with `objectBoundingBox`: `translate(0.25 0)` moves
+the gradient by a quarter of the target's width, and `rotate(45 0.5 0.5)` rotates it about the centre of the target.
+For `USERSPACE`, distances are measured in the target's user coordinates and scale with the viewport.
+
 *********************************************************************************************************************/
 
 static ERR GRADIENT_SET_Transform(extGradient *Self, const std::string_view &Commands)

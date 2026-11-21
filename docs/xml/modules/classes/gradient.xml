@@ -145,6 +145,7 @@
       <type>STRING</type>
       <description>
 <p>A transform can be applied to the gradient by setting this field with an SVG compliant transform string.</p>
+<p>The transform operates in the coordinate system defined by <class name="Gradient" field="Units">Gradient.Units</class>.  For <code>BOUNDING_BOX</code> that is the normalised space of the target's bounding box, as for SVG's <code>gradientTransform</code> with <code>objectBoundingBox</code>: <code>translate(0.25 0)</code> moves the gradient by a quarter of the target's width, and <code>rotate(45 0.5 0.5)</code> rotates it about the centre of the target. For <code>USERSPACE</code>, distances are measured in the target's user coordinates and scale with the viewport.</p>
       </description>
     </field>
 

@@ -47,6 +47,9 @@ Vector definitions can be saved and loaded from permanent storage by using the @
 class SceneRenderer;
 class VectorState;
 
+static void apply_gradient_transforms(const extGradient &, agg::trans_affine &, const TClipRectangle<double> &);
+static double field_scale(const agg::trans_affine &, double Width, double Height, double MaxPixels = 4096.0 * 4096.0);
+
 static void fill_image(VectorState &, const TClipRectangle<double> &, agg::path_storage &, VSM,
    const agg::trans_affine &, double, double, extVectorImage &, agg::renderer_base<agg::pixfmt_psl> &,
    agg::rasterizer_scanline_aa<> &, double Alpha = 1.0, SceneRenderer *Render = nullptr);

@@ -49,20 +49,26 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 
 //#define EXPORT_FILTER_BITMAP
 
-constexpr size_t MAX_FILTER_EFFECTS = 4096;
-constexpr size_t MAX_FILTER_INPUTS = 65536;
-constexpr size_t MAX_FILTER_SURFACE_BYTES = 256 * 1024 * 1024;
-constexpr size_t MAX_RETAINED_FILTER_BYTES = 64 * 1024 * 1024;
+//********************************************************************************************************************
+// Resource limits for a single filter pipeline.
+
+constexpr size_t MAX_FILTER_EFFECTS = 4096;                     // Maximum effects in one pipeline
+constexpr size_t MAX_FILTER_INPUTS = 65536;                     // Maximum input bindings across all effects
+constexpr size_t MAX_FILTER_SURFACE_BYTES = 256 * 1024 * 1024;  // Maximum live surface storage during a draw
+constexpr size_t MAX_RETAINED_FILTER_BYTES = 64 * 1024 * 1024;  // Maximum idle storage retained between draws
 
 enum class filter_surface_format { RGBA8, SCALAR_F32, VECTOR_F32 };
 
-// Slots own backing memory.  A bitmap is attached on demand when a slot holds an RGBA8 image.
+//********************************************************************************************************************
+// A storage slot for an intermediate filter result.  Slots own their backing memory and are recycled through the
+// filter's free list.  A bitmap is attached on demand when a slot holds an RGBA8 image.
+
 struct filter_surface {
-   filter_surface *Next = nullptr;
-   std::unique_ptr<uint8_t[]> Data;
-   size_t Bytes;
-   bool Numerical;
-   OBJECTID BitmapID = 0;
+   filter_surface *Next = nullptr; // Link in the free list or a working list
+   std::unique_ptr<uint8_t[]> Data; // Backing memory, shared with the attached bitmap if any
+   size_t Bytes; // Size of Data
+   bool Numerical; // True if the slot holds float samples; such slots are only recycled for numerical results
+   OBJECTID BitmapID = 0; // Bitmap bound to Data on demand, otherwise zero
 
    ~filter_surface() {
       if (auto object = BitmapID ? GetObjectPtr(BitmapID) : nullptr; object) {
@@ -73,6 +79,9 @@ struct filter_surface {
       }
    }
 };
+
+//********************************************************************************************************************
+// Enumerations that describe how effects consume their inputs.
 
 enum class filter_input_role { INPUT, MIX, MERGE, NAMED };
 enum class filter_inputs { GENERATOR, SINGLE, DUAL, MERGE };
@@ -86,92 +95,132 @@ using filter_map_value = std::array<float, 2>;
 static_assert((sizeof(float) IS 4) and std::numeric_limits<float>::is_iec559);
 constexpr float INVALID_FILTER_SAMPLE = std::numeric_limits<float>::quiet_NaN();
 
+//********************************************************************************************************************
+// Describes how far an effect reads beyond each output pixel.  The renderer sums the reach of every effect to size
+// the processing margin around the filter region.
+
 struct filter_sampling {
    static constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
-   filter_access Access = filter_access::POINTWISE;
+   filter_access Access = filter_access::POINTWISE; // How the effect reads its input relative to each output pixel
    double X = 0, Y = 0; // Conservative device-pixel reach.  Full input may apply along only one axis.
 };
 
+//********************************************************************************************************************
+// The input arrangement and sampling reach of an effect class.  See describe_filter_operation().
+
 struct filter_operation {
-   filter_inputs Inputs;
+   filter_inputs Inputs; // The standard input fields that the effect consumes
+   // Returns the effect's sampling reach for its current settings.  The default is pointwise.
    filter_sampling (*Sampling)(const extFilterEffect *) = [](const extFilterEffect *) -> filter_sampling {
       return {};
    };
 };
 
+//********************************************************************************************************************
+// The requirements that an effect places on one of its inputs, including how numerical maps are derived from RGBA8
+// producers and how samples outside of the valid region are resolved.
+
 struct filter_input_contract {
-   filter_input_kind Kind = filter_input_kind::IMAGE;
-   bool ContributesRegion = true;
+   filter_input_kind Kind = filter_input_kind::IMAGE; // An RGBA8 image, or a scalar or vector map
+   bool ContributesRegion = true; // If true, the input is considered when defaulting the primitive subregion
+   // RGBA8 channels that supply the map's X and Y components.  YChannel applies to vector maps only.
    filter_map_channel XChannel = filter_map_channel::ALPHA, YChannel = filter_map_channel::ALPHA;
-   filter_map_transfer Transfer = filter_map_transfer::STORED;
-   filter_map_value Fallback = {};
-   filter_interpolation Interpolation = filter_interpolation::NEAREST;
-   FEM Edge = FEM::TRANSPARENT;
-   filter_sampling Sampling = {};
-   filter_bitmap_conversion BitmapConversion = filter_bitmap_conversion::NONE;
+   filter_map_transfer Transfer = filter_map_transfer::STORED; // LINEAR decodes sRGB colour channels before use
+   filter_map_value Fallback = {}; // Map value for an unset input and for invalid or out-of-bounds samples
+   filter_interpolation Interpolation = filter_interpolation::NEAREST; // Map sampling between pixel centres
+   FEM Edge = FEM::TRANSPARENT; // Edge mode for map samples outside of the producer's valid region
+   filter_sampling Sampling = {}; // Reach of the input, added to the pipeline's processing margin
+   filter_bitmap_conversion BitmapConversion = filter_bitmap_conversion::NONE; // Numerical-to-RGBA8 adapter for images
 };
+
+//********************************************************************************************************************
+// A named input slot declared by an effect extension.  The client assigns Source, and Reference when Source is
+// VSF::REFERENCE, through set_named_filter_input().
 
 struct filter_named_input {
-   CSTRING Name;
-   filter_input_contract Contract;
-   VSF Source = VSF::NONE;
-   objFilterEffect *Reference = nullptr;
+   CSTRING Name; // Slot name, matched case-sensitively
+   filter_input_contract Contract; // Requirements fixed by the effect
+   VSF Source = VSF::NONE; // Assigned source; NONE leaves the slot unset
+   objFilterEffect *Reference = nullptr; // Producer when Source is VSF::REFERENCE, otherwise null
 };
 
+//********************************************************************************************************************
+// Optional extension for effects that declare named inputs or produce numerical output.  Slot names, contracts and
+// the output format are fixed by the effect.  Its Draw action writes the result.
+
 struct filter_effect_extension {
-   // Slot names, contracts and output format are fixed by the effect.  Its Draw action writes the result.
-   std::span<filter_named_input> Inputs = {};
-   filter_surface_format Format = filter_surface_format::RGBA8;
+   std::span<filter_named_input> Inputs = {}; // Named input slots, owned by the effect
+   filter_surface_format Format = filter_surface_format::RGBA8; // Format of the effect's result
 };
 
 enum class filter_alpha { STRAIGHT, PREMULTIPLIED };
 
-// Valid is half-open in local coordinates, Origin locates (0,0) in scene device pixels, and Stride is in bytes.
-// Bitmap, Encoding and Alpha describe RGBA8 only.  Numerical rows hold one float or two interleaved floats per pixel.
+//********************************************************************************************************************
+// A read-only view of an intermediate result.  Valid is half-open in local coordinates, Origin locates (0,0) in scene
+// device pixels, and Stride is in bytes.  Bitmap, Encoding and Alpha describe RGBA8 only.  Numerical rows hold one
+// float or two interleaved floats per pixel.
+
 struct filter_surface_view {
-   const objBitmap *Bitmap = nullptr; // Adapter for bitmap-based readers.
-   const uint8_t *Data = nullptr;
-   int Width = 0, Height = 0, Stride = 0;
-   int OriginX = 0, OriginY = 0;
-   CS Encoding = CS::SRGB;
-   filter_alpha Alpha = filter_alpha::STRAIGHT;
-   TClipRectangle<int> Valid = { 0 };
-   filter_surface_format Format = filter_surface_format::RGBA8;
+   const objBitmap *Bitmap = nullptr;     // Adapter for bitmap-based readers.  Null for numerical surfaces.
+   const uint8_t *Data = nullptr;         // First byte of row zero
+   int Width = 0, Height = 0, Stride = 0; // Surface dimensions in pixels; Stride is in bytes
+   int OriginX = 0, OriginY = 0;          // Scene device-pixel position of local (0,0)
+   CS Encoding = CS::SRGB;                // Colour encoding of RGBA8 data
+   filter_alpha Alpha = filter_alpha::STRAIGHT; // Alpha representation of RGBA8 data
+   TClipRectangle<int> Valid = { 0 };           // Half-open region of initialised pixels in local coordinates
+   filter_surface_format Format = filter_surface_format::RGBA8; // Pixel format of Data
 
    const uint8_t * row(int Y) const { return Data + std::ptrdiff_t(Y) * Stride; }
 };
 
+//********************************************************************************************************************
+// A resolved input binding in the draw plan.  Producer is set for references to earlier effects, otherwise Source
+// names a standard source.
+
 struct filter_step;
 
 struct filter_input {
-   VSF Source;
-   filter_input_role Role;
-   size_t Slot;
-   filter_step *Producer;
-   filter_input_contract Contract;
+   VSF Source;               // Source kind, or VSF::REFERENCE for a producer
+   filter_input_role Role;   // The effect field that declared the binding
+   size_t Slot;              // SourceList index for MERGE, named slot index for NAMED, otherwise zero
+   filter_step *Producer;    // Producing step for references, otherwise null
+   filter_input_contract Contract; // Requirements copied from the consumer
 };
+
+//********************************************************************************************************************
+// One effect in the draw plan.  Consumers counts the remaining bindings that read Result, which is released when the
+// count reaches zero.
 
 struct filter_step {
-   extFilterEffect *Effect;
-   filter_operation Operation;
-   std::span<const filter_input> Inputs;
-   filter_surface_format Format = filter_surface_format::RGBA8;
+   extFilterEffect *Effect;              // The effect drawn by this step
+   filter_operation Operation;           // Input arrangement and sampling reach of the effect's class
+   std::span<const filter_input> Inputs; // This step's bindings within filter_plan::Inputs
+   filter_surface_format Format = filter_surface_format::RGBA8; // Format of Result
    TClipRectangle<double> Subregion = { 0.0 }; // Client user coordinates.
-   size_t Consumers = 0;
-   filter_surface *Surface = nullptr;
-   filter_surface_view Result = {};
+   size_t Consumers = 0;               // Remaining bindings that read Result
+   filter_surface *Surface = nullptr;  // Storage for Result while it is live
+   filter_surface_view Result = {};    // Output of the step, valid after it has drawn
 };
+
+//********************************************************************************************************************
+// A lazily populated standard source (SourceGraphic, SourceAlpha, BackgroundImage or BackgroundAlpha), shared by its
+// readers until the last planned use.
 
 struct filter_standard_source {
-   size_t Consumers = 0;
-   filter_surface *Surface = nullptr;
-   filter_surface_view View = {};
+   size_t Consumers = 0;              // Remaining planned reads
+   filter_surface *Surface = nullptr; // Storage for View once populated
+   filter_surface_view View = {};     // Populated on first read; empty until then
 };
 
+//********************************************************************************************************************
+// The validated pipeline for a single draw, built by prepare_filter_plan().  Steps follow the effect order and their
+// Inputs spans index into the shared Inputs array.
+
 struct filter_plan {
-   std::vector<filter_step> Steps;
-   std::vector<filter_input> Inputs;
-   filter_step *Final = nullptr;
+   std::vector<filter_step> Steps;   // One step per effect, in authored order
+   std::vector<filter_input> Inputs; // Bindings for all steps; reserved in advance so that spans remain valid
+   filter_step *Final = nullptr;     // The last step, which supplies the filter's output
+   // Standard sources from VSF::GRAPHIC to VSF::BKGD_ALPHA.  Index with standard_source().
    std::array<filter_standard_source, size_t(VSF::BKGD_ALPHA) - size_t(VSF::GRAPHIC) + 1> StandardSources;
 
    filter_standard_source & standard_source(VSF Source) {
@@ -179,34 +228,38 @@ struct filter_plan {
    }
 };
 
+//********************************************************************************************************************
+// State for a filter draw in progress.  It lives on the stack of render_filter() and is reachable from effects
+// through extVectorFilter::Render for the duration of the draw.
+
 struct filter_render_context {
-   extVector *ClientVector;
-   extVectorViewport *ClientViewport;
-   objBitmap *BkgdBitmap;
-   int BkgdOriginX, BkgdOriginY;
-   VCS ClientColourSpace;
-   uint64_t Revision;
+   extVector *ClientVector;           // The vector that the filter is applied to
+   extVectorViewport *ClientViewport; // The client's nearest viewport
+   objBitmap *BkgdBitmap;             // Destination bitmap; null unless SourceGraphic or a background source is read
+   int BkgdOriginX, BkgdOriginY;      // Scene device-pixel position of BkgdBitmap (0,0)
+   VCS ClientColourSpace;             // The client's resolved colour space, used when capturing SourceGraphic
+   uint64_t Revision;                 // Filter GraphRevision when the draw started.  A mismatch aborts the draw.
    filter_plan Plan;
-   const filter_step *ActiveStep = nullptr;
+   const filter_step *ActiveStep = nullptr; // Step currently drawing, otherwise null
    TClipRectangle<int> VectorClip = { 0 }; // Processing rectangle in scene pixels.  Left/top are the bitmap origin.
    TClipRectangle<double> ClientBounds = { 0.0 }; // Unrounded bounds of the subtree in client user coordinates.
    TClipRectangle<double> ClientPathBounds = { 0.0 }; // Client path alone in user coordinates.
-   TClipRectangle<double> SceneBounds = { 0.0 }; // Unrounded subtree bounds in scene coordinates for per-axis units.
-   TClipRectangle<double> FilterRegion = { 0.0 }; // Default primitive region in client user coordinates.
-   double BoundWidth = 0, BoundHeight = 0; // Rounded subtree dimensions used by legacy distance scaling.
-   double ViewportWidth = 0, ViewportHeight = 0; // Viewport dimensions in its user coordinates (viewBox if set).
+   TClipRectangle<double> SceneBounds = { 0.0 };   // Unrounded subtree bounds in scene coordinates for per-axis units.
+   TClipRectangle<double> FilterRegion = { 0.0 };  // Default primitive region in client user coordinates.
+   double BoundWidth = 0, BoundHeight = 0;         // Rounded subtree dimensions used by legacy distance scaling.
+   double ViewportWidth = 0, ViewportHeight = 0;   // Viewport dimensions in its user coordinates (viewBox if set).
    double ContainerWidth = 0, ContainerHeight = 0; // Fixed viewport dimensions used by legacy filter region lengths.
-   VUNIT FilterUnits, PrimitiveUnits;
-   VFA AspectRatio;
-   agg::trans_affine ToScene; // Client user coordinates to scene coordinates.
-   agg::trans_affine Transform; // Client user coordinates to local bitmap coordinates.
-   agg::trans_affine Inverse; // Local bitmap coordinates to client user coordinates.
-   filter_surface *WorkingSurfaces = nullptr;
-   int BitmapStride = 0;
-   size_t BitmapBytes = 0;
-   size_t LiveBytes = 0, PeakLiveBytes = 0;
-   size_t LiveSurfaces = 0, PeakLiveSurfaces = 0;
-   size_t Allocations = 0, AllocatedBytes = 0, Reuses = 0;
+   VUNIT FilterUnits, PrimitiveUnits; // Filter settings captured at the start of the draw
+   VFA AspectRatio;                // Filter setting captured at the start of the draw
+   agg::trans_affine ToScene;      // Client user coordinates to scene coordinates.
+   agg::trans_affine Transform;    // Client user coordinates to local bitmap coordinates.
+   agg::trans_affine Inverse;      // Local bitmap coordinates to client user coordinates.
+   filter_surface *WorkingSurfaces = nullptr; // Scratch and converted inputs, released after each step
+   int BitmapStride = 0;   // Row stride of RGBA8 surfaces covering VectorClip
+   size_t BitmapBytes = 0; // Size of RGBA8 surfaces covering VectorClip
+   size_t LiveBytes = 0, PeakLiveBytes = 0; // Checked-out surface storage, enforced by MAX_FILTER_SURFACE_BYTES
+   size_t LiveSurfaces = 0, PeakLiveSurfaces = 0; // Checked-out surface count
+   size_t Allocations = 0, AllocatedBytes = 0, Reuses = 0; // Storage statistics for diagnostic logging
 
    TClipRectangle<int> scratch_clip() const { return { 0, 0, VectorClip.width(), VectorClip.height() }; }
 
@@ -228,61 +281,12 @@ struct filter_render_context {
    }
 };
 
-static bool finite_transform(const agg::trans_affine &Transform)
-{
-   return std::isfinite(Transform.sx) and std::isfinite(Transform.sy) and
-      std::isfinite(Transform.shx) and std::isfinite(Transform.shy) and
-      std::isfinite(Transform.tx) and std::isfinite(Transform.ty);
-}
-
-static bool invert_filter_transform(agg::trans_affine &Transform)
-{
-   const double determinant = Transform.determinant();
-   if ((not finite_transform(Transform)) or (not std::isfinite(determinant)) or (determinant IS 0)) return false;
-   Transform.invert();
-   return finite_transform(Transform);
-}
-
-static bool finite_region(const TClipRectangle<double> &Region)
-{
-   return std::isfinite(Region.left) and std::isfinite(Region.top) and
-      std::isfinite(Region.right) and std::isfinite(Region.bottom) and
-      std::isfinite(Region.width()) and std::isfinite(Region.height());
-}
-
-static bool transform_filter_region(TClipRectangle<double> &, const agg::trans_affine &);
-
-static bool filter_raster_bounds(const TClipRectangle<double> &Bounds)
-{
-   // Reserve headroom for additions and differences in the rasteriser's fixed-point arithmetic.
-   constexpr double limit = double(agg::poly_max_coord) / agg::poly_subpixel_scale;
-   return (Bounds.left >= -limit) and (Bounds.top >= -limit) and
-      (Bounds.right <= limit) and (Bounds.bottom <= limit);
-}
-
-static void map_filter_pixel_centre(const agg::trans_affine &Transform, int X, int Y, double &PX, double &PY)
-{
-   PX = filter_pixel_centre(X);
-   PY = filter_pixel_centre(Y);
-   Transform.transform(&PX, &PY);
-}
-
-static filter_rgba_sampler filter_sampler(const objBitmap *Bitmap)
-{
-   const auto &clip = Bitmap->Clip;
-   return { Bitmap->Data, Bitmap->LineWidth, clip.Left, clip.Top, clip.Right, clip.Bottom };
-}
-
-static filter_surface_view filter_view(const filter_render_context &Render, const objBitmap *Bitmap)
-{
-   return { Bitmap, Bitmap->Data, Bitmap->Width, Bitmap->Height, Bitmap->LineWidth,
-      Render.VectorClip.left, Render.VectorClip.top, Bitmap->ColourSpace,
-      ((Bitmap->Flags & BMF::PREMUL) != BMF::NIL) ? filter_alpha::PREMULTIPLIED : filter_alpha::STRAIGHT,
-      { Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom } };
-}
-
 using filter_positions = std::unordered_map<objFilterEffect *, size_t>;
 
+//********************************************************************************************************************
+// Forward declarations.
+
+static bool transform_filter_region(TClipRectangle<double> &, const agg::trans_affine &);
 static ERR get_source_view(extFilterEffect *, filter_surface_view &, filter_input_role, size_t = 0);
 static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input_role, size_t = 0);
 static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
@@ -297,6 +301,82 @@ static void update_filter_links(extVectorFilter *);
 static ERR check_filter_reference(extFilterEffect *, objFilterEffect *, filter_input_role, size_t = 0,
    const filter_positions * = nullptr);
 
+//********************************************************************************************************************
+// Returns true if every component of the transform is finite.
+
+static bool finite_transform(const agg::trans_affine &Transform)
+{
+   return std::isfinite(Transform.sx) and std::isfinite(Transform.sy) and
+      std::isfinite(Transform.shx) and std::isfinite(Transform.shy) and
+      std::isfinite(Transform.tx) and std::isfinite(Transform.ty);
+}
+
+//********************************************************************************************************************
+// Inverts the transform in place.  Returns false if the transform is singular or the result is not finite.
+
+static bool invert_filter_transform(agg::trans_affine &Transform)
+{
+   const double determinant = Transform.determinant();
+   if ((not finite_transform(Transform)) or (not std::isfinite(determinant)) or (determinant IS 0)) return false;
+   Transform.invert();
+   return finite_transform(Transform);
+}
+
+//********************************************************************************************************************
+// Returns true if the edges and dimensions of the region are finite.
+
+static bool finite_region(const TClipRectangle<double> &Region)
+{
+   return std::isfinite(Region.left) and std::isfinite(Region.top) and
+      std::isfinite(Region.right) and std::isfinite(Region.bottom) and
+      std::isfinite(Region.width()) and std::isfinite(Region.height());
+}
+
+//********************************************************************************************************************
+// Returns true if the bounds can be rasterised.  Headroom is reserved for additions and differences in the
+// rasteriser's fixed-point arithmetic.
+
+static bool filter_raster_bounds(const TClipRectangle<double> &Bounds)
+{
+   constexpr double limit = double(agg::poly_max_coord) / agg::poly_subpixel_scale;
+   return (Bounds.left >= -limit) and (Bounds.top >= -limit) and
+      (Bounds.right <= limit) and (Bounds.bottom <= limit);
+}
+
+//********************************************************************************************************************
+// Maps the centre of pixel (X, Y) through the transform.
+
+static void map_filter_pixel_centre(const agg::trans_affine &Transform, int X, int Y, double &PX, double &PY)
+{
+   PX = filter_pixel_centre(X);
+   PY = filter_pixel_centre(Y);
+   Transform.transform(&PX, &PY);
+}
+
+//********************************************************************************************************************
+// Returns an RGBA sampler that is limited to the bitmap's clipping region.
+
+static filter_rgba_sampler filter_sampler(const objBitmap *Bitmap)
+{
+   const auto &clip = Bitmap->Clip;
+   return { Bitmap->Data, Bitmap->LineWidth, clip.Left, clip.Top, clip.Right, clip.Bottom };
+}
+
+//********************************************************************************************************************
+// Describes an RGBA8 filter bitmap as a surface view, positioned at the origin of the processing rectangle.
+
+static filter_surface_view filter_view(const filter_render_context &Render, const objBitmap *Bitmap)
+{
+   return { Bitmap, Bitmap->Data, Bitmap->Width, Bitmap->Height, Bitmap->LineWidth,
+      Render.VectorClip.left, Render.VectorClip.top, Bitmap->ColourSpace,
+      ((Bitmap->Flags & BMF::PREMUL) != BMF::NIL) ? filter_alpha::PREMULTIPLIED : filter_alpha::STRAIGHT,
+      { Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom } };
+}
+
+//********************************************************************************************************************
+// Returns the plan step that is currently drawing Effect, or null if the effect is not active or the filter graph has
+// changed since the plan was built.  Helpers re-check it after any operation that can run client code.
+
 static const filter_step * active_filter_step(const extFilterEffect *Effect)
 {
    const auto filter = Effect->Filter;
@@ -306,6 +386,7 @@ static const filter_step * active_filter_step(const extFilterEffect *Effect)
    return render->ActiveStep;
 }
 
+//********************************************************************************************************************
 // The display blitter takes a mutable source object but only reads from it.
 
 static ERR copy_filter_bitmap(const objBitmap *Source, objBitmap *Dest, BAF Flags,
@@ -315,6 +396,8 @@ static ERR copy_filter_bitmap(const objBitmap *Source, objBitmap *Dest, BAF Flag
 }
 
 //********************************************************************************************************************
+// Resamples Bitmap into the clip region of Target with a pure scale transform, splitting rows across worker threads
+// when the region is large enough to benefit.
 
 static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const agg::trans_affine &Transform,
    const agg::image_filter_lut &Filter)
@@ -328,7 +411,8 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
       agg::pixfmt_psl pix_source(Bitmap), pix_dest(Target);
       agg::span_interpolator_linear<> interpolator(Transform);
       agg::span_once<agg::pixfmt_psl> source(pix_source, 0, 0);
-      agg::span_image_filter_rgba<decltype(source), decltype(interpolator)> sampler(source, interpolator, Filter, false);
+      agg::span_image_filter_rgba<decltype(source), decltype(interpolator)>
+         sampler(source, interpolator, Filter, false);
       agg::span_allocator<agg::rgba8> span_alloc;
       auto colours = span_alloc.allocate(width);
 
@@ -353,8 +437,8 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
 //********************************************************************************************************************
 // Universal function for rendering a filter's Bitmap to the target region.
 //
-// No blending is performed because this is intended for use when there is no former input.  Copying is done
-// with only the transforms applied (if any).  Linear RGB interpolation will wait until post processing.
+// No blending is performed because this is intended for use when there is no former input.  Copying is done with
+// only the transforms applied (if any).  Linear RGB interpolation will wait until post processing.
 
 static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
 {
@@ -371,7 +455,8 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
    if ((p_width <= 0) or (p_height <= 0)) return ERR::Okay;
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
-   calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap->Width, Bitmap->Height, align_x, align_y, x_scale, y_scale);
+   calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap->Width, Bitmap->Height, align_x, align_y,
+      x_scale, y_scale);
 
    p_x += std::round(align_x);
    p_y += std::round(align_y);
@@ -399,15 +484,16 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
       }
 
       agg::rasterizer_scanline_aa<> raster;
-      agg::renderer_base<agg::pixfmt_psl> renderBase;
-      agg::pixfmt_psl pixDest(*Self->Target);
-      agg::pixfmt_psl pixSource(*Bitmap);
+      agg::renderer_base<agg::pixfmt_psl> render_base;
+      agg::pixfmt_psl pix_dest(*Self->Target);
+      agg::pixfmt_psl pix_source(*Bitmap);
 
-      renderBase.attach(pixDest);
-      renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right-1, Self->Target->Clip.Bottom-1);
+      render_base.attach(pix_dest);
+      render_base.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right - 1,
+         Self->Target->Clip.Bottom - 1);
 
       agg::span_interpolator_linear<> interpolator(img_transform);
-      agg::span_once<agg::pixfmt_psl> source(pixSource, 0, 0);
+      agg::span_once<agg::pixfmt_psl> source(pix_source, 0, 0);
 
       set_raster_rect_path(raster, Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right - Self->Target->Clip.Left,
@@ -416,13 +502,13 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
       if (SampleMethod IS VSM::NEIGHBOUR) {
          agg::span_image_filter_rgba_nn<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
             spangen(source, interpolator);
-         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+         renderSolidBitmap(render_base, raster, spangen); // Solid render without blending.
       }
       else {
          const agg::image_filter_lut &ifilter = get_filter(SampleMethod, img_transform);
          agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
             spangen(source, interpolator, ifilter, false);
-         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+         renderSolidBitmap(render_base, raster, spangen); // Solid render without blending.
       }
    }
    else return gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height,
@@ -461,6 +547,7 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
 #include "filter_wavefunction.cpp"
 
 //********************************************************************************************************************
+// Logs a problem with one of an effect's inputs, identifying the field or named slot, and returns Error.
 
 static ERR filter_input_error(const extFilterEffect *Effect, filter_input_role Role, size_t Slot, ERR Error,
    CSTRING Reason, OBJECTID Producer = 0)
@@ -481,6 +568,10 @@ static ERR filter_input_error(const extFilterEffect *Effect, filter_input_role R
    else log.warning("%s #%d %s: %s (producer #%d).", class_name, Effect->UID, field, Reason, Producer);
    return Error;
 }
+
+//********************************************************************************************************************
+// Confirms that Producer is a live sibling of Effect within the same filter.  If Positions is provided it is used in
+// place of a linear search of the filter's effect list.
 
 static ERR check_filter_reference(extFilterEffect *Effect, objFilterEffect *Producer, filter_input_role Role,
    size_t Slot, const filter_positions *Positions)
@@ -504,6 +595,10 @@ static ERR check_filter_reference(extFilterEffect *Effect, objFilterEffect *Prod
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Assigns the source of a named input declared by the effect's extension.  Map inputs may be cleared with
+// VSF::NONE, in which case they resolve to their contract's fallback value.
+
 [[maybe_unused]] static ERR set_named_filter_input(extFilterEffect *Effect, std::string_view Name, VSF Source,
    objFilterEffect *Reference = nullptr)
 {
@@ -526,9 +621,12 @@ static ERR check_filter_reference(extFilterEffect *Effect, objFilterEffect *Prod
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Clears every reference from Effect to Producer, or all of its references if Producer is null.  Dormant references
+// are also detached, because a later SourceType or MixType write can reactivate them.
+
 static void clear_filter_references(extFilterEffect *Effect, objFilterEffect *Producer)
 {
-   // Also detach dormant references.  A later SourceType or MixType write can reactivate them.
    if ((not Producer) or (Effect->Input IS Producer)) Effect->Input = nullptr;
    if ((not Producer) or (Effect->Mix IS Producer)) Effect->Mix = nullptr;
    if (Effect->classID() IS CLASSID::MERGEFX) {
@@ -543,6 +641,9 @@ static void clear_filter_references(extFilterEffect *Effect, objFilterEffect *Pr
    }
 }
 
+//********************************************************************************************************************
+// Rebuilds the Prev and Next links of the filter's effects to match their order, and invalidates any active plan.
+
 static void update_filter_links(extVectorFilter *Filter)
 {
    auto &effects = Filter->Effects;
@@ -552,6 +653,9 @@ static void update_filter_links(extVectorFilter *Filter)
    }
    Filter->GraphRevision++;
 }
+
+//********************************************************************************************************************
+// Removes an effect from its filter and clears all references to it held by the remaining effects.
 
 static void unlink_filter_effect(extFilterEffect *Effect)
 {
@@ -566,12 +670,15 @@ static void unlink_filter_effect(extFilterEffect *Effect)
    update_filter_links(filter);
 }
 
+//********************************************************************************************************************
+
 extFilterEffect::~extFilterEffect()
 {
    unlink_filter_effect(this);
 }
 
 //********************************************************************************************************************
+// Adapts an effect class's sampling() method to the filter_operation::Sampling function signature.
 
 template<class Effect>
 static filter_sampling effect_sampling(const extFilterEffect *Instance)
@@ -583,6 +690,10 @@ static filter_sampling effect_sampling(const extFilterEffect *Instance)
 static constexpr CSTRING glFilterMaskTestClass = "FilterMaskTestFX";
 static constexpr CSTRING glFilterSurfaceTestClass = "FilterSurfaceTestFX";
 #endif
+
+//********************************************************************************************************************
+// Returns the input arrangement and sampling reach for an effect class.  Unrecognised classes are treated as
+// single-input effects that may read the whole of their input.
 
 static filter_operation describe_filter_operation(CLASSID Class)
 {
@@ -614,6 +725,9 @@ static filter_operation describe_filter_operation(CLASSID Class)
    }
 }
 
+//********************************************************************************************************************
+// Returns true if a producer of the given Format can satisfy the input Contract.
+
 static bool supports_filter_input(filter_surface_format Format, const filter_input_contract &Contract)
 {
    using enum filter_input_kind;
@@ -626,8 +740,10 @@ static bool supports_filter_input(filter_surface_format Format, const filter_inp
    return false;
 }
 
-// Any cycle includes a forward edge.  Walk the dependencies only when the authored order is already invalid,
-// so successful draws do not need a second graph pass.
+//********************************************************************************************************************
+// Reports why the authored effect order is invalid, distinguishing a dependency cycle from a producer that merely
+// follows its consumer.  Any cycle includes a forward edge, so this walk is only needed when a forward reference has
+// been found, and successful draws do not need a second graph pass.
 
 static ERR diagnose_filter_order(const filter_plan &Plan, const extFilterEffect *Consumer, const filter_input &Forward)
 {
@@ -652,13 +768,16 @@ static ERR diagnose_filter_order(const filter_plan &Plan, const extFilterEffect 
             stack.pop_back();
             continue;
          }
+
          const auto &input = current.Step->Inputs[current.NextInput++];
          if (not input.Producer) continue;
          auto &state = visited[input.Producer - first];
+
          if (state IS visit::ACTIVE) {
             return filter_input_error(current.Step->Effect, input.Role, input.Slot, ERR::Recursion,
                "dependency cycle", input.Producer->Effect->UID);
          }
+
          if (state IS visit::UNSEEN) {
             state = visit::ACTIVE;
             stack.push_back({ input.Producer });
@@ -668,6 +787,11 @@ static ERR diagnose_filter_order(const filter_plan &Plan, const extFilterEffect 
    return filter_input_error(Consumer, Forward.Role, Forward.Slot, ERR::InvalidValue,
       "producer must precede its consumer", Forward.Producer->Effect->UID);
 }
+
+//********************************************************************************************************************
+// Validates the filter's effects and builds the draw plan.  The first pass checks each effect, sizes the input
+// array and enforces the resource limits.  The second pass resolves every input binding, counts consumers for
+// producers and standard sources, and detects references that do not precede their consumer.
 
 static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
 {
@@ -687,6 +811,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
             Filter->UID);
          return ERR::InvalidState;
       }
+
       const auto prev = i ? effects[i - 1] : nullptr;
       const auto next = (i + 1 < effects.size()) ? effects[i + 1] : nullptr;
       if ((effect->Prev != prev) or (effect->Next != next)) {
@@ -705,6 +830,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
          log.warning("Numerical filter effect #%d requires a Draw action.", effect->UID);
          return ERR::NoSupport;
       }
+
       size_t count = 0;
       switch (operation.Inputs) {
          case filter_inputs::GENERATOR: break;
@@ -712,8 +838,11 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
          case filter_inputs::DUAL: count = 2; break;
          case filter_inputs::MERGE: count = ((extMergeFX *)effect)->List.size(); break;
       }
+
       if (count > MAX_FILTER_INPUTS - input_count) return log.warning(ERR::ArrayFull);
+
       input_count += count;
+
       if (extension) {
          if (extension->Inputs.size() > MAX_FILTER_INPUTS - input_count) return log.warning(ERR::ArrayFull);
          input_count += extension->Inputs.size();
@@ -726,6 +855,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       log.warning("Final filter effect #%d requires an RGBA8 result for scene composition.", Plan.Final->Effect->UID);
       return ERR::NoSupport;
    }
+
    const extFilterEffect *forward_consumer = nullptr;
    const filter_input *forward_input = nullptr;
 
@@ -741,7 +871,9 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
              ((not std::isfinite(Contract.Fallback[0])) or (not std::isfinite(Contract.Fallback[1])))) {
             return filter_input_error(effect, Role, Slot, ERR::InvalidValue, "non-finite fallback");
          }
+
          filter_step *producer = nullptr;
+
          switch (Type) {
             case VSF::REFERENCE: {
                if (auto error = check_filter_reference(effect, Reference, Role, Slot, &positions);
@@ -773,15 +905,18 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                return filter_input_error(effect, Role, Slot, ERR::NoSupport, reason);
             }
          }
+
          if (producer and (not supports_filter_input(producer->Format, Contract))) {
             return filter_input_error(effect, Role, Slot, ERR::NoSupport, "incompatible producer format",
                Reference->UID);
          }
+
          const auto &input = Plan.Inputs.emplace_back(Type, Role, Slot, producer, Contract);
          if (producer and (producer > &step) and (not forward_input)) {
             forward_consumer = effect;
             forward_input = &input;
          }
+
          return ERR::Okay;
       };
 
@@ -807,6 +942,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
             break;
          }
       }
+
       if (auto extension = effect->FilterExtension; extension) {
          size_t slot = 0;
          for (const auto &input : extension->Inputs) {
@@ -814,6 +950,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                 input.Contract); error != ERR::Okay) return error;
          }
       }
+
       step.Inputs = std::span(Plan.Inputs).subspan(first);
    }
 
@@ -858,11 +995,18 @@ static TClipRectangle<double> box_filter_region(const extVectorFilter *Self, con
    return { left, top, left + width, top + height };
 }
 
+//********************************************************************************************************************
+// Resolves a filter length.  Scaled values are relative to Reference, and undefined values return Default.
+
 static double filter_length(const Unit &Length, double Reference, double Default)
 {
    if (Length.scaled()) return Length * Reference;
    return Length.defined() ? double(Length) : Default;
 }
+
+//********************************************************************************************************************
+// Computes the client transforms, the bounds of the client subtree and the filter region for the current draw.
+// Returns ERR::NothingDone if the client or its viewport is degenerate and nothing needs to be drawn.
 
 static ERR prepare_filter_geometry(extVectorFilter *Self)
 {
@@ -890,6 +1034,7 @@ static ERR prepare_filter_geometry(extVectorFilter *Self)
    auto inverse = render.ToScene;
    if (not invert_filter_transform(inverse)) {
       // A finite transform can collapse a client to zero area during a zoom animation.
+
       if (finite_transform(render.ToScene) and (render.ToScene.determinant() IS 0.0)) return ERR::NothingDone;
       return ERR::InvalidValue;
    }
@@ -904,6 +1049,7 @@ static ERR prepare_filter_geometry(extVectorFilter *Self)
    if (not finite_region(bounds)) return ERR::InvalidValue;
 
    // A pathless client has no content dimensions.  Its processing rectangle can still fall back to the viewport.
+
    if ((bounds.right < bounds.left) or (bounds.bottom < bounds.top)) bounds = { 0.0 };
    render.ClientBounds = bounds;
    render.ClientPathBounds = client->Bounds;
@@ -960,6 +1106,10 @@ static void trim_filter_surfaces(extVectorFilter *Self, size_t Limit)
    }
 }
 
+//********************************************************************************************************************
+// Checks out a surface of exactly Bytes from the free list, or allocates a new one.  The content of the surface is
+// undefined.  Allocation is refused if the live storage of the draw would exceed MAX_FILTER_SURFACE_BYTES.
+
 static ERR acquire_filter_surface(extVectorFilter *Self, size_t Bytes, filter_surface *&Surface,
    bool Numerical = false)
 {
@@ -999,6 +1149,9 @@ static ERR acquire_filter_surface(extVectorFilter *Self, size_t Bytes, filter_su
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Returns a surface to the front of the free list and clears the caller's pointer.
+
 static void release_filter_surface(extVectorFilter *Self, filter_surface *&Surface)
 {
    if (not Surface) return;
@@ -1011,6 +1164,9 @@ static void release_filter_surface(extVectorFilter *Self, filter_surface *&Surfa
    Self->FreeSurfaces = slot;
 }
 
+//********************************************************************************************************************
+// Releases each surface in a linked List, up to but not including Stop.
+
 static void release_filter_surfaces(extVectorFilter *Self, filter_surface *&List, const filter_surface *Stop)
 {
    while (List != Stop) {
@@ -1020,6 +1176,7 @@ static void release_filter_surfaces(extVectorFilter *Self, filter_surface *&List
    }
 }
 
+//********************************************************************************************************************
 // Every bitmap exposes a fully initialised, tightly packed RGBA8 rectangle.  Targets in particular may blend or
 // write only a primitive subregion, so initialise the entire processing region before making it addressable.
 
@@ -1050,12 +1207,18 @@ static ERR bind_filter_bitmap(extVectorFilter *Self, filter_surface &Surface, ob
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Acquires a surface sized for the processing region and binds a cleared RGBA8 bitmap to it.
+
 static ERR acquire_filter_bitmap(extVectorFilter *Self, filter_surface *&Surface, objBitmap *&Bitmap,
    CSTRING Name = "dummy_fx_bitmap")
 {
    if (auto error = acquire_filter_surface(Self, Self->Render->BitmapBytes, Surface); error != ERR::Okay) return error;
    return bind_filter_bitmap(Self, *Surface, Bitmap, Name);
 }
+
+//********************************************************************************************************************
+// As for acquire_filter_bitmap(), but the surface is pushed onto List so that the caller can release it in bulk.
 
 static ERR get_filter_bitmap(extVectorFilter *Self, filter_surface *&List, objBitmap *&Bitmap)
 {
@@ -1068,21 +1231,34 @@ static ERR get_filter_bitmap(extVectorFilter *Self, filter_surface *&List, objBi
    return error;
 }
 
+//********************************************************************************************************************
+// Returns the number of floats per pixel for a numerical surface format.
+
 static int filter_components(filter_surface_format Format)
 {
    return (Format IS filter_surface_format::VECTOR_F32) ? 2 : 1;
 }
 
+//********************************************************************************************************************
+// Computes the stride and total size of a Width x Height surface, rejecting sizes that exceed the surface limit.
+
 static ERR filter_surface_size(int Width, int Height, size_t PixelBytes, size_t &Bytes, int &Stride)
 {
    if ((Width <= 0) or (Height <= 0)) return ERR::NothingDone;
+
    if (size_t(Width) > size_t(std::numeric_limits<int>::max()) / PixelBytes) return ERR::OutOfRange;
+
    const size_t stride = size_t(Width) * PixelBytes;
    if (size_t(Height) > MAX_FILTER_SURFACE_BYTES / stride) return ERR::AllocMemory;
+
    Stride = int(stride);
    Bytes = stride * size_t(Height);
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+// Acquires the output surface for a numerical effect.  Every sample is initialised to INVALID_FILTER_SAMPLE so that
+// pixels the effect does not write are treated as invalid by readers.
 
 static ERR acquire_numeric_target(extVectorFilter *Filter, filter_step &Step)
 {
@@ -1090,16 +1266,29 @@ static ERR acquire_numeric_target(extVectorFilter *Filter, filter_step &Step)
    const auto clip = render.scratch_clip();
    size_t bytes;
    int stride;
+
    const size_t pixel_bytes = filter_components(Step.Format) * sizeof(float);
    if (auto error = filter_surface_size(clip.width(), clip.height(), pixel_bytes, bytes, stride); error != ERR::Okay) {
       return error;
    }
+
    if (auto error = acquire_filter_surface(Filter, bytes, Step.Surface, true); error != ERR::Okay) return error;
+
    std::fill_n((float *)Step.Surface->Data.get(), bytes / sizeof(float), INVALID_FILTER_SAMPLE);
-   Step.Result = { .Data = Step.Surface->Data.get(), .Width = clip.right, .Height = clip.bottom, .Stride = stride,
-      .OriginX = render.VectorClip.left, .OriginY = render.VectorClip.top, .Valid = clip, .Format = Step.Format };
+
+   Step.Result = {
+      .Data = Step.Surface->Data.get(),
+      .Width = clip.right, .Height = clip.bottom, .Stride = stride,
+      .OriginX = render.VectorClip.left, .OriginY = render.VectorClip.top,
+      .Valid = clip, .Format = Step.Format
+   };
+
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+// Returns the layout and float storage of the active numerical effect's output.  Fails with ERR::NoSupport for
+// effects that produce RGBA8 output.
 
 [[maybe_unused]] static ERR get_numeric_target(extFilterEffect *Effect, filter_surface_view &Layout, float *&Data)
 {
@@ -1108,10 +1297,14 @@ static ERR acquire_numeric_target(extVectorFilter *Filter, filter_step &Step)
    const auto step = active_filter_step(Effect);
    if (not step) return ERR::InvalidState;
    if (step->Format IS filter_surface_format::RGBA8) return ERR::NoSupport;
+
    Layout = step->Result;
    Data = (float *)step->Surface->Data.get();
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+// Consumes one planned use of a standard source, releasing its storage after the last use.
 
 static void consume_filter_source(extVectorFilter *Self, filter_standard_source &Source)
 {
@@ -1121,6 +1314,7 @@ static void consume_filter_source(extVectorFilter *Self, filter_standard_source 
    }
 }
 
+//********************************************************************************************************************
 // Effect-local arrays must initialise every element they read.  They are released along with converted input views
 // after the current effect returns, including when the effect fails.
 
@@ -1142,7 +1336,9 @@ static ERR get_filter_scratch(extFilterEffect *Effect, size_t Count, T *&Data)
 }
 
 //********************************************************************************************************************
-// Standard sources are populated lazily and shared by their readers until their last planned use.
+// Resolves an input binding to a surface view.  References return the producer's result, and standard sources are
+// populated lazily and shared by their readers until their last planned use.  Returns ERR::Continue for an unset
+// optional input.
 
 static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input, filter_surface_view &Output)
 {
@@ -1152,8 +1348,10 @@ static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input,
    auto &render = *filter->Render;
    kt::SwitchContext ctx(filter);
    const auto &input = Input;
+
    log.msg(VLF::BRANCH|VLF::DETAIL, "%s #%d <- ID: #%u, Type: %d", Effect->className(), Effect->UID,
       input.Producer ? input.Producer->Effect->UID : 0, int(input.Source));
+
    if (not active_filter_step(Effect)) return ERR::InvalidState;
 
    if (input.Source IS VSF::REFERENCE) {
@@ -1164,7 +1362,9 @@ static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input,
       Output = input.Producer->Result;
       return ERR::Okay;
    }
+
    if (input.Source IS VSF::NONE) return ERR::Continue;
+
    if (input.Source IS VSF::GRAPHIC) {
       auto error = get_source_graphic(filter, Output);
       if (error != ERR::Okay) return error;
@@ -1180,13 +1380,16 @@ static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input,
 
       if (input.Source IS VSF::ALPHA) {
          filter_surface_view graphic;
+
          if (auto error = get_source_graphic(filter, graphic); error != ERR::Okay) return error;
          if (not active_filter_step(Effect)) return ERR::InvalidState;
+
          for (int y = graphic.Valid.top; y < graphic.Valid.bottom; y++) {
             const auto src = (const uint32_t *)graphic.row(y);
             const auto dest = (uint32_t *)(bmp->Data + std::ptrdiff_t(y) * bmp->LineWidth);
             for (int x = graphic.Valid.left; x < graphic.Valid.right; x++) dest[x] = src[x] & 0xff000000;
          }
+
          consume_filter_source(filter, render.Plan.standard_source(VSF::GRAPHIC));
       }
       else {
@@ -1197,6 +1400,7 @@ static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input,
             auto restore_data = kt::Defer([&]() { background->Data = save_data; });
             const int left = clip.left - render.BkgdOriginX;
             const int top = clip.top - render.BkgdOriginY;
+
             if (input.Source IS VSF::BKGD) {
                if (auto error = copy_filter_bitmap(background, bmp, BAF::NIL, left, top,
                    clip.width(), clip.height(), 0, 0); error != ERR::Okay) return error;
@@ -1226,20 +1430,30 @@ static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input,
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Returns the RGBA8 view for the active effect's Input, Mix or SourceList[Slot] binding.  Numerical producers are
+// rejected with ERR::NoSupport.
+
 static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output, filter_input_role Role, size_t Slot)
 {
    Output = {};
    const auto step = active_filter_step(Effect);
    const size_t index = (Role IS filter_input_role::MIX) ? 1 : Slot;
+
    if ((not step) or (Role IS filter_input_role::NAMED) or (index >= step->Inputs.size()) or
        (step->Inputs[index].Role != Role)) return ERR::InvalidState;
+
    auto error = read_filter_input(Effect, step->Inputs[index], Output);
+
    if ((error IS ERR::Okay) and (not Output.Bitmap)) {
       Output = {};
       return ERR::NoSupport;
    }
    return error;
 }
+
+//********************************************************************************************************************
+// As for get_source_view(), returning the bitmap alone.
 
 static ERR get_source_bitmap(extFilterEffect *Effect, const objBitmap **Bitmap, filter_input_role Role, size_t Slot)
 {
@@ -1248,6 +1462,10 @@ static ERR get_source_bitmap(extFilterEffect *Effect, const objBitmap **Bitmap, 
    *Bitmap = (error IS ERR::Okay) ? source.Bitmap : nullptr;
    return error;
 }
+
+//********************************************************************************************************************
+// Returns the planned binding for a named input of the active effect.  Named inputs occupy the end of the step's
+// input span, in declaration order.
 
 static const filter_input * planned_named_input(const extFilterEffect *Effect, std::string_view Name)
 {
@@ -1261,6 +1479,9 @@ static const filter_input * planned_named_input(const extFilterEffect *Effect, s
    return nullptr;
 }
 
+//********************************************************************************************************************
+// Reads one pixel from a numerical surface.  Returns false if any component is not finite.
+
 static bool read_numeric_sample(const filter_surface_view &Source, int X, int Y, filter_map_value &Value)
 {
    const auto components = filter_components(Source.Format);
@@ -1269,11 +1490,16 @@ static bool read_numeric_sample(const filter_surface_view &Source, int X, int Y,
    return std::isfinite(Value[0]) and std::isfinite(Value[1]);
 }
 
+//********************************************************************************************************************
+// Samples a scalar or vector map from a named input, applying the input contract's channel selection, transfer
+// curve, interpolation, edge mode and fallback.
+
 struct filter_map_view {
    filter_surface_view Source;
    filter_input_contract Contract;
 
    // Scene coordinates use pixel centres at Origin + local index + 0.5.
+
    filter_map_value sample(double X, double Y) const {
       if (not Source.Data) return Contract.Fallback;
       const double x = X - Source.OriginX - 0.5, y = Y - Source.OriginY - 0.5;
@@ -1310,16 +1536,19 @@ struct filter_map_view {
       const auto pixel = Source.row(y) + std::ptrdiff_t(x) * 4;
       const auto &format = *Source.Bitmap->ColourFormat;
       const double alpha = double(pixel[format.AlphaPos >> 3]) / 255.0;
+
       auto colour = [&](int Shift) {
          double value = double(pixel[Shift >> 3]) / 255.0;
          if (Source.Alpha IS filter_alpha::PREMULTIPLIED) {
             value = alpha > 0.0 ? std::min(1.0, value / alpha) : 0.0;
          }
+
          if ((Contract.Transfer IS filter_map_transfer::LINEAR) and (Source.Encoding IS CS::SRGB)) {
             value = value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
          }
          return value;
       };
+
       auto channel = [&](filter_map_channel Channel) -> float {
          using enum filter_map_channel;
          switch (Channel) {
@@ -1333,10 +1562,15 @@ struct filter_map_view {
          }
          return 0.0f;
       };
+
       return { channel(Contract.XChannel),
          (Contract.Kind IS filter_input_kind::VECTOR_MAP) ? channel(Contract.YChannel) : 0.0f };
    }
 };
+
+//********************************************************************************************************************
+// Prepares a map view for a named map input of the active effect.  An unset input yields a view that returns the
+// contract's fallback value.
 
 [[maybe_unused]] static ERR get_filter_map(extFilterEffect *Effect, std::string_view Name, filter_map_view &Output)
 {
@@ -1349,8 +1583,10 @@ struct filter_map_view {
    return read_filter_input(Effect, *input, Output.Source);
 }
 
+//********************************************************************************************************************
 // An explicit unit-channel adapter for a named bitmap input.  Finite scalar values are grey, vectors use R/G.
 // Values clamp to [0,1] and round to 8 bits.  Invalid pixels remain transparent, and no transfer curve is applied.
+
 [[maybe_unused]] static ERR get_named_filter_bitmap(extFilterEffect *Effect, std::string_view Name,
    filter_surface_view &Output)
 {
@@ -1360,11 +1596,14 @@ struct filter_map_view {
    if (input->Contract.Kind != filter_input_kind::IMAGE) return ERR::NoSupport;
 
    filter_surface_view source;
+
    if (auto error = read_filter_input(Effect, *input, source); error != ERR::Okay) return error;
+
    if (source.Bitmap) {
       Output = source;
       return ERR::Okay;
    }
+
    if (input->Contract.BitmapConversion != filter_bitmap_conversion::UNIT_CHANNELS) return ERR::NoSupport;
 
    auto filter = Effect->Filter;
@@ -1372,6 +1611,7 @@ struct filter_map_view {
    if (auto error = get_filter_bitmap(filter, filter->Render->WorkingSurfaces, bitmap); error != ERR::Okay) {
       return error;
    }
+
    if (not active_filter_step(Effect)) return ERR::InvalidState;
 
    const auto &format = *bitmap->ColourFormat;
@@ -1390,10 +1630,12 @@ struct filter_map_view {
          pixel[format.AlphaPos >> 3] = 255;
       }
    }
+
    Output = filter_view(*filter->Render, bitmap);
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Decode before premultiplying.  The filter bank uses a common RGBA8 layout, so a working copy preserves the
 // source bytes exactly before the bitmap conversion routines perform their usual rounding.
 
@@ -1418,20 +1660,24 @@ static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_vie
       copymem(Source.row(y) + start, work->Data + std::ptrdiff_t(y) * work->LineWidth + start,
          size_t(valid.width()) * pixel_size);
    }
+
    work->ColourSpace = Source.Encoding;
    if (Source.Alpha IS filter_alpha::PREMULTIPLIED) {
       work->Flags |= BMF::PREMUL;
       if (auto error = work->demultiply(); error != ERR::Okay) return error;
    }
+
    if (Source.Encoding != Encoding) {
       auto error = (Encoding IS CS::LINEAR_RGB) ? work->convertToLinear() : work->convertToRGB();
       if (error != ERR::Okay) return error;
    }
+
    if (auto error = work->premultiply(); error != ERR::Okay) return error;
    Output = filter_view(*filter->Render, work);
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Suppress only this pipeline in the private scene that is drawing its raw input.  A request from any other
 // scene will still detect an active instance, including indirect recursion through another filter.
 
@@ -1461,6 +1707,7 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
 {
    auto &render = *Self->Render;
    auto &source = render.Plan.standard_source(VSF::GRAPHIC);
+
    if (source.View.Bitmap) {
       Output = source.View;
       return ERR::Okay;
@@ -1471,17 +1718,21 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
    if (auto error = acquire_filter_bitmap(Self, source.Surface, sg, "source_graphic"); error != ERR::Okay) {
       return error;
    }
+
    if ((Self->GraphRevision != render.Revision) or Self->collecting()) return ERR::InvalidState;
 
    const auto scene = render.ClientViewport->Scene;
    if (not Self->SourceScene) {
       auto source_scene = extVectorScene::create::local(fl::PageWidth(scene->PageWidth),
          fl::PageHeight(scene->PageHeight));
+
       if (not source_scene) return ERR::CreateObject;
+
       if (not extVectorViewport::create::global(fl::Owner(source_scene->UID))) {
          FreeResource(source_scene);
          return ERR::CreateObject;
       }
+
       Self->SourceScene = source_scene;
    }
    else if ((scene->PageWidth != Self->SourceScene->PageWidth) or
@@ -1494,6 +1745,7 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
 
    // The source is sRGB encoded.  It inherits the destination's blending preference and the client's resolved
    // colour space, independently of the colour space requested for filter arithmetic.
+
    auto preference = render.BkgdBitmap ? render.BkgdBitmap->BlendMode : BLM::AUTO;
    if ((preference IS BLM::LINEAR) or (preference IS BLM::NONE)) preference = BLM::AUTO;
    sg->BlendMode = preference;
@@ -1529,11 +1781,13 @@ static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
          return (Sampling.X >= 0) and (Sampling.Y >= 0) and
             (unbounded or (std::isfinite(Sampling.X) and std::isfinite(Sampling.Y)));
       };
+
       if (not valid(sampling)) {
          kt::Log("FilterGeometry").warning("%s #%d has invalid sampling reach.", step.Effect->className(),
             step.Effect->UID);
          return ERR::InvalidValue;
       }
+
       double reach_x = sampling.X, reach_y = sampling.Y;
       for (const auto &input : step.Inputs) {
          if (input.Role != filter_input_role::NAMED) continue;
@@ -1542,15 +1796,22 @@ static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
             return filter_input_error(step.Effect, input.Role, input.Slot, ERR::InvalidValue,
                "invalid sampling reach");
          }
+
          if (input.Source IS VSF::NONE) continue;
+
          reach_x = std::max(reach_x, reach.X);
          reach_y = std::max(reach_y, reach.Y);
       }
+
       ReachX += reach_x;
       ReachY += reach_y;
    }
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+// Replaces Region with the axis-aligned bounds of its transformed corners.  Returns false if any result is not
+// finite.
 
 static bool transform_filter_region(TClipRectangle<double> &Region, const agg::trans_affine &Transform)
 {
@@ -1568,8 +1829,14 @@ static bool transform_filter_region(TClipRectangle<double> &Region, const agg::t
          Region.bottom = std::max(Region.bottom, py);
       }
    }
+
    return finite_region(Region);
 }
+
+//********************************************************************************************************************
+// Computes the processing rectangle in scene device pixels.  The filter region is extended by the pipeline's
+// sampling reach and limited to the page plus a bounded margin.  The local bitmap transforms are derived from the
+// result.
 
 static ERR set_clip_region(extVectorFilter *Self)
 {
@@ -1580,15 +1847,19 @@ static ERR set_clip_region(extVectorFilter *Self)
    if (render.FilterUnits IS VUNIT::BOUNDING_BOX) {
       bool transform = render.AspectRatio IS VFA::NONE;
       auto bounds = transform ? render.ClientBounds : render.SceneBounds;
+
       if (not finite_region(bounds)) return ERR::InvalidValue;
+
       if (not bounds.valid()) {
          bounds = viewport->vpBounds;
          transform = false;
       }
+
       if (render.AspectRatio IS VFA::NONE) {
          const double left = std::round(bounds.left), top = std::round(bounds.top);
          bounds = { left, top, left + std::round(bounds.width()), top + std::round(bounds.height()) };
       }
+
       region = box_filter_region(Self, bounds);
       if (transform and region.valid()) {
          if (not transform_filter_region(region, render.ToScene)) return ERR::InvalidValue;
@@ -1601,14 +1872,18 @@ static ERR set_clip_region(extVectorFilter *Self)
       const double y = std::round(filter_length(Self->Y, render.ContainerHeight, 0));
       const double width = std::round(filter_length(Self->Width, render.ContainerWidth, render.ContainerWidth));
       const double height = std::round(filter_length(Self->Height, render.ContainerHeight, render.ContainerHeight));
+
       if ((width <= 0) or (height <= 0)) return ERR::NothingDone;
       region = { x, y, x + width, y + height };
+
       if ((not finite_region(region)) or (not transform_filter_region(region, render.ToScene))) {
          return ERR::InvalidValue;
       }
+
       region = { std::trunc(region.left), std::trunc(region.top),
          std::trunc(region.right), std::trunc(region.bottom) };
    }
+
    if (not finite_region(region)) return ERR::InvalidValue;
    if (not region.valid()) return ERR::NothingDone;
 
@@ -1623,7 +1898,9 @@ static ERR set_clip_region(extVectorFilter *Self)
       return { std::max(region.left, -MarginX), std::max(region.top, -MarginY),
          std::min(region.right, page_width + MarginX), std::min(region.bottom, page_height + MarginY) };
    };
+
    auto clip = limit_region(std::ceil(std::min(reach_x, max_margin)), std::ceil(std::min(reach_y, max_margin)));
+
    if (not clip.valid()) return ERR::NothingDone;
    if ((clip.left < std::numeric_limits<int>::min()) or (clip.top < std::numeric_limits<int>::min()) or
        (clip.right > std::numeric_limits<int>::max()) or (clip.bottom > std::numeric_limits<int>::max()) or
@@ -1632,6 +1909,7 @@ static ERR set_clip_region(extVectorFilter *Self)
    render.VectorClip = { int(clip.left), int(clip.top), int(clip.right), int(clip.bottom) };
    if (auto error = filter_surface_size(render.VectorClip.width(), render.VectorClip.height(), 4,
        render.BitmapBytes, render.BitmapStride); error != ERR::Okay) return error;
+
    render.Transform = render.ToScene;
    render.Transform.translate(-clip.left, -clip.top);
    render.Inverse = render.Transform;
@@ -1639,6 +1917,7 @@ static ERR set_clip_region(extVectorFilter *Self)
    if ((not invert_filter_transform(render.Inverse)) or (not transform_filter_region(local, render.Inverse))) {
       return ERR::InvalidValue;
    }
+
    return ERR::Okay;
 }
 
@@ -1651,6 +1930,7 @@ static ERR compute_subregion(const filter_render_context &Render, filter_step &S
    TClipRectangle<double> inputs = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
       std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
    bool referenced = false, standard = false;
+
    for (const auto &input : Step.Inputs) {
       if (not input.Contract.ContributesRegion) continue;
       if (input.Producer) {
@@ -1684,6 +1964,7 @@ static ERR compute_subregion(const filter_render_context &Render, filter_step &S
       kt::Log("FilterGeometry").warning("%s #%d has an invalid subregion.", effect->className(), effect->UID);
       return ERR::InvalidValue;
    }
+
    return ERR::Okay;
 }
 
@@ -1699,6 +1980,7 @@ static void clip_to_subregion(const filter_render_context &Render, const filter_
       region = { 0, 0, double(Step.Result.Width), double(Step.Result.Height) };
       transform_filter_region(region, Render.Inverse);
    }
+
    if ((sub.left <= region.left) and (sub.top <= region.top) and
        (sub.right >= region.right) and (sub.bottom >= region.bottom)) return;
 
@@ -1712,6 +1994,7 @@ static void clip_to_subregion(const filter_render_context &Render, const filter_
          }
       }
    };
+
    if (auto bmp = Step.Effect->Target; bmp) {
       if (bmp->BytesPerPixel != 4) return;
       clip_pixels({ bmp->Clip.Left, bmp->Clip.Top, bmp->Clip.Right, bmp->Clip.Bottom }, [&](int Y) {
@@ -1732,9 +2015,9 @@ static void clip_to_subregion(const filter_render_context &Render, const filter_
 
 //********************************************************************************************************************
 // Main rendering routine for filter effects.  Called by the scene graph renderer whenever a vector uses a filter.
-// The caller holds the filter lock through rendering and composition.  ColourSpace is the client's resolved
-// colour space in the renderer, which can be inherited from a vector that is not
-// a physical ancestor, e.g. the viewport that consumes a live pattern.
+// The caller holds the filter lock through rendering and composition, and must call finish_filter_composition()
+// after a successful render.  ColourSpace is the client's resolved colour space in the renderer, which can be
+// inherited from a vector that is not a physical ancestor, e.g. the viewport that consumes a live pattern.
 
 ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
    objBitmap *BkgdBitmap, VCS ColourSpace, filter_render_result &Output, int BkgdOriginX, int BkgdOriginY)
@@ -1746,22 +2029,27 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
    if (Self->collecting()) return ERR::MarkedForDeletion;
    if (Self->Render or Self->Composing) return ERR::Recursion;
+
    kt::SwitchContext context(Self);
    const bool diagnostics = GetResource(RES::LOG_LEVEL) >= 6;
 
    filter_render_context render = {};
-   render.ClientVector = Vector;
-   render.ClientViewport = Viewport;
-   render.BkgdOriginX = BkgdOriginX;
-   render.BkgdOriginY = BkgdOriginY;
+   render.ClientVector      = Vector;
+   render.ClientViewport    = Viewport;
+   render.BkgdOriginX       = BkgdOriginX;
+   render.BkgdOriginY       = BkgdOriginY;
    render.ClientColourSpace = ColourSpace;
-   render.Revision = Self->GraphRevision;
+   render.Revision          = Self->GraphRevision;
 
    for (auto effect : Self->Effects) effect->Target = nullptr;
+
    release_filter_surface(Self, Self->LastOutput);
+
    Self->Render = &render;
    auto graph_changed = [&]() { return (Self->GraphRevision != render.Revision) or Self->collecting(); };
+
    bool completed = false;
+
    auto cleanup = kt::Defer([&]() {
       if (not completed) {
          for (auto effect : Self->Effects) effect->Target = nullptr;
@@ -1770,6 +2058,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
          for (auto &source : render.Plan.StandardSources) release_filter_surface(Self, source.Surface);
          trim_filter_surfaces(Self, std::min(render.PeakLiveBytes, MAX_RETAINED_FILTER_BYTES));
       }
+
       Self->Render = nullptr;
    });
 
@@ -1778,9 +2067,11 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    if (auto error = prepare_filter_plan(Self, plan); error != ERR::Okay) return error;
 
    CSTRING filter_name = Self->Name;
-   if ((!filter_name) or (!filter_name[0])) filter_name = "Unnamed";
+   if ((not filter_name) or (not filter_name[0])) filter_name = "Unnamed";
+
    CSTRING vector_name = Vector->Name;
-   if ((!vector_name) or (!vector_name[0])) vector_name = "Unnamed";
+   if ((not vector_name) or (not vector_name[0])) vector_name = "Unnamed";
+
    log.msg(VLF::BRANCH|VLF::DETAIL, "Rendering '%s' filter content for %s #%d '%s'.", filter_name,
       Vector->Class->ClassName.c_str(), Vector->UID, vector_name);
 
@@ -1815,12 +2106,16 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       effect->Target = target;
 
       // Earlier draw and bitmap allocation callbacks can edit this primitive's dimensions.
+
       if (auto error = compute_subregion(render, step); error != ERR::Okay) return error;
+
       render.ActiveStep = &step;
       auto finish_step = kt::Defer([&]() { render.ActiveStep = nullptr; });
+
       if (step.Subregion.valid()) {
          if (auto error = acDraw(effect); error != ERR::Okay) return log.warning(error);
       }
+
       if (graph_changed() or effect->collecting()) {
          log.warning("Filter #%d changed while drawing.", Self->UID);
          return ERR::InvalidState;
@@ -1828,9 +2123,11 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
       effect->Target = target;
       if (step.Subregion.valid()) clip_to_subregion(render, step);
+
       if (target and ((target->ColourSpace != CS::SRGB) or ((target->Flags & BMF::PREMUL) != BMF::NIL))) {
          return log.warning(ERR::InvalidState);
       }
+
       if ((&step IS plan.Final) or step.Consumers) {
          if (target) step.Result = filter_view(render, target);
       }
@@ -1838,6 +2135,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
       // A reference is counted even if the current effect skips reading it.  Repeated inputs to the same
       // effect each consume a binding, and the last binding releases the result.
+
       for (const auto &input : step.Inputs) {
          if (auto producer = input.Producer; producer) {
             if (not --producer->Consumers) release_result(*producer);
@@ -1851,11 +2149,13 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
             consume_filter_source(Self, source);
          }
       }
+
       release_filter_surfaces(Self, render.WorkingSurfaces);
       if (diagnostics) {
          log.detail("Filter effect: %s #%u elapsed_us=%" PRId64, effect->className(), effect->UID,
             PreciseTime() - started);
       }
+
       if (graph_changed()) return log.warning(ERR::InvalidState);
    }
 
@@ -1885,6 +2185,10 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    completed = true;
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+// Ends the composition that follows a successful render_filter().  An oversized final surface is freed immediately
+// rather than retained for the next draw.
 
 void finish_filter_composition(extVectorFilter *Self)
 {
@@ -1939,6 +2243,8 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 extVectorFilter::~extVectorFilter()
 {
@@ -2051,9 +2357,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
    for (auto e : Self->Effects) {
       ss << "<";
       std::string def;
-      if (!e->getXMLDef(def)) {
-         ss << def;
-      }
+      if (e->getXMLDef(def) IS ERR::Okay) ss << def;
       ss << "/>";
    }
 

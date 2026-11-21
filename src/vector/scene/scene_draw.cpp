@@ -774,40 +774,54 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
    }
 }
 
-static double distal_fill_inflation(extVector *Shape, double ViewWidth, double ViewHeight)
+//********************************************************************************************************************
+// Tiled distal gradients pad their distance field far enough to reach the view edges.
+
+static double distal_fill_extent(double Radius, VSPREAD Spread, const TClipRectangle<double> &Bounds,
+   double ViewWidth, double ViewHeight)
 {
-   double inflation = 0;
-
-   auto check_fill = [&](const extPainter &Fill) {
-      if (not Fill.Gradient) return;
-
-      auto gradient = (extGradient *)Fill.Gradient;
-      if ((gradient->classID() IS CLASSID::GRADIENTDISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP)) {
-         auto distal = (extGradientDistal *)gradient;
-         const double max_bound = (Shape->Bounds.width() > Shape->Bounds.height()) ? Shape->Bounds.width() :
-            Shape->Bounds.height();
-         const double radius = distal->Radius.scaled() ? distal->Radius * max_bound : double(distal->Radius);
-
-         // For REPEAT/REFLECT the exterior tiles outward to fill the parent area, so fill_gradient() expands the SDF
-         // buffer to a fill extent that reaches the view edges from the path bounds.
-
-         double extent = radius;
-         if ((gradient->SpreadMethod IS VSPREAD::REPEAT) or (gradient->SpreadMethod IS VSPREAD::REFLECT)) {
-            const double reach_x = std::max(Shape->Bounds.left, ViewWidth - Shape->Bounds.right);
-            const double reach_y = std::max(Shape->Bounds.top, ViewHeight - Shape->Bounds.bottom);
-            extent = std::max({ radius, reach_x, reach_y });
-         }
-
-         if (extent > inflation) inflation = extent;
-      }
-   };
-
-   check_fill(Shape->Fill);
-   if (Shape->ExtFill) {
-      for (auto &fill : *Shape->ExtFill) check_fill(fill);
+   if ((Spread IS VSPREAD::REPEAT) or (Spread IS VSPREAD::REFLECT)) {
+      const double reach_x = std::max(Bounds.left, ViewWidth - Bounds.right);
+      const double reach_y = std::max(Bounds.top, ViewHeight - Bounds.bottom);
+      return std::max({ Radius, reach_x, reach_y });
    }
+   return Radius;
+}
 
-   return inflation * Shape->Transform.scale();
+//********************************************************************************************************************
+// Include the padded distal field in scene culling, using the same transform as the field sampler.
+
+static void expand_distal_bounds(TClipRectangle<double> &Bounds, extVector &Shape, const extPainter &Painter,
+   double ViewWidth, double ViewHeight)
+{
+   if (not Painter.Gradient) return;
+
+   auto gradient = (extGradient *)Painter.Gradient;
+   if ((gradient->classID() != CLASSID::GRADIENTDISTAL) or (gradient->SpreadMethod IS VSPREAD::CLIP)) return;
+
+   auto distal = (const extGradientDistal *)gradient;
+   if (std::isnan(distal->Radius) or std::isnan(distal->InnerRadius)) return;
+
+   const double width = Shape.Bounds.width();
+   const double height = Shape.Bounds.height();
+   const double radius = distal->Radius.scaled() ? distal->Radius * std::max(width, height) : double(distal->Radius);
+   const double extent = distal_fill_extent(radius, gradient->SpreadMethod, Shape.Bounds, ViewWidth, ViewHeight);
+
+   agg::trans_affine transform;
+   apply_gradient_transforms(*gradient, transform, Shape.Bounds);
+   transform *= Shape.Transform;
+
+   const double pixel_scale = field_scale(transform, width + (extent * 2.0), height + (extent * 2.0));
+   // Allow for rounding and the extra edge pixel in the field buffer.
+   const double padding = std::max(0.0, extent) + (3.0 / pixel_scale);
+   auto path_bounds = get_bounds(Shape.BasePath);
+   path_bounds.left -= padding;
+   path_bounds.top -= padding;
+   path_bounds.right += padding;
+   path_bounds.bottom += padding;
+
+   auto coverage = path_bounds.as_path(transform);
+   Bounds.expanding(get_bounds(coverage));
 }
 
 //********************************************************************************************************************
@@ -834,18 +848,27 @@ bool SceneRenderer::shape_intersects_clip(extVector *Shape)
       if (stroke_inflation > inflation) inflation = stroke_inflation;
    }
 
-   auto fill_inflation = distal_fill_inflation(Shape, mView->vpFixedWidth, mView->vpFixedHeight);
-   if (fill_inflation > inflation) inflation = fill_inflation;
-
    bounds.left   -= inflation;
    bounds.top    -= inflation;
    bounds.right  += inflation;
    bounds.bottom += inflation;
 
    auto &clip = mRenderBase.clip_box();
+   auto intersects_clip = [&]() {
+      return (bounds.right >= double(clip.x1)) and (bounds.bottom >= double(clip.y1)) and
+         (bounds.left <= double(clip.x2)) and (bounds.top <= double(clip.y2));
+   };
+   if (intersects_clip()) return true;
 
-   return (bounds.right >= double(clip.x1)) and (bounds.bottom >= double(clip.y1)) and
-      (bounds.left <= double(clip.x2)) and (bounds.top <= double(clip.y2));
+   expand_distal_bounds(bounds, *Shape, Shape->Fill, mView->vpFixedWidth, mView->vpFixedHeight);
+   if (Shape->ExtFill) {
+      for (auto &fill : *Shape->ExtFill) {
+         expand_distal_bounds(bounds, *Shape, fill, mView->vpFixedWidth, mView->vpFixedHeight);
+      }
+   }
+   if (Shape->StrokeRaster) expand_distal_bounds(bounds, *Shape, Shape->Stroke, view_width(), view_height());
+
+   return intersects_clip();
 }
 
 //********************************************************************************************************************

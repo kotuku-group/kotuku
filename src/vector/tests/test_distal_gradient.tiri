@@ -243,6 +243,29 @@ end
    assert((centre.red + centre.green + centre.blue) > 0, 'Distal fill should draw inside the target path')
 end
 
+@Test function BoundingBoxTransformMovesPaddedCoverage()
+   local scene, gradient = newRectScene(10)
+   scene.pageWidth = 140
+   local bmp = newBitmap(140, 120)
+   drawScene(scene, bmp)
+   local interior = readPixel(bmp, 96, 60)
+   local halo = readPixel(bmp, 104, 60)
+   assert(interior.green > 0 and halo.green > 0, 'The original field should paint its interior and halo')
+
+   -- A quarter-width translation moves the field 20 pixels right, beyond the original right edge and padding.
+   gradient.transform = 'translate(0.25 0)'
+   drawScene(scene, bmp)
+   assert(readPixel(bmp, 116, 60).green is interior.green, 'The translated field should paint its interior')
+   assert(readPixel(bmp, 124, 60).green is halo.green, 'The translated field should paint its exterior halo')
+
+   -- Restrict the target to a strip beyond the original field to exercise scene culling.
+   local clipped = newBitmap(140, 120)
+   check clipped.mtSetClipRegion(114, 55, 128, 65)
+   drawScene(scene, clipped)
+   assert(readPixel(clipped, 116, 60).green is interior.green, 'The translated interior should survive culling')
+   assert(readPixel(clipped, 124, 60).green is halo.green, 'The translated halo should survive culling')
+end
+
 @Test function ScaledRadiusPadsAgainstVectorBounds()
    -- Regression: Radius accepts scaled values.  A 50% radius on a 100px-wide shape should create about 50px of
    -- exterior padding, not a raw 0.5px margin.
