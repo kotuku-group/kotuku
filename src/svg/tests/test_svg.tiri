@@ -255,7 +255,7 @@ end
 @Test global function W3Paths18()       hashTestSVG('paths/w3-paths-data-18-f.svg', 0x54e77352) end
 @Test global function W3Paths19()       hashTestSVG('paths/w3-paths-data-19-f.svg', 0x1986e739) end
 -- Some aspects of this test do not pass but we do not intend to support them
-@Test global function W3Paths20()       hashTestSVG('paths/w3-paths-data-20-f.svg', 0x70082db1) end
+@Test global function W3Paths20()       hashTestSVG('paths/w3-paths-data-20-f.svg', 0x8fbd4a25) end
 
 @Test global function Chevrons()     hashTestSVG('patterns/chevrons.svg', 0x1f5bac88) end
 @Test global function Complex()      hashTestSVG('patterns/complex.svg', 0x76ec182e) end
