@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 64 64" preserveAspectRatio="xMidYMid meet">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="4 4.04 56.6 56.96" preserveAspectRatio="xMidYMid meet">
    <!-- Hearts and spades above diamonds and clubs.  Inherit the icon's fill colour. -->
    <path d="M 16,27 C 13,24 4,18 4,12 C 4,5 12,3 16,10 C 20,3 28,5 28,12 C 28,18 19,24 16,27 Z"/>
    <path d="M 48,4 C 44,9 36,14 36,20 C 36,27 44,28 47,22
