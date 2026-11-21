@@ -94,6 +94,7 @@ extern const int * small_text_gamma();
 class extVector;
 class extVectorScene;
 class extFilterEffect;
+struct filter_effect_extension;
 struct filter_render_context;
 struct filter_surface;
 class extVectorViewport;
@@ -757,8 +758,9 @@ class extFilterEffect : public objFilterEffect {
    using create = kt::Create<extFilterEffect>;
 
    extVectorFilter *Filter = nullptr; // Direct reference to the parent filter
+   const filter_effect_extension *FilterExtension = nullptr; // Optional, owned by the derived effect.
    // Preserve the base size and the starting offset of derived fields.
-   alignas(TClipRectangle<double>) uint8_t Reserved[sizeof(TClipRectangle<double>) + alignof(APTR)];
+   alignas(TClipRectangle<double>) uint8_t Reserved[sizeof(TClipRectangle<double>)];
 
    extFilterEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.

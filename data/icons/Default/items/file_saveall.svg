@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="2.673 45.519 992.979 673.826" preserveAspectRatio="xMidyMid meet">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="2.673 45.519 609.327 673.826" preserveAspectRatio="xMidyMid meet">
 <polygon points="355.252,46.345 12.121,45.519 2.673,54.966 2.673,657.513 11.661,666.5 90.622,666.5 90.622,120.375 427.5,120.375 
 	"/>
-<polygon fill="none" points="921.989,397.662 921.989,397.663 995.652,397.663 921.989,323.749 "/>
 <path fill="#231F20" d="M457.824,168H137.836v551.345H612V322.702L457.824,168z M375.759,582.755l-67.619-80.297v173.274h-50.717
 	V502.458l-67.618,80.297v-80.297l92.981-105.653l92.974,105.653V582.755z M456.747,321.626L456.747,321.626v-79.594l79.324,79.594
 	H456.747z"/>
