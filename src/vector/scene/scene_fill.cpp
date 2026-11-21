@@ -10,6 +10,29 @@ static void fill_diffusion(VectorState &, const TClipRectangle<double> &, double
    SceneRenderer *);
 
 //********************************************************************************************************************
+// Applies a gradient's transforms to Transform, which must already map the gradient into the target's user space.
+//
+// Under BOUNDING_BOX units the transforms are defined in the normalised (0..1) space of the bounding box, as for SVG's
+// gradientTransform, so a rotation centre of (0.5, 0.5) is the centre of the box.  The transforms are therefore applied
+// between a mapping from user space to box units and the reverse mapping.  A box without area has no unit space, so
+// its transforms are applied in user space.
+
+static void apply_gradient_transforms(const extGradient &Gradient, agg::trans_affine &Transform,
+   const TClipRectangle<double> &Bounds)
+{
+   if (Gradient.Matrices.empty()) return;
+
+   if ((Gradient.Units IS VUNIT::BOUNDING_BOX) and (Bounds.width() > 0) and (Bounds.height() > 0)) {
+      Transform.translate(-Bounds.left, -Bounds.top);
+      Transform.scale(1.0 / Bounds.width(), 1.0 / Bounds.height());
+      apply_transforms(Gradient, Transform);
+      Transform.scale(Bounds.width(), Bounds.height());
+      Transform.translate(Bounds.left, Bounds.top);
+   }
+   else apply_transforms(Gradient, Transform);
+}
+
+//********************************************************************************************************************
 
 void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rasterizer_scanline_aa<> &Raster, extPainter &Painter)
 {
@@ -619,7 +642,7 @@ static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bound
       transform.scale(c_width, c_height);
       transform.translate(x_offset, y_offset);
    }
-   apply_transforms(Gradient, transform);
+   apply_gradient_transforms(Gradient, transform, Bounds);
    transform *= Transform;
 
    // The transformed triangle list depends only on the mesh data, the final placement transform, the opacity and
@@ -923,7 +946,7 @@ static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, 
       transform.scale(c_width, c_height);
       transform.translate(x_offset, y_offset);
    }
-   apply_transforms(Gradient, transform);
+   apply_gradient_transforms(Gradient, transform, Bounds);
    transform *= Transform;
 
    const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
@@ -1042,7 +1065,7 @@ static void fill_diffusion(VectorState &State, const TClipRectangle<double> &Bou
       transform.scale(Bounds.width(), Bounds.height());
       transform.translate(Bounds.left, Bounds.top);
    }
-   apply_transforms(Gradient, transform);
+   apply_gradient_transforms(Gradient, transform, Bounds);
    transform *= Transform;
    transform.invert();
 
@@ -1109,8 +1132,7 @@ static uint64_t mix_fingerprint(uint64_t Hash, uint64_t Value)
 // larger axis scale is used so that a stretched fill is not magnified in either direction, and the buffer, which spans
 // Width x Height gradient units, is capped to MaxPixels to bound memory and build time.
 
-static double field_scale(const agg::trans_affine &Transform, double Width, double Height,
-   double MaxPixels = 4096.0 * 4096.0)
+static double field_scale(const agg::trans_affine &Transform, double Width, double Height, double MaxPixels)
 {
    const double scale_x = sqrt((Transform.sx * Transform.sx) + (Transform.shy * Transform.shy));
    const double scale_y = sqrt((Transform.shx * Transform.shx) + (Transform.sy * Transform.sy));
@@ -1227,7 +1249,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          transform.translate(area.left, area.top);
       }
 
-      apply_transforms(Gradient, transform);
+      apply_gradient_transforms(Gradient, transform, Bounds);
       transform *= Transform;
       transform.invert();
 
@@ -1268,8 +1290,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
          transform.translate(c);
          transform.scale(c_width, c_height);
-         apply_transforms(Gradient, transform);
          transform.translate(x_offset, y_offset);
+         apply_gradient_transforms(Gradient, transform, Bounds);
          transform *= Transform;
          transform.invert();
 
@@ -1296,7 +1318,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          else focal_radius = radial_col_span;
 
          transform.translate(c);
-         apply_transforms(Gradient, transform);
+         apply_gradient_transforms(Gradient, transform, Bounds);
          transform *= Transform;
          transform.invert();
       }
@@ -1388,7 +1410,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       agg::gradient_diamond gradient_func;
 
       transform.translate(c);
-      apply_transforms(Gradient, transform);
+      apply_gradient_transforms(Gradient, transform, Bounds);
       transform *= Transform;
       transform.invert();
 
@@ -1437,7 +1459,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       agg::gradient_conic gradient_func;
       transform.translate(c);
-      apply_transforms(Gradient, transform);
+      apply_gradient_transforms(Gradient, transform, Bounds);
       transform *= Transform;
       transform.invert();
 
@@ -1481,7 +1503,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
 
       transform.translate(Bounds.left, Bounds.top);
-      apply_transforms(Gradient, transform);
+      apply_gradient_transforms(Gradient, transform, Bounds);
       transform *= Transform;
 
       // The buffer is computed at display resolution, so sampling coordinates are scaled to match.
@@ -1533,7 +1555,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.d2(multiplier);
 
       transform.translate(Bounds.left, Bounds.top);
-      apply_transforms(Gradient, transform);
+      apply_gradient_transforms(Gradient, transform, Bounds);
       transform *= Transform;
 
       const auto path_hash = path_fingerprint(*Path);
@@ -1648,12 +1670,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       // Radius; the fill extent is the furthest the field has to reach from the path bounds to cover the view, so a
       // tiled fade always paints out to (and a little past) the parent edges regardless of where the shape sits.
 
-      double fill_extent = radius;
-      if (spread != agg::sdf_spread::pad) {
-         const double reach_x = std::max(Bounds.left, ViewWidth - Bounds.right);
-         const double reach_y = std::max(Bounds.top, ViewHeight - Bounds.bottom);
-         fill_extent = std::max({ radius, reach_x, reach_y });
-      }
+      const double fill_extent = distal_fill_extent(radius, Gradient.SpreadMethod, Bounds, ViewWidth, ViewHeight);
       gradient_func.fill_extent(fill_extent);
 
       // Resolution stepping is baked into the SDF alpha buffer too.  The base Resolution setter does not touch the
@@ -1667,7 +1684,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       // known.
 
       agg::trans_affine field_transform;
-      apply_transforms(Gradient, field_transform);
+      apply_gradient_transforms(Gradient, field_transform, Bounds);
       field_transform *= Transform;
       const double pixel_scale = field_scale(field_transform, Bounds.width() + (fill_extent * 2.0),
          Bounds.height() + (fill_extent * 2.0));
@@ -1697,8 +1714,7 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       const double region_h = gradient_func.sdf_height() / pixel_scale;
 
       transform.translate(region_x, region_y);
-      apply_transforms(Gradient, transform);
-      transform *= Transform;
+      transform *= field_transform;
       transform.premultiply(agg::trans_affine_scaling(1.0 / pixel_scale));
       transform.invert();
 
@@ -1709,14 +1725,9 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          // To expose the exterior half of the ramp the coverage is widened to the full padded field extent rather
          // than the path itself.  Any active clip stack still constrains the result inside render_gradient.
 
-         agg::path_storage region;
-         region.move_to(region_x, region_y);
-         region.line_to(region_x + region_w, region_y);
-         region.line_to(region_x + region_w, region_y + region_h);
-         region.line_to(region_x, region_y + region_h);
-         region.close_polygon();
-         agg::conv_transform<agg::path_storage> region_trans(region, Transform);
-         sdf_raster.add_path(region_trans);
+         const TClipRectangle<double> region(region_x, region_y, region_x + region_w, region_y + region_h);
+         auto coverage = region.as_path(field_transform);
+         sdf_raster.add_path(coverage);
          active_raster = &sdf_raster;
       }
 

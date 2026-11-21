@@ -118,3 +118,106 @@ end
    assert(drawHash(plain_scene, plain_bmp) is drawHash(reset_scene, reset_bmp),
       'Re-assigning a zero rotation should restore the untransformed rendering')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Under BOUNDING_BOX units the transform is applied in the normalised (0..1) space of the target's bounding box, as for
+-- SVG's gradientTransform, so translate(0.25 0) moves the gradient by a quarter of the box width and rotate(180 0.5 0.5)
+-- turns it about the centre of the box.  The target is a 60x40 rectangle at (20,10), so that a transform applied in
+-- user space, or with the box offset and scale in the wrong order, lands somewhere measurably different.
+
+BOX <const> = { x = 20, y = 10, width = 60, height = 40 }
+
+-- Red before the half-way point of the gradient, blue after it
+
+function hardStops()
+   return array<struct<GradientStop>> { stop(0.5, 1.0, 0.0, 0.0), stop(0.5, 0.0, 0.0, 1.0) }
+end
+
+function newBoxScene(Class, Fields)
+   scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   gradient = scene.new(Class, table.merge({ units=VUNIT_BOUNDING_BOX }, Fields))
+   check scene.mtAddDef('grad', gradient)
+   viewport.new('VectorRectangle', {
+      x=BOX.x, y=BOX.y, width=BOX.width, height=BOX.height, fill='url(#grad)'
+   })
+   return scene
+end
+
+-- Returns 'red' or 'blue' for the dominant colour of a pixel in the box, which has no other colours
+
+function colourAt(Scene, X, Y)
+   bmp = newBitmap(100, 100)
+   drawScene(Scene, bmp)
+   pixel = readPixel(bmp, X, Y)
+   assert(math.max(pixel.red, pixel.blue) > 180, f'Pixel {X},{Y} is not inside the gradient ' ..
+      f'({pixel.red},{pixel.green},{pixel.blue})')
+   return (pixel.red > pixel.blue) ? 'red' : 'blue'
+end
+
+function assertColours(Scene, Expected, Label)
+   for _, check_point in Expected do
+      got = colourAt(Scene, check_point.x, check_point.y)
+      assert(got is check_point.colour, f'{Label}: pixel {check_point.x},{check_point.y} is {got}, ' ..
+         f'expected {check_point.colour}')
+   end
+end
+
+@Test function BoundingBoxLinearTranslate()
+   -- The red/blue edge is at 50% of the box (x=50), and a translation of 0.25 moves it to 75% (x=65)
+
+   linear = { x1=0, y1=0, x2='100%', y2=0, stops=hardStops() }
+   assertColours(newBoxScene('GradientLinear', linear), array<table> {
+      { x = 45, y = 30, colour = 'red' }, { x = 55, y = 30, colour = 'blue' }
+   }, 'Untransformed')
+
+   linear.transform = 'translate(0.25 0)'
+   assertColours(newBoxScene('GradientLinear', linear), array<table> {
+      { x = 60, y = 30, colour = 'red' }, { x = 70, y = 30, colour = 'blue' }
+   }, 'translate(0.25 0)')
+end
+
+@Test function BoundingBoxLinearRotateAboutCentre()
+   -- A half turn about the centre of the box reverses the gradient within the box
+
+   assertColours(newBoxScene('GradientLinear', {
+      x1=0, y1=0, x2='100%', y2=0, stops=hardStops(), transform='rotate(180 0.5 0.5)'
+   }), array<table> {
+      { x = 25, y = 30, colour = 'blue' }, { x = 75, y = 30, colour = 'red' }
+   }, 'rotate(180 0.5 0.5)')
+end
+
+@Test function BoundingBoxRadialTranslate()
+   -- The circle has a radius of 25% of the box, so it spans x=35..65 untransformed and x=50..80 after translate(0.25 0)
+
+   radial = { cx='50%', cy='50%', radius='25%' }
+   radial.stops = array<struct<GradientStop>> { stop(1.0, 1.0, 0.0, 0.0), stop(1.0, 0.0, 0.0, 1.0) }
+   assertColours(newBoxScene('GradientRadial', radial), array<table> {
+      { x = 50, y = 30, colour = 'red' }, { x = 75, y = 30, colour = 'blue' }
+   }, 'Untransformed')
+
+   radial.transform = 'translate(0.25 0)'
+   assertColours(newBoxScene('GradientRadial', radial), array<table> {
+      { x = 40, y = 30, colour = 'blue' }, { x = 65, y = 30, colour = 'red' }
+   }, 'translate(0.25 0)')
+end
+
+@Test function BoundingBoxDiamondTranslate()
+   -- Kotuku's own gradient types follow the same rule as the SVG ones
+
+   diamond = { cx='50%', cy='50%', radius='25%', transform='translate(0.25 0)' }
+   diamond.stops = array<struct<GradientStop>> { stop(1.0, 1.0, 0.0, 0.0), stop(1.0, 0.0, 0.0, 1.0) }
+   assertColours(newBoxScene('GradientDiamond', diamond), array<table> {
+      { x = 40, y = 30, colour = 'blue' }, { x = 65, y = 30, colour = 'red' }
+   }, 'Diamond translate(0.25 0)')
+end
+
+@Test function UserSpaceTransformUnchanged()
+   -- A user space transform is in the target's coordinate system, so translate(15 0) moves the edge by 15 pixels
+
+   assertColours(newBoxScene('GradientLinear', {
+      units=VUNIT_USERSPACE, x1=20, y1=0, x2=80, y2=0, stops=hardStops(), transform='translate(15 0)'
+   }), array<table> {
+      { x = 60, y = 30, colour = 'red' }, { x = 70, y = 30, colour = 'blue' }
+   }, 'User space translate(15 0)')
+end
