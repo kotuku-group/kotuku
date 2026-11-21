@@ -147,10 +147,28 @@ ERR read_path(std::vector<PathCommand> &Path, std::string_view Value, bool EdgeO
 
    // Keep operand roles separate from values: arc radii share X2/Y2 storage with curve controls.
 
+   // SVG arc flags are single characters, so they need no separator from the operand that follows them.  For
+   // example 'A1 1 0 0020 10' has the flags 0 and 0 and the end point 20,10.
+
+   constexpr int ARC_LARGE_FLAG = 3; // Operand positions of the arc flags
+   constexpr int ARC_SWEEP_FLAG = 4;
+
    auto read_operands = [&](std::initializer_list<double *> Operands, bool Absolute, bool Arc = false) {
+      int index = -1;
       for (auto operand : Operands) {
+         index++;
          while ((not Value.empty()) and ((Value.front() <= 0x20) or (Value.front() IS ','))) {
             Value.remove_prefix(1);
+         }
+
+         if (Arc and ((index IS ARC_LARGE_FLAG) or (index IS ARC_SWEEP_FLAG))) {
+            if (Value.empty()) *operand = 0; // Retain the legacy zero-fill policy for missing operands
+            else if ((Value.front() IS '0') or (Value.front() IS '1')) {
+               *operand = Value.front() - '0';
+               Value.remove_prefix(1);
+            }
+            else return ERR::InvalidValue;
+            continue;
          }
 
          const bool offset = Value.starts_with('~');

@@ -122,3 +122,54 @@ end
       end
    end
 end
+
+-- SVG arc flags are single characters that need no separator, so 'A1 1 0 0020 10' has the flags 0 and 0 and the end
+-- point 20,10.
+
+@Test function PackedArcFlags()
+   function commandsOf(Sequence:str!):array<table>
+      local scene, viewport, path = newPath(Sequence)
+      local result = array<table>
+      for i in {0 to path.totalCommands} do
+         local err, command = path.mtGetCommand(i)
+         assert(err is ERR_Okay, f'GetCommand({i}) failed for "{Sequence}"')
+         result.push({
+            type = command.type, options = command.options, x = command.x, y = command.y,
+            x2 = command.x2, y2 = command.y2, angle = command.angle
+         })
+      end
+      return result
+   end
+
+   for pair in values(array<table> {
+      { 'M19 11A1 1 0 0020 10 1 1 0 0019 9', 'M19 11A1 1 0 0 0 20 10 1 1 0 0 0 19 9' },
+      { 'M5 7A3 3 0 0122 10', 'M5 7A3 3 0 0 1 22 10' },
+      { 'M5 7a3 3 45 11-2.5.5', 'M5 7a3 3 45 1 1 -2.5 .5' },
+      { 'M5 7A3,3,0,1,0,9,9', 'M5 7A3 3 0 1 0 9 9' }
+   }) do
+      packed = commandsOf(pair[0])
+      spaced = commandsOf(pair[1])
+      assert(#packed is #spaced, f'"{pair[0]}" has {#packed} commands, expected {#spaced}')
+      for i, command in spaced do
+         for key, value in command do
+            assert(packed[i][key] ≈ value, f'"{pair[0]}" command {i} {key} is {packed[i][key]}, expected {value}')
+         end
+      end
+   end
+
+   _, _, path = newPath('M5 7A3 3 0 0122 10')
+   err, arc = path.mtGetCommand(1)
+   assert(arc.type is PE_Arc, 'The second command must be an arc')
+   assert(not (arc.options has PCO_LARGE_ARC), 'The large arc flag is 0')
+   assert(arc.options has PCO_SWEEP, 'The sweep flag is 1')
+   assert(arc.x is 22 and arc.y is 10, f'The arc ends at {arc.x},{arc.y}, expected 22,10')
+
+   for sequence in values(array<str> { 'M5 7A3 3 0 2 0 9 9', 'M5 7A3 3 0 0x 9 9' }) do
+      try
+         newPath(sequence)
+      except e when ERR_InvalidValue
+      success
+         assert(false, f'"{sequence}" has an invalid arc flag and must be rejected')
+      end
+   end
+end

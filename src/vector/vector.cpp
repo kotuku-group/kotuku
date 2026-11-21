@@ -260,7 +260,9 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef UNIT_TESTS
    extern void vector_input_unit_tests(std::string_view, int &, int &);
+   extern void vector_filter_unit_tests(std::string_view, int &, int &);
    vector_input_unit_tests(Options, *Passed, *Total);
+   vector_filter_unit_tests(Options, *Passed, *Total);
 #endif
 }
 

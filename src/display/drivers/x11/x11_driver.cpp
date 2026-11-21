@@ -262,9 +262,17 @@ static void set_motif_hints(X11Driver::State *State, X11WindowRecord *Record)
 // Sends the size limits and aspect ratio retained in the window record as WM_NORMAL_HINTS.  A zero AspectWidth means
 // that no aspect ratio is enforced.
 
+// Kotuku positions windows by their client area.  StaticGravity tells the window manager that the coordinates of a
+// configure request refer to the client window rather than its frame, so that XMoveWindow() and XResizeWindow() do not
+// shift the client area by the frame extents.  WM_NORMAL_HINTS is replaced as a whole, so every update includes these
+// flags.
+
+static constexpr long BASE_SIZE_HINTS = USPosition|USSize|PWinGravity;
+
 static void send_size_hints(X11Driver::State *State, X11WindowRecord *Window)
 {
-   XSizeHints hints = {};
+   XSizeHints hints = { .flags = BASE_SIZE_HINTS };
+   hints.win_gravity = StaticGravity;
    if ((Window->MaxWidth > 0) and (Window->MaxHeight > 0)) {
       hints.max_width = Window->MaxWidth; hints.max_height = Window->MaxHeight; hints.flags |= PMaxSize;
    }
@@ -1057,7 +1065,8 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
          (unsigned char *)counters, std::ssize(counters));
    }
 
-   XSizeHints hints = { .flags = USPosition|USSize };
+   XSizeHints hints = { .flags = BASE_SIZE_HINTS };
+   hints.win_gravity = StaticGravity;
    XSetWMNormalHints(State->Connection, native, &hints);
 
    // Accepting input while advertising WM_TAKE_FOCUS follows the ICCCM 'locally active' focus model.
