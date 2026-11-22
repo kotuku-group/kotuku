@@ -115,96 +115,101 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
             agg::renderer_scanline_aa_solid<agg::renderer_base<agg::pixfmt_gray8>> solid(Base);
 
             if ((m_clip->Flags & (VCLF::APPLY_STROKES|VCLF::APPLY_FILLS)) != VCLF::NIL) {
-               if ((m_clip->Flags & VCLF::APPLY_FILLS) != VCLF::NIL) {
-                  // When the APPLY_FILLS option is enabled, regular fill painting rules will be applied.
+               // Fills and strokes are painted in the vector's PaintOrder, because their luminance values differ.
 
-                  auto render_fill = [&](extPainter &Fill) {
-                     if ((Fill.Colour.Alpha > 0) and (!node->DisableFillColour)) {
-                        double value = (Fill.Colour.Red * 0.2126) + (Fill.Colour.Green * 0.7152) +
-                           (Fill.Colour.Blue * 0.0722);
-                        value *= opacity * node->FillOpacity;
+               for (auto stage : node->paint_stages()) {
+                  if ((stage IS PAINT_STAGE::FILL) and ((m_clip->Flags & VCLF::APPLY_FILLS) != VCLF::NIL)) {
+                     // When the APPLY_FILLS option is enabled, regular fill painting rules will be applied.
+
+                     auto render_fill = [&](extPainter &Fill) {
+                        if ((Fill.Colour.Alpha > 0) and (!node->DisableFillColour)) {
+                           double value = (Fill.Colour.Red * 0.2126) + (Fill.Colour.Green * 0.7152) +
+                              (Fill.Colour.Blue * 0.0722);
+                           value *= opacity * node->FillOpacity;
+                           solid.color(agg::gray8(value * 0xff, 0xff));
+
+                           agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(node->BasePath, t);
+                           Raster.reset();
+                           Raster.add_path(final_path);
+                           agg::render_scanlines(Raster, sl, solid);
+                        }
+
+                        if ((Fill.Gradient) or (Fill.Image) or (Fill.Pattern)) {
+                           // The fill routines use 32-bit colour rendering, so convert RGB colours to grey-scale.
+                           // The results are cached when the masks remain static.
+
+                           VectorState state;
+                           state.mOpacity = opacity;
+                           agg::pixfmt_psl pixf;
+                           agg::renderer_base<agg::pixfmt_psl> rb(pixf);
+                           ColourFormat cf; // Dummy, not required
+                           pixf.rawBitmap(m_bitmap.data(), m_width, m_height, m_width, 8, cf, BLM::LINEAR);
+                           rb.attach(pixf);
+
+                           agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(node->BasePath, t);
+                           Raster.reset();
+                           Raster.add_path(final_path);
+
+                           if (Fill.Gradient) {
+                              auto gradient = (extGradient *)Fill.Gradient;
+                              if (gradient->classID() IS CLASSID::GRADIENTGOURAUD) {
+                                 fill_gouraud(state, node->Bounds, Render.view_width(), Render.view_height(),
+                                    *(extGradientGouraud *)gradient, state.mOpacity * node->FillOpacity, rb, Raster, t);
+                              }
+                              else if (gradient->classID() IS CLASSID::GRADIENTDIFFUSION) {
+                                 fill_diffusion(state, node->Bounds, Render.view_width(), Render.view_height(),
+                                    *(extGradientDiffusion *)gradient, state.mOpacity * node->FillOpacity, rb, Raster,
+                                    t);
+                              }
+                              else if (gradient->classID() IS CLASSID::GRADIENTMESH) {
+                                 fill_mesh(state, node->Bounds, Render.view_width(), Render.view_height(),
+                                    *(extGradientMesh *)gradient, state.mOpacity * node->FillOpacity, rb, Raster, t);
+                              }
+                              else if (auto table = get_fill_gradient_table(Fill, state.mOpacity * node->FillOpacity)) {
+                                 fill_gradient(state, node->Bounds, &node->BasePath, t,
+                                    Render.view_width(), Render.view_height(), *gradient, table, rb, Raster);
+                              }
+                           }
+
+                           // SVG <image> tags use a standard VectorRectangle with an image fill.
+
+                           if (Fill.Image) {
+                              fill_image(state, node->Bounds, node->BasePath, node->Scene->SampleMethod, t,
+                                 Render.view_width(), Render.view_height(), *((extVectorImage *)Fill.Image), rb, Raster,
+                                 opacity * node->FillOpacity);
+                           }
+
+                           if (Fill.Pattern) {
+                              fill_pattern(state, node->Bounds, &node->BasePath, node->Scene->SampleMethod, t,
+                                 Render.view_width(), Render.view_height(), *((extVectorPattern *)Fill.Pattern),
+                                 rb, Raster, opacity * node->FillOpacity);
+                           }
+                        }
+                     };
+
+                     render_fill(node->Fill);
+                     if (node->ExtFill) {
+                        for (auto &fill : *node->ExtFill) render_fill(fill);
+                     }
+                  }
+                  else if ((stage IS PAINT_STAGE::STROKE) and ((m_clip->Flags & VCLF::APPLY_STROKES) != VCLF::NIL)) {
+                     if (node->StrokeRaster) {
+                        double value = (std::clamp<float>(node->Stroke.Colour.Red, 0, 1) * 0.2126) +
+                           (std::clamp<float>(node->Stroke.Colour.Green, 0, 1) * 0.7152) +
+                           (std::clamp<float>(node->Stroke.Colour.Blue, 0, 1) * 0.0722);
+                        value *= opacity * node->StrokeOpacity;
                         solid.color(agg::gray8(value * 0xff, 0xff));
 
-                        agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(node->BasePath, t);
+                        agg::conv_stroke<agg::path_storage> stroked_path(node->BasePath);
+                        configure_stroke(*node, stroked_path);
+                        stroked_path.approximation_scale(t.max_scale());
+                        agg::conv_transform<agg::conv_stroke<agg::path_storage>, agg::trans_affine>
+                           final_path(stroked_path, t);
+
                         Raster.reset();
                         Raster.add_path(final_path);
                         agg::render_scanlines(Raster, sl, solid);
                      }
-
-                     if ((Fill.Gradient) or (Fill.Image) or (Fill.Pattern)) {
-                        // The fill routines use 32-bit colour rendering, so convert RGB colours to grey-scale.
-                        // The results are cached when the masks remain static.
-
-                        VectorState state;
-                        state.mOpacity = opacity;
-                        agg::pixfmt_psl pixf;
-                        agg::renderer_base<agg::pixfmt_psl> rb(pixf);
-                        ColourFormat cf; // Dummy, not required
-                        pixf.rawBitmap(m_bitmap.data(), m_width, m_height, m_width, 8, cf, BLM::LINEAR);
-                        rb.attach(pixf);
-
-                        agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(node->BasePath, t);
-                        Raster.reset();
-                        Raster.add_path(final_path);
-
-                        if (Fill.Gradient) {
-                           auto gradient = (extGradient *)Fill.Gradient;
-                           if (gradient->classID() IS CLASSID::GRADIENTGOURAUD) {
-                              fill_gouraud(state, node->Bounds, Render.view_width(), Render.view_height(),
-                                 *(extGradientGouraud *)gradient, state.mOpacity * node->FillOpacity, rb, Raster, t);
-                           }
-                           else if (gradient->classID() IS CLASSID::GRADIENTDIFFUSION) {
-                              fill_diffusion(state, node->Bounds, Render.view_width(), Render.view_height(),
-                                 *(extGradientDiffusion *)gradient, state.mOpacity * node->FillOpacity, rb, Raster, t);
-                           }
-                           else if (gradient->classID() IS CLASSID::GRADIENTMESH) {
-                              fill_mesh(state, node->Bounds, Render.view_width(), Render.view_height(),
-                                 *(extGradientMesh *)gradient, state.mOpacity * node->FillOpacity, rb, Raster, t);
-                           }
-                           else if (auto table = get_fill_gradient_table(Fill, state.mOpacity * node->FillOpacity)) {
-                              fill_gradient(state, node->Bounds, &node->BasePath, t,
-                                 Render.view_width(), Render.view_height(), *gradient, table, rb, Raster);
-                           }
-                        }
-
-                        // SVG <image> tags use a standard VectorRectangle with an image fill.
-
-                        if (Fill.Image) {
-                           fill_image(state, node->Bounds, node->BasePath, node->Scene->SampleMethod, t,
-                              Render.view_width(), Render.view_height(), *((extVectorImage *)Fill.Image), rb, Raster,
-                              opacity * node->FillOpacity);
-                        }
-
-                        if (Fill.Pattern) {
-                           fill_pattern(state, node->Bounds, &node->BasePath, node->Scene->SampleMethod, t,
-                              Render.view_width(), Render.view_height(), *((extVectorPattern *)Fill.Pattern),
-                              rb, Raster, opacity * node->FillOpacity);
-                        }
-                     }
-                  };
-
-                  render_fill(node->Fill);
-                  if (node->ExtFill) {
-                     for (auto &fill : *node->ExtFill) render_fill(fill);
-                  }
-               }
-
-               if ((m_clip->Flags & VCLF::APPLY_STROKES) != VCLF::NIL) {
-                  if (node->StrokeRaster) {
-                     double value = (std::clamp<float>(node->Stroke.Colour.Red, 0, 1) * 0.2126) +
-                        (std::clamp<float>(node->Stroke.Colour.Green, 0, 1) * 0.7152) +
-                        (std::clamp<float>(node->Stroke.Colour.Blue, 0, 1) * 0.0722);
-                     value *= opacity * node->StrokeOpacity;
-                     solid.color(agg::gray8(value * 0xff, 0xff));
-
-                     agg::conv_stroke<agg::path_storage> stroked_path(node->BasePath);
-                     configure_stroke(*node, stroked_path);
-                     stroked_path.approximation_scale(t.max_scale());
-                     agg::conv_transform<agg::conv_stroke<agg::path_storage>, agg::trans_affine> final_path(stroked_path, t);
-
-                     Raster.reset();
-                     Raster.add_path(final_path);
-                     agg::render_scanlines(Raster, sl, solid);
                   }
                }
             }

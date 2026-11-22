@@ -1413,15 +1413,25 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             const bool render_path = shape_intersects_clip(shape);
 
             if (render_path) {
-               if (shape->FillRaster) {
-                  render_fill(state, *shape, *shape->FillRaster, shape->Fill);
-                  if (shape->ExtFill) {
-                     for (auto &fill : *shape->ExtFill) render_fill(state, *shape, *shape->FillRaster, fill);
-                  }
-               }
+               // The PaintOrder field determines the stage sequence.  All fill painters form one stage.
 
-               if (shape->StrokeRaster) {
-                  render_stroke(state, *shape);
+               for (auto stage : shape->paint_stages()) {
+                  switch (stage) {
+                     case PAINT_STAGE::FILL:
+                        if (shape->FillRaster) {
+                           render_fill(state, *shape, *shape->FillRaster, shape->Fill);
+                           if (shape->ExtFill) {
+                              for (auto &fill : *shape->ExtFill) render_fill(state, *shape, *shape->FillRaster, fill);
+                           }
+                        }
+                        break;
+
+                     case PAINT_STAGE::STROKE:
+                        if (shape->StrokeRaster) render_stroke(state, *shape);
+                        break;
+
+                     case PAINT_STAGE::MARKERS: break; // Markers are not supported
+                  }
                }
             }
 

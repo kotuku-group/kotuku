@@ -313,6 +313,8 @@ end
 @Test global function W3ColourProp03() hashTestSVG('painting/w3-color-prop-03-t.svg', 0x54946188) end
 @Test global function W3ColourProp04() pHashTestSVG('painting/w3-color-prop-04-t.svg', array<byte> { 116,143,11,241,97,164,84,59 }, 6, true) end
 @Test; @Disabled global function W3ColourProp05() hashTestSVG('painting/w3-color-prop-05-t.svg', 0) end
+
+@Test global function PaintOrder() hashTestSVG('painting/paint-order.svg', 0x6d623283) end
 @Test global function W3Painting01() hashTestSVG('painting/w3-painting-control-01-f.svg', 0x130f9677) end
 @Test global function W3Painting02() hashTestSVG('painting/w3-painting-control-02-f.svg', 0x7fc07377) end
 @Test global function W3Painting03() hashTestSVG('painting/w3-painting-control-03-f.svg', 0x2235bed0) end

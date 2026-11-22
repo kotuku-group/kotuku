@@ -1934,6 +1934,49 @@ static ERR VECTOR_SET_Opacity(extVector *Self, double Value)
 }
 
 /*********************************************************************************************************************
+-FIELD-
+PaintOrder: Defines the order in which the fill, stroke and markers are painted.
+Lookup: VPO
+
+The PaintOrder field determines the order in which the fill, stroke and markers of a vector are painted.  It is the
+equivalent of the SVG `paint-order` property.  The default value of `NORMAL` paints the fill first, followed by the
+stroke and then the markers.
+
+A common use case is outlined text, where `STROKE_FILL_MARKERS` paints a thick stroke beneath the fill so that the
+inner half of the stroke does not obscure the glyph shapes.
+
+All of the fill painters of a vector, including any additional layers declared in the #Fill string, are treated as
+one painting stage and move together.  Markers are included in each ordering for SVG compatibility, but are not
+currently rendered.
+
+The value is not inherited from parent vectors at runtime.
+
+-ERRORS-
+Okay
+InvalidValue: The value is not a valid VPO constant.
+
+*********************************************************************************************************************/
+
+static ERR VECTOR_GET_PaintOrder(extVector *Self, VPO &Value)
+{
+   Value = VPO(Self->PaintOrder);
+   return ERR::Okay;
+}
+
+static ERR VECTOR_SET_PaintOrder(extVector *Self, VPO Value)
+{
+   kt::Log log;
+
+   if ((int(Value) < 0) or (int(Value) >= int(VPO::END))) return log.warning(ERR::InvalidValue);
+
+   if (uint8_t(Value) != Self->PaintOrder) {
+      Self->PaintOrder = uint8_t(Value);
+      mark_buffers_for_refresh(Self);
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 Parent: The parent of the vector, or NULL if this is the top-most vector.
@@ -2605,6 +2648,8 @@ static const FieldArray clVectorFields[] = {
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, VECTOR_GET_Matrices, nullptr, "VectorMatrix" },
+   { "PaintOrder",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VECTOR_GET_PaintOrder, VECTOR_SET_PaintOrder,
+     &clVectorVPO },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R, VECTOR_GET_Sequence },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },

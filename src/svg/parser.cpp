@@ -184,6 +184,62 @@ static ARF parse_aspect_ratio(std::string_view Value)
 
 //********************************************************************************************************************
 
+// Parses the CSS paint-order grammar, `normal | [ fill || stroke || markers ]`.  Keywords are case-insensitive and
+// any that are omitted follow in their default order.  Returns no value if the declaration is invalid.
+
+static std::optional<VPO> parse_paint_order(std::string_view Value)
+{
+   enum { FILL, STROKE, MARKERS };
+
+   // Indexed by the first and second painting stages; the third stage is implied.
+
+   static constexpr VPO orders[3][3] = {
+      { VPO::END, VPO::NORMAL, VPO::FILL_MARKERS_STROKE },
+      { VPO::STROKE_FILL_MARKERS, VPO::END, VPO::STROKE_MARKERS_FILL },
+      { VPO::MARKERS_FILL_STROKE, VPO::MARKERS_STROKE_FILL, VPO::END }
+   };
+
+   std::array<int, 3> order;
+   int count = 0;
+   bool normal = false;
+
+   while (true) {
+      Value.remove_prefix(std::min(Value.find_first_not_of(" \t\r\n\f"), Value.size()));
+      if (Value.empty()) break;
+
+      auto word = Value.substr(0, std::min(Value.find_first_of(" \t\r\n\f"), Value.size()));
+      Value.remove_prefix(word.size());
+
+      if (iequals(word, "normal")) {
+         if ((normal) or (count > 0)) return std::nullopt;
+         normal = true;
+         continue;
+      }
+
+      int stage;
+      if (iequals(word, "fill")) stage = FILL;
+      else if (iequals(word, "stroke")) stage = STROKE;
+      else if (iequals(word, "markers")) stage = MARKERS;
+      else return std::nullopt;
+
+      if (normal) return std::nullopt;
+      if (std::find(order.begin(), order.begin() + count, stage) != order.begin() + count) return std::nullopt;
+      order[count++] = stage;
+   }
+
+   if (normal) return VPO::NORMAL;
+   if (count IS 0) return std::nullopt;
+
+   for (int stage : { FILL, STROKE, MARKERS }) {
+      if (count >= 2) break;
+      if (std::find(order.begin(), order.begin() + count, stage) IS order.begin() + count) order[count++] = stage;
+   }
+
+   return orders[order[0]][order[1]];
+}
+
+//********************************************************************************************************************
+
 static RQ shape_rendering_to_render_quality(const std::string_view Value)
 {
    if (iequals(Value, "auto")) return RQ::AUTO;
@@ -1027,6 +1083,7 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
    if (m_line_join != VLJ::NIL)  Vector->setLineJoin(m_line_join);
    if (m_inner_join != VIJ::NIL) Vector->setInnerJoin(m_inner_join);
    if (m_line_cap != VLC::NIL)   Vector->setLineCap(m_line_cap);
+   if (m_paint_order != VPO::END) Vector->setPaintOrder(m_paint_order);
 
 
    if (!m_display.empty()) {
@@ -1074,7 +1131,15 @@ void svgState::applyTag(const XTag &Tag) noexcept
    std::vector<XMLAttrib> declarations;
    for (size_t a = 1; a < Tag.Attribs.size(); ++a) {
       const auto &attr = Tag.Attribs[a];
-      if (strhash(attr.Name) IS SVF_font) {
+      const auto hash = strhash(attr.Name);
+      if (hash IS SVF_paint_order) {
+         if (iequals(attr.Value, "inherit")) m_paint_order = parent.m_paint_order;
+         else if (auto order = parse_paint_order(attr.Value)) m_paint_order = *order;
+         else if (!attr.Value.empty()) {
+            log.warning("Invalid paint-order value '%s' at line %d", attr.Value.c_str(), Tag.LineNo);
+         }
+      }
+      else if (hash IS SVF_font) {
          std::vector<XMLAttrib> expanded;
          bool valid = expand_text_font(attr.Value, expanded);
          auto candidate = *this;
@@ -1084,7 +1149,7 @@ void svgState::applyTag(const XTag &Tag) noexcept
          if (valid) declarations.insert(declarations.end(), expanded.begin(), expanded.end());
          else log.warning("Invalid or unsupported font shorthand: %s", attr.Value.c_str());
       }
-      else if (text_property_initial(strhash(attr.Name))) declarations.push_back(attr);
+      else if (text_property_initial(hash)) declarations.push_back(attr);
    }
    // Compute font-size first: spacing lengths use this element's final computed size regardless of source order.
    for (bool sizes : { true, false }) {
@@ -3405,7 +3470,9 @@ ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 
       // All attributes of <image> will be applied to the rectangle.
 
-      process_attrib(Tag, rect);
+      auto state = *this;
+      state.applyTag(Tag);
+      state.process_attrib(Tag, rect);
 
       if (x.defined()) rect->setX(x);
       if (y.defined()) rect->setY(y);
@@ -4161,6 +4228,7 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
             break;
          }
 
+         case SVF_paint_order:
          case SVF_xml_space: break; // Element-scoped state is resolved by applyTag().
 
          default: {
@@ -5453,6 +5521,10 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          else if (iequals("evenodd", StrValue)) Vector->setFillRule(VFR::EVEN_ODD);
          else if (iequals("inherit", StrValue)) Vector->setFillRule(VFR::INHERIT);
          else log.warning("Unsupported fill-rule value '%s'", StrValue.c_str());
+         break;
+
+      case SVF_paint_order:
+         if (m_paint_order != VPO::END) Vector->setPaintOrder(m_paint_order);
          break;
 
       case SVF_clip_rule:

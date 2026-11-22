@@ -956,6 +956,31 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       if (fill_rule IS VFR::EVEN_ODD) xml::NewAttrib(tag, "fill-rule", "evenodd");
    }
 
+   // Paint orders are written in their shortest form; omitted keywords follow in their default order.
+
+   VPO paint_order;
+   if ((!error) and (!Vector->getPaintOrder(paint_order))) {
+      switch (paint_order) {
+         case VPO::FILL_MARKERS_STROKE: xml::NewAttrib(tag, "paint-order", "fill markers"); break;
+         case VPO::STROKE_FILL_MARKERS: xml::NewAttrib(tag, "paint-order", "stroke"); break;
+         case VPO::STROKE_MARKERS_FILL: xml::NewAttrib(tag, "paint-order", "stroke markers"); break;
+         case VPO::MARKERS_FILL_STROKE: xml::NewAttrib(tag, "paint-order", "markers"); break;
+         case VPO::MARKERS_STROKE_FILL: xml::NewAttrib(tag, "paint-order", "markers stroke"); break;
+         case VPO::NORMAL: {
+            // Reset a non-default order inherited from the exported XML ancestors.
+            XTag *ancestor;
+            for (int id = tag->ParentID; id and !XML->getTag(id, &ancestor); id = ancestor->ParentID) {
+               if (auto order = ancestor->attrib("paint-order")) {
+                  if (*order != "normal") xml::NewAttrib(tag, "paint-order", "normal");
+                  break;
+               }
+            }
+            break;
+         }
+         default: break;
+      }
+   }
+
    if ((!error) and (!(error = Vector->getSID(sv))) and not sv.empty()) xml::NewAttrib(tag, "id", sv);
 
    if ((!error) and (!(error = Vector->getFilter(sv))) and not sv.empty()) xml::NewAttrib(tag, "filter", sv);
