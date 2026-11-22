@@ -35,7 +35,13 @@ The 'combined' lighting mode replaces the standard primitive with kotuku:feLight
 
 The albedo is the fill of the rectangle, chosen with the Albedo combobox beneath the preview.  Unlike a chain of
 lighting and composite primitives, the light is only clamped when the result is written, so a strong light brightens
-the albedo without washing out its colour.  The specular constant applies to this mode only.
+the albedo without washing out its colour.  The specular constant and the material sliders apply to this mode only:
+metalness blends the surface from a dielectric to a metal, whose highlights take the albedo's colour; Fresnel sets the
+reflectance where the surface faces the viewer (0 disables it, 0.04 suits most dielectrics but needs a larger specular
+constant); and wrap lets diffuse light reach past the terminator, as on wax.  The Matcap combobox adds the reflection
+of an environment, which is weak where the surface faces the viewer if Fresnel is set, and takes the albedo's colour
+as metalness rises.  The matcap is set on the effect as LightingFX.MatcapPath after the document is parsed, because
+the matcap attribute of a document only accepts paths that are relative to the document's folder.
 
 Surfaces are chosen from the presets in the Surface combobox, or entered in the editor beneath the preview.  Edits are
 applied after a short pause in typing.  Point and spot lights are positioned by clicking or dragging in the preview;
@@ -55,6 +61,7 @@ every feature produces the result defined by the SVG specification.
    local glWindow, glViewport, glPreview, glSurfaceHost, glSurface, glMarker, glStatus, glEditor, glSVG, glEditTimer
    local glThemeXML -- Colours of the editor
    local glControls -- Scrollable page that holds the controls on the left
+   MATCAP_FOLDER <const> = obj.find('self').workingPath .. 'data/'
 
    glWidgets = array<table> -- Strong references keep the widgets alive, as their callbacks hold weak references
    glSliders = { }          -- Sliders by parameter name, so that those that do not apply can be disabled
@@ -84,8 +91,12 @@ every feature produces the result defined by the SVG specification.
       detail    = 1.5,
       penumbra  = 2,
       specularConstant = 0.5, -- Combined mode only
+      metalness = 0,          -- Material terms, combined mode only
+      fresnel   = 0,
+      wrap      = 0,
       intensity = 1,
       ambient   = nil,  -- Colour of the ambient light, or nil for none
+      matcap    = nil,  -- Path of the matcap image, or nil for none (combined mode only)
       albedo    = 0     -- Index into ALBEDOS
    }
 
@@ -111,6 +122,12 @@ every feature produces the result defined by the SVG specification.
       { label = 'Sky',    value = '#1c2a40' },
       { label = 'Warm',   value = '#30200c' },
       { label = 'Bright', value = '#505050' }
+   }
+
+   MATCAPS <const> = array<table> {
+      { label = 'None' },
+      { label = 'Studio',  path = MATCAP_FOLDER .. 'studio.png' },
+      { label = 'Softbox', path = MATCAP_FOLDER .. 'softbox.png' }
    }
 
    -- Surface colours for the combined mode.  Gradients are defined in the document and referenced by the fill.
@@ -148,6 +165,7 @@ every feature produces the result defined by the SVG specification.
    }
 
    LIGHT_SLIDERS <const> = array<str> { 'azimuth', 'elevation', 'lightZ', 'cone' }
+   MATERIAL_SLIDERS <const> = array<str> { 'specularConstant', 'metalness', 'fresnel', 'wrap' } -- Combined mode
 
    PRESETS <const> = array<table> {
       { label = 'Moon', source = [[
@@ -256,6 +274,9 @@ function lightingPrimitive():str
 
    if p.ambient then common ..= f' kotuku:ambient="{p.ambient}"' end
    if p.lighting is 'combined' then
+      for _, name in array<str> { 'metalness', 'fresnel', 'wrap' } do
+         if p[name] > 0 then common ..= f' {name}="{fmt(p[name])}"' end
+      end
       return f'<kotuku:feLighting in2="SourceGraphic" diffuseConstant="{fmt(p.constant)}" ' ..
          f'specularConstant="{fmt(p.specularConstant)}" specularExponent="{fmt(p.exponent)}" ' ..
          f'{common}>\n  {lightSource()}\n</kotuku:feLighting>'
@@ -281,6 +302,18 @@ function countPrimitives(ID:str):num
    err, vf = glViewport.scene.mtFindDef(ID)
    if err != ERR_Okay then return nil end
    return #vf.children()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Sets the matcap of the combined mode's LightingFX, which is the last primitive of the filter.
+
+function applyMatcap(ID:str)
+   if (glParams.lighting != 'combined') or (glParams.matcap is nil) then return end
+   err, vf = glViewport.scene.mtFindDef(ID)
+   if err != ERR_Okay then return end
+   effects = vf.children('LightingFX')
+   if #effects is 0 then return end
+   obj.find(effects[#effects - 1]).matcapPath = glParams.matcap
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -322,6 +355,7 @@ function render()
          target = glSurface, statement = surfaceDocument(glSource, id), flags = SVF_ENFORCE_TRACKING
       })
 
+      applyMatcap(id)
       primitives = countPrimitives(id)
       if primitives then
          surface_count = primitives - 1 -- Excludes the lighting primitive
@@ -372,14 +406,13 @@ function updateMarker()
    end
 end
 
--- The exponent applies to the specular and combined modes, and the specular constant to the combined mode alone.
+-- The exponent applies to the specular and combined modes, and the specular constant and material terms to the
+-- combined mode alone.
 
 function updateLightingSliders()
    if glParams.lighting is 'diffuse' then glSliders.exponent.disable() else glSliders.exponent.enable() end
-   if glParams.lighting is 'combined' then
-      glSliders.specularConstant.enable()
-   else
-      glSliders.specularConstant.disable()
+   for _, name in MATERIAL_SLIDERS do
+      if glParams.lighting is 'combined' then glSliders[name].enable() else glSliders[name].disable() end
    end
 end
 
@@ -474,11 +507,24 @@ function buildControls()
       scheduleRender()
    end)
 
+   matcap_items = array<table>
+   for _, matcap in MATCAPS do matcap_items.push({ label = matcap.label }) end
+
+   addCombobox('Matcap:', MATCAPS[0].label, matcap_items, function(Item:table!)
+      for _, matcap in MATCAPS do
+         if matcap.label is Item.label then glParams.matcap = matcap.path end
+      end
+      scheduleRender()
+   end)
+
    glY += 4
 
    addSlider('scale', 'Surface scale', 0.5, 40, nil, 1)
    addSlider('constant', 'Lighting constant', 0.1, 10, nil, 2)
    addSlider('specularConstant', 'Specular constant', 0.05, 4, nil, 2)
+   addSlider('metalness', 'Metalness', 0, 1, nil, 2)
+   addSlider('fresnel', 'Fresnel (f0)', 0, 1, nil, 2)
+   addSlider('wrap', 'Wrap', 0, 1, nil, 2)
    addSlider('exponent', 'Specular exponent', 1, 128, 1, 0)
    addSlider('intensity', 'Light intensity', 0.05, 4, nil, 2)
    addSlider('azimuth', 'Azimuth', 0, 360, 1, 0)

@@ -125,7 +125,21 @@ it.  Sets <class name="LightingFX" field="Ambient">LightingFX.Ambient</class>.  
   &lt;/filter&gt;
 &lt;/svg&gt;
 </pre>
-<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive, producing a finished surface: <code>in</code> is the height (its alpha channel) and <code>in2</code> is the albedo.  Without <code>in2</code> the albedo is opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>, and the extension attributes above without their prefix, as the element is already in the Kōtuku namespace.  One light source element is required.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
+<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive, producing a finished surface: <code>in</code> is the height (its alpha channel) and <code>in2</code> is the albedo.  Without <code>in2</code> the albedo is opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>, and the extension attributes above without their prefix, as the element is already in the Kōtuku namespace.  It also accepts the following material attributes, which the standard lighting elements do not:</p>
+<list type="bullet">
+<li><code>metalness</code>: 0 for a dielectric surface (the default) to 1 for a metal, whose highlights take the albedo's colour
+and which has no diffuse light.  Sets <class name="LightingFX" field="Metalness">LightingFX.Metalness</class>.</li>
+<li><code>fresnel</code>: reflectance at normal incidence, 0 to 1.  A non-zero value enables a Fresnel term that brightens
+highlights on steep slopes and edges; 0.04 suits most dielectrics.  The default is 0, which disables it.  Sets
+<class name="LightingFX" field="Fresnel">LightingFX.Fresnel</class>.</li>
+<li><code>wrap</code>: 0 to 1, default 0.  Extends diffuse light past the terminator, for wax, paper and skin.  Sets
+<class name="LightingFX" field="Wrap">LightingFX.Wrap</class>.</li>
+<li><code>matcap</code>: the path of a matcap image, an image of a sphere that reflects an environment, which adds reflections
+such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
+parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
+warning is logged and the surface is drawn without it.  Sets <class name="LightingFX" field="MatcapPath">LightingFX.MatcapPath</class>.</li>
+</list>
+<p>One light source element is required.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
 <pre>&lt;filter id=&quot;brass&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
   &lt;feTurbulence type=&quot;fractalNoise&quot; baseFrequency=&quot;0.04&quot; numOctaves=&quot;3&quot; result=&quot;height&quot;/&gt;
   &lt;kotuku:feLighting in=&quot;height&quot; in2=&quot;SourceGraphic&quot; surfaceScale=&quot;6&quot; diffuseConstant=&quot;0.9&quot;

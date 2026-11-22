@@ -795,6 +795,130 @@ end
    end
 end
 
+-- Material attributes of kotuku:feLighting.  Invalid values keep the defaults, and the standard elements ignore the
+-- attributes, with or without the prefix.
+
+@Test function LightingMaterialAttributes()
+   local svg <close> = combinedDocument('metalness="0.75" fresnel="0.04" wrap="0.5"')
+   local fx = lightingFX(svg)
+   assert((fx.metalness is 0.75) and (fx.fresnel is 0.04) and (fx.wrap is 0.5),
+      f'Material attributes must be read (got {fx.metalness}, {fx.fresnel}, {fx.wrap})')
+   local doc <close> = draw(svg, 64)
+
+   local plain <close> = combinedDocument()
+   local api = lightingFX(plain)
+   api.{ metalness=0.75, fresnel=0.04, wrap=0.5 }
+   local diff = imageDifference(doc, draw(plain, 64))
+   assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
+   assert(imageDifference(doc, draw(combinedDocument(), 64)) > 0, 'The attributes must change the default render')
+
+   local prefixed <close> = combinedDocument('kotuku:metalness="1" kotuku:wrap="0.25"')
+   fx = lightingFX(prefixed)
+   assert((fx.metalness is 1) and (fx.wrap is 0.25), 'The prefixed attributes must be accepted on kotuku:feLighting')
+
+   for _, attribs in array<str> {
+      'metalness="1.5" fresnel="-0.1" wrap="2"', 'metalness="bad" fresnel="0.04x" wrap=""'
+   } do
+      local invalid <close> = combinedDocument(attribs)
+      fx = lightingFX(invalid)
+      assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0),
+         f'Invalid values must leave the defaults: {attribs}')
+   end
+
+   local standard <close> = lightingDocument('kotuku:metalness="1" kotuku:fresnel="0.5" kotuku:wrap="1"')
+   fx = lightingFX(standard)
+   assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0),
+      'feDiffuseLighting must ignore the material attributes')
+   local diff_standard = imageDifference(draw(standard, 64), draw(lightingDocument(), 64))
+   assert(diff_standard is 0, f'The material attributes must not change feDiffuseLighting ({diff_standard})')
+end
+
+-- XMLDef writes the material attributes when they are set, and re-parses to an identical render.
+
+@Test function MaterialXMLDefRoundTrips()
+   local defaults <close> = combinedDocument()
+   local _, filter:any = check defaults.scene.mtFindDef('f')
+   local xml:str = filter.effectXML
+   for _, name in array<str> { 'metalness', 'fresnel', 'wrap' } do
+      assert(xml.find(name, 0, true) is nil, f'Default material terms must not be written: {xml}')
+   end
+
+   for _, attribs in array<str> { 'metalness="0.6"', 'fresnel="0.04" specularConstant="12"', 'wrap="0.35"',
+      'metalness="1" fresnel="0.25" wrap="1" ambient="#202020"' } do
+      local svg <close> = combinedDocument(attribs)
+      local original <close> = draw(svg, 64)
+      _, filter = check svg.scene.mtFindDef('f')
+      xml = filter.effectXML
+      local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
+      local diff = imageDifference(original, draw(loaded, 64))
+      assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+      local a, b = lightingFX(svg), lightingFX(loaded)
+      assert((a.metalness is b.metalness) and (a.fresnel is b.fresnel) and (a.wrap is b.wrap),
+         f'XMLDef must preserve the material fields: {xml}')
+   end
+end
+
+-- The matcap attribute of kotuku:feLighting is resolved against the document's folder, as the href of feImage is.  The
+-- surface is flat and unlit, so it takes the colour at the matcap's centre.  Paths that leave the folder are refused,
+-- and a refused or missing matcap leaves the surface unlit.
+
+@Test function LightingMatcapResolvesAgainstTheDocument()
+   local folder = 'temp:svg_matcap_test/'
+   defer mSys.DeleteFile(folder) end
+   local err = mSys.CreateFolder(folder .. 'caps/', 0)
+   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
+
+   do
+      local pic <close> = obj.new('image', { width=9, height=9, bitsPerPixel=32, flags='NEW' })
+      pic.bitmap.bkgd = '255,0,0,255'
+      pic.bitmap.acClear()
+      local file <close> = obj.new('file', { flags=FL_NEW|FL_WRITE, path=folder .. 'caps/red.png' })
+      check pic.acSaveImage(file)
+   end
+
+   local function load(Matcap:str):obj
+      io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
+         'height="64"><filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
+         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" diffuseConstant="0" ' ..
+         f'specularConstant="0" matcap="{Matcap}"><feDistantLight azimuth="0" elevation="90"/></kotuku:feLighting>' ..
+         '</filter><rect width="64" height="64" fill="white" filter="url(#f)"/></svg>')
+      return obj.new('svg', { path=folder .. 'doc.svg' })
+   end
+
+   local svg <close> = load('caps/red.png')
+   local fx = lightingFX(svg)
+   local path:str = fx.matcapPath ?? ''
+   assert(path.replace('\\', '/').endsWith('caps/red.png') and (#path > #'caps/red.png'),
+      f'The matcap must be resolved against the document\'s folder (got {path})')
+   local bmp <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(bmp, 32, 32)
+   assert((p.red is 255) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
+      f'The surface must reflect the matcap (got {p.red}, {p.green}, {p.blue}, {p.alpha})')
+
+   local _, filter:any = check svg.scene.mtFindDef('f')
+   local xml:str = filter.effectXML
+   assert(xml.find('matcap="caps/red.png"', 0, true) != nil, f'XMLDef must preserve the relative matcap path: {xml}')
+
+   do
+      local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
+      check svg.acSaveToObject(file, 0)
+   end
+   local saved <close> = obj.new('svg', { path=folder .. 'saved.svg' })
+   local saved_bmp <close> = draw(saved, 64)
+   assert(imageDifference(bmp, saved_bmp) is 0, 'Saving and reopening the SVG must preserve the matcap reflection')
+
+   for _, matcap in array<str> { '../caps/red.png', 'caps/../../red.png', '/caps/red.png',
+      'temp:svg_matcap_test/caps/red.png', 'caps/missing.png' } do
+      local refused <close> = load(matcap)
+      fx = lightingFX(refused)
+      assert(fx.matcapPath is nil, f'The matcap path {matcap} must not be loaded (got {fx.matcapPath})')
+      local unlit <close> = draw(refused, 64)
+      p = mGfx.ReadRGBPixel(unlit, 32, 32)
+      assert((p.red is 0) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
+         f'{matcap}: the surface must be drawn without a matcap (got {p.red}, {p.green}, {p.blue}, {p.alpha})')
+   end
+end
+
 @Test function CombinedLightingSavePreservesInputBindings()
    local path = 'temp:svg_combined_lighting_roundtrip.svg'
    defer mSys.DeleteFile(path) end

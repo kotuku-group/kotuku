@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- LightingFX metalness on kotuku:feLighting.
+
+Columns are metalness 0, 0.5 and 1.  Rows: a polished gold dome, a brushed brass plate under a warm light, and a
+copper disc whose relief extends beyond its albedo, under a point light.  As metalness rises the diffuse light
+fades and the highlight takes the albedo's colour.
+
+Each cell is a 340x254 filter region in its own user space.  Every surface is lit by kotuku:feLighting, the COMBINED
+type of LightingFX, which uses the enhanced pipeline whatever the scene's Compliance. -->
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
+  viewBox="0 0 1024 768">
+  <defs>
+    <!-- Alpha profile of a hemisphere, sqrt(1 - r^2), used as a height map -->
+    <radialGradient id="hemisphere">
+      <stop offset="0" stop-color="white" stop-opacity="1"/>
+      <stop offset="0.2" stop-color="white" stop-opacity="0.98"/>
+      <stop offset="0.4" stop-color="white" stop-opacity="0.917"/>
+      <stop offset="0.5" stop-color="white" stop-opacity="0.866"/>
+      <stop offset="0.6" stop-color="white" stop-opacity="0.8"/>
+      <stop offset="0.7" stop-color="white" stop-opacity="0.714"/>
+      <stop offset="0.8" stop-color="white" stop-opacity="0.6"/>
+      <stop offset="0.85" stop-color="white" stop-opacity="0.527"/>
+      <stop offset="0.9" stop-color="white" stop-opacity="0.436"/>
+      <stop offset="0.95" stop-color="white" stop-opacity="0.312"/>
+      <stop offset="0.98" stop-color="white" stop-opacity="0.199"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 1: Polished gold dome, metalness 0 -->
+    <filter id="c1" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#e8b850"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1"
+        specularExponent="40" ambient="#404040" metalness="0">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 2: Polished gold dome, metalness 0.5 -->
+    <filter id="c2" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#e8b850"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1"
+        specularExponent="40" ambient="#404040" metalness="0.5">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 3: Polished gold dome, metalness 1 -->
+    <filter id="c3" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#e8b850"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1"
+        specularExponent="40" ambient="#404040" metalness="1">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 4: Brushed brass plate under a warm light, metalness 0 -->
+    <filter id="c4" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feTurbulence type="fractalNoise" baseFrequency="0.3 0.015" numOctaves="3" seed="8" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="2" diffuseConstant="1" specularConstant="1.5"
+        specularExponent="60" lighting-color="#ffe0b0" ambient="#202020" metalness="0">
+        <feDistantLight azimuth="300" elevation="40"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 5: Brushed brass plate under a warm light, metalness 0.5 -->
+    <filter id="c5" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feTurbulence type="fractalNoise" baseFrequency="0.3 0.015" numOctaves="3" seed="8" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="2" diffuseConstant="1" specularConstant="1.5"
+        specularExponent="60" lighting-color="#ffe0b0" ambient="#202020" metalness="0.5">
+        <feDistantLight azimuth="300" elevation="40"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 6: Brushed brass plate under a warm light, metalness 1 -->
+    <filter id="c6" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feTurbulence type="fractalNoise" baseFrequency="0.3 0.015" numOctaves="3" seed="8" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="2" diffuseConstant="1" specularConstant="1.5"
+        specularExponent="60" lighting-color="#ffe0b0" ambient="#202020" metalness="1">
+        <feDistantLight azimuth="300" elevation="40"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 7: Copper disc on a wider relief, so that part of the lit height has a transparent albedo; metalness 0 under a
+      point light.  A metal casts no highlight where the albedo is transparent. -->
+    <filter id="c7" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="40" diffuseConstant="1" specularConstant="1.2"
+        specularExponent="25" ambient="#303030" metalness="0">
+        <fePointLight x="120" y="60" z="120"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 8: Copper disc on a wider relief, so that part of the lit height has a transparent albedo; metalness 0.5 under
+      a point light.  A metal casts no highlight where the albedo is transparent. -->
+    <filter id="c8" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="40" diffuseConstant="1" specularConstant="1.2"
+        specularExponent="25" ambient="#303030" metalness="0.5">
+        <fePointLight x="120" y="60" z="120"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 9: Copper disc on a wider relief, so that part of the lit height has a transparent albedo; metalness 1 under a
+      point light.  A metal casts no highlight where the albedo is transparent. -->
+    <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="40" diffuseConstant="1" specularConstant="1.2"
+        specularExponent="25" ambient="#303030" metalness="1">
+        <fePointLight x="120" y="60" z="120"/>
+      </kotuku:feLighting>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="768" fill="#d8d8d8"/>
+
+  <g transform="translate(0 0)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c1)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(342 0)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c2)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(684 0)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c3)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(0 257)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c4)">
+      <rect width="340" height="254" fill="#b5893a"/>
+    </g>
+  </g>
+
+  <g transform="translate(342 257)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c5)">
+      <rect width="340" height="254" fill="#b5893a"/>
+    </g>
+  </g>
+
+  <g transform="translate(684 257)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c6)">
+      <rect width="340" height="254" fill="#b5893a"/>
+    </g>
+  </g>
+
+  <g transform="translate(0 514)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c7)">
+      <circle cx="190" cy="127" r="70" fill="#c87533"/>
+    </g>
+  </g>
+
+  <g transform="translate(342 514)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c8)">
+      <circle cx="190" cy="127" r="70" fill="#c87533"/>
+    </g>
+  </g>
+
+  <g transform="translate(684 514)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c9)">
+      <circle cx="190" cy="127" r="70" fill="#c87533"/>
+    </g>
+  </g>
+</svg>

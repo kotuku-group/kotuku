@@ -3086,7 +3086,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getAmbient(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[35];
       return field->GetValue(this, &Value);
    }
 
@@ -3101,12 +3101,12 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getCavity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[33];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getDetail(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[31];
       return field->GetValue(this, &Value);
    }
 
@@ -3116,12 +3116,37 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getIntensity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[25];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getSpecularConstant(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getMetalness(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getFresnel(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getWrap(double &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getMatcap(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getMatcapPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
       return field->GetValue(this, &Value);
    }
 
@@ -3149,12 +3174,12 @@ class objLightingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setType(const LT Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3164,27 +3189,27 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setAmbient(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setConstant(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setExponent(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setCavity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setExponent(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[36];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setCavity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[33];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setDetail(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3194,22 +3219,47 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setIntensity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setSpecularConstant(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setScale(const double Value) noexcept {
+   inline ERR setMetalness(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setFresnel(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setWrap(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setMatcap(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, 0x08100309, Value);
+   }
+
+   inline ERR setMatcapPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, 0x00904308, &Value);
+   }
+
+   inline ERR setScale(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setUnitX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

@@ -175,7 +175,24 @@ The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It light
 ambient light in one primitive, producing a finished surface: `in` is the height (its alpha channel) and `in2` is the
 albedo.  Without `in2` the albedo is opaque white.  It accepts `surfaceScale`, `diffuseConstant`, `specularConstant`,
 `specularExponent`, `kernelUnitLength` and `lighting-color`, and the extension attributes above without their prefix,
-as the element is already in the Kōtuku namespace.  One light source element is required.  The element is drawn
+as the element is already in the Kōtuku namespace.  It also accepts the following material attributes, which the
+standard lighting elements do not:
+
+<list type="bullet">
+<li>`metalness`: 0 for a dielectric surface (the default) to 1 for a metal, whose highlights take the albedo's colour
+and which has no diffuse light.  Sets @LightingFX.Metalness.</li>
+<li>`fresnel`: reflectance at normal incidence, 0 to 1.  A non-zero value enables a Fresnel term that brightens
+highlights on steep slopes and edges; 0.04 suits most dielectrics.  The default is 0, which disables it.  Sets
+@LightingFX.Fresnel.</li>
+<li>`wrap`: 0 to 1, default 0.  Extends diffuse light past the terminator, for wax, paper and skin.  Sets
+@LightingFX.Wrap.</li>
+<li>`matcap`: the path of a matcap image, an image of a sphere that reflects an environment, which adds reflections
+such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
+parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
+warning is logged and the surface is drawn without it.  Sets @LightingFX.MatcapPath.</li>
+</list>
+
+One light source element is required.  The element is drawn
 whatever the document's compliance, but other renderers do not draw it.
 
 <pre>

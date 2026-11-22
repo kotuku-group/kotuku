@@ -389,6 +389,14 @@ end
 @Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0xa414aa41) end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0x86937dc1) end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xcb395553) end
+
+-- kotuku:feLighting material terms, each a 3x3 matrix of surfaces.  Matcaps are loaded from filters/matcaps/.
+-- NOTE: These hashes are liable to change as lighting routines continue to improve
+@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0x6ad6ab66) end
+@Test global function LightingFresnel()    hashTestSVG('filters/lighting_fresnel.svg', 0x16cc9fdf) end
+@Test global function LightingWrap()       hashTestSVG('filters/lighting_wrap.svg', 0xa751a61b) end
+@Test global function LightingMatcap()     hashTestSVG('filters/lighting_matcap.svg', 0x5a57d16d) end
+
 -- Turbulence snapshots include sampling in user coordinates through the inverse transform at pixel centres.
 @Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x06560878) end
 @Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x70c6859b) end

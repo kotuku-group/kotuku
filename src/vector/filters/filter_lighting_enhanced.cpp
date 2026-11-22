@@ -21,12 +21,16 @@ replaces the gradient stage only; normals, kernel units and the light models are
    compressed so that it cannot tilt the surface far past the light, while the base slope is left exactly as it was.
 6. Distant lights cast shadows.  The surface is swept from the side nearest the light, carrying the height of the
    shadow from pixel to pixel, so the cost per pixel does not depend on the length of the shadows.  The edge of the
-   shadow is softened over a small angle, so the penumbra widens with distance from the occluder.
+   shadow is softened over a small angle, so the penumbra widens with distance from the occluder.  With Wrap, a
+   second sweep casts shadows from the light raised by the wrap angle, for faces that turn away from the light.
 7. Specular highlights are anti-aliased with Toksvig's method.  Where the normals within a pixel's neighbourhood vary,
    the highlight is shaded with their mean and a reduced exponent, so that it spreads over the variation instead of
    sparkling.
 8. The combined type evaluates the diffuse and specular light together and applies them to an albedo, with ambient
-   light, clamping once on output.
+   light, clamping once on output.  Material terms (metalness, Fresnel, wrap and a matcap) select enhanced_material()
+   for the draw; with all of them at their defaults enhanced_combined() is used, so the result is unchanged.  A matcap
+   is converted once per draw to premultiplied colour in the filter's colour space, and sampled with the shading
+   normal.
 
 *********************************************************************************************************************/
 
@@ -97,6 +101,7 @@ struct lit_surface {
    const float *detail;  // Padded, cored detail layer, or nullptr if detail is not boosted
    const float *curve;   // Padded heights from which curvature is measured
    const float *shadow;  // Fraction of a distant light reaching each pixel, unpadded, or nullptr
+   const float *raised;  // As shadow, with the light raised by the wrap angle, or nullptr if it is unshadowed
    const uint8_t *albedo; // First pixel of the albedo for the combined type, or nullptr if it is opaque white
    const float *albedo_lut; // Converts a stored albedo channel to the filter's colour space, 0 - 1
    int albedo_stride;    // Bytes per row of the albedo
@@ -464,6 +469,73 @@ static void row_normals(float *__restrict NX, float *__restrict NY, float *__res
    }
 }
 
+// Fills a table that converts an 8-bit channel to the filter's colour space, from 0 to 1.  LinearSource is true if the
+// channel is linear, and Linear is true if the filter computes in linear RGB.
+
+static void colour_table(std::array<float, 256> &Table, bool LinearSource, bool Linear)
+{
+   for (int i=0; i < 256; i++) {
+      const float value = float(i) * (1.0f / 255.0f);
+      if (Linear IS LinearSource) Table[i] = value;
+      else if (Linear) Table[i] = rgb_to_linear::f_convert(value);
+      else Table[i] = rgb_to_linear::f_invert(value);
+   }
+}
+
+// Converts the matcap to premultiplied RGB in the filter's colour space, for sample_matcap(), with four floats per
+// texel.  The bitmap is read in
+// full on each draw, so that changes to a client's bitmap are seen.  A bitmap without an alpha channel is opaque.
+
+ERR extLightingFX::prepare_matcap()
+{
+   MatcapTexels = nullptr;
+   const auto bmp = Matcap;
+   if ((not bmp) or (bmp->BytesPerPixel != 4) or (bmp->Width < 1) or (bmp->Height < 1) or (not bmp->Data)) {
+      return ERR::Okay;
+   }
+
+   const int width = bmp->Width, height = bmp->Height;
+   float *texels;
+   if (auto error = get_filter_scratch(this, size_t(width) * height * 4, texels); error != ERR::Okay) return error;
+
+   std::array<float, 256> lut;
+   colour_table(lut, bmp->ColourSpace IS CS::LINEAR_RGB, Linear);
+
+   const auto fmt = bmp->ColourFormat;
+   const uint8_t R = fmt->RedPos>>3, G = fmt->GreenPos>>3, B = fmt->BluePos>>3, A = fmt->AlphaPos>>3;
+   const bool has_alpha = (bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL;
+   const bool premul = (bmp->Flags & BMF::PREMUL) != BMF::NIL;
+
+   float *out = texels;
+   for (int y=0; y < height; y++) {
+      const uint8_t *pixel = bmp->Data + (std::ptrdiff_t(y) * bmp->LineWidth);
+      for (int x=0; x < width; x++, pixel += 4, out += 4) {
+         const int alpha = has_alpha ? pixel[A] : 255;
+         out[3] = 0;
+         if (not alpha) {
+            out[0] = out[1] = out[2] = 0;
+            continue;
+         }
+
+         int r = pixel[R], g = pixel[G], b = pixel[B];
+         if ((premul) and (alpha < 255)) {
+            r = std::min(255, ((r * 255) + (alpha / 2)) / alpha);
+            g = std::min(255, ((g * 255) + (alpha / 2)) / alpha);
+            b = std::min(255, ((b * 255) + (alpha / 2)) / alpha);
+         }
+         const float level = float(alpha) * (1.0f / 255.0f);
+         out[0] = lut[r] * level;
+         out[1] = lut[g] * level;
+         out[2] = lut[b] * level;
+      }
+   }
+
+   MatcapTexels = texels;
+   MatcapWidth  = width;
+   MatcapHeight = height;
+   return ERR::Okay;
+}
+
 // Reads the albedo at X from a row, or returns transparent black if X is beyond the albedo.  Without an albedo row the
 // albedo is opaque white.
 
@@ -644,6 +716,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       const float *h = row_of(Surface.heights, y);
       const float *nx = cur.x + 1, *ny = cur.y + 1, *nz = cur.z + 1, *cavity = cur.occlusion + 1;
       const float *shadow = Surface.shadow ? Surface.shadow + (y * Width) : nullptr;
+      const float *raised = Surface.raised ? Surface.raised + (y * Width) : nullptr;
       const uint8_t *albedo = ((Surface.albedo) and (y < Surface.albedo_height)) ?
          Surface.albedo + (std::ptrdiff_t(y) * Surface.albedo_stride) : nullptr;
       auto dptr = dest_base + y * Target->LineWidth;
@@ -657,14 +730,16 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
          }
          else if (Type IS LT::COMBINED) {
             const auto sample = read_albedo(Surface, albedo, x, R, G, B, A);
-            if (toksvig) {
-               enhanced_combined(normal, point3(mean_x[x], mean_y[x], mean_z[x]),
-                  SpecularExponent * double(factor[x]), stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
-                  cavity[x]);
+            const point3 mean = toksvig ? point3(mean_x[x], mean_y[x], mean_z[x]) : normal;
+            const double exponent = toksvig ? SpecularExponent * double(factor[x]) : SpecularExponent;
+            if (Material) {
+               const float lifted = raised ? cavity[x] * raised[x] : cavity[x];
+               enhanced_material(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
+                  cavity[x], lifted);
             }
             else {
-               enhanced_combined(normal, normal, SpecularExponent, stl, Tint(stl), sample, dptr, R, G, B, A,
-                  occlusion, cavity[x]);
+               enhanced_combined(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
+                  cavity[x]);
             }
          }
          else if (toksvig) {
@@ -755,6 +830,9 @@ ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_v
       Strength = Constant * Intensity;
    }
 
+   Material = has_material();
+   WrapScale = 1.0 / (1.0 + Wrap);
+
    // Ambient light in the filter's colour space, scaled by its alpha.
 
    AmbientLight = { 0, 0, 0, 0 };
@@ -768,14 +846,13 @@ ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_v
    // The albedo's channels are converted to the filter's colour space through a table.
 
    std::array<float, 256> albedo_lut;
-   if (Albedo) {
-      const bool linear_source = Albedo->Encoding IS CS::LINEAR_RGB;
-      for (int i=0; i < 256; i++) {
-         const float value = float(i) * (1.0f / 255.0f);
-         if (Linear IS linear_source) albedo_lut[i] = value;
-         else if (Linear) albedo_lut[i] = rgb_to_linear::f_convert(value);
-         else albedo_lut[i] = rgb_to_linear::f_invert(value);
-      }
+   if (Albedo) colour_table(albedo_lut, Albedo->Encoding IS CS::LINEAR_RGB, Linear);
+
+   // The matcap's colour, for the combined type.
+
+   MatcapTexels = nullptr;
+   if ((Material) and (Matcap)) {
+      if (auto error = prepare_matcap(); error != ERR::Okay) return error;
    }
 
    float *raw;
@@ -884,8 +961,24 @@ ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_v
       if (error != ERR::Okay) return error;
    }
 
+   // With Wrap, faces that turn away from the light take their shadows from the light raised by the wrap angle, which
+   // their own slope does not block.  The raised light is unshadowed within 1 degree of overhead.
+
+   float *raised = nullptr;
+   WrapShadows = (shadow) and (Material) and (Wrap > 0);
+   if (WrapShadows) {
+      const double lifted = elevation + asin(Wrap);
+      if (lifted < 89.0 * DEG2RAD) {
+         if (auto error = get_filter_scratch(this, size_t(Width) * Height, raised); error != ERR::Okay) return error;
+         auto error = cast_shadows(this, heights + (LIGHT_PAD * stride) + LIGHT_PAD, stride, Width, Height, raised,
+            Direction, lifted, SpotHeight * (1.0 / 255.0), pool);
+         if (error != ERR::Okay) return error;
+      }
+      WrapBlend = sin(std::min(Penumbra * DEG2RAD, elevation * 0.5));
+   }
+
    lit_surface surface = {
-      .heights = heights, .detail = detail, .curve = curve, .shadow = shadow, .albedo = nullptr,
+      .heights = heights, .detail = detail, .curve = curve, .shadow = shadow, .raised = raised, .albedo = nullptr,
       .albedo_lut = albedo_lut.data(), .albedo_stride = 0, .albedo_width = 0, .albedo_height = 0,
       .albedo_premul = false, .stride = stride, .height = Height, .normal = NormalHeight,
       .curvature = MapHeight * (1.0 / 255.0) * UnitSize * UnitSize, .sharpen = sharpen_weight(UnitSize)
