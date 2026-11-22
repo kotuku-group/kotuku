@@ -289,7 +289,7 @@ Z: Close Path
 <li>If <fl>X</fl> and XOffset are defined, the path is stretched to fill the space between them.</li>
 <li>If <fl>X</fl> and <fl>Width</fl> are both defined, XOffset is ignored.</li>
 </list>
-<p>When XOffset is not set, reading it returns the distance between the right edge of the placed path and the right edge of the parent viewport.  To remove the offset, set an undefined value (NaN).</p>
+<p>When XOffset is set, reading it returns the stored value.  Otherwise it returns the distance between the right edge of the placed path and the right edge of the parent viewport.  To remove the offset, set an undefined value (NaN).</p>
       </description>
     </field>
 

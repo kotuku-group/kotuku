@@ -633,6 +633,20 @@ hatch pattern over a solid fill.  This format is a Kōtuku extension and is not 
     </field>
 
     <field>
+      <name>PaintOrder</name>
+      <comment>Defines the order in which the fill, stroke and markers are painted.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="VPO">VPO</type>
+      <description>
+<p>The PaintOrder field determines the order in which the fill, stroke and markers of a vector are painted.  It is the equivalent of the SVG <code>paint-order</code> property.  The default value of <code>NORMAL</code> paints the fill first, followed by the stroke and then the markers.</p>
+<p>A common use case is outlined text, where <code>STROKE_FILL_MARKERS</code> paints a thick stroke beneath the fill so that the inner half of the stroke does not obscure the glyph shapes.</p>
+<p>All of the fill painters of a vector, including any additional layers declared in the <fl>Fill</fl> string, are treated as one painting stage and move together.  Markers are included in each ordering for SVG compatibility, but are not currently rendered.</p>
+<p>The value is not inherited from parent vectors at runtime.</p>
+<types lookup="VPO"/>
+      </description>
+    </field>
+
+    <field>
       <name>Parent</name>
       <comment>The parent of the vector, or NULL if this is the top-most vector.</comment>
       <access read="R">Read</access>
@@ -933,6 +947,15 @@ Z: Close Path
       <const name="Y_MAX">Align the source so that it is morphed along the bottom of the target path.</const>
       <const name="Y_MID">Align the source so that it is morphed along the middle of the target path.</const>
       <const name="Y_MIN">Align the source so that it is morphed along the top of the target path.</const>
+    </constants>
+
+    <constants lookup="VPO" comment="Painting order options for the PaintOrder field in the Vector class.">
+      <const name="FILL_MARKERS_STROKE">Paint the fill, then markers, then the stroke.</const>
+      <const name="MARKERS_FILL_STROKE">Paint markers, then the fill, then the stroke.</const>
+      <const name="MARKERS_STROKE_FILL">Paint markers, then the stroke, then the fill.</const>
+      <const name="NORMAL">The default.  Paint the fill, then the stroke, then markers.</const>
+      <const name="STROKE_FILL_MARKERS">Paint the stroke, then the fill, then markers.  Equivalent to SVG's <code>paint-order: stroke</code>.</const>
+      <const name="STROKE_MARKERS_FILL">Paint the stroke, then markers, then the fill.</const>
     </constants>
 
   </types>

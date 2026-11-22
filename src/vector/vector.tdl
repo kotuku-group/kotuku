@@ -82,6 +82,15 @@ struct KeyValue;
     "INHERIT: The rule is inherited from the parent vector(s).",
     "END: Private")
 
+  enums("VPO", { type="int", start=0, comment="Painting order options for the PaintOrder field in the Vector class." },
+    "NORMAL: The default.  Paint the fill, then the stroke, then markers.",
+    "FILL_MARKERS_STROKE: Paint the fill, then markers, then the stroke.",
+    "STROKE_FILL_MARKERS: Paint the stroke, then the fill, then markers.  Equivalent to SVG's `paint-order: stroke`.",
+    "STROKE_MARKERS_FILL: Paint the stroke, then markers, then the fill.",
+    "MARKERS_FILL_STROKE: Paint markers, then the fill, then the stroke.",
+    "MARKERS_STROKE_FILL: Paint markers, then the stroke, then the fill.",
+    "END: Private")
+
   enums("VIS", { type="int", start=0, comment="Options for the Vector class' Visibility field." },
     "HIDDEN: Hide the vector and its children.",
     "VISIBLE: The default.  Ensures that the vector is visible.",
@@ -491,7 +500,7 @@ struct KeyValue;
     { id=10, name='FreeMatrix' }
   })
 
-  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true, references={ 'VIJ', 'VLC', 'VLJ', 'VFR', 'VMF' } }, [[
+  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true, references={ 'VIJ', 'VLC', 'VLJ', 'VFR', 'VMF', 'VPO' } }, [[
     obj(Vector) Child       # The first child vector, or `NULL`.
     obj(VectorScene) Scene  # Short-cut to the top-level @VectorScene.
     obj(Vector) Next        # The next vector in the branch, or `NULL`.
@@ -518,6 +527,7 @@ struct KeyValue;
     ~int(VLJ) LineJoin
     ~int(VLC) LineCap
     ~int(VIJ) InnerJoin
+    ~int(VPO) PaintOrder
   ]])
 
   -- VectorPath method ID's start high enough to give a cushion from inherited Vector methods.

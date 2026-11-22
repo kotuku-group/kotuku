@@ -323,6 +323,117 @@ end
    assert(saved.find('color-interpolation', 0, true) is nil, 'The default root colour space should not be written')
 end
 
+function paintOrderDocument(Content:str):str
+   return '<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">' .. Content .. '</svg>'
+end
+
+@Test function PaintOrderImports()
+   local scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+   local svg = obj.new('svg', { target=scene, statement=paintOrderDocument([[
+<rect id="po_stroke" width="10" height="10" paint-order="stroke"/>
+<rect id="po_case" width="10" height="10" paint-order="Markers  STROKE"/>
+<rect id="po_style" width="10" height="10" style="paint-order: fill markers"/>
+<rect id="po_normal" width="10" height="10" paint-order="normal"/>
+<rect id="po_full" width="10" height="10" paint-order="stroke markers fill"/>
+<g paint-order="stroke"><rect id="po_child" width="10" height="10"/><rect id="po_override" paint-order="markers"/></g>
+<rect id="po_default" width="10" height="10"/>]]) })
+   assert(obj.find('po_stroke').paintOrder is VPO_STROKE_FILL_MARKERS, 'paint-order="stroke" should import')
+   assert(obj.find('po_case').paintOrder is VPO_MARKERS_STROKE_FILL, 'paint-order keywords are case-insensitive')
+   assert(obj.find('po_style').paintOrder is VPO_FILL_MARKERS_STROKE, 'paint-order should import from a style')
+   assert(obj.find('po_normal').paintOrder is VPO_NORMAL, 'paint-order="normal" should import')
+   assert(obj.find('po_full').paintOrder is VPO_STROKE_MARKERS_FILL, 'A full paint-order list should import')
+   assert(obj.find('po_child').paintOrder is VPO_STROKE_FILL_MARKERS, 'paint-order should be inherited from a group')
+   assert(obj.find('po_override').paintOrder is VPO_MARKERS_FILL_STROKE,
+      'A child paint-order should override its group')
+   assert(obj.find('po_default').paintOrder is VPO_NORMAL, 'An undeclared paint-order should default to normal')
+end
+
+@Test function InvalidPaintOrderIsIgnored()
+   local scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+   local svg = obj.new('svg', { target=scene, statement=paintOrderDocument([[
+<rect id="po_duplicate" width="10" height="10" paint-order="stroke stroke"/>
+<rect id="po_unknown" width="10" height="10" paint-order="bogus"/>
+<rect id="po_mixed" width="10" height="10" paint-order="normal fill"/>
+<g paint-order="stroke">
+   <rect id="po_invalid_child" width="10" height="10" paint-order="fill fill"/>
+   <rect id="po_blank_child" width="10" height="10" paint-order=" "/>
+</g>]]) })
+   for id in values(array<str> { 'po_duplicate', 'po_unknown', 'po_mixed' }) do
+      local order = obj.find(id).paintOrder
+      assert(order is VPO_NORMAL, f'An invalid paint-order on {id} should leave the default, got {order}')
+   end
+   assert(obj.find('po_invalid_child').paintOrder is VPO_STROKE_FILL_MARKERS,
+      'An invalid paint-order should leave the inherited value')
+   assert(obj.find('po_blank_child').paintOrder is VPO_STROKE_FILL_MARKERS,
+      'A whitespace-only paint-order should leave the inherited value')
+end
+
+@Test function PaintOrderCascadeResolvesInherit()
+   local scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+   local svg = obj.new('svg', { target=scene, statement=paintOrderDocument([[
+<g paint-order="stroke">
+   <rect id="po_inherit_shape" width="10" height="10" paint-order="fill" style="paint-order: inherit"/>
+   <g paint-order="markers" style="paint-order: inherit">
+      <rect id="po_inherit_group" width="10" height="10"/>
+   </g>
+</g>
+<rect id="po_inherit_root" width="10" height="10" paint-order="stroke" style="paint-order: inherit"/>]]) })
+   assert(obj.find('po_inherit_shape').paintOrder is VPO_STROKE_FILL_MARKERS,
+      'Inline inherit should override a shape presentation attribute')
+   assert(obj.find('po_inherit_group').paintOrder is VPO_STROKE_FILL_MARKERS,
+      'Inline inherit on a group should use the parent order for its children')
+   assert(obj.find('po_inherit_root').paintOrder is VPO_NORMAL,
+      'Inheriting from an undeclared parent should give the default order')
+end
+
+@Test function PaintOrderRoundTripsNormalUnderStrokeGroup()
+   local scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+   local svg = obj.new('svg', { target=scene, statement=paintOrderDocument([[
+<g paint-order="stroke">
+   <svg width="30" height="30">
+      <rect width="10" height="10" paint-order="normal"/>
+      <rect x="12" width="10" height="10"/>
+   </svg>
+</g>]]) })
+   local saved = saveScene(scene, 'temp:svg_paint_order_group.svg')
+   assertContains(saved, 'paint-order="normal"', 'Export should preserve normal under a stroke-ordered group')
+
+   local loaded_scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+   local loaded_svg = obj.new('svg', { target=loaded_scene, statement=saved })
+   local rect = loaded_svg.viewport.child.child.child
+   assert(rect.paintOrder is VPO_NORMAL, 'The explicit normal order should survive reload')
+   assert(rect.next.paintOrder is VPO_STROKE_FILL_MARKERS, 'The inherited stroke-first order should survive reload')
+end
+
+@Test function PaintOrderExportsShortestForm()
+   local expected = {
+      [VPO_FILL_MARKERS_STROKE] = 'fill markers',
+      [VPO_STROKE_FILL_MARKERS] = 'stroke',
+      [VPO_STROKE_MARKERS_FILL] = 'stroke markers',
+      [VPO_MARKERS_FILL_STROKE] = 'markers',
+      [VPO_MARKERS_STROKE_FILL] = 'markers stroke'
+   }
+
+   for order, value in expected do
+      local scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+      local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+      viewport.new('VectorRectangle', { width=10, height=10, fill='rgb(0,0,255)', paintOrder=order })
+      local saved = saveScene(scene, f'temp:svg_paint_order_{order}.svg')
+      assertContains(saved, f'paint-order="{value}"', f'PaintOrder {order} should export as "{value}"')
+
+      local loaded_scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+      local loaded_svg = obj.new('svg', { target=loaded_scene, statement=saved })
+      local loaded = loaded_svg.viewport.child
+      assert(loaded.paintOrder is order, f'PaintOrder {order} should survive round trip, got {loaded.paintOrder}')
+   end
+
+   local scene <close> = obj.new('VectorScene', { pageWidth=40, pageHeight=40 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   viewport.new('VectorRectangle', { width=10, height=10, fill='rgb(0,0,255)' })
+   local saved = saveScene(scene, 'temp:svg_paint_order_normal.svg')
+   assert(saved.find('paint-order', 0, true) is nil, 'The default paint order should not be written')
+end
+
 @Test function CollectionTileColourSpaceRoundTrip()
    local _, original = mSys.ResolvePath('patterns:', RSF_NO_FILE_CHECK)
    check mSys.SetVolume('patterns', glSVGFolder .. 'collection_paints/', '', '', '', VOLUME_REPLACE)

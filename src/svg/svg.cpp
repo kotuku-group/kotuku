@@ -241,6 +241,7 @@ struct svgState {
    VLJ     m_line_join;
    VLC     m_line_cap;
    VIJ     m_inner_join;
+   VPO     m_paint_order = VPO::END; // VPO::END if undefined
    const ParamScope *m_param_scope = nullptr; // Active <use> parameter scope, if any
    std::vector<const XTag *> m_gradient_refs; // Active href chain, used to stop cyclic gradient references
 
@@ -604,6 +605,7 @@ static constexpr auto SVF_overflow            = strhash("overflow");
 static constexpr auto SVF_overflow_wrap       = strhash("overflow-wrap");
 static constexpr auto SVF_overlay             = strhash("overlay");
 static constexpr auto SVF_overline            = strhash("overline");
+static constexpr auto SVF_paint_order         = strhash("paint-order");
 static constexpr auto SVF_param               = strhash("param");
 static constexpr auto SVF_path                = strhash("path");
 static constexpr auto SVF_pathLength          = strhash("pathLength");

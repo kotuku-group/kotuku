@@ -108,6 +108,16 @@ static const struct FieldDef clVectorVMF[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clVectorVPO[] = {
+   { "Normal", 0x00000000 },
+   { "FillMarkersStroke", 0x00000001 },
+   { "StrokeFillMarkers", 0x00000002 },
+   { "StrokeMarkersFill", 0x00000003 },
+   { "MarkersFillStroke", 0x00000004 },
+   { "MarkersStrokeFill", 0x00000005 },
+   { nullptr, 0 }
+};
+
 FDEF maPush[] = { { "Position", FD_INT }, { 0, 0 } };
 FDEF maTrace[] = { { "Callback", FD_FUNCTION }, { "Scale", FD_DOUBLE }, { "Transform", FD_INT }, { 0, 0 } };
 FDEF maGetBoundary[] = { { "Flags", FD_INT }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { "Width", FD_RESULT|FD_DOUBLE }, { "Height", FD_RESULT|FD_DOUBLE }, { 0, 0 } };

@@ -789,6 +789,21 @@ public:
    }
 };
 
+// Decodes a VPO value to the order in which its painting stages are drawn.
+
+enum class PAINT_STAGE : uint8_t { FILL, STROKE, MARKERS };
+
+constexpr std::array<std::array<PAINT_STAGE, 3>, int(VPO::END)> glPaintStages = {{
+   { PAINT_STAGE::FILL,    PAINT_STAGE::STROKE,  PAINT_STAGE::MARKERS }, // NORMAL
+   { PAINT_STAGE::FILL,    PAINT_STAGE::MARKERS, PAINT_STAGE::STROKE  }, // FILL_MARKERS_STROKE
+   { PAINT_STAGE::STROKE,  PAINT_STAGE::FILL,    PAINT_STAGE::MARKERS }, // STROKE_FILL_MARKERS
+   { PAINT_STAGE::STROKE,  PAINT_STAGE::MARKERS, PAINT_STAGE::FILL    }, // STROKE_MARKERS_FILL
+   { PAINT_STAGE::MARKERS, PAINT_STAGE::FILL,    PAINT_STAGE::STROKE  }, // MARKERS_FILL_STROKE
+   { PAINT_STAGE::MARKERS, PAINT_STAGE::STROKE,  PAINT_STAGE::FILL    }  // MARKERS_STROKE_FILL
+}};
+
+static_assert(glPaintStages.size() IS size_t(VPO::END), "glPaintStages must have an entry for every VPO value");
+
 class extVector : public objVector {
    public:
    using create = kt::Create<extVector>;
@@ -844,6 +859,7 @@ class extVector : public objVector {
    uint16_t  ValidState:1;         // Can be set to false during path generation if the shape is invalid
    uint16_t  RequiresRedraw:1;
    uint16_t  InputSubscriptionsDirty:1 = 0; // InputSubscriptions holds cleared entries awaiting compaction
+   uint8_t   PaintOrder = 0;       // A VPO value, stored as a byte to avoid growing the structure
 
    extVector(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVector(ClassPtr, ObjectID) {
       StrokeOpacity = 1.0;
@@ -877,6 +893,8 @@ class extVector : public objVector {
    inline bool dirty() { return (Dirty & RC::DIRTY) != RC::NIL; }
 
    inline VectorMatrix * matrices() { return Matrices.empty() ? nullptr : &Matrices.front(); }
+
+   inline const std::array<PAINT_STAGE, 3> & paint_stages() const { return glPaintStages[PaintOrder]; }
 
    inline bool is_stroked() {
       return (StrokeWidth > 0) and
