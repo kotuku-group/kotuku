@@ -68,7 +68,12 @@ do not produce isolated bright pixels.</li>
 <pre>albedo * (ambient + kd * N.L * light) + ks * pow(N.H, specularExponent) * light
 </pre>
 <p>where kd is <fl>Constant</fl> and ks is <fl>SpecularConstant</fl>.  The value is clamped once, when it is written, so light that is brighter than full strength keeps its colour through the albedo.  This is the result of multiplying the diffuse light by the albedo and adding the specular light with <class name="CompositeFX">CompositeFX</class>, but the surface is analysed once and no intermediate result is limited to 8 bits.  Shadows and <code>CAVITY</code> reduce both light terms.  The alpha of the result is the albedo's alpha, raised to the brightest channel of the specular light, so that highlights can extend over transparent areas of the albedo.  If #Mix is not set, the albedo is opaque white and the result is the sum of the light terms.  The <code>COMBINED</code> type always uses the enhanced pipeline, whatever the scene's Compliance, and has no SVG equivalent.</p>
-<p>SVG documents can set <fl>Features</fl>, <fl>Cavity</fl>, <fl>Detail</fl>, <fl>Penumbra</fl>, <fl>Ambient</fl> and <fl>Intensity</fl> with <code>kotuku:</code> attributes, and the <code>COMBINED</code> type is available as the <code>kotuku:feLighting</code> element; refer to the SVG class for details.</p></description>
+<p>The <code>COMBINED</code> type also accepts three material terms, all of which are disabled by default.  With <fl>Metalness</fl> m, <fl>Fresnel</fl> f0 and <fl>Wrap</fl> w, the result is</p>
+<pre>albedo * (ambient + kd * (1 - m) * max(0, (N.L + w) / (1 + w)) * light) + ks * F * pow(N.H, specularExponent) * light
+</pre>
+<p>where F is the reflectance.  It is <code>F0 = lerp(base, albedo, m)</code>, where base is f0 if it is set and 1 otherwise, and if f0 is set it rises towards 1 as the surface turns away from the viewer: <code>F = F0 + (1 - F0) * pow(1 - N.z, 5)</code>. This is the usual metallic workflow.  A dielectric reflects specular light in the light's colour, weakly when it faces the viewer and strongly at grazing angles, and scatters diffuse light in its albedo's colour.  A metal has no diffuse light and reflects in its albedo's colour.  Wrap lets diffuse light reach past the terminator, as on wax and skin, and changes the brightness of flat surfaces.</p>
+<p>A matcap adds reflections of an environment that the light model cannot produce, such as those of chrome, glass or glazed ceramic.  It is an image of a lit sphere, set with <fl>MatcapPath</fl> or <fl>Matcap</fl>, and each pixel takes the colour of the point on the sphere that faces the same way as the surface.  The reflection is added to the specular light as <code>matcap * F * albedo.alpha</code>, where F is the reflectance above, computed with the albedo's colour.  It is reduced by <code>CAVITY</code> but not by shadows, and it is independent of the light, so it remains if <fl>SpecularConstant</fl> is zero.</p>
+<p>SVG documents can set <fl>Features</fl>, <fl>Cavity</fl>, <fl>Detail</fl>, <fl>Penumbra</fl>, <fl>Ambient</fl> and <fl>Intensity</fl> with <code>kotuku:</code> attributes, and the <code>COMBINED</code> type is available as the <code>kotuku:feLighting</code> element, which also accepts the material terms; refer to the SVG class for details.</p></description>
     <source>
       <file path="filters/">filter_lighting.cpp</file>
     </source>
@@ -228,6 +233,19 @@ do not produce isolated bright pixels.</li>
     </field>
 
     <field>
+      <name>Fresnel</name>
+      <comment>Reflectance at normal incidence for the <code>COMBINED</code> type, which enables a Fresnel term.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Real surfaces reflect more light at grazing angles than when they are seen head on.  When this field is set, the specular light of the <code>COMBINED</code> type is multiplied by a reflectance that equals this value where the surface faces the viewer and rises towards 1 as the surface turns away, using Schlick's approximation.  As the viewer is always directly in front of the content, the angle is that between the shading normal and the viewer, so the term brightens the highlights of steep slopes and edges.  It is a facing-ratio term rather than a microfacet one: the microfacet form depends on the angle between the light and the viewer, which is constant over the image for a distant light.  A highlight peaks where the surface turns no more than 45 degrees from the viewer, where the reflectance is still close to this value, so on the highlight alone the term chiefly affects the broad highlights of low exponents.</p>
+<p>The term is most visible with a <fl>Matcap</fl>, whose reflection is also multiplied by the reflectance.  The reflection is then faint where the surface faces the viewer and strong towards its edges, as on glazed ceramic, varnish and glass.</p>
+<p>Typical values are about 0.04 for dielectrics such as plastic, glass and glazed ceramic.  Note that the highlight of a flat surface is multiplied by this value, so content that enables Fresnel needs a larger <fl>SpecularConstant</fl> or <fl>Intensity</fl> for the same highlight: about <code>1 / Fresnel</code> times as large.  The matcap's reflection is not scaled by <fl>SpecularConstant</fl>; use a brighter matcap if it is too faint.  With <fl>Metalness</fl>, the reflectance at normal incidence blends from this value to the albedo's colour.</p>
+<p>The default is 0, which disables the term.  The value must be between 0 and 1.  The diffuse and specular types ignore this field.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Intensity</name>
       <comment>Multiplies the colour of the light.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -235,6 +253,43 @@ do not produce isolated bright pixels.</li>
       <description>
 <p>The light's <fl>Colour</fl> is multiplied by this value.  For the diffuse and specular types, the light is limited to full strength before it is coloured, as it is for <fl>Constant</fl>, so a value above 1 brightens the light only until it reaches full strength.  For the <code>COMBINED</code> type the light is not limited until the result is written, so a value above 1 can make an albedo brighter while it keeps its colour.</p>
 <p>The default is 1.  The value must be zero or greater.  It has no effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>, unless the <fl>Type</fl> is <code>COMBINED</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Matcap</name>
+      <comment>A matcap image for the <code>COMBINED</code> type, supplied as a bitmap.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>A matcap ('material capture') is an image of a sphere that reflects an environment.  When the <code>COMBINED</code> type has a matcap, each pixel adds the colour of the point on the sphere that faces the same way as the surface to its specular light, so that the surface reflects the environment.  Matcaps produce reflections that the light model cannot, such as those of chrome, glass, glazed ceramic or brushed metal.</p>
+<p>The surface normal indexes the image directly: a flat surface takes the colour at the centre of the image, and a surface that faces up, down, left or right takes the colour at the middle of the top, bottom, left or right edge.  The corners of the image are never read, so the area outside the sphere is unused.  The image is sampled with bilinear filtering, using the same anti-aliased normal as the specular highlight.  Its alpha channel scales the reflection, so a translucent matcap gives a weaker reflection.  A 32-bit bitmap without an alpha channel is treated as opaque.</p>
+<p>The reflection is multiplied by the reflectance of the surface, so it takes the albedo's colour as <fl>Metalness</fl> rises and, if <fl>Fresnel</fl> is set, it is weak where the surface faces the viewer and strong at grazing angles.  It is weighted by the albedo's alpha, reduced by the <code>CAVITY</code> feature, and is not affected by shadows or by the light.  To show the reflection alone, set <fl>SpecularConstant</fl> to zero.  The diffuse and specular types ignore the matcap.</p>
+<p>Setting this field to a bitmap replaces any matcap that was loaded from <fl>MatcapPath</fl>, and clears <fl>MatcapPath</fl>.  The bitmap must be initialised and use 32 bits per pixel; otherwise <code>ERR::InvalidValue</code> is returned and the field is unchanged.  The bitmap is pinned until it is replaced or the effect is freed, so an attempt to free it earlier is deferred.  Changes to its content are used on the next draw of the filter.  Set the field to <code>NULL</code>, or <fl>MatcapPath</fl> to an empty string, to remove the matcap.</p>
+<p>When the matcap was loaded from <fl>MatcapPath</fl>, reading this field returns the loaded bitmap.  A client-supplied bitmap cannot be written by <fl>XMLDef</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MatcapPath</name>
+      <comment>Loads a matcap image for the <code>COMBINED</code> type from a file.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Set this field to the path of an image file that the <class name="Image">Image</class> class supports to use it as the <fl>Matcap</fl>.  The image is loaded immediately and converted to 32 bits per pixel with an alpha channel.  If it cannot be loaded, the error is returned and the current matcap, if any, is kept.  Setting the field to an empty string removes the matcap.  Setting <fl>Matcap</fl> clears this field.</p>
+<p>Matcaps are usually square images of 256 x 256 pixels or more.  Refer to <fl>Matcap</fl> for details of how the image is used.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Metalness</name>
+      <comment>Blends the <code>COMBINED</code> type from a dielectric surface (0) to a metal (1).</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>A dielectric surface, such as paint or plastic, scatters diffuse light in the colour of its albedo and reflects specular light in the colour of the light.  A metal has no diffuse light and reflects in the colour of its albedo. This field blends between the two: the diffuse light is multiplied by <code>1 - Metalness</code>, and the colour of the specular light is blended from the light's colour towards the albedo's.  Ambient light is unchanged, as it stands in for the reflection of the surroundings, which a metal colours with its albedo.</p>
+<p>As a metal's highlights take the albedo's colour, they do not extend over transparent areas of the albedo.  If <fl>Fresnel</fl> is set, the reflectance at normal incidence blends from <fl>Fresnel</fl> to the albedo's colour, and the highlights of a metal still turn white at grazing angles.</p>
+<p>The default is 0, and the value must be between 0 and 1.  The diffuse and specular types ignore this field.</p>
       </description>
     </field>
 
@@ -304,12 +359,25 @@ do not produce isolated bright pixels.</li>
     </field>
 
     <field>
+      <name>Wrap</name>
+      <comment>Extends the diffuse light of the <code>COMBINED</code> type past the terminator.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Wrap lighting softens the transition from light to shade, as on wax, paper and skin, where light scattered within the material reaches areas that face slightly away from the light.  The diffuse term <code>N.L</code> is replaced with <code>(N.L + Wrap) / (1 + Wrap)</code>, so that faces turned up to <code>asin(Wrap)</code> past the terminator receive some light.</p>
+<p>Unlike the other lighting extensions, a non-zero value changes the brightness of flat surfaces: a flat surface under a distant light at elevation E receives <code>(sin E + Wrap) / (1 + Wrap)</code> of the diffuse light instead of <code>sin E</code>.</p>
+<p>Faces that turn away from a distant light lie in the surface's own shadow, which would cancel the wrapped light when the <code>SHADOWS</code> feature is enabled.  For the diffuse light of those faces, shadows are instead cast by the light raised by the wrap angle, <code>asin(Wrap)</code>, so that a face is not darkened by its own slope.  Surfaces that face the light keep their shadows unchanged.  As a surface cannot tell its own shadow from one cast by a distant feature, a face that turns away from the light is also lit inside a cast shadow, if the feature that casts it rises less than the wrap angle above the light.  At a <code>Wrap</code> of 1, or wherever the raised light is within 1 degree of overhead, such faces receive no shadow.  The extra shadow pass increases the cost of the effect.</p>
+<p>The default is 0, and the value must be between 0 and 1.  The diffuse and specular types ignore this field.</p>
+      </description>
+    </field>
+
+    <field>
       <name>XMLDef</name>
       <comment>Returns an SVG element that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The result is a complete element, including its light source: <code>feDiffuseLighting</code> or <code>feSpecularLighting</code>, or <code>kotuku:feLighting</code> for the <code>COMBINED</code> type.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes, and only when they differ from their defaults: <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:ambient</code> for <fl>Ambient</fl>, and <code>kotuku:intensity</code> on the light source for <fl>Intensity</fl>.  The attributes of <code>kotuku:feLighting</code> are written without the prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
+<p>The result is a complete element, including its light source: <code>feDiffuseLighting</code> or <code>feSpecularLighting</code>, or <code>kotuku:feLighting</code> for the <code>COMBINED</code> type.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes, and only when they differ from their defaults: <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:ambient</code> for <fl>Ambient</fl>, and <code>kotuku:intensity</code> on the light source for <fl>Intensity</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder. For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted. The attributes of <code>kotuku:feLighting</code> are written without the prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
 <p>The <code>in</code>, <code>in2</code>, <code>result</code> and primitive subregion attributes are not included.</p>
       </description>
       <tags>caller-owns-result</tags>

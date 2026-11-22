@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- LightingFX matcaps on kotuku:feLighting.
+
+The matcap attribute names an image relative to the document's folder.  Row 1: the quadrant matcap shows the
+orientation of the lookup, then chrome and a dielectric with the softbox.  Row 2: brass with the analytic
+highlight, then hammered steel and brushed aluminium plates.  Row 3: matcaps with Fresnel on a glaze and on a
+metal, and a bevelled star.
+
+Each cell is a 340x254 filter region in its own user space.  Every surface is lit by kotuku:feLighting, the COMBINED
+type of LightingFX, which uses the enhanced pipeline whatever the scene's Compliance. -->
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
+  viewBox="0 0 1024 768">
+  <defs>
+    <!-- Alpha profile of a hemisphere, sqrt(1 - r^2), used as a height map -->
+    <radialGradient id="hemisphere">
+      <stop offset="0" stop-color="white" stop-opacity="1"/>
+      <stop offset="0.2" stop-color="white" stop-opacity="0.98"/>
+      <stop offset="0.4" stop-color="white" stop-opacity="0.917"/>
+      <stop offset="0.5" stop-color="white" stop-opacity="0.866"/>
+      <stop offset="0.6" stop-color="white" stop-opacity="0.8"/>
+      <stop offset="0.7" stop-color="white" stop-opacity="0.714"/>
+      <stop offset="0.8" stop-color="white" stop-opacity="0.6"/>
+      <stop offset="0.85" stop-color="white" stop-opacity="0.527"/>
+      <stop offset="0.9" stop-color="white" stop-opacity="0.436"/>
+      <stop offset="0.95" stop-color="white" stop-opacity="0.312"/>
+      <stop offset="0.98" stop-color="white" stop-opacity="0.199"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 1: Quadrant matcap on a white dome, no other light.  Each quadrant of the dome takes the matching colour: red
+      top left, green top right, blue bottom left, yellow bottom right -->
+    <filter id="c1" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="white"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="0" specularConstant="0"
+        matcap="matcaps/quadrant.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 2: Chrome: the studio matcap on a white metal dome, no analytic highlight -->
+    <filter id="c2" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="white"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
+        matcap="matcaps/studio.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 3: Dielectric dome with diffuse light and the softbox matcap -->
+    <filter id="c3" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#3a7d5c"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.4"
+        specularExponent="30" ambient="#202020" matcap="matcaps/softbox.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 4: Brass: the studio matcap tinted by a metal albedo, with the analytic highlight -->
+    <filter id="c4" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#e8b850"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" specularConstant="1" specularExponent="40"
+        ambient="#202020" metalness="1" matcap="matcaps/studio.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 5: Hammered steel plate with the studio matcap -->
+    <filter id="c5" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="1" seed="7"/>
+      <feComponentTransfer result="height"><feFuncA type="gamma" amplitude="1" exponent="0.5"/></feComponentTransfer>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="12" specularConstant="0.5" specularExponent="30"
+        metalness="1" matcap="matcaps/studio.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 6: Brushed aluminium plate with the softbox matcap and shadows -->
+    <filter id="c6" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feTurbulence type="fractalNoise" baseFrequency="0.002 0.6" numOctaves="3" seed="8" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="3" specularConstant="0.6" specularExponent="50"
+        metalness="1" features="all" matcap="matcaps/softbox.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 7: Glazed ceramic dome: the softbox matcap with Fresnel 0.04, strong at the rim only -->
+    <filter id="c7" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#9c3b2e"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="20"
+        specularExponent="100" ambient="#303030" fresnel="0.04" matcap="matcaps/softbox.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 8: Blue metal dome with the studio matcap and Fresnel 0.5: the reflection takes the albedo's colour at the
+      centre and turns white at the rim -->
+    <filter id="c8" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
+      <feFlood flood-color="#3050c0"/>
+      <feComposite in2="mask" operator="in" result="albedo"/>
+      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
+        fresnel="0.5" matcap="matcaps/studio.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <!-- 9: Bevelled chrome star with cavity: a blurred shape as the height, the studio matcap and a gold albedo at half
+      metalness -->
+    <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="height"/>
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="30" diffuseConstant="0.8" specularConstant="0.8"
+        specularExponent="40" ambient="#303030" metalness="0.5" features="all" matcap="matcaps/studio.png">
+        <feDistantLight azimuth="225" elevation="45"/>
+      </kotuku:feLighting>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="768" fill="#d8d8d8"/>
+
+  <g transform="translate(0 0)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c1)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(342 0)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c2)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(684 0)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c3)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(0 257)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c4)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(342 257)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c5)">
+      <rect width="340" height="254" fill="#c8ccd0"/>
+    </g>
+  </g>
+
+  <g transform="translate(684 257)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c6)">
+      <rect width="340" height="254" fill="#d0d4d8"/>
+    </g>
+  </g>
+
+  <g transform="translate(0 514)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c7)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(342 514)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c8)">
+      <circle cx="170" cy="127" r="110" fill="url(#hemisphere)"/>
+    </g>
+  </g>
+
+  <g transform="translate(684 514)">
+    <rect width="340" height="254" fill="#808080"/>
+    <g filter="url(#c9)">
+      <path d="M170 17 L196 91 L274 92 L212 139 L235 214 L170 169 L105 214 L128 139 L66 92 L144 91 Z" fill="#e8b850"
+        stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -1899,6 +1899,38 @@ static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string
    return Name.substr(colon + 1);
 }
 
+// Filter resource references must be relative and cannot contain parent folder components.
+
+static bool safe_filter_path(std::string_view Path)
+{
+   if (Path.empty() or Path.starts_with('/') or Path.starts_with('\\') or
+       (Path.find(':') != std::string_view::npos) or (Path.find('\0') != std::string_view::npos)) return false;
+
+   while (not Path.empty()) {
+      const auto separator = Path.find_first_of("/\\");
+      if (Path.substr(0, separator) IS "..") return false;
+      if (separator IS std::string_view::npos) break;
+      Path.remove_prefix(separator + 1);
+   }
+   return true;
+}
+
+// Resolve existing native paths before checking containment so that symlinks are followed.
+
+static ERR resolve_matcap_path(extSVG *Self, std::string_view Reference, std::string &Path)
+{
+   if (not safe_filter_path(Reference)) return ERR::InvalidPath;
+
+   const auto document_folder = folder(Self);
+   std::string base;
+   if (auto error = ResolvePath(document_folder.empty() ? "./" : document_folder, RSF::NIL, &base);
+       error != ERR::Okay) return error;
+   if ((not base.ends_with('/')) and (not base.ends_with('\\'))) return ERR::InvalidPath;
+
+   if (auto error = ResolvePath(base + std::string(Reference), RSF::NIL, &Path); error != ERR::Okay) return error;
+   return Path.starts_with(base) ? ERR::Okay : ERR::InvalidPath;
+}
+
 // Parses feDiffuseLighting, feSpecularLighting and kotuku:feLighting, which is the COMBINED type.  Extension attributes
 // carry the kotuku: prefix on the standard elements.  On kotuku:feLighting they are also accepted without it, as the
 // element is already in the Kōtuku namespace, and its in2 attribute selects the albedo.
@@ -1979,6 +2011,23 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             else if (local IS "cavity") set_light_number("cavity", val, &objLightingFX::setCavity);
             else if (local IS "detail") set_light_number("detail", val, &objLightingFX::setDetail);
             else if (local IS "penumbra") set_light_number("penumbra", val, &objLightingFX::setPenumbra);
+            else if ((combined) and (local IS "metalness")) {
+               set_light_number("metalness", val, &objLightingFX::setMetalness);
+            }
+            else if ((combined) and (local IS "fresnel")) set_light_number("fresnel", val, &objLightingFX::setFresnel);
+            else if ((combined) and (local IS "wrap")) set_light_number("wrap", val, &objLightingFX::setWrap);
+            else if ((combined) and (local IS "matcap")) {
+               std::string path;
+               auto error = resolve_matcap_path(Self, val, path);
+               if (error IS ERR::Okay) error = fx->setMatcapPath(path);
+               if (error IS ERR::Okay) {
+                  const auto field = FindField(fx, kt::fieldhash("MatcapReference"), nullptr);
+                  error = field ? fx->set(field, val) : ERR::UnsupportedField;
+               }
+               if (error != ERR::Okay) {
+                  log.warning("Failed to load matcap '%s': %s", val.c_str(), GetErrorMsg(error));
+               }
+            }
             else if (local IS "ambient") {
                FRGB rgb;
                if (iequals("none", val)) fx->setAmbient(FRGB { 0, 0, 0, 0 });
@@ -2670,26 +2719,9 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
    }
 
    if (!path.empty()) {
-      // Check for security risks in the path.
-
-      if ((path[0] IS '/') or ((path[0] IS '.') and (path[1] IS '.') and (path[2] IS '/'))) {
+      if (not safe_filter_path(path)) { // Check for security risks in the path.
          FreeResource(fx);
          return log.warning(ERR::InvalidValue);
-      }
-      else {
-         if (path.find(':') != std::string::npos) {
-            FreeResource(fx);
-            return log.warning(ERR::InvalidValue);
-         }
-
-         for (unsigned i=0; path[i]; i++) {
-            if (path[i] IS '/') {
-               while (path[i+1] IS '.') i++;
-               if (path[i+1] IS '/') {
-                  return log.warning(ERR::InvalidValue);
-               }
-            }
-         }
       }
 
       if (auto fl = folder(Self); not fl.empty()) {
