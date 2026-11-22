@@ -6,6 +6,8 @@
 -- The editor is a tab stop.  The arrow keys move the selected handle, and Home and End select the first and last
 -- handle.
 
+   import 'gui'
+
    include 'display'
 
    namespace colourpicker_curve { }
@@ -123,9 +125,10 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
    }
    vp = self.viewport
 
-   edge = (&theme.input.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
-   self.bkgd = vp.new('VectorRectangle', table.merge({
-      x = edge, y = edge, width = width - (edge*2), height = height - (edge*2)
+   edge = ((&theme.input.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Adjustment for crisp strokes
+   self.bkgd = vp.new('VectorPath', table.merge({
+      x = edge, y = edge, xOffset = edge, yOffset = edge,
+      sequence = gui.paths.rectangle(vp)
    }, &theme.input.bkgd, true, true))
 
    self.toGraph = function(X:num!, Y:num!):<num, num>

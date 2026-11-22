@@ -46,6 +46,8 @@ panel's height is set.
   field has a `disabled` field so that it can be registered.
 - **Contrast**: `updateContrast()` sets `events.metaActivate` only while a dropped colour is the target, which makes
   the meta clickable, and passes the `vs ` prefix and ` on panel` suffix to `setMeta()`.
+- **Readout**: a headerless panel (`header = false`) with the page fill.  The cell grid is drawn in its body, which is
+  the grid's tab stop and input target (`readoutVP`).
 - **Export** and the manager's list panels flash messages with `flash()`.  The manager's centre panel uses
   `truncate = 'title'` and `scroll = 'vertical'`; its body is the card grid's tab stop.
 

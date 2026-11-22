@@ -176,13 +176,20 @@ function planLayout(Has:table!):table
       plan.minBody = Has.list ? MIN_LIST_BODY : MIN_STACK_BODY
    end
 
-   -- The presets take their height from the font list in the column that they share.
+   if Has.list then plan.minBody = math.max(plan.minBody, MIN_LIST_BODY) end
 
-   plan.listReserve = (Has.list and Has.presets) ? fontdialog_presets.HEIGHT + GAP : 0
-   if Has.list then plan.minBody = math.max(plan.minBody, MIN_LIST_BODY + plan.listReserve) end
-
+   plan.listReserve = 0 -- Set by reserveList() once the presets panel exists
    plan.minClient = plan.minBody + FOOTER_HEIGHT
    return plan
+end
+
+-- The presets take their height from the font list in the column that they share.  Their height depends on the
+-- panel's corner radius, so it is only known once the presets panel has been created.
+
+function reserveList(Plan:table!, PresetsHeight:num!)
+   Plan.listReserve = PresetsHeight + GAP
+   Plan.minBody = math.max(Plan.minBody, MIN_LIST_BODY + Plan.listReserve)
+   Plan.minClient = Plan.minBody + FOOTER_HEIGHT
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -458,7 +465,7 @@ gui.dialog.font = function(Options:table)
 
          if &fontList then &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2) - plan.listReserve end
          if &presetPanel and &fontList then
-            &presetPanel.panel.viewport.y = BodyHeight - EDGE_PAD - fontdialog_presets.HEIGHT
+            &presetPanel.panel.viewport.y = BodyHeight - EDGE_PAD - &presetPanel.height
          end
 
          if &preview then
@@ -687,8 +694,12 @@ gui.dialog.font = function(Options:table)
 
          if enabled.presets then
             &presetPanel = fontdialog_presets.new(&&, plan.list.viewport, {
-               x = plan.list.left, y = BODY_HEIGHT - EDGE_PAD - fontdialog_presets.HEIGHT, width = plan.list.inner
+               x = plan.list.left, width = plan.list.inner
             })
+            reserveList(plan, &presetPanel.height)
+            &window.surface.minHeight = math.round(plan.minClient * MIN_SCALE)
+            &fontList.panel.viewport.height = BODY_HEIGHT - (EDGE_PAD * 2) - plan.listReserve
+            &presetPanel.panel.viewport.y = BODY_HEIGHT - EDGE_PAD - &presetPanel.height
          end
       end
 

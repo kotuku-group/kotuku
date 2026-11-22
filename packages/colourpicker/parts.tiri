@@ -296,6 +296,11 @@ colourpicker_parts.notice = function(Viewport:obj!, Options:table!):table
       x = 0.5, y = 0.5, width = Options.width - 1, height = NOTICE_HEIGHT - 1, strokeWidth = 1
    }, &theme.input.bkgd, false, true))
 
+   -- The corner radius is relative to the height of the bar, so that it is the same at any width.
+
+   self.bkgd.cornerX = gui.sizing.widget.cornerSize * NOTICE_HEIGHT
+   self.bkgd.cornerY = self.bkgd.cornerX
+
    self.glyph = self.viewport.new('VectorViewport', {
       x = Options.width - 20, y = (NOTICE_HEIGHT - 12) * 0.5, width = 12, height = 12, visibility = VIS_HIDDEN
    })
@@ -345,7 +350,7 @@ The rings are placed behind the thumb bar, so the slider's thumbSize must be at 
 @result The outer ring, whose fill can be changed to show focus, and the inner ring
 ]])
 colourpicker_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
-   bar = Slider.button
+   bar = Slider.thumbBkgd
    outer = Slider.thumbVP.new('VectorRectangle', {
       x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, cornerX = 3, cornerY = 3,
       stroke = &theme.scheme is 'light' ? 'black' : 'white', fill=&theme.panel.bkgd.fill
@@ -840,7 +845,7 @@ and `cancelTip()`
 colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
    t      = Options.tokens
    height = Options.height
-   top    = (height - TAB_HEIGHT) * 0.5
+   top    = math.round((height - TAB_HEIGHT) * 0.5)
    self   = { tabs = array<table>, active = Options.active }
 
    function cancelTip()

@@ -134,7 +134,7 @@ end
 -- returned preview once the drag starts and releases it when the drag ends.
 
 function colourDragPreview(View:table!, Items:array<table>!):obj
-   width = math.min(240, math.max(40, #Items * 24 + 4))
+   width = math.clamp(#Items * 24 + 4, 40, 240)
    height = ROW_HEIGHT + 4
    host = View.scene.surface
    preview = host.new('Surface', {

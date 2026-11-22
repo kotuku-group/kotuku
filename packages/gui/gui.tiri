@@ -145,6 +145,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+INV_SQRT2 <const> = 1 / math.sqrt(2)
 METRIC_SIZE <const> = 1000 -- Pixel size at which a font's ascent is measured for scaling to fractional sizes
 
 @Doc(text=[[
@@ -721,12 +722,12 @@ glStyleDefaults <const> = {
          gap = 12         -- Margin to apply on all sides
       },
       widget = {
-         gap       = 4,   -- Recommended gap between widgets (px at 96 DPI)
-         margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
-         labelGap  = 12,  -- Spacing between labels and the widget parts
-         edgeWidth = 2,   -- Default stroke-width for widget edges (fixed)
-         edgeRound = 5,   -- Default corner radius for widget edges (fixed)
-         height    = 1.2  -- Box height, expressed in em scale
+         gap       = 4,    -- Recommended gap between widgets (px at 96 DPI)
+         margin    = 6,    -- Recommended internal margin for widgets (px at 96 DPI)
+         labelGap  = 12,   -- Spacing between labels and the widget parts
+         edgeWidth = 2,    -- Default stroke-width for widget edges (px at 96 DPI)
+         cornerSize = 0.2, -- Corner radius as a fraction of the area's normalised diagonal (unitless)
+         height    = 1.2   -- Box height, expressed in em scale
       }
    }
 }
@@ -744,7 +745,7 @@ SCHEMA_INTERFACE <const> = {
 }
 SCHEMA_WINDOW <const> = { gap = 'num' }
 SCHEMA_WIDGET <const> = {
-   width = 'size', gap = 'num', margin = 'num', labelGap = 'num', edgeWidth = 'num', edgeRound = 'num', height = 'num'
+   width = 'size', gap = 'num', margin = 'num', labelGap = 'num', edgeWidth = 'num', cornerSize = 'num', height = 'num'
 }
 SCHEMA_FONT <const> = { face = 'str', size = 'fontSize', style = 'str' }
 
@@ -987,8 +988,8 @@ end
    gui.sizing.window = scaledPixels(table.merge(glStyleDefaults.sizing.window, glStyle.sizing.window))
 
    gui.sizing.widget = scaledPixels(table.merge(glStyleDefaults.sizing.widget, glStyle.sizing.widget),
-      { edgeWidth = true, edgeRound = true },
-      { height = true } -- A multiplier of the line spacing, which already follows the density
+      { edgeWidth = true },
+      { height = true, cornerSize = true } -- Multipliers of the line spacing and of the area's diagonal
    )
 
    local glFontDefaults:table -- The unscaled font roles, assigned by fonts_data
@@ -1019,6 +1020,17 @@ gui.styleDefaults = function():table
       sizing    = table.clone(glStyleDefaults.sizing),
       fonts     = table.clone(glFontDefaults)
    }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Note: This function only needs to be called when shape calculations can't provide their own size limiter.
+
+@Doc(text=[[
+@desc Returns the maximum recommended corner size for widgets.
+@result The maximum corner size is returned in pixel units.
+]])
+gui.maxCornerSize = function():num
+   return gui.fonts.default.size * .4
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1102,8 +1114,9 @@ end
 -- with vector object definitions.  The majority of the time, the target will be a VectorRectangle or VectorText
 -- object.  Gradient and pattern fills are also permitted via the use of 'url()'.
 --
--- Palette is the scheme's palette variant, Edge holds the scaled edge width and corner radius, and Icon(Default)
--- returns the icon theme for a section.
+-- Palette is the scheme's palette variant.  Edge holds the scaled edge width, the corner radius as a fraction of the
+-- diagonal (round) and as a percentage string for VectorRectangle corners (corner).  Icon(Default) returns the icon
+-- theme for a section.
 
 function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
    return {
@@ -1195,20 +1208,20 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          disabled    = { opacity = 0.5 }
       },
       button = {
-         bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
+         path      = gui.paths.boombox,
+         bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text      = table.merge({ fill = Palette.text }, gui.fonts.widget),
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
+            bkgd      = { fill = Palette.prime, stroke = Palette.prime },
             highlight = { fill = Palette.contrast, stroke = Palette.edge },
-            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
             text      = { fill = Palette.altText }
          }
       },
       dropdown = { -- Exclusive to combobox
-         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.round, cornerY = Edge.round },
+         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.corner, cornerY = Edge.corner },
          highlight     = { fill = Palette.contrast },
          textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
          icon          = Icon('fill(pearl)'),
@@ -1219,7 +1232,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          effect = Icon('fill(pearl)')
       },
       input = { -- Used by checkbox, input, combobox
-         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.corner, cornerY = Edge.corner, opacity = 1 },
          focus = { stroke = Palette.contrast },
          text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
@@ -1239,7 +1252,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          icon      = Icon('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round },
+         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.corner, cornerY = Edge.corner },
          header        = { fill = Palette.surround },
          title         = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, style = 'semi bold' },
          meta          = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, opacity = 0.7 },
@@ -1249,9 +1262,9 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          metaGap       = gui.sizing.widget.labelGap    -- Minimum space between the title and the meta
       },
       slider = {
-         bkgd          = { fill = Palette.mid, stroke = Palette.edge, cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
-         slideFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
-         thumbFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
+         bkgd          = { fill = Palette.mid, stroke = Palette.edge, cornerX = Edge.corner, cornerY = Edge.corner, strokeWidth = Edge.width, opacity = 1 },
+         slideFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.corner, cornerY = Edge.corner, strokeWidth = Edge.width },
+         thumbFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.corner, cornerY = Edge.corner, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text          = table.merge({ fill = Palette.text }, gui.fonts.widget),
@@ -1336,20 +1349,20 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          disabled    = { opacity = 0.5 }
       },
       button = {
-         bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
+         path      = gui.paths.rectangle,
+         bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text      = table.merge({ fill = Palette.altText }, gui.fonts.widget),
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
-            highlight = { fill = Palette.contrast, stroke = Palette.edge },
-            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
+            bkgd      = { fill = Palette.prime },
+            highlight = { stroke = Palette.edge },
             text      = { fill = Palette.altText }
          }
       },
       dropdown = {
-         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.round, cornerY = Edge.round },
+         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.corner, cornerY = Edge.corner },
          border        = { stroke = Palette.inverse },
          highlight     = { fill = Palette.contrast },
          textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
@@ -1361,7 +1374,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          effect = Icon('fill(carbon)')
       },
       input = {
-         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round, opacity = 1 },
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.corner, cornerY = Edge.corner, opacity = 1 },
          focus = { stroke = Palette.contrast },
          text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
@@ -1381,7 +1394,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          icon      = Icon('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.round, cornerY = Edge.round },
+         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.corner, cornerY = Edge.corner },
          header        = { fill = Palette.surround },
          title         = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, style = 'bold' },
          meta          = { fill = Palette.text, face = gui.fonts.small.face, size = gui.fonts.small.size, opacity = 0.9 },
@@ -1391,9 +1404,9 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          metaGap       = gui.sizing.widget.labelGap
       },
       slider = {
-         bkgd          = { fill = Palette.mid, stroke = Palette.edge, cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
-         slideFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
-         thumbFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.round, cornerY = Edge.round, strokeWidth = Edge.width },
+         bkgd          = { fill = Palette.mid, stroke = Palette.edge, cornerX = Edge.corner, cornerY = Edge.corner, strokeWidth = Edge.width, opacity = 1 },
+         slideFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.corner, cornerY = Edge.corner, strokeWidth = Edge.width },
+         thumbFill     = { fill = Palette.handle, stroke = 'none', cornerX = Edge.corner, cornerY = Edge.corner, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
@@ -1446,8 +1459,11 @@ Options that are not provided take the values that the gui library loaded from t
   the configured fill.  Pass `false` to use the theme's own fills.
 * `effects`: An effects spec, such as `'emboss()'`, that is appended to every icon fill.  Defaults to the configured
   effects.  Pass `false` for no effects.
-* `edgeWidth`, `edgeRound`: The stroke width and corner radius of widget edges, in pixels at 96 DPI.  They are scaled
-  to the interface density.  Default to `gui.sizing.widget.edgeWidth` and `edgeRound`.
+* `edgeWidth`: The stroke width of widget edges, in pixels at 96 DPI.  It is scaled to the interface density.
+  Defaults to `gui.sizing.widget.edgeWidth`.
+* `cornerSize`: The corner radius of widget edges, as a fraction of the normalised diagonal of each edge's area (see
+  `gui.cornerRadius()`).  The theme's `cornerX` and `cornerY` values are the equivalent percentage strings.  Defaults
+  to `gui.sizing.widget.cornerSize`.
 
 Fonts and all other sizing values come from the resolved `gui.fonts` and `gui.sizing` tables, because widget
 layout depends on them.
@@ -1473,9 +1489,9 @@ gui.buildTheme = function(ColourScheme:str!, Options:table):table
    if Options.effects != nil then effects = Options.effects end
 
    scale = gui.interface.dpi / 96
-   edge = { width = gui.sizing.widget.edgeWidth, round = gui.sizing.widget.edgeRound }
+   edge = { width = gui.sizing.widget.edgeWidth, round = gui.sizing.widget.cornerSize }
    if Options.edgeWidth != nil then edge.width = Options.edgeWidth * scale end
-   if Options.edgeRound != nil then edge.round = Options.edgeRound * scale end
+   if Options.cornerSize != nil then edge.round = Options.cornerSize end
 
    function icon(Default:str!):str
       return iconTheme(Default, fill, effects)

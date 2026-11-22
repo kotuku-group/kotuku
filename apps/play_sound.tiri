@@ -437,7 +437,7 @@ function describe(Effect:obj, Schema:table)
          check Effect.mtGetResponse(points, magnitudes)
 
          for i in {0 to #points} do
-            db    = math.max(-12, math.min(12, magnitudes[i]))
+            db    = math.clamp(magnitudes[i], -12, 12)
             bars  = math.floor(math.abs(db) * 2 + 0.5)
             left  = (db < 0) ? string.rep(' ', 24 - bars) .. string.rep('#', bars) : string.rep(' ', 24)
             right = (db > 0) ? string.rep('#', bars) : ''

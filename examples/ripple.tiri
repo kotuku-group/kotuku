@@ -94,9 +94,9 @@ Examples:
    local glWindow, glViewport, glScene, glWater, glTimer, glTarget
    local glPointer = { x = 0, y = 0, down = false, pending = false }
 
-   glStrength = math.min(math.max(glArgs.strength, 2), 200)
-   glDensity  = math.floor(math.min(math.max(glArgs.density, 0), 100) / 10)
-   glDrop     = math.min(math.max(glArgs.drop, 10), 1000)
+   glStrength = math.clamp(glArgs.strength, 2, 200)
+   glDensity  = math.floor(math.clamp(glArgs.density, 0, 100) / 10)
+   glDrop     = math.clamp(glArgs.drop, 10, 1000)
    local initial_mode = glArgs.punch ? 'punch' : (glArgs.warp ? 'warp' : glArgs.mode)
    glMode = MODES.indexOf(initial_mode)
 
@@ -108,7 +108,7 @@ Examples:
    IMG_H = source.bitmap.height
    source = nil
 
-   detail = math.min(math.max(glArgs.detail, 1), 8)
+   detail = math.clamp(glArgs.detail, 1, 8)
    MAP_W = math.floor(IMG_W / detail)
    MAP_H = math.floor(IMG_H / detail)
    MAP_CELLS = MAP_W * MAP_H
@@ -492,7 +492,7 @@ end
    local glPanelKeys:userdata -- Keyboard subscription for the space bar
 
 function slidePanel(Slide:num!)
-   glSlide = math.min(math.max(Slide, 0), MAX_SLIDE)
+   glSlide = math.clamp(Slide, 0, MAX_SLIDE)
    glPanel.yOffset = -glSlide
    glScene.surface.mtScheduleRedraw()
 end

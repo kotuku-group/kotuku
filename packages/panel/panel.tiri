@@ -514,10 +514,28 @@ gui.panel = function(Options:table!)
       body_y = 0
       last_width, last_height = 0, 0
 
+      -- The corner radius is relative to the height of the header
+
+      local round_height
+      if theme.headerHeight then
+         round_height = theme.headerHeight
+      else
+         title_line = gui.getFontHeight(theme.title)
+         meta_line = gui.getFontHeight(theme.meta)
+         round_height = math.max(math.ceil(title_line), math.ceil(meta_line)) + gui.sizing.widget.margin
+      end
+
+      -- The background style, with the corner radii resolved to pixels.
+
+      function bkgdStyle():table
+         r =  gui.sizing.widget.cornerSize * round_height
+         return table.merge(theme.bkgd, { cornerX = r, cornerY = r })
+      end
+
       &bkgd = &viewport.new('VectorRectangle', {
          x = edge * 0.5, y = edge * 0.5, xOffset = edge * 0.5, yOffset = edge * 0.5
       })
-      gui.styleRectangle(&bkgd, theme.bkgd, bkgd_defaults)
+      gui.styleRectangle(&bkgd, bkgdStyle(), bkgd_defaults)
 
       -- The background reports resizing of the panel viewport.  It subscribes before the header is measured, because
       -- measuring lays out the viewport and the first resize message would otherwise be lost.  The body size is
@@ -537,15 +555,16 @@ gui.panel = function(Options:table!)
          return (theme.header != nil) and (theme.header.fill != theme.bkgd.fill)
       end
 
+      &innerCorners = function():num
+         return math.max(0, (gui.sizing.widget.cornerSize * round_height) - (edge * 0.5))
+      end
+
       function headerFillStyle():table
-         fill_round_x = theme.bkgd.cornerX or theme.bkgd.cornerY or 0
-         fill_round_y = theme.bkgd.cornerY or fill_round_x
-         fill_round_x = math.max(0, fill_round_x - (edge * 0.5))
-         fill_round_y = math.max(0, fill_round_y - (edge * 0.5))
+         fill_round = &innerCorners()
 
          return table.merge({
             x = edge, y = edge, xOffset = edge,
-            corners = array<double> { fill_round_x, fill_round_y, fill_round_x, fill_round_y, 0, 0, 0, 0 }
+            corners = array<double> { fill_round, fill_round, fill_round, fill_round, 0, 0, 0, 0 }
          }, theme.header)
       end
 
@@ -591,6 +610,12 @@ gui.panel = function(Options:table!)
          &headerHeight = theme.headerHeight ??
             (math.max(math.ceil(title_line), math.ceil(meta_line)) + gui.sizing.widget.margin)
          &header.height = &headerHeight
+
+         if &headerHeight != round_height then -- The measured header replaces the estimate that the corners used
+            round_height = &headerHeight
+            gui.styleRectangle(&bkgd, bkgdStyle(), bkgd_defaults)
+            if &headerFill then gui.styleRectangle(&headerFill, headerFillStyle(), header_defaults) end
+         end
 
          if &headerFill then
             fill_height = math.max(1, &headerHeight - edge)
@@ -647,21 +672,18 @@ gui.panel = function(Options:table!)
          -- scrollbar sections of the new theme when the window theme changes.
 
          scrollbarTheme = function():table
-            round_x = theme.bkgd.cornerX or theme.bkgd.cornerY or 0
-            round_y = theme.bkgd.cornerY or round_x
-            round_x = math.max(0, round_x - (edge * 0.5))
-            round_y = math.max(0, round_y - (edge * 0.5))
+            round = &innerCorners()
 
             return {
                scrollbar_v = table.merge(base_theme.scrollbar_v ?? base_theme.scrollbar, {
-                  bkgd = { corners = { 0, 0, round_x * round_tr, round_y * round_tr,
-                     round_x * round_br, round_y * round_br, 0, 0 } },
-                  margin = { round_y * round_tr, round_y * round_br }
+                  bkgd = { corners = { 0, 0, round * round_tr, round * round_tr,
+                     round * round_br, round * round_br, 0, 0 } },
+                  margin = { round * round_tr, round * round_br }
                }, true, true),
                scrollbar_h = table.merge(base_theme.scrollbar_h ?? base_theme.scrollbar, {
-                  bkgd = { corners = { 0, 0, 0, 0, round_x * round_br_h, round_y * round_br_h,
-                     round_x * round_bl, round_y * round_bl } },
-                  margin = { round_x * round_bl, round_x * round_br_h }
+                  bkgd = { corners = { 0, 0, 0, 0, round * round_br_h, round * round_br_h,
+                     round * round_bl, round * round_bl } },
+                  margin = { round * round_bl, round * round_br_h }
                }, true, true)
             }
          end
@@ -685,7 +707,7 @@ gui.panel = function(Options:table!)
          edge = theme.bkgd.strokeWidth ?? 0
          header_pad = theme.headerPad
          &bkgd.{ x = edge * 0.5, y = edge * 0.5, xOffset = edge * 0.5, yOffset = edge * 0.5 }
-         gui.styleRectangle(&bkgd, theme.bkgd, bkgd_defaults)
+         gui.styleRectangle(&bkgd, bkgdStyle(), bkgd_defaults)
 
          if &header then
             if headerFillNeeded() then

@@ -185,7 +185,7 @@ end
    lToolbar = gui.toolbar({
       target      = viewport,
       xOffset     = 0,
-      y           = y,
+      y           = math.round(y),
       createItems = function(Bar)
          Bar.addGroup(1, 'Navigation', 2)
          Bar.addItem(2, 'Root', 'Root Directory', 'devices/harddisk', itemCallback)
@@ -254,7 +254,7 @@ end
 
    text = viewport.new('vectortext', {
       x         = win.margins.left,
-      y         = y,
+      y         = math.round(y),
       string    = TEXT_SAMPLE,
       fontStyle = gui.fontStyle(table.merge(win.theme.window.text, { face = 'Noto Sans', size = 20 })),
       textFlags = '!editable'
@@ -269,7 +269,7 @@ end
       target = viewport,
       label  = 'Message Box',
       x      = win.margins.left,
-      y      = y,
+      y      = math.round(y),
       disabled = true,
       icon   = 'items/question',
       events = {
@@ -308,7 +308,7 @@ end
       target = viewport,
       label  = 'Select Colour',
       x      = msgButton.viewport.x + msgButton.viewport.width + gui.sizing.widget.gap,
-      y      = y,
+      y      = math.round(y),
       icon   = 'tools/palette',
       events = {
          activate = function()
@@ -359,7 +359,7 @@ end
       target = viewport,
       label  = 'Select Font',
       x      = colourButton.viewport.x + colourButton.viewport.width + gui.sizing.widget.gap,
-      y      = y,
+      y      = math.round(y),
       icon   = 'items/font',
       events = {
          activate = function()
@@ -420,7 +420,7 @@ end
       target = viewport,
       label  = 'Select File',
       x      = fontButton.viewport.x + fontButton.viewport.width + gui.sizing.widget.gap,
-      y      = y,
+      y      = math.round(y),
       icon   = 'folders/folder',
       events = {
          activate = function()
@@ -456,7 +456,7 @@ end
       labelWidth = gui.pixel('150dp'),
       labelPos   = 'left',
       x          = win.margins.left,
-      y          = y,
+      y          = math.round(y),
       events     = {
          activate = function()
             if &value then
@@ -494,7 +494,7 @@ end
       labelWidth  = gui.rpixel('150dp'),
       text        = 'Your text here',
       x           = win.margins.left,
-      y           = y,
+      y           = math.round(y),
       allowCustom = true,
       items       = {
          { group = 'Office' },
@@ -518,10 +518,10 @@ end
    local input = gui.input({
       target     = viewport,
       x          = win.margins.left,
-      y          = y,
+      y          = math.round(y),
       width      = combobox.viewport.width,
       labelWidth = gui.rpixel('150dp'),
-      label      = 'Inputbox:',
+      label      = 'Input Box:',
       text       = 'Your text here',
       events     = {
          activate = function(Event)
@@ -561,7 +561,7 @@ end
    memo = gui.input({
       target     = viewport,
       x          = win.margins.left,
-      y          = y,
+      y          = math.round(y),
       width      = input.viewport.width,
       labelWidth = gui.rpixel('150dp'),
       label      = 'Multi-line:',
@@ -614,7 +614,7 @@ end
 
    notes_text = notes.page.new('VectorText', {
       x         = gui.sizing.widget.gap,
-      y         = gui.getFontHeight({ face='Inconsolata', size='12pt' }),
+      y         = math.round([*_]gui.getFontHeight({ face='Inconsolata', size='12pt' })),
       lineLimit = 0,
       fontStyle = gui.fontStyle(table.merge(win.theme.window.text, { face = 'Inconsolata', size = '12pt' })),
       textFlags = VTXF_SELECTABLE,
@@ -640,7 +640,7 @@ end
       multiSelect = true,
       editable    = array<str> { 'name' },
       x           = notes.viewport.x,
-      y           = y,
+      y           = math.round(y),
       xOffset     = win.margins.right + list_width + gui.sizing.widget.gap,
       height      = gui.rpixel('200pt'),
       events = {
@@ -692,7 +692,7 @@ end
       textAttrib = 'name',
       editable   = array<str> { 'name' },
       xOffset    = win.margins.right,
-      y          = y,
+      y          = math.round(y),
       width      = list_width,
       height     = gui.rpixel('200pt'),
       events = {
@@ -724,7 +724,7 @@ end
    glAlarmIcon = gui.icon({
       target = viewport,
       x      = gui.rpixel('30dp'),
-      y      = y,
+      y      = math.round(y),
       image  = 'time/alarm',
       label  = 'Alarm',
       size   = gui.rpixel('120dp'),
@@ -756,7 +756,7 @@ end
    glHouseIcon = gui.icon({
       target    = viewport,
       x         = gui.rpixel('170dp'),
-      y         = y,
+      y         = math.round(y),
       image     = 'programs/filemanager',
       label     = 'Wilhelm\'s House',
       draggable = true,

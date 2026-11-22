@@ -9,6 +9,7 @@ Documentation is available in the Kotuku Wiki.
    namespace gui
 
 MIN_FONT_SIZE <const> = 6 -- Labels are not scaled below this pixel size, and may overflow the button if so
+ICON_RATIO    <const> = 0.6 -- Size of the icon relative to the button height when there is no label
 
 gui.button = function(Options)
    self = entity { -- Public interface
@@ -19,7 +20,7 @@ gui.button = function(Options)
       viewport       = nil, -- The button's primary viewport
    }
 
-   local LINE_SPACING, FONT_HEIGHT, ASCENT, HEIGHT, ICON_SIZE, L_GAP, R_GAP, ICON_GAP
+   local LINE_SPACING, FONT_HEIGHT, ASCENT, HEIGHT, L_GAP, R_GAP, ICON_GAP
 
    using self do
       -- The applied theme is layered as base.button <- base.button.primary (if primary) <- Options.theme <- the
@@ -38,10 +39,23 @@ gui.button = function(Options)
          if override then result = table.merge(result, override, true, true) end
          LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight(result.text)
 
-         HEIGHT    = Options.height ?? FONT_HEIGHT * 2.2
-         ICON_SIZE = FONT_HEIGHT
-         L_GAP     = HEIGHT * .5
-         R_GAP     = HEIGHT * .5
+         -- A fixed height scales the text by the ratio of that height to the button's natural height, unless the
+         -- client themes the text size.  The icon and gaps follow the scaled text.
+
+         client_size = Options.theme?.text?.size -- ?? override?.text?.size
+         if Options.height and (not client_size) and result.text.size then
+            size = result.text.size
+            if not (size is <num>) then size = gui.pixel(tostring(size), 96) end
+            scaled = math.max(MIN_FONT_SIZE, size * Options.height / (FONT_HEIGHT * 1.8))
+            if scaled != size then
+               result.text = table.merge(result.text, { size = scaled })
+               LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight(result.text)
+            end
+         end
+
+         HEIGHT    = Options.height ?? FONT_HEIGHT * 1.8
+         L_GAP     = HEIGHT * .7
+         R_GAP     = HEIGHT * .7
          ICON_GAP  = HEIGHT * .5 * 0.75 -- Space between the icon and the label, if both are present
 
          return result
@@ -53,6 +67,14 @@ gui.button = function(Options)
       icon_margin = 0     -- Padding around the icon, see gui.createIcon()
       label_size  = 0     -- The label's font size in pixels before any scaling to fit the button
       inset       = math.ceil(theme.bkgd.strokeWidth) -- Inset of the label area; whole pixels keep the label sharp
+
+      -- An icon beside a label matches the label's font height.  A lone icon is sized from the button height, in whole
+      -- pixels to keep it sharp.
+
+      function iconSize():num
+         if &_label then return FONT_HEIGHT end
+         return math.round(HEIGHT * ICON_RATIO)
+      end
 
       function disabledOpacity():num
          return base_theme.scheme is 'light' ? 0.75 : 0.5
@@ -106,7 +128,7 @@ gui.button = function(Options)
 
          if &iconRender then
             &iconRender.x = L_GAP - icon_margin
-            label_offset = L_GAP - icon_margin + ICON_SIZE + ICON_GAP
+            label_offset = L_GAP - icon_margin + iconSize() + ICON_GAP
          end
 
          if &_label and (tonumber(&_label.fontSize) != label_size) then -- Restore the full size before measuring
@@ -118,7 +140,7 @@ gui.button = function(Options)
          end
 
          if &iconRender and not &_label then -- Center icon, no text
-            &iconRender.x = ((&viewport.width - ICON_SIZE) * 0.5) - icon_margin
+            &iconRender.x = ((&viewport.width - iconSize()) * 0.5) - icon_margin
          end
 
          if &_label?? then
@@ -136,10 +158,44 @@ gui.button = function(Options)
          end
       end
 
+      bkgd_height = nil -- Height that the current background path was generated for
+
+      function shapeBkgd(Viewport:obj!, Force:bool)
+         vp_height = Viewport.height
+         if Force or (vp_height != bkgd_height) then
+            if theme.path then -- Custom path support
+               &bkgd.sequence = theme.path(Viewport, theme.bkgd)
+            else
+               &bkgd.sequence = gui.paths.rectangle(Viewport)
+            end
+            bkgd_height = vp_height
+         end
+      end
+
+      function createBkgd()
+         replaced = &bkgd?? ? true : false
+         &bkgd?.free()
+
+         align = ((theme.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
+         &bkgd = &viewport.new('VectorPath', {
+            x = align, y = align, xOffset=align, yOffset=align,
+            resizeEvent = function(Viewport:obj, Vector:obj, X:num, Y:num, Width:num, Height:num)
+               shapeBkgd(Viewport)
+               arrange(false, true) -- Fit the label again, as arrange() restores it to full size before measuring
+            end
+         })
+
+         bkgd_height = nil
+         shapeBkgd(&viewport, true)
+         if replaced then &bkgd.acMoveToBack() end
+
+         refreshStyle()
+      end
+
       -- Returns the icon pattern for Path in the current text colour, and the placement of the viewport that paints it.
 
       function iconPattern(Path:str!):<table, table>
-         icon = gui.createIcon(&viewport.scene, Path, ICON_SIZE, gui.rgbToIconTheme(theme.text.fill))
+         icon = gui.createIcon(&viewport.scene, Path, iconSize(), gui.rgbToIconTheme(theme.text.fill))
          icon_margin = icon.margin
          return icon, {
             x      = L_GAP - icon.margin,
@@ -155,14 +211,30 @@ gui.button = function(Options)
          return &viewport.new('VectorViewport', settings)
       end
 
+      -- Rebuild the icon pattern for the current theme and icon size.
+
+      function refreshIcon()
+         &iconRender ?! return
+         try
+            _, settings = iconPattern(&icon)
+            settings.x = nil -- Horizontal placement belongs to arrange(), which centres an icon without a label
+            gui.applyStyle(&iconRender, settings)
+         except e
+            msg(f'Failed to restyle button icon "{&icon}": {e.message}')
+         end
+      end
+
       -- Apply the current theme to the existing vectors.
 
       function restyle()
-         sw = theme.bkgd.strokeWidth
-         &bkgd.{ x = sw * 0.5, y = sw * 0.5, width = &viewport.width - sw, height = &viewport.height - sw }
-         refreshStyle()
+         if ('VectorPath' != &bkgd.class.className) then
+            createBkgd()
+         else
+            shapeBkgd(&viewport, true)
+            refreshStyle()
+         end
 
-         inset = math.ceil(sw)
+         inset = math.ceil(theme.bkgd.strokeWidth)
 
          if &_label then
             if theme.text.fill then
@@ -175,15 +247,7 @@ gui.button = function(Options)
             end
          end
 
-         if &iconRender then
-            try
-               _, settings = iconPattern(&icon)
-               settings.x = nil -- Horizontal placement belongs to arrange(), which centres an icon without a label
-               gui.applyStyle(&iconRender, settings)
-            except e
-               msg(f'Failed to restyle button icon "{&icon}": {e.message}')
-            end
-         end
+         refreshIcon()
 
          if &disabled then &viewport.opacity = disabledOpacity() end
          &viewport.acDraw()
@@ -214,6 +278,7 @@ gui.button = function(Options)
       -- Change the button label.  A nil or empty string removes the label.
 
       &setLabel = function(Label:str)
+         had_label = &_label != nil
          if Label?? then
             Label = Label.trim()
             if Label is '' then Label = nil end
@@ -235,6 +300,7 @@ gui.button = function(Options)
             &_label = nil
          end
 
+         if had_label != (&_label != nil) then refreshIcon() end -- The icon size depends on the label's presence
          arrange(false, true)
          &viewport.acDraw()
       end
@@ -295,23 +361,9 @@ gui.button = function(Options)
 
       &_hoverTip = gui.hoverTip({ target = &viewport, text = function[&&]() return &tip end })
 
-      &bkgd = &viewport.new('VectorRectangle', table.merge({
-         x      = theme.bkgd.strokeWidth * 0.5,
-         y      = theme.bkgd.strokeWidth * 0.5,
-         width  = &viewport.width - theme.bkgd.strokeWidth,
-         height = HEIGHT - theme.bkgd.strokeWidth,
-         resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-            if Vector.width != Width then
-               Vector.width = Width - theme.bkgd.strokeWidth
-            end
+      createBkgd()
 
-            if Vector.height != Height then
-               Vector.height = Height - theme.bkgd.strokeWidth
-            end
-
-            arrange(false, false)
-         end
-      }, theme.bkgd))
+      if Options.label then &setLabel(Options.label) end -- Before the icon, which is sized for the label
 
       if Options.icon then -- A missing icon is reported but is not fatal to the button
          try
@@ -321,8 +373,6 @@ gui.button = function(Options)
             msg(f'Failed to load button icon "{Options.icon}": {e.message}')
          end
       end
-
-      if Options.label then &setLabel(Options.label) end
 
       arrange(true, Options.width ? true : false)
 

@@ -15,8 +15,8 @@
 
    namespace colourpicker_manager { }
 
-PAD          <const> = 14 -- Around the panels
-GAP          <const> = 12 -- Between panels
+PAD          <const> = gui.sizing.window.gap -- Around the panels
+GAP          <const> = gui.sizing.window.gap -- Between panels
 LEFT_W       <const> = 268
 RIGHT_W      <const> = 260
 INSET        <const> = 10 -- Padding inside a panel body
@@ -644,7 +644,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    if starter_h > 0 then
       starter_panel = gui.panel({
-         target = self.viewport, x = PAD, y = PAD + left_h + GAP, width = LEFT_W, height = starter_h,
+         target = self.viewport, x = PAD, y = math.round(PAD + left_h + GAP), width = LEFT_W, height = starter_h,
          title = 'Starter Palettes', meta = tostring(#self.starters),
          padding = { left = 0, top=0, right = &theme.panel.bkgd.strokeWidth } --, padding = colourpicker_parts.PANEL_PADDING
       })
@@ -905,7 +905,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    sw_y = PAD + pal_h + GAP
    swatch = gui.panel({
-      target = self.viewport, x = right_x, y = sw_y, width = RIGHT_W, height = height - PAD - sw_y,
+      target = self.viewport, x = right_x, y = math.round(sw_y), width = RIGHT_W, height = height - PAD - sw_y,
       title = 'Swatch', padding = colourpicker_parts.PANEL_PADDING
    })
    self.swatchPanel = swatch

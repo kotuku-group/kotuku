@@ -149,17 +149,31 @@ gui.slider = function(Options:table!)
       prvApplyStyle = function()
          theme = &prvTheme
          gui.applyStyle(&prvBarBkgd, table.merge({ opacity = 1 }, theme.bkgd))
-         gui.applyStyle(&button, table.merge({ opacity = 1 }, &prvFill())) -- Undo any highlight opacity
+         gui.applyStyle(&thumbBkgd, table.merge({ opacity = 1 }, &prvFill())) -- Undo any highlight opacity
 
          if &disabled then
             gui.applyStyle(&prvBarBkgd, theme.disabled)
          else
-            if &prvHover then gui.applyStyle(&button, theme.foreHighlight) end
-            if &hasFocus then gui.applyStyle(&button, theme.foreFocus) end
+            if &prvHover then gui.applyStyle(&thumbBkgd, theme.foreHighlight) end
+            if &hasFocus then gui.applyStyle(&thumbBkgd, theme.foreFocus) end
          end
+
+         &prvRoundCorners()
 
          for _, path in &prvTickPaths do
             &prvStyleTicks(path)
+         end
+      end,
+
+      -- The corner radii are relative to the thickness of the track, so that they are the same at any length.  A
+      -- percentage radius in the theme is applied to sqrt(t * t), and a number is a fixed radius.
+
+      prvRoundCorners = function()
+         for pair in values(array<table> { { &prvBarBkgd, &prvTheme.bkgd }, { &thumbBkgd, &prvFill() } }) do
+            vector, style = pair[0], pair[1]
+            r = gui.sizing.widget.cornerSize * &thickness
+            vector.cornerX = r
+            vector.cornerY = r
          end
       end,
 
@@ -171,6 +185,7 @@ gui.slider = function(Options:table!)
 
       prvCheckTicks = function(Ticks:any)
          if (Ticks is nil) or (Ticks is false) then return end
+
          if Ticks is true then
             assert(&step > 0, 'ticks=true requires a step greater than zero.')
          elseif Ticks is <num> then
@@ -758,8 +773,8 @@ gui.slider = function(Options:table!)
             end
          end
 
-         if &style is 'slide' and &button then
-            &button.{ width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2) }
+         if &style is 'slide' and &thumbBkgd then
+            &thumbBkgd.{ width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2) }
          end
 
          -- Inside value text places the inside label with it
@@ -927,6 +942,7 @@ gui.slider = function(Options:table!)
             style   = &prvTheme.text,
             rotated = &orientation is 'V'
          })
+
          &labelText = &prvLabel.text
 
          if &orientation is 'V' then
@@ -1026,7 +1042,9 @@ gui.slider = function(Options:table!)
 
       &thumbVP.dragCallback = function[<weak> &&](Viewport:obj!, X:num!, Y:num!, OriginX:num!, OriginY:num!)
          if &disabled then return end
+
          local track_vp = &trackVP
+
          display_w, display_h = [___*]track_vp.mtGetBoundary(0)
 
          if &orientation is 'V' then
@@ -1071,12 +1089,14 @@ gui.slider = function(Options:table!)
       &prvGapX     = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
       &prvGapY     = math.min(GAP, math.max(0, (thumb_height - 1) * 0.5))
 
-      &button = &thumbVP.new('VectorRectangle', table.merge({
+      &thumbBkgd = &thumbVP.new('VectorRectangle', table.merge({
          x      = &prvGapX,
          y      = &prvGapY,
          width  = &thumbVP.width - (&prvGapX * 2),
          height = &thumbVP.height - (&prvGapY * 2)
       }, &prvFill()))
+
+      &prvRoundCorners()
 
       if &prvLabelEnd then &labelText.acMoveToFront() end -- Placed by prvPlaceSlider()
 
@@ -1087,6 +1107,7 @@ gui.slider = function(Options:table!)
 
       function[<weak> &&] focusFeedback(Viewport, Event)
          if not &viewport then return end
+
          &hasFocus = Event != FM_LOST_FOCUS
 
          &prvApplyStyle()
@@ -1141,6 +1162,7 @@ gui.slider = function(Options:table!)
                   &prvAdjust((Msg.value > 0) ? 1 : -1)
                end
             end
+
             Msg = Msg.next
          until not Msg
       end
@@ -1156,6 +1178,7 @@ gui.slider = function(Options:table!)
             elseif Msg.type is JET_CROSSED_OUT then
                &prvHover = false
             end
+
             Msg = Msg.next
          until not Msg
 
@@ -1174,6 +1197,7 @@ gui.slider = function(Options:table!)
                position = ((&orientation is 'V') ? Msg.y : Msg.x) - (&prvThumbLength * 0.5)
                &setValue(&prvTrackValue(position))
             end
+
             Msg = Msg.next
          until Msg is nil
       end
@@ -1188,10 +1212,10 @@ gui.slider = function(Options:table!)
          style = gui.fontStyle(&prvTheme.text)
 
          function keepSize(Text:obj)
-            if not Text then return end
+            Text ?! return
             size = Text.fontSize
             Text.fontStyle = style
-            Text.fontSize = f'{size}px'
+            Text.fontSize  = size
          end
 
          keepSize(&labelText)

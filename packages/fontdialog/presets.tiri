@@ -15,8 +15,6 @@ FONT_SIZE   <const> = 11
 NAME_LIMIT  <const> = 40 -- Characters in an edited preset name
 LIST_H      <const> = ROW_H * VISIBLE_ROWS
 
-fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialog_parts.LIST_INSET
-
 @Doc(text=[[
 @desc Create the Presets panel.
 @input Picker table.  The picker provides `presets` (array of { name }), `activePreset`, `applyPreset(Name)`,
@@ -26,12 +24,18 @@ fontdialog_presets.HEIGHT = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialo
 @result Table with `panel`, `height`, `view`, `btnSave`, `btnDelete`, `update(Source)` and `editing()`
 ]])
 fontdialog_presets.new = function(Picker:table!, Target:obj!, Options:table!):table
-   self = { height = fontdialog_presets.HEIGHT, appliedDef = nil, appliedParagraph = nil }
+   self = { appliedDef = nil, appliedParagraph = nil }
+
+   -- The height depends on the panel's corner radius, so it is only known once the panel exists.
 
    self.panel = gui.panel({
-      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      target = Target, x = Options.x, y = Options.y, width = Options.width,
+      height = fontdialog_theme.PANEL_HEADER_H + LIST_H,
       title = 'Presets', padding = fontdialog_parts.PANEL_PADDING
    })
+
+   self.height = fontdialog_theme.PANEL_HEADER_H + LIST_H + fontdialog_parts.listInset(self.panel)
+   self.panel.viewport.height = self.height
 
    body = self.panel.body
    edge = math.ceil(self.panel.bkgd.strokeWidth ?? 0) -- Matches the panel's whole-pixel body inset

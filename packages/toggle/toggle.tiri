@@ -137,8 +137,13 @@ gui.toggle = function(Options:table!):table
          &_label.place(packed_width, &viewport.height, box.y, HEIGHT)
       end
 
+      edge = 1 - ((&theme.input.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
+      h  = HEIGHT - (edge * 2)
+      r = math.max(0, math.min(gui.sizing.widget.cornerSize * h, (HEIGHT * 0.5) - edge))
+
       &bkgd = &viewport.new('VectorRectangle', table.merge({
-         x = box.x, y = box.y, width = HEIGHT, height = HEIGHT
+         x = box.x+edge, y = box.y+edge, width = HEIGHT-edge, height = HEIGHT-edge,
+         cornerX = r, cornerY = r
       }, &theme.input.bkgd))
 
       -- Returns the placement of the checkmark viewport, with the pattern in the current text colour.  The fill is

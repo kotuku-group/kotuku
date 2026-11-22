@@ -242,7 +242,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
       title = 'Preview', scroll = 'vertical', truncate = 'meta',
       padding = { bottom = divider_h + footer_h + inset },
-      theme = { bkgd = page_bkgd },
+      theme = { },
       events = {
          -- The page fills the body and is extended to fit the content.  The content is not redrawn, as its width
          -- does not change.
@@ -273,16 +273,6 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
       x = edge, xOffset = edge, y = 0, height = divider_h, fill = panel_theme.divider?.fill ?? t.border
    })
 
-   round_x = panel_theme.bkgd.cornerX or panel_theme.bkgd.cornerY or 0
-   round_y = panel_theme.bkgd.cornerY or round_x
-   round_x = math.max(0, round_x - (edge * 0.5))
-   round_y = math.max(0, round_y - (edge * 0.5))
-   self.footer.new('VectorRectangle', {
-      x = edge, xOffset = edge, y = divider_h, yOffset = edge,
-      corners = array<double> { 0, 0, 0, 0, round_x, round_y, round_x, round_y },
-      fill = panel_theme.header?.fill ?? Picker.theme.page.bkgd.fill
-   })
-
    seg_y = divider_h + math.floor((footer_h - FOOTER_SEG_H) * 0.5)
    footer_pad = panel_theme.headerPad ?? 9
 
@@ -303,7 +293,6 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    self.bkgdButton = gui.button({
       target = self.footer, x = math.round(footer_pad + self.viewSeg.width + SAMPLE_GAP), y = seg_y,
       width = FOOTER_SEG_H, height = FOOTER_SEG_H, icon = 'tools/palette', tip = 'Preview background colour',
-      theme = { bkgd = { cornerX = 3, cornerY = 3 } },
       events = {
          activate = function()
             chosen = fdc.pickColour(self, self.footer,
@@ -340,10 +329,6 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
    for _, sample in SAMPLES do
       btn = gui.button({
          target = self.sampleRow, x = x, y = 0, height = FOOTER_SEG_H, label = sample.label, disabled = true,
-         theme = {
-            bkgd = { cornerX = 3, cornerY = 3 },
-            text = { size = FOOTER_SEG_SIZE } -- The button centres the label for this size
-         },
          events = {
             activate = function()
                Picker.update({ text = sample.text ?? fontdialog_preview.sampleFor(Picker.state.font) }, 'sample')
@@ -431,10 +416,12 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
             width = '100%', height = '100%', cornerX = 3, cornerY = 3,
             fill = live ? Picker.theme.palette.prime : t.border
          })
+
          tag_text = fontdialog_parts.text(tag, {
             x = 7, y = fontdialog_parts.baseline(0, TAG_H, 9.5), size = 9.5, face = fontdialog_parts.FACE_MONO,
             fill = live ? Picker.theme.button.primary.text.fill : t.fg1, string = Tag.upper()
          })
+
          tag.width = math.ceil(tag_text.textWidth) + 14
          caption = fontdialog_parts.text(pane, {
             x = PANE_PAD_X + tag.width + 8, y = fontdialog_parts.baseline(y, TAG_H, 11), size = 11, fill = t.fg2

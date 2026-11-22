@@ -168,6 +168,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    local body = self.panel.body
    body_w, body_h = self.panel.bodySize()
    edge = math.ceil(self.panel.bkgd.strokeWidth ?? 0) -- Matches the panel's whole-pixel body inset
+   list_inset = fontdialog_parts.listInset(self.panel)
 
    self.search = gui.input({
       target = body, x = PAD_X, y = 8, width = body_w - (PAD_X * 2), height = SEARCH_H,
@@ -222,7 +223,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       x          = edge,
       y          = list_top,
       xOffset    = edge,
-      height     = math.max(ROW_H, body_h - list_top - fontdialog_parts.LIST_INSET),
+      height     = math.max(ROW_H, body_h - list_top - list_inset),
       borderless = true,
       showIcons  = false,
       rowHeight  = ROW_H,
@@ -281,7 +282,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    -- Fit the list below the search row for a body of the given height.
 
    self.layoutBody = function(BodyHeight:num!)
-      self.view.viewport.height = math.max(ROW_H, BodyHeight - list_top - fontdialog_parts.LIST_INSET)
+      self.view.viewport.height = math.max(ROW_H, BodyHeight - list_top - list_inset)
    end
 
    ----------------------------------------------------------------------------------------------------------------
