@@ -294,6 +294,115 @@ end
    assertBoundary(path, 40, 40, 40, 40, 'negative Height spans from Y + Height to Y')
 end
 
+-- XOffset and YOffset follow the VectorRectangle conventions.  The test path is a 30x30 square at (10,20) in a
+-- 200 px viewport.
+
+@Test function PathOffsetAnchorsFarEdge()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.xOffset = 20
+   path.yOffset = 10
+
+   assertBoundary(path, 150, 160, 30, 30, 'XOffset/YOffset alone keep the natural size')
+   assertNear(path.x, 150, 'X reads the resolved left edge')
+   assertNear(path.y, 160, 'Y reads the resolved top edge')
+   assertNear(path.width, 30, 'Width reads the natural width')
+   assertNear(path.xOffset, 20, 'XOffset reads back the stored value')
+   assertNear(path.yOffset, 10, 'YOffset reads back the stored value')
+   assertCommand(path, 0, PE_Move, 10, 20, 'move command unchanged by offsets')
+
+   path.xOffset = 0/0
+   path.yOffset = 0/0
+   assertBoundary(path, 10, 20, 30, 30, 'clearing the offsets restores the natural placement')
+end
+
+@Test function PathOffsetWithSize()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.width = 60
+   path.height = 40
+   path.xOffset = 20
+   path.yOffset = 10
+
+   assertBoundary(path, 120, 150, 60, 40, 'Width/Height with offsets anchor the sized path')
+end
+
+@Test function PathOffsetWithFlippedSize()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.{ width=-60, height=-40, xOffset=20, yOffset=10 }
+   assertBoundary(path, 120, 150, 60, 40, 'Offsets anchor the geometric far edge of a flipped path')
+
+   path.{ x=180, y=190, xOffset=0/0, yOffset=0/0 }
+   assertNear(path.xOffset, 20, 'Derived XOffset is measured to the geometric right edge')
+   assertNear(path.yOffset, 10, 'Derived YOffset is measured to the geometric bottom edge')
+end
+
+@Test function PathOffsetStretchesFromXY()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.x = 10
+   path.xOffset = 40
+   path.y = 20
+   path.yOffset = 30
+
+   assertBoundary(path, 10, 20, 150, 150, 'X/Y with offsets stretch the path')
+   assertNear(path.width, 150, 'Width reads the stretched width')
+   assertNear(path.height, 150, 'Height reads the stretched height')
+
+   path.width = 50
+   assertBoundary(path, 10, nil, 50, nil, 'XOffset is ignored when X and Width are defined')
+end
+
+@Test function PathOffsetScaled()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.xOffset = '10%'
+
+   assertBoundary(path, 150, nil, 30, nil, 'scaled XOffset in a 200 px viewport')
+   assertNear(path.xOffset, 0.1, 'scaled XOffset reads back as a scaled value')
+
+   viewport.width = 400
+   assertBoundary(path, 330, nil, 30, nil, 'scaled XOffset after resizing the viewport')
+end
+
+@Test function PathOffsetDerivedReadback()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   assertNear(path.xOffset, 160, 'undefined XOffset reads the natural right-side gap')
+   assertNear(path.yOffset, 150, 'undefined YOffset reads the natural bottom gap')
+
+   path.x = 100
+   path.width = 60
+   assertNear(path.xOffset, 40, 'undefined XOffset follows X and Width')
+end
+
+@Test function PathOffsetMove()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.xOffset = 20
+   check path.acMove(-10, 5, 0)
+
+   assertBoundary(path, 140, 25, 30, 30, 'Move shifts an offset-anchored path without resizing it')
+   assertNear(path.xOffset, 30, 'Move adjusts XOffset')
+
+   path.x = 10
+   path.xOffset = 40
+   check path.acMove(5, 0, 0)
+   assertBoundary(path, 15, nil, 150, nil, 'Move keeps the width of a stretched path')
+end
+
+@Test function PathScaledOffsetMoveAfterViewportResize()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 10 20 L 40 20 L 40 50 L 10 50 Z'
+   path.{ xOffset='10%', yOffset='20%' }
+   assertBoundary(path, 150, 130, 30, 30, 'Initial scaled offsets')
+
+   viewport.{ width=400, height=300 }
+   check path.acMove(5, 10, 0)
+   assertBoundary(path, 335, 220, 30, 30, 'Move resolves scaled offsets against the resized viewport')
+end
+
 @Test function PathWidthCurveFit()
    scene, viewport, path = newTargetPath()
    path.sequence = 'M 0 0 C 0 -100 100 -100 100 0'

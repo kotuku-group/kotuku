@@ -39,9 +39,10 @@ struct KeyValue;
 
   enums("LT", { type="int", start=0, comment="Lighting algorithm for the LightingFX class." },
     "DIFFUSE: Select diffuse lighting.",
-    "SPECULAR: Select specular lighting.")
+    "SPECULAR: Select specular lighting.",
+    "COMBINED: Light an albedo with diffuse, specular and ambient light in a single pass, producing a finished surface.")
 
-  flags("LFX", { comment="Enhanced lighting features for the LightingFX class.  These apply only when the scene's Compliance is `NONE`." },
+  flags("LFX", { comment="Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features." },
     "DEQUANTISE: Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.",
     "SHARPEN: Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.",
     "CAVITY: Darken narrow creases and pits in proportion to their curvature.",

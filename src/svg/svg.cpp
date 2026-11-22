@@ -533,6 +533,7 @@ static constexpr auto SVF_kerning             = strhash("kerning");
 static constexpr auto SVF_keyPoints           = strhash("keyPoints");
 static constexpr auto SVF_keySplines          = strhash("keySplines");
 static constexpr auto SVF_keyTimes            = strhash("keyTimes");
+static constexpr auto SVF_kotuku_feLighting   = strhash("kotuku:feLighting");
 static constexpr auto SVF_kotuku_guidePath    = strhash("kotuku:guidePath");
 static constexpr auto SVF_kotuku_pathTransition = strhash("kotuku:pathTransition");
 static constexpr auto SVF_kotuku_shape        = strhash("kotuku:shape");
@@ -749,6 +750,7 @@ static constexpr auto SVF_yChannelSelector = strhash("yChannelSelector");
 static constexpr auto SVF_yOffset          = strhash("yOffset");
 static constexpr auto SVF_z                = strhash("z");
 static constexpr auto SVF_zoomAndPan       = strhash("zoomAndPan");
+static constexpr auto SVF_feLighting       = strhash("feLighting");
 static constexpr auto SVF_guidePath        = strhash("guidePath");
 static constexpr auto SVF_pathTransition   = strhash("pathTransition");
 static constexpr auto SVF_shape            = strhash("shape");
@@ -817,6 +819,7 @@ static uint32_t svg_tag_hash(const XTag &Tag) noexcept
 
    if ((Tag.NamespaceID IS glKotukuNamespace) or (Tag.NamespaceID IS glKotukuSVGNamespace)) {
       switch (strhash(svg_local_name(Tag))) {
+         case SVF_feLighting:     return SVF_kotuku_feLighting;
          case SVF_guidePath:      return SVF_kotuku_guidePath;
          case SVF_pathTransition: return SVF_kotuku_pathTransition;
          case SVF_shape:          return SVF_kotuku_shape;

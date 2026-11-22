@@ -1095,6 +1095,7 @@ class extVectorPath : public extVector, public SceneDef {
    agg::path_storage UnplacedPath; // Cached conversion of Commands, prior to (X,Y) placement
    TClipRectangle<double> UnplacedBounds;
    Unit pX, pY;
+   Unit pXOffset, pYOffset; // Optional right/bottom placement, measured inward from the parent's edges
    Unit pWidth, pHeight; // Optional size constraint applied to the generated path, prior to (X,Y) placement
    PCO CoordinateDependencies = PCO::NIL; // Combined PCO bits; refreshed whenever CommandsChanged is set
    double ReferenceWidth = 0, ReferenceHeight = 0;

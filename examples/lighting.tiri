@@ -1,0 +1,685 @@
+#!/usr/bin/env origo
+--[[
+Lighting Workbench
+
+Experiment with the SVG lighting filters on surfaces that are generated from filter primitives.  The alpha channel of
+the last primitive in a surface declaration is used as a bump map, which is lit by feDiffuseLighting,
+feSpecularLighting or kotuku:feLighting according to the controls on the left.  For example, this declaration
+produces the surface of a moon:
+
+   <feTurbulence type="fractalNoise" baseFrequency=".01" numOctaves="9"/>
+   <feComponentTransfer>
+     <feFuncA type="table" tableValues="0 .02 .1 .25 .2 .25 .3 .4 .5 .6 .7 .8"/>
+   </feComponentTransfer>
+
+The declaration is inserted into a complete SVG document that ends the filter with the lighting primitive:
+
+   <svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+     <filter id="surface">
+       ...declaration...
+       <feDiffuseLighting diffuseConstant="4" surfaceScale="4" lighting-color="#ffffff"
+           kotuku:features="dequantise sharpen cavity detail shadows specular-aa" kotuku:cavity="0.25"
+           kotuku:detail="1.5" kotuku:penumbra="2">
+         <feDistantLight azimuth="0" elevation="4"/>
+       </feDiffuseLighting>
+     </filter>
+     <rect width="100%" height="100%" fill="white" filter="url(#surface)"/>
+   </svg>
+
+The 'combined' lighting mode replaces the standard primitive with kotuku:feLighting, which lights a surface colour
+(the albedo) with diffuse, specular and ambient light in one pass:
+
+   <kotuku:feLighting in2="SourceGraphic" diffuseConstant="1" specularConstant="0.5" specularExponent="20" ...>
+     <feDistantLight azimuth="0" elevation="4"/>
+   </kotuku:feLighting>
+
+The albedo is the fill of the rectangle, chosen with the Albedo combobox beneath the preview.  Unlike a chain of
+lighting and composite primitives, the light is only clamped when the result is written, so a strong light brightens
+the albedo without washing out its colour.  The specular constant applies to this mode only.
+
+Surfaces are chosen from the presets in the Surface combobox, or entered in the editor beneath the preview.  Edits are
+applied after a short pause in typing.  Point and spot lights are positioned by clicking or dragging in the preview;
+spot lights point at the centre of the preview.
+
+The Features toggles select the enhancements that LightingFX applies to the SVG lighting algorithm, and the sliders
+beneath them set the strength of the cavity and detail features and the width of the shadow edge.  The ambient light
+(diffuse and combined modes) and the light's intensity are also extensions.  They are written to the lighting
+primitive and its light source as kotuku: attributes.  The attributes take effect because the scene of the window has a
+Compliance of NONE; a standalone document that declares the Kotuku namespace is given the same Compliance.  Disabling
+every feature produces the result defined by the SVG specification.
+--]]
+
+   include 'vector', 'svg', 'xml', 'scintilla'
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider', 'gui/toggle', 'gui/scrollbar'
+
+   local glWindow, glViewport, glPreview, glSurfaceHost, glSurface, glMarker, glStatus, glEditor, glSVG, glEditTimer
+   local glThemeXML -- Colours of the editor
+   local glControls -- Scrollable page that holds the controls on the left
+
+   glWidgets = array<table> -- Strong references keep the widgets alive, as their callbacks hold weak references
+   glSliders = { }          -- Sliders by parameter name, so that those that do not apply can be disabled
+
+   glY             = 0
+   glRenderCount   = 0     -- Gives each render a unique filter ID
+   glRenderPending = false
+   glPreviewWidth  = 0
+   glPreviewHeight = 0
+   glFeatures      = LFX_ALL
+   glSource        = '' -- The surface declaration of the last render
+
+   glParams = {
+      lighting  = 'diffuse',
+      source    = 'distant',
+      colour    = '#ffffff',
+      scale     = 4,
+      constant  = 4,
+      exponent  = 20,
+      azimuth   = 0,
+      elevation = 4,
+      lightX    = 0.3, -- Position of point and spot lights, as a fraction of the preview size
+      lightY    = 0.3,
+      lightZ    = 150,
+      cone      = 30,
+      cavity    = 0.25, -- Strengths of the enhanced features
+      detail    = 1.5,
+      penumbra  = 2,
+      specularConstant = 0.5, -- Combined mode only
+      intensity = 1,
+      ambient   = nil,  -- Colour of the ambient light, or nil for none
+      albedo    = 0     -- Index into ALBEDOS
+   }
+
+   CONTROL_WIDTH <const> = 270
+   ALBEDO_WIDTH  <const> = 230
+   PREVIEW_X     <const> = 310
+   EDITOR_HEIGHT <const> = 220
+   ROW_HEIGHT    <const> = 32
+   EDIT_DELAY    <const> = 0.6 -- Seconds of inactivity in the editor before the surface is rendered again
+
+   COLOURS <const> = array<table> {
+      { label = 'White', value = '#ffffff' },
+      { label = 'Warm',  value = '#ffd9a0' },
+      { label = 'Cool',  value = '#bcd4ff' },
+      { label = 'Amber', value = '#ffb347' },
+      { label = 'Red',   value = '#ff6464' },
+      { label = 'Green', value = '#7dff9a' }
+   }
+
+   AMBIENTS <const> = array<table> {
+      { label = 'None' },
+      { label = 'Dim',    value = '#202020' },
+      { label = 'Sky',    value = '#1c2a40' },
+      { label = 'Warm',   value = '#30200c' },
+      { label = 'Bright', value = '#505050' }
+   }
+
+   -- Surface colours for the combined mode.  Gradients are defined in the document and referenced by the fill.
+
+   ALBEDOS <const> = array<table> {
+      { label = 'Amber to blue', fill = 'url(#albedo)', defs =
+         '<linearGradient id="albedo" x1="0" y1="0" x2="1" y2="1">' ..
+         '<stop offset="0" stop-color="#c8862e"/><stop offset="1" stop-color="#2f6f9a"/></linearGradient>' },
+      { label = 'Spectrum', fill = 'url(#albedo)', defs =
+         '<linearGradient id="albedo" x1="0" y1="0" x2="1" y2="0">' ..
+         '<stop offset="0" stop-color="#d04040"/><stop offset=".25" stop-color="#d0b040"/>' ..
+         '<stop offset=".5" stop-color="#40c060"/><stop offset=".75" stop-color="#4080d0"/>' ..
+         '<stop offset="1" stop-color="#a050c0"/></linearGradient>' },
+      { label = 'Copper', fill = '#b87333' },
+      { label = 'Jade',   fill = '#3f8f6f' },
+      { label = 'Slate',  fill = '#5a6670' },
+      { label = 'White',  fill = '#ffffff' }
+   }
+
+   FEATURES <const> = array<table> {
+      { label = 'Dequantise',  flag = LFX_DEQUANTISE,  name = 'dequantise' },
+      { label = 'Sharpen',     flag = LFX_SHARPEN,     name = 'sharpen' },
+      { label = 'Cavity',      flag = LFX_CAVITY,      name = 'cavity' },
+      { label = 'Detail',      flag = LFX_DETAIL,      name = 'detail' },
+      { label = 'Shadows',     flag = LFX_SHADOWS,     name = 'shadows' },
+      { label = 'Specular AA', flag = LFX_SPECULAR_AA, name = 'specular-aa' }
+   }
+
+   -- The parameters that each light source uses.  Sliders for other parameters are disabled.
+
+   LIGHT_PARAMS <const> = {
+      distant = { azimuth = true, elevation = true },
+      point   = { lightZ = true },
+      spot    = { lightZ = true, cone = true }
+   }
+
+   LIGHT_SLIDERS <const> = array<str> { 'azimuth', 'elevation', 'lightZ', 'cone' }
+
+   PRESETS <const> = array<table> {
+      { label = 'Moon', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".01" numOctaves="9"/>
+<feComponentTransfer>
+  <feFuncA type="table" tableValues="0 .02 .1 .25 .2 .25 .3 .4 .5 .6 .7 .8"/>
+</feComponentTransfer>]] },
+
+      { label = 'Islands', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".008" numOctaves="5" seed="12"/>
+<feComponentTransfer>
+  <feFuncA type="discrete" tableValues="0 0 .15 .3 .45 .6 .8 1"/>
+</feComponentTransfer>
+<feGaussianBlur stdDeviation="2"/>]] },
+
+      { label = 'Bubbles', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".04" numOctaves="2" seed="4"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 16 -10.5"/>
+<feMorphology operator="dilate" radius="1"/>
+<feGaussianBlur stdDeviation="4"/>]] },
+
+      { label = 'Stucco', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".08" numOctaves="4" seed="3"/>
+<feComponentTransfer>
+  <feFuncA type="linear" slope="1.5" intercept="-.2"/>
+</feComponentTransfer>]] },
+
+      { label = 'Water', source = [[
+<feTurbulence type="turbulence" baseFrequency=".012 .035" numOctaves="2" seed="5"/>
+<feGaussianBlur stdDeviation="1.5"/>]] },
+
+      { label = 'Wood grain', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".003 .04" numOctaves="4" seed="21"/>
+<feComponentTransfer>
+  <feFuncA type="table" tableValues="0 .3 .1 .4 .15 .45"/>
+</feComponentTransfer>
+<feGaussianBlur stdDeviation=".7"/>]] },
+
+      { label = 'Brushed metal', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".002 .6" numOctaves="3" seed="8"/>]] },
+
+      { label = 'Hammered metal', source = [[
+<feTurbulence type="turbulence" baseFrequency=".05" numOctaves="1" seed="7"/>
+<feComponentTransfer>
+  <feFuncA type="gamma" amplitude="1" exponent=".5"/>
+</feComponentTransfer>]] },
+
+      { label = 'Sand', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="1"/>]] },
+
+      { label = 'Flat', source = [[
+<!-- Without primitives, the opaque rectangle is lit, which is flat.
+     Try a point or spot light. -->]] }
+   }
+
+----------------------------------------------------------------------------------------------------------------------
+
+function redraw()
+   glViewport.scene.surface.mtScheduleRedraw()
+end
+
+function fmt(Value:num):str
+   return string.format('%g', Value)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Point and spot lights are positioned in the user space of the filter, which matches the preview's coordinates.
+
+function lightSource():str
+   p = glParams
+   intensity = (p.intensity is 1) ? '' : f' kotuku:intensity="{fmt(p.intensity)}"'
+   if p.source is 'distant' then
+      return f'<feDistantLight azimuth="{fmt(p.azimuth)}" elevation="{fmt(p.elevation)}"{intensity}/>'
+   end
+
+   x = fmt(p.lightX * glPreviewWidth)
+   y = fmt(p.lightY * glPreviewHeight)
+   if p.source is 'point' then return f'<fePointLight x="{x}" y="{y}" z="{fmt(p.lightZ)}"{intensity}/>' end
+
+   return f'<feSpotLight x="{x}" y="{y}" z="{fmt(p.lightZ)}" pointsAtX="{fmt(glPreviewWidth * 0.5)}" ' ..
+      f'pointsAtY="{fmt(glPreviewHeight * 0.5)}" pointsAtZ="0" limitingConeAngle="{fmt(p.cone)}"{intensity}/>'
+end
+
+-- The enhanced features and their strengths, as kotuku: attributes of the lighting primitive.
+
+function featureAttributes():str
+   names = ''
+   for _, feature in FEATURES do
+      if (glFeatures & feature.flag) != 0 then names = (names is '') ? feature.name : f'{names} {feature.name}' end
+   end
+   p = glParams
+   return f'kotuku:features="{(names is "") ? "none" : names}" kotuku:cavity="{fmt(p.cavity)}" ' ..
+      f'kotuku:detail="{fmt(p.detail)}" kotuku:penumbra="{fmt(p.penumbra)}"'
+end
+
+-- The ambient light is ignored by specular lighting, so it is only written for the other modes.  kotuku:feLighting
+-- accepts its extension attributes with or without the prefix.
+
+function lightingPrimitive():str
+   p = glParams
+   common = f'surfaceScale="{fmt(p.scale)}" lighting-color="{p.colour}" {featureAttributes()}'
+   if p.lighting is 'specular' then
+      return f'<feSpecularLighting specularConstant="{fmt(p.constant)}" specularExponent="{fmt(p.exponent)}" ' ..
+         f'{common}>\n  {lightSource()}\n</feSpecularLighting>'
+   end
+
+   if p.ambient then common ..= f' kotuku:ambient="{p.ambient}"' end
+   if p.lighting is 'combined' then
+      return f'<kotuku:feLighting in2="SourceGraphic" diffuseConstant="{fmt(p.constant)}" ' ..
+         f'specularConstant="{fmt(p.specularConstant)}" specularExponent="{fmt(p.exponent)}" ' ..
+         f'{common}>\n  {lightSource()}\n</kotuku:feLighting>'
+   end
+   return f'<feDiffuseLighting diffuseConstant="{fmt(p.constant)}" {common}>\n  {lightSource()}\n</feDiffuseLighting>'
+end
+
+-- Wraps the surface declaration in a complete SVG document.  The rectangle's fill is the albedo of the combined mode;
+-- the other modes use only its alpha, through SourceGraphic, when the declaration is empty.
+
+function surfaceDocument(Source:str, ID:str):str
+   albedo = ALBEDOS[glParams.albedo]
+   return '<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">\n' ..
+      f'<defs>{albedo.defs ?? ""}</defs>\n' ..
+      f'<filter id="{ID}">\n{Source}\n{lightingPrimitive()}\n</filter>\n' ..
+      f'<rect width="100%" height="100%" fill="{albedo.fill}" filter="url(#{ID})"/>\n</svg>'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns the number of primitives in the filter, or nil if the filter was not created.
+
+function countPrimitives(ID:str):num
+   err, vf = glViewport.scene.mtFindDef(ID)
+   if err != ERR_Okay then return nil end
+   return #vf.children()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The SVG parser accepts unbalanced tags, which would silently discard primitives while the declaration is being
+-- typed.  The declaration is checked first, so that the previous surface remains on display until it is well formed.
+
+function wellFormed(Source:str):bool
+   try
+      local xml <close> = obj.new('XML', { statement = f'<filter>{Source}</filter>', flags = XMF_WELL_FORMED })
+      return true
+   except e
+      return false
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The surface is rendered from a new document whenever a setting changes.  The vectors of the previous document are
+-- freed before its SVG object, which frees the filter that they refer to.
+
+function render()
+   glSource = glEditor.string ?? ''
+   if not wellFormed(glSource) then
+      glStatus.string = 'The surface declaration is not well-formed XML.'
+      redraw()
+      return
+   end
+
+   glSurface?.free()
+   glSurface = nil
+   glSVG?.free()
+   glSVG = nil
+
+   glRenderCount++
+   id = f'lighting_surface_{glRenderCount}'
+   glSurface = glSurfaceHost.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0 })
+
+   try
+      glSVG = obj.new('svg', {
+         target = glSurface, statement = surfaceDocument(glSource, id), flags = SVF_ENFORCE_TRACKING
+      })
+
+      primitives = countPrimitives(id)
+      if primitives then
+         surface_count = primitives - 1 -- Excludes the lighting primitive
+         plural = (surface_count is 1) ? '' : 's'
+         glStatus.string = f'{surface_count} surface primitive{plural}, {glParams.lighting} lighting from a ' ..
+            f'{glParams.source} light.'
+      else
+         glStatus.string = 'No filter was created.  Check the surface declaration for errors.'
+      end
+   except e
+      glStatus.string = f'Error: {e.message}'
+   end
+
+   redraw()
+end
+
+-- Settings can change several times in a cycle, e.g. while a slider is dragged, so renders are coalesced.
+
+function scheduleRender()
+   if glRenderPending then return end
+   glRenderPending = true
+   processing.delayedCall(function()
+      glRenderPending = false
+      render()
+   end)
+end
+
+-- The surface is rendered again once the user pauses typing.  Changes that were made by selecting a preset have been
+-- rendered already.
+
+function editorChanged()
+   if glEditTimer then mSys.UpdateTimer(glEditTimer, 0) end
+   _, glEditTimer = mSys.SubscribeTimer(EDIT_DELAY, function(Subscriber, Elapsed, Current)
+      glEditTimer = nil
+      if (glEditor.string ?? '') != glSource then render() end
+      raise ERR_Terminate
+   end)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function updateMarker()
+   if glParams.source is 'distant' then
+      glMarker.visibility = VIS_HIDDEN
+   else
+      glMarker.visibility = VIS_VISIBLE
+      glMarker.{ cx = glParams.lightX * glPreviewWidth, cy = glParams.lightY * glPreviewHeight }
+   end
+end
+
+-- The exponent applies to the specular and combined modes, and the specular constant to the combined mode alone.
+
+function updateLightingSliders()
+   if glParams.lighting is 'diffuse' then glSliders.exponent.disable() else glSliders.exponent.enable() end
+   if glParams.lighting is 'combined' then
+      glSliders.specularConstant.enable()
+   else
+      glSliders.specularConstant.disable()
+   end
+end
+
+function updateLightSliders()
+   for _, name in LIGHT_SLIDERS do
+      if LIGHT_PARAMS[glParams.source][name] then glSliders[name].enable() else glSliders[name].disable() end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Keep the widget range above zero where possible: the slider's default-value handling treats zero as an unset value.
+
+function addSlider(Name:str, Label:str, Min:num, Max:num, Step:num, Places:num)
+   caption_format = f'%s: %.{Places}f'
+   caption = glControls.new('VectorText', {
+      x = 16, y = glY + 14,
+      fontStyle = gui.fontStyle(table.merge(gui.getTheme(glControls).window.text, { size = '10pt' })),
+      string = string.format(caption_format, Label, glParams[Name])
+   })
+
+   slider = gui.slider({
+      target = glControls, x = 16, y = glY + 20, width = CONTROL_WIDTH, step = Step,
+      min = Min, max = Max, value = glParams[Name],
+      events = {
+         activate = function(Position:num)
+            glParams[Name] = Position
+            caption.string = string.format(caption_format, Label, Position)
+            scheduleRender()
+         end
+      }
+   })
+   glWidgets.push(slider)
+   glSliders[Name] = slider
+   glY += 52
+end
+
+function addCombobox(Label:str, Text:str, Items:array<table>, Activate:func)
+   glWidgets.push(gui.combobox({
+      target = glControls, label = Label, text = Text, x = 16, y = glY,
+      width = CONTROL_WIDTH, labelWidth = 100, items = Items,
+      events = { activate = Activate }
+   }))
+   glY += ROW_HEIGHT
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- The controls are placed on a page in a clipped view, which scrolls vertically when the window is too short to show
+-- all of them.  The scrollbar is hidden while the page fits.
+
+function buildControls()
+   host = glViewport.new('VectorViewport', { x = 0, y = 0, width = PREVIEW_X - 8, yOffset = 0 })
+   view = host.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN })
+   glControls = view.new('VectorViewport', { x = 0, y = 0, width = PREVIEW_X - 8, height = 1 })
+
+   glY = glWindow.margins.top
+
+   addCombobox('Lighting:', glParams.lighting,
+      array<table> { { label = 'diffuse' }, { label = 'specular' }, { label = 'combined' } },
+      function(Item:table!)
+         glParams.lighting = Item.label
+         updateLightingSliders()
+         scheduleRender()
+      end)
+
+   addCombobox('Light source:', glParams.source,
+      array<table> { { label = 'distant' }, { label = 'point' }, { label = 'spot' } },
+      function(Item:table!)
+         glParams.source = Item.label
+         updateLightSliders()
+         updateMarker()
+         scheduleRender()
+      end)
+
+   colour_items = array<table>
+   for _, colour in COLOURS do colour_items.push({ label = colour.label }) end
+
+   addCombobox('Light colour:', COLOURS[0].label, colour_items, function(Item:table!)
+      for _, colour in COLOURS do
+         if colour.label is Item.label then glParams.colour = colour.value end
+      end
+      scheduleRender()
+   end)
+
+   ambient_items = array<table>
+   for _, ambient in AMBIENTS do ambient_items.push({ label = ambient.label }) end
+
+   addCombobox('Ambient light:', AMBIENTS[0].label, ambient_items, function(Item:table!)
+      for _, ambient in AMBIENTS do
+         if ambient.label is Item.label then glParams.ambient = ambient.value end
+      end
+      scheduleRender()
+   end)
+
+   glY += 4
+
+   addSlider('scale', 'Surface scale', 0.5, 40, nil, 1)
+   addSlider('constant', 'Lighting constant', 0.1, 10, nil, 2)
+   addSlider('specularConstant', 'Specular constant', 0.05, 4, nil, 2)
+   addSlider('exponent', 'Specular exponent', 1, 128, 1, 0)
+   addSlider('intensity', 'Light intensity', 0.05, 4, nil, 2)
+   addSlider('azimuth', 'Azimuth', 0, 360, 1, 0)
+   addSlider('elevation', 'Elevation', 1, 90, 1, 0)
+   addSlider('lightZ', 'Light height (z)', 1, 600, 1, 0)
+   addSlider('cone', 'Spot cone angle', 1, 90, 1, 0)
+
+   -- The features are arranged in two columns.
+
+   glControls.new('VectorText', {
+      x = 16, y = glY + 14, string = 'Enhanced lighting features',
+      fontStyle = gui.fontStyle(table.merge(gui.getTheme(glControls).window.text, { size = '10pt', style = 'Bold' }))
+   })
+   glY += 24
+
+   for i, feature in FEATURES do
+      local toggle
+      toggle = gui.toggle({
+         target = glControls, label = feature.label, value = true,
+         x = 16 + ((i % 2) * (CONTROL_WIDTH * 0.5)), y = glY + (math.floor(i / 2) * 30),
+         events = {
+            activate = function()
+               if toggle.value then
+                  glFeatures = glFeatures | feature.flag
+               else
+                  glFeatures = glFeatures & ~feature.flag
+               end
+               scheduleRender()
+            end
+         }
+      })
+      glWidgets.push(toggle)
+   end
+   glY += (math.floor((#FEATURES + 1) / 2) * 30) + 8
+
+   addSlider('cavity', 'Cavity strength', 0.01, 1, nil, 2)
+   addSlider('detail', 'Detail strength', 1, 4, nil, 2)
+   addSlider('penumbra', 'Shadow penumbra (degrees)', 0.1, 15, nil, 1)
+
+   updateLightingSliders()
+   updateLightSliders()
+
+   glControls.height = glY + glWindow.margins.bottom
+   glWidgets.push(gui.scrollbar({ target = host, view = view, page = glControls, direction = 'vertical' }))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The preview occupies the top right of the window, with the surface presets and the editor beneath it.
+
+function buildPreview()
+   margin = glWindow.margins.right
+   editor_bottom = glWindow.margins.bottom
+   row_bottom = editor_bottom + EDITOR_HEIGHT + 8
+
+   glPreview = glViewport.new('VectorViewport', {
+      x = PREVIEW_X, y = glWindow.margins.top, xOffset = margin, yOffset = row_bottom + ROW_HEIGHT + 8,
+      overflow = 'hidden'
+   })
+
+   -- Specular lighting produces a translucent result, which is shown against black.  The resize event of the
+   -- background reports the size of the preview.
+
+   glPreview.new('VectorRectangle', {
+      width = '100%', height = '100%', fill = '#000000',
+      resizeEvent = function(Viewport, Vector, X:num, Y:num, Width:num, Height:num)
+         if Width is glPreviewWidth and Height is glPreviewHeight then return end
+         glPreviewWidth  = Width
+         glPreviewHeight = Height
+         updateMarker()
+         if glParams.source != 'distant' then scheduleRender() end
+      end
+   })
+
+   glSurfaceHost = glPreview.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0 })
+
+   glMarker = glPreview.new('VectorEllipse', {
+      cx = 0, cy = 0, radius = 7, fill = 'rgb(255 204 0 / .35)', stroke = '#ffcc00', strokeWidth = 2,
+      visibility = VIS_HIDDEN
+   })
+
+   glPreview.new('VectorRectangle', {
+      width = '100%', height = '100%', fill = 'none', stroke = 'rgb(128 128 128 / .5)', strokeWidth = 1
+   })
+
+   -- Point and spot lights follow the pointer while the left button is held.
+
+   held = false
+   glPreview.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function(Viewport:obj, Events:any)
+      ev = Events
+      while ev do
+         if ev.type is JET_LMB then
+            held = ev.value is 1
+         end
+
+         if held and glParams.source != 'distant' and glPreviewWidth > 0 and glPreviewHeight > 0 and
+            (ev.type is JET_LMB or ev.type is JET_ABS_XY) then
+            glParams.lightX = math.clamp(ev.x / glPreviewWidth, 0, 1)
+            glParams.lightY = math.clamp(ev.y / glPreviewHeight, 0, 1)
+            updateMarker()
+            scheduleRender()
+         end
+         ev = ev.next
+      end
+   end)
+
+   -- Surface presets and status
+
+   preset_items = array<table>
+   for _, preset in PRESETS do preset_items.push({ label = preset.label }) end
+
+   glWidgets.push(gui.combobox({
+      target = glViewport, label = 'Surface:', text = PRESETS[0].label,
+      x = PREVIEW_X, yOffset = row_bottom, width = CONTROL_WIDTH, labelWidth = 64, items = preset_items,
+      events = {
+         activate = function(Item:table!)
+            for _, preset in PRESETS do
+               if preset.label is Item.label then glEditor.string = preset.source end
+            end
+            scheduleRender()
+         end
+      }
+   }))
+
+   -- The albedo applies to the combined mode.
+
+   albedo_items = array<table>
+   for _, albedo in ALBEDOS do albedo_items.push({ label = albedo.label }) end
+
+   glWidgets.push(gui.combobox({
+      target = glViewport, label = 'Albedo:', text = ALBEDOS[0].label,
+      x = PREVIEW_X + CONTROL_WIDTH + 16, yOffset = row_bottom, width = ALBEDO_WIDTH, labelWidth = 64,
+      items = albedo_items,
+      events = {
+         activate = function(Item:table!)
+            for i, albedo in ALBEDOS do
+               if albedo.label is Item.label then glParams.albedo = i end
+            end
+            scheduleRender()
+         end
+      }
+   }))
+
+   status_vp = glViewport.new('VectorViewport', {
+      x = PREVIEW_X + CONTROL_WIDTH + ALBEDO_WIDTH + 32, xOffset = margin, yOffset = row_bottom, height = ROW_HEIGHT
+   })
+
+   glStatus = status_vp.new('VectorText', {
+      x = 0, y = 20, string = '',
+      fontStyle = gui.fontStyle(table.merge(gui.getTheme(glViewport).window.text, { size = '10pt' }))
+   })
+
+   -- Editor for the surface declaration.  Colours are taken from the window's palette.
+
+   editor_frame = glViewport.new('VectorViewport', {
+      x = PREVIEW_X, xOffset = margin, yOffset = editor_bottom, height = EDITOR_HEIGHT
+   })
+
+   editor_vp = editor_frame.new('VectorViewport', { x = 1, y = 1, xOffset = 1, yOffset = 1 })
+
+   pal = glWindow.theme.palette
+   glThemeXML = obj.new('XML', { statement=f'<theme><palette background="{pal.bkgd}" text="{pal.text}" ' ..
+      f'operator="{pal.text}" keyword="{pal.prime}" comment="{pal.handle}" string="{pal.success}" ' ..
+      f'type="{pal.contrast}" error="{pal.error}" margin="{pal.handle}" marginBackground="{pal.surround}" ' ..
+      f'cursor="{pal.text}" selectionBackground="{pal.prime}" selectionForeground="{pal.altText}"/></theme>' })
+
+   glEditor = editor_vp.new('Scintilla', {
+      flags          = SCIF_EDIT,
+      lexer          = SCLEX_XML,
+      fontStyle      = f'face=Source Code Pro; size={math.round(13 * gui.interface.dpi / 96)}px',
+      lineNumbers    = true,
+      themeXML       = glThemeXML
+   })
+
+   -- The string is assigned after initialisation, and the change callback after the string so that the initial text
+   -- is not reported as an edit.
+
+   glEditor.string = PRESETS[0].source
+   glEditor.changeCallback = function(Editor, Change)
+      editorChanged()
+   end
+
+   editor_frame.new('VectorRectangle', {
+      width = '100%', height = '100%', fill = 'none', stroke = 'rgb(128 128 128 / .5)', strokeWidth = 1
+   })
+
+   glWidgets.push(gui.scrollbar({ target = editor_vp, view = glEditor.view, page = glEditor.page }))
+
+   -- The Tab key is delivered to the editor rather than moving the focus between widgets.
+
+   glViewport.scene.flags = glViewport.scene.flags | VPF_IGNORE_TAB
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glWindow = gui.window({
+      title = 'Lighting Workbench', insideWidth = 1200, insideHeight = 910, minWidth = 1000, minHeight = 600
+   })
+   glViewport = glWindow.clientViewport({ })
+
+   buildControls()
+   buildPreview()
+   render()
+   glWindow.show()
+   processing.sleep()

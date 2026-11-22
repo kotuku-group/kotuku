@@ -5,8 +5,8 @@ VectorPath: Extends the Vector class with support for generating custom paths.
 
 VectorPath provides support for parsing SVG styled path strings.
 
-The generated path can be placed with the #X and #Y fields and sized with the #Width and #Height fields.  These are
-applied as a post-transform, so the authored path commands are never modified.
+The generated path can be placed with the #X, #Y, #XOffset and #YOffset fields and sized with the #Width and #Height
+fields.  These are applied as a post-transform, so the authored path commands are never modified.
 
 -END-
 
@@ -104,8 +104,8 @@ static TClipRectangle<double> get_authored_path_bounds(const agg::path_storage &
 
 //********************************************************************************************************************
 // Refreshes the cached AGG conversion of the command list if it has been invalidated.  Placement-only changes
-// (e.g. the X/Y/Width/Height fields, Move and Resize actions) leave the cache intact because generate_path() applies
-// sizing and placement as a post-transform.
+// (e.g. the X/Y/XOffset/YOffset/Width/Height fields, Move and Resize actions) leave the cache intact because
+// generate_path() applies sizing and placement as a post-transform.
 
 static void refresh_unplaced_path(extVectorPath *Vector)
 {
@@ -143,6 +143,72 @@ static void refresh_unplaced_path(extVectorPath *Vector)
 
 static constexpr double MIN_SCALABLE_EXTENT = 1.0e-6;
 
+inline double path_fixed_width(extVectorPath *Vector, const Unit &Value) {
+   return Value.scaled() ? double(Value) * get_parent_width(Vector) : double(Value);
+}
+
+inline double path_fixed_height(extVectorPath *Vector, const Unit &Value) {
+   return Value.scaled() ? double(Value) * get_parent_height(Vector) : double(Value);
+}
+
+// Resolved placement of one axis: the path is scaled by Scale about its natural near edge, which is then placed at
+// Position.  Size is the resulting (signed) extent of the path on that axis.
+
+struct PathAxis {
+   double scale, position, size;
+};
+
+// Resolves one axis following the VectorRectangle conventions for X/Width/XOffset.  The natural extent of the path
+// stands in for an undefined Width, so an XOffset on its own anchors the far edge without resizing the path.  If both
+// X and XOffset are defined and Width is not, the path is stretched to fill the space between them.
+
+static PathAxis resolve_path_axis(extVectorPath *Vector, double Near, double Far, const Unit &Pos,
+   const Unit &Offset, const Unit &Size, bool Horizontal)
+{
+   auto fixed = [Vector, Horizontal](const Unit &Value) {
+      return Horizontal ? path_fixed_width(Vector, Value) : path_fixed_height(Vector, Value);
+   };
+
+   auto parent_size = [Vector, Horizontal]() {
+      return Horizontal ? get_parent_width(Vector) : get_parent_height(Vector);
+   };
+
+   const double extent = Far - Near;
+   double target = extent;
+   if (Size.defined()) target = fixed(Size);
+   else if (Pos.defined() and Offset.defined()) target = parent_size() - fixed(Offset) - fixed(Pos);
+
+   const double scale = (extent >= MIN_SCALABLE_EXTENT) ? target / extent : 1.0;
+   const double size = extent * scale;
+
+   double position;
+   if (Pos.defined()) position = fixed(Pos);
+   else if (Offset.defined()) position = parent_size() - std::max(0.0, size) - fixed(Offset);
+   else position = Near;
+
+   return { scale, position, size };
+}
+
+static PathAxis resolve_path_x(extVectorPath *Vector, const TClipRectangle<double> &Bounds)
+{
+   return resolve_path_axis(Vector, Bounds.left, Bounds.right, Vector->pX, Vector->pXOffset, Vector->pWidth, true);
+}
+
+static PathAxis resolve_path_y(extVectorPath *Vector, const TClipRectangle<double> &Bounds)
+{
+   return resolve_path_axis(Vector, Bounds.top, Bounds.bottom, Vector->pY, Vector->pYOffset, Vector->pHeight, false);
+}
+
+// Field getters can be called before a draw has refreshed the parent viewport, so its dimensions are brought up to date
+// before resolving any placement that depends on them.  Not for use within generate_path().
+
+static void sync_parent_view(extVectorPath *Vector)
+{
+   if (Vector->ParentView) gen_vector_tree(Vector->ParentView);
+}
+
+//********************************************************************************************************************
+
 static void generate_path(extVectorPath *Vector, agg::path_storage &Path)
 {
    refresh_unplaced_path(Vector);
@@ -154,31 +220,10 @@ static void generate_path(extVectorPath *Vector, agg::path_storage &Path)
    // Width and Height scale the path about its left/top bound, then X and Y place that bound.  Both are combined
    // into a single transform: x' = (x - left) * sx + dest_left
 
-   double sx = 1.0, sy = 1.0;
-   if (Vector->pWidth.defined()) {
-      const double extent = bounds.right - bounds.left;
-      if (extent >= MIN_SCALABLE_EXTENT) {
-         double target = Vector->pWidth;
-         if (Vector->pWidth.scaled()) target *= get_parent_width(Vector);
-         sx = target / extent;
-      }
-   }
-
-   if (Vector->pHeight.defined()) {
-      const double extent = bounds.bottom - bounds.top;
-      if (extent >= MIN_SCALABLE_EXTENT) {
-         double target = Vector->pHeight;
-         if (Vector->pHeight.scaled()) target *= get_parent_height(Vector);
-         sy = target / extent;
-      }
-   }
-
-   double dest_left = bounds.left, dest_top = bounds.top;
-   if (Vector->pX.scaled()) dest_left = Vector->pX * get_parent_width(Vector);
-   else if (Vector->pX.defined()) dest_left = Vector->pX;
-
-   if (Vector->pY.scaled()) dest_top = Vector->pY * get_parent_height(Vector);
-   else if (Vector->pY.defined()) dest_top = Vector->pY;
+   const auto axis_x = resolve_path_x(Vector, bounds);
+   const auto axis_y = resolve_path_y(Vector, bounds);
+   const double sx = axis_x.scale, sy = axis_y.scale;
+   const double dest_left = axis_x.position, dest_top = axis_y.position;
 
    if ((sx IS 1.0) and (sy IS 1.0) and (dest_left IS bounds.left) and (dest_top IS bounds.top)) return;
 
@@ -472,16 +517,22 @@ static ERR VECTORPATH_Move(extVectorPath *Self, struct acMove *Args)
 {
    if (not Args) return ERR::NullArgs;
 
+   if (Self->pX.scaled() or Self->pY.scaled() or Self->pXOffset.scaled() or Self->pYOffset.scaled()) {
+      sync_parent_view(Self);
+   }
    auto bounds = get_unplaced_path_bounds(Self);
 
-   if (Self->pX.scaled()) Self->pX.set(Self->pX * get_parent_width(Self));
-   else if (not Self->pX.defined()) Self->pX = bounds.left;
+   // Each defined placement edge is shifted, so that right/bottom anchored and stretched paths keep their size.
+   // Placement is fixed by the X/Y bounds if neither edge is defined.
 
-   if (Self->pY.scaled()) Self->pY.set(Self->pY * get_parent_height(Self));
-   else if (not Self->pY.defined()) Self->pY = bounds.top;
+   if ((not Self->pX.defined()) and (not Self->pXOffset.defined())) Self->pX = bounds.left;
+   if (Self->pX.defined()) Self->pX = Unit(path_fixed_width(Self, Self->pX) + Args->DeltaX);
+   if (Self->pXOffset.defined()) Self->pXOffset = Unit(path_fixed_width(Self, Self->pXOffset) - Args->DeltaX);
 
-   Self->pX = Unit(Self->pX + Args->DeltaX);
-   Self->pY = Unit(Self->pY + Args->DeltaY);
+   if ((not Self->pY.defined()) and (not Self->pYOffset.defined())) Self->pY = bounds.top;
+   if (Self->pY.defined()) Self->pY = Unit(path_fixed_height(Self, Self->pY) + Args->DeltaY);
+   if (Self->pYOffset.defined()) Self->pYOffset = Unit(path_fixed_height(Self, Self->pYOffset) - Args->DeltaY);
+
    reset_path(Self);
    return ERR::Okay;
 }
@@ -809,10 +860,12 @@ left of X.
 
 static ERR VECTORPATH_GET_X(extVectorPath *Self, Unit &Value)
 {
-   // With no X placement there is no horizontal translation, so the unplaced bounds are authoritative.  They are
-   // computed on demand because Self->Bounds is only refreshed during path generation.
+   // The placement is resolved on demand because Self->Bounds is only refreshed during path generation.
    if (Self->pX.defined()) Value = Self->pX;
-   else Value = Unit(get_unplaced_path_bounds(Self).left);
+   else {
+      sync_parent_view(Self);
+      Value = Unit(resolve_path_x(Self, get_unplaced_path_bounds(Self)).position);
+   }
    return ERR::Okay;
 }
 
@@ -838,7 +891,10 @@ Y.
 static ERR VECTORPATH_GET_Y(extVectorPath *Self, Unit &Value)
 {
    if (Self->pY.defined()) Value = Self->pY;
-   else Value = Unit(get_unplaced_path_bounds(Self).top);
+   else {
+      sync_parent_view(Self);
+      Value = Unit(resolve_path_y(Self, get_unplaced_path_bounds(Self)).position);
+   }
    return ERR::Okay;
 }
 
@@ -851,11 +907,95 @@ static ERR VECTORPATH_SET_Y(extVectorPath *Self, Unit &Value)
 
 /*********************************************************************************************************************
 -FIELD-
+XOffset: The right-side of the path, expressed as a fixed or scaled offset value.
+
+XOffset places the path relative to the right edge of the parent viewport.  The value is measured inward from that
+edge, so an XOffset of zero aligns the right-most boundary of the path with the right edge of the parent.  Scaled
+values are relative to the width of the parent viewport.  The path commands remain unchanged.
+
+XOffset follows the @VectorRectangle conventions and is combined with #X and #Width as follows:
+
+<list type="bullet">
+<li>If only XOffset is defined, the path keeps its width and its right edge is anchored to the offset.</li>
+<li>If #Width and XOffset are defined, the path is sized by #Width and its right edge is anchored to the offset.</li>
+<li>If #X and XOffset are defined, the path is stretched to fill the space between them.</li>
+<li>If #X and #Width are both defined, XOffset is ignored.</li>
+</list>
+
+When XOffset is set, reading it returns the stored value.  Otherwise it returns the distance between the right edge of
+the placed path and the right edge of the parent viewport.  To remove the offset, set an undefined value (NaN).
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORPATH_GET_XOffset(extVectorPath *Self, Unit &Value)
+{
+   if (Self->pXOffset.defined()) {
+      Value = Self->pXOffset;
+      return ERR::Okay;
+   }
+
+   sync_parent_view(Self);
+   const auto axis = resolve_path_x(Self, get_unplaced_path_bounds(Self));
+   const double parent_size = get_parent_width(Self);
+   const double value = parent_size - (axis.position + std::max(0.0, axis.size));
+
+   if ((Value.scaled()) and (parent_size != 0)) Value = Unit(value / parent_size, FD_SCALED);
+   else Value = Unit(value);
+   return ERR::Okay;
+}
+
+static ERR VECTORPATH_SET_XOffset(extVectorPath *Self, Unit &Value)
+{
+   Self->pXOffset = Value;
+   reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+YOffset: The bottom of the path, expressed as a fixed or scaled offset value.
+
+YOffset places the path relative to the bottom edge of the parent viewport.  The value is measured inward from that
+edge, so a YOffset of zero aligns the bottom-most boundary of the path with the bottom edge of the parent.  Scaled
+values are relative to the height of the parent viewport.
+
+YOffset behaves in the same way as #XOffset on the vertical axis, in combination with #Y and #Height.  Refer to
+#XOffset for further details.
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORPATH_GET_YOffset(extVectorPath *Self, Unit &Value)
+{
+   if (Self->pYOffset.defined()) {
+      Value = Self->pYOffset;
+      return ERR::Okay;
+   }
+
+   sync_parent_view(Self);
+   const auto axis = resolve_path_y(Self, get_unplaced_path_bounds(Self));
+   const double parent_size = get_parent_height(Self);
+   const double value = parent_size - (axis.position + std::max(0.0, axis.size));
+
+   if ((Value.scaled()) and (parent_size != 0)) Value = Unit(value / parent_size, FD_SCALED);
+   else Value = Unit(value);
+   return ERR::Okay;
+}
+
+static ERR VECTORPATH_SET_YOffset(extVectorPath *Self, Unit &Value)
+{
+   Self->pYOffset = Value;
+   reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
 Width: Scales the path to a fixed or scaled width.
 
 Setting Width scales the computed path on the horizontal axis so that its bounding box matches the supplied width.
 Scaled values are relative to the width of the parent viewport.  The path is scaled about its left edge, after which
-#X placement is applied.  If Width is not set, the path keeps its natural width.
+#X placement is applied.  If Width is not set, the path keeps its natural width unless it is stretched between #X and
+#XOffset.
 
 Width and #Height are independent: if only one is set, the other axis keeps its natural size and the aspect ratio
 is not preserved.  A width of zero collapses the path to a vertical line.  Negative values are permitted and will
@@ -871,7 +1011,7 @@ the Width is applied.
 The path commands remain unchanged, so reading #Commands or calling #GetCommand() returns the authored path.  The
 #Sequence field returns the scaled geometry.
 
-When Width is not set, reading it returns the natural width of the path.  To return the path to its natural width,
+When Width is not set, reading it returns the resolved width of the path.  To return the path to its natural width,
 set an undefined value (NaN).
 -END-
 *********************************************************************************************************************/
@@ -880,8 +1020,8 @@ static ERR VECTORPATH_GET_Width(extVectorPath *Self, Unit &Value)
 {
    if (Self->pWidth.defined()) Value = Self->pWidth;
    else {
-      auto bounds = get_unplaced_path_bounds(Self);
-      Value = Unit(bounds.right - bounds.left);
+      sync_parent_view(Self);
+      Value = Unit(resolve_path_x(Self, get_unplaced_path_bounds(Self)).size);
    }
    return ERR::Okay;
 }
@@ -910,8 +1050,8 @@ static ERR VECTORPATH_GET_Height(extVectorPath *Self, Unit &Value)
 {
    if (Self->pHeight.defined()) Value = Self->pHeight;
    else {
-      auto bounds = get_unplaced_path_bounds(Self);
-      Value = Unit(bounds.bottom - bounds.top);
+      sync_parent_view(Self);
+      Value = Unit(resolve_path_y(Self, get_unplaced_path_bounds(Self)).size);
    }
    return ERR::Okay;
 }
@@ -1018,6 +1158,8 @@ static const FieldArray clPathFields[] = {
    { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
    { "X",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_X, VECTORPATH_SET_X },
    { "Y",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Y, VECTORPATH_SET_Y },
+   { "XOffset",       FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW, VECTORPATH_GET_XOffset, VECTORPATH_SET_XOffset },
+   { "YOffset",       FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW, VECTORPATH_GET_YOffset, VECTORPATH_SET_YOffset },
    { "Width",         FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Width, VECTORPATH_SET_Width },
    { "Height",        FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Height, VECTORPATH_SET_Height },
    { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },

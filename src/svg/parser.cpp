@@ -1786,6 +1786,57 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
 }
 
 //********************************************************************************************************************
+// Reads the space-separated feature names of a kotuku:features attribute.  Unknown names are skipped with a warning.
+
+static LFX read_lighting_features(std::string_view Value) noexcept
+{
+   kt::Log log(__FUNCTION__);
+
+   static const std::pair<std::string_view, LFX> names[] = {
+      { "all", LFX::ALL }, { "none", LFX::NIL }, { "dequantise", LFX::DEQUANTISE }, { "sharpen", LFX::SHARPEN },
+      { "cavity", LFX::CAVITY }, { "detail", LFX::DETAIL }, { "shadows", LFX::SHADOWS },
+      { "specular-aa", LFX::SPECULAR_AA }
+   };
+
+   auto result = LFX::NIL;
+   size_t pos = 0;
+   while (pos < Value.size()) {
+      while ((pos < Value.size()) and (Value[pos] <= 0x20)) pos++;
+      auto end = pos;
+      while ((end < Value.size()) and (Value[end] > 0x20)) end++;
+      if (end IS pos) break;
+
+      const auto word = Value.substr(pos, end - pos);
+      bool known = false;
+      for (auto &[name, flags] : names) {
+         if (iequals(name, word)) {
+            result |= flags;
+            known = true;
+            break;
+         }
+      }
+      if (not known) log.warning("Unknown lighting feature '%.*s'", int(word.size()), word.data());
+      pos = end;
+   }
+   return result;
+}
+
+// Returns the local name of an attribute in a Kōtuku namespace, or an empty view if the attribute is not in one.
+
+static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string_view Name) noexcept
+{
+   const auto colon = Name.find(':');
+   if ((colon IS std::string_view::npos) or (colon IS 0)) return { };
+
+   uint32_t uri;
+   if (Self->XML->resolvePrefix(Name.substr(0, colon), Tag.ID, &uri) != ERR::Okay) return { };
+   if ((uri != glKotukuSVGNamespace) and (uri != glKotukuNamespace)) return { };
+   return Name.substr(colon + 1);
+}
+
+// Parses feDiffuseLighting, feSpecularLighting and kotuku:feLighting, which is the COMBINED type.  Extension attributes
+// carry the kotuku: prefix on the standard elements.  On kotuku:feLighting they are also accepted without it, as the
+// element is already in the Kōtuku namespace, and its in2 attribute selects the albedo.
 
 ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noexcept
 {
@@ -1796,6 +1847,25 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
    SetOwner(fx, Filter);
 
    fx->setType(Type);
+   const bool combined = Type IS LT::COMBINED;
+
+   // Reads a colour, which may be currentColor.  Returns false if the value is not a colour.
+
+   auto read_light_colour = [this](std::string_view Value, FRGB &Colour) -> bool {
+      if (iequals("currentColor", Value)) return current_colour(Self->Scene->Viewport, Colour);
+
+      VectorPainter painter;
+      if (vec::ReadPainter(nullptr, Value, &painter, nullptr) != ERR::Okay) return false;
+      Colour = painter.Colour;
+      return true;
+   };
+
+   auto set_light_number = [&](CSTRING Name, std::string_view Value, auto Setter) {
+      auto number = kt::font_traits::parse_number(Value);
+      if ((not number) or ((fx->*Setter)(*number) != ERR::Okay)) {
+         log.warning("Invalid %s value for '%s': '%.*s'", Tag.name(), Name, int(Value.size()), Value.data());
+      }
+   };
 
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -1805,12 +1875,8 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       switch(strhash(Tag.Attribs[a].Name)) {
          case SVF_lighting_colour:
          case SVF_lighting_color: {
-            VectorPainter painter;
-            if (iequals("currentColor", val)) {
-               FRGB rgb;
-               if (current_colour(Self->Scene->Viewport, rgb)) fx->setColour(rgb);
-            }
-            else if (!vec::ReadPainter(nullptr, val, &painter, nullptr)) fx->setColour(painter.Colour);
+            FRGB rgb;
+            if (read_light_colour(val, rgb)) fx->setColour(rgb);
             break;
          }
 
@@ -1824,6 +1890,10 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
          }
 
          case SVF_specularConstant:
+            if (combined) set_light_number("specularConstant", val, &objLightingFX::setSpecularConstant);
+            else fx->setConstant(svtonum<double>(val));
+            break;
+
          case SVF_diffuseConstant:  fx->setConstant(svtonum<double>(val)); break;
          case SVF_surfaceScale:     fx->setScale(svtonum<double>(val)); break;
          case SVF_specularExponent: fx->setExponent(svtonum<double>(val)); break;
@@ -1834,7 +1904,24 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
          case SVF_in:     parse_input_source(Self, fx, val); break;
          case SVF_result: result_name = val; break;
-         default:         log.warning("Unknown %s attribute %s", Tag.name(), Tag.Attribs[a].Name.c_str());
+
+         default: { // Kōtuku extensions
+            const std::string_view name = Tag.Attribs[a].Name;
+            const bool bare = (combined) and (name.find(':') IS std::string_view::npos);
+            const auto local = bare ? name : kotuku_attrib(Self, Tag, name);
+            if ((name IS "in2") and (combined)) parse_input_mix(Self, fx, val);
+            else if (local IS "features") fx->setFeatures(read_lighting_features(val));
+            else if (local IS "cavity") set_light_number("cavity", val, &objLightingFX::setCavity);
+            else if (local IS "detail") set_light_number("detail", val, &objLightingFX::setDetail);
+            else if (local IS "penumbra") set_light_number("penumbra", val, &objLightingFX::setPenumbra);
+            else if (local IS "ambient") {
+               FRGB rgb;
+               if (iequals("none", val)) fx->setAmbient(FRGB { 0, 0, 0, 0 });
+               else if (read_light_colour(val, rgb)) fx->setAmbient(rgb);
+               else log.warning("Invalid ambient colour '%s'", val.c_str());
+            }
+            else log.warning("Unknown %s attribute %s", Tag.name(), Tag.Attribs[a].Name.c_str());
+         }
       }
    }
 
@@ -1896,6 +1983,12 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       if (error != ERR::Okay) {
          FreeResource(fx);
          return error;
+      }
+
+      for (int a=1; a < std::ssize(child.Attribs); a++) { // Light extensions
+         if (kotuku_attrib(Self, child, child.Attribs[a].Name) IS "intensity") {
+            set_light_number("intensity", child.Attribs[a].Value, &objLightingFX::setIntensity);
+         }
       }
    }
 
@@ -2650,6 +2743,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
                case SVF_feComponentTransfer: parse_fe_component_xfer(filter, child); break;
                case SVF_feDiffuseLighting:   parse_fe_lighting(filter, child, LT::DIFFUSE); break;
                case SVF_feSpecularLighting:  parse_fe_lighting(filter, child, LT::SPECULAR); break;
+               case SVF_kotuku_feLighting:   parse_fe_lighting(filter, child, LT::COMBINED); break;
                case SVF_feDisplacementMap:   parse_fe_displacement_map(filter, child); break;
                case SVF_feWaveFunction:      parse_fe_wavefunction(filter, child); break;
                case SVF_feTile:

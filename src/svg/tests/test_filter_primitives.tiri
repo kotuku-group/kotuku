@@ -569,3 +569,248 @@ end
    assert((moved.red is 255) and (moved.alpha is 255), 'The map moves the image into its own subregion')
    assert(mGfx.ReadRGBPixel(bmp, 11, 20).alpha is 0, 'Displacement output stays inside the input union')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Kotuku lighting attributes.  Each is read through a prefix bound to a Kotuku namespace, so the prefix name is free.
+
+KOTUKU_NS <const> = 'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"'
+
+-- A shallow ground with a raised block, which casts a shadow, and a low ridge with shallow creases.
+
+LIGHTING_CONTENT <const> = '<g filter="url(#f)"><rect width="64" height="64" fill-opacity="0.2"/>' ..
+   '<rect x="36" y="16" width="16" height="16"/><rect x="10" y="40" width="2" height="16" fill-opacity="0.3"/></g>'
+
+function lightingFX(SVG:obj!):obj
+   local _, filter = check SVG.scene.mtFindDef('f')
+   return obj.find(filter.children('LightingFX')[0])
+end
+
+function lightingDocument(Attribs:str, Light:str, Declarations:str):obj
+   return document('<feDiffuseLighting in="SourceAlpha" surfaceScale="20" diffuseConstant="1" ' ..
+      f'{Attribs ?? ""}>{Light ?? "<feDistantLight azimuth=\"0\" elevation=\"30\"/>"}</feDiffuseLighting>',
+      LIGHTING_CONTENT, 64, Declarations ?? KOTUKU_NS)
+end
+
+@Test function LightingFeaturesAttributeSelectsFeatures()
+   for _, case in array<table> {
+      { value='shadows cavity', expected=LFX_SHADOWS | LFX_CAVITY },
+      { value='  Detail\tSHARPEN  ', expected=LFX_DETAIL | LFX_SHARPEN },
+      { value='dequantise specular-aa', expected=LFX_DEQUANTISE | LFX_SPECULAR_AA },
+      { value='none', expected=0 },
+      { value='all', expected=LFX_ALL },
+      { value='shadows sky-occlusion bogus', expected=LFX_SHADOWS } -- Unknown names are skipped
+   } do
+      local svg <close> = lightingDocument(f'kotuku:features="{case.value}"')
+      local fx = lightingFX(svg)
+      assert(fx.features is case.expected, f'"{case.value}" must select {case.expected}, got {fx.features}')
+   end
+
+   local svg <close> = lightingDocument('k:features="none"', nil, 'xmlns:k="http://www.kotuku.dev/namespaces/kotuku"')
+   assert(lightingFX(svg).features is 0, 'Any prefix bound to a Kotuku namespace must be accepted')
+
+   local foreign <close> = lightingDocument('kotuku:features="none"', nil, 'xmlns:kotuku="urn:foreign"')
+   assert(lightingFX(foreign).features is LFX_ALL, 'A foreign namespace must not set Features')
+end
+
+@Test function LightingStrengthAttributesSetFields()
+   local svg <close> = lightingDocument('kotuku:cavity="0.6" kotuku:detail="2.5" kotuku:penumbra="6"')
+   local fx = lightingFX(svg)
+   assert((fx.cavity is 0.6) and (fx.detail is 2.5) and (fx.penumbra is 6),
+      f'Strengths must be read (got {fx.cavity}, {fx.detail}, {fx.penumbra})')
+
+   local invalid <close> = lightingDocument('kotuku:cavity="-1" kotuku:detail="0.5" kotuku:penumbra="-2"')
+   fx = lightingFX(invalid)
+   assert((fx.cavity is 0.25) and (fx.detail is 1.5) and (fx.penumbra is 2),
+      f'Invalid strengths must leave the defaults (got {fx.cavity}, {fx.detail}, {fx.penumbra})')
+
+   local malformed <close> = lightingDocument('kotuku:cavity="bad" kotuku:detail="3x" kotuku:penumbra="0px"',
+      '<feDistantLight elevation="30" kotuku:intensity="bad"/>')
+   fx = lightingFX(malformed)
+   assert((fx.cavity is 0.25) and (fx.detail is 1.5) and (fx.penumbra is 2) and (fx.intensity is 1),
+      'Malformed numbers and trailing text must leave the defaults')
+end
+
+-- Largest channel difference between two 64 x 64 renders.
+
+function imageDifference(A:obj!, B:obj!):num
+   local result = 0
+   for y in {0 to 64} do
+      for x in {0 to 64} do
+         local p = mGfx.ReadRGBPixel(A, x, y)
+         local r, g, b, a = p.red, p.green, p.blue, p.alpha
+         local q = mGfx.ReadRGBPixel(B, x, y)
+         result = math.max(result, math.abs(r - q.red), math.abs(g - q.green), math.abs(b - q.blue),
+            math.abs(a - q.alpha))
+      end
+   end
+   return result
+end
+
+-- A document that sets the attributes renders as the same filter configured through the API in a NONE scene.
+
+@Test function LightingAttributesMatchTheAPI()
+   local attribs = 'kotuku:features="shadows cavity detail" kotuku:cavity="0.6" kotuku:detail="2" kotuku:penumbra="6"'
+   local svg <close> = lightingDocument(attribs)
+   assert(svg.scene.compliance is VSC_NONE, 'The Kotuku namespace must drop compliance')
+   local doc <close> = draw(svg, 64)
+
+   local plain <close> = lightingDocument()
+   local fx = lightingFX(plain)
+   fx.{ features=LFX_SHADOWS | LFX_CAVITY | LFX_DETAIL, cavity=0.6, detail=2, penumbra=6 }
+   local api <close> = draw(plain, 64)
+   local diff = imageDifference(doc, api)
+   assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
+
+   local defaults <close> = draw(lightingDocument(), 64)
+   assert(imageDifference(doc, defaults) > 0, 'The attributes must change the default render')
+end
+
+-- XMLDef writes the standard element with Kotuku attributes for non-default settings only, and re-parses to an
+-- identical render.
+
+@Test function LightingXMLDefRoundTrips()
+   for _, case in array<table> {
+      { attribs='', light=nil },
+      { attribs='kotuku:features="shadows detail" kotuku:cavity="0.5" kotuku:penumbra="0"', light=nil },
+      { attribs='kotuku:features="none" lighting-color="#ffcc99" kernelUnitLength="2 1.5"',
+        light='<fePointLight x="20" y="12" z="40"/>' },
+      { attribs='kotuku:detail="3" lighting-color="rgb(64 128 255)"',
+        light='<feSpotLight x="60" y="4" z="50" pointsAtX="30" pointsAtY="30" pointsAtZ="0" ' ..
+           'specularExponent="4" limitingConeAngle="25"/>' }
+   } do
+      local svg <close> = lightingDocument(case.attribs, case.light)
+      local original <close> = draw(svg, 64)
+      local _, filter = check svg.scene.mtFindDef('f')
+      local xml = filter.effectXML
+      if case.attribs is '' then
+         assert(xml.find('kotuku:', 0, true) is nil, f'Default settings must be written as standard SVG: {xml}')
+      end
+
+      local loaded <close> = document(xml, LIGHTING_CONTENT, 64, KOTUKU_NS)
+      local copy <close> = draw(loaded, 64)
+      local diff = imageDifference(original, copy)
+      assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+      local a, b = lightingFX(svg), lightingFX(loaded)
+      assert((a.features is b.features) and (a.cavity is b.cavity) and (a.detail is b.detail) and
+         (a.penumbra is b.penumbra), f'XMLDef must preserve the extension fields: {xml}')
+   end
+
+   local specular <close> = document('<feSpecularLighting in="SourceAlpha" surfaceScale="4" specularConstant="0.8" ' ..
+      'specularExponent="24" kotuku:features="specular-aa"><feDistantLight azimuth="45" elevation="40"/>' ..
+      '</feSpecularLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS)
+   local _, filter = check specular.scene.mtFindDef('f')
+   local xml = filter.effectXML
+   local loaded <close> = document(xml, LIGHTING_CONTENT, 64, KOTUKU_NS)
+   local diff = imageDifference(draw(specular, 64), draw(loaded, 64))
+   assert(diff is 0, f'Specular XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Ambient light, intensity and kotuku:feLighting.  The combined content has a coloured albedo, which is transparent
+-- in the top-left corner so that the specular light can be seen beyond it.
+
+COMBINED_CONTENT <const> = '<g filter="url(#f)">' ..
+   '<rect x="8" width="56" height="64" fill="#c8862e" fill-opacity="0.4"/>' ..
+   '<rect x="36" y="16" width="16" height="16" fill="#2f6f9a"/></g>'
+
+function combinedDocument(Attribs:str, Light:str):obj
+   return document('<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" ' ..
+      f'{Attribs ?? ""}>{Light ?? "<feDistantLight azimuth=\"0\" elevation=\"30\"/>"}</kotuku:feLighting>',
+      COMBINED_CONTENT, 64, KOTUKU_NS)
+end
+
+function near(A:num!, B:num!):bool
+   return math.abs(A - B) < 1e-6
+end
+
+@Test function LightingAmbientAndIntensityAttributes()
+   local svg <close> = lightingDocument('kotuku:ambient="rgb(51 102 153 / 0.5)"',
+      '<feDistantLight azimuth="0" elevation="30" kotuku:intensity="0.75"/>')
+   local fx = lightingFX(svg)
+   local a:any = fx.ambient
+   assert(near(a.red, 0.2) and near(a.green, 0.4) and near(a.blue, 0.6) and near(a.alpha, 0.5),
+      f'kotuku:ambient must set Ambient (got {a.red}, {a.green}, {a.blue}, {a.alpha})')
+   assert(fx.intensity is 0.75, f'kotuku:intensity must set Intensity (got {fx.intensity})')
+   local doc <close> = draw(svg, 64)
+
+   local plain <close> = lightingDocument()
+   local api = lightingFX(plain)
+   api.ambient = struct<FRGB> { red=0.2, green=0.4, blue=0.6, alpha=0.5 }
+   api.intensity = 0.75
+   local diff = imageDifference(doc, draw(plain, 64))
+   assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
+
+   local none <close> = lightingDocument('kotuku:ambient="none"')
+   assert(lightingFX(none).ambient.alpha is 0, 'An ambient of none must leave Ambient transparent')
+
+   local foreign <close> = lightingDocument('kotuku:ambient="white"',
+      '<feDistantLight azimuth="0" elevation="30" kotuku:intensity="2"/>', 'xmlns:kotuku="urn:foreign"')
+   fx = lightingFX(foreign)
+   assert((fx.ambient.alpha is 0) and (fx.intensity is 1), 'A foreign namespace must not set Ambient or Intensity')
+end
+
+@Test function CombinedLightingElementIsParsed()
+   local svg <close> = combinedDocument('diffuseConstant="0.8" specularConstant="0.3" specularExponent="12" ' ..
+      'ambient="#336699" features="shadows cavity" cavity="0.5" kotuku:penumbra="4"',
+      '<feDistantLight azimuth="0" elevation="30" kotuku:intensity="1.5"/>')
+   local fx = lightingFX(svg)
+   assert(fx.type is LT_COMBINED, f'kotuku:feLighting must create the COMBINED type (got {fx.type})')
+   assert((fx.constant is 0.8) and (fx.specularConstant is 0.3) and (fx.exponent is 12),
+      f'Constants must be read (got {fx.constant}, {fx.specularConstant}, {fx.exponent})')
+   assert((fx.features is LFX_SHADOWS | LFX_CAVITY) and (fx.cavity is 0.5) and (fx.penumbra is 4),
+      'Extension attributes must be read with or without the prefix')
+   assert(near(fx.ambient.green, 0.4) and (fx.intensity is 1.5), 'Ambient and intensity must be read')
+   assert(fx.mixType is 1, f'in2="SourceGraphic" must select the albedo (got mix type {fx.mixType})')
+
+   local bmp <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(bmp, 44, 24).blue > mGfx.ReadRGBPixel(bmp, 44, 24).red,
+      'The blue block must be lit in its albedo colour')
+
+   -- Without the Kotuku namespace the element is not recognised.
+
+   local plain <close> = document('<feLighting in="SourceAlpha"><feDistantLight azimuth="0" elevation="30"/>' ..
+      '</feLighting>', COMBINED_CONTENT, 64)
+   local _, filter = check plain.scene.mtFindDef('f')
+   assert(#filter.children('LightingFX') is 0, 'feLighting outside the Kotuku namespace must be ignored')
+end
+
+-- EffectXML writes kotuku:feLighting with unprefixed extension attributes and preserves both inputs.
+
+@Test function CombinedXMLDefRoundTrips()
+   for _, case in array<table> {
+      { attribs='diffuseConstant="0.9" specularConstant="0.5" specularExponent="40" lighting-color="#ffcc99"' },
+      { attribs='ambient="rgb(10% 20% 30%)" features="shadows specular-aa" detail="2"',
+        light='<fePointLight x="20" y="12" z="40" kotuku:intensity="1.75"/>' }
+   } do
+      local svg <close> = combinedDocument(case.attribs, case.light)
+      local original <close> = draw(svg, 64)
+      local _, filter = check svg.scene.mtFindDef('f')
+      local xml = filter.effectXML
+      assert(xml.startsWith('<kotuku:feLighting '), f'The combined type must be written as kotuku:feLighting: {xml}')
+      assert(xml.find(' kotuku:features', 0, true) is nil, f'Attributes of kotuku:feLighting are unprefixed: {xml}')
+
+      local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
+      local diff = imageDifference(original, draw(loaded, 64))
+      assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+   end
+end
+
+@Test function CombinedLightingSavePreservesInputBindings()
+   local path = 'temp:svg_combined_lighting_roundtrip.svg'
+   defer mSys.DeleteFile(path) end
+
+   for albedo in values(array<str> { 'SourceGraphic', 'paint' }) do
+      local svg <close> = document('<feOffset dx="3" result="paint"/><feOffset dy="5"/>' ..
+         f'<kotuku:feLighting in="SourceAlpha" in2="{albedo}" surfaceScale="20" specularConstant="0">' ..
+         '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS)
+      local original <close> = draw(svg, 64)
+      do
+         local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+         check svg.acSaveToObject(file, 0)
+      end
+
+      local loaded <close> = obj.new('svg', { statement=io.readAll(path) })
+      local diff = imageDifference(original, draw(loaded, 64))
+      assert(diff is 0, f'SaveToObject must preserve the {albedo} albedo and SourceAlpha height (difference {diff})')
+   end
+end

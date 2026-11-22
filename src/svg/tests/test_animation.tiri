@@ -279,7 +279,7 @@ end
       local _, transform_x = check obj.find('seek_transform').mtGetBoundary(0)
       local _, motion_x = check obj.find('seek_motion').mtGetBoundary(0)
       nearValue(transform_x, time >= 2 and time < 6 ? 1 + (time - 2) * 5 : 6, f'Transform at {time}')
-      nearValue(motion_x, 7 + math.max(0, math.min(4, time - 2)) * 5, f'Motion at {time}')
+      nearValue(motion_x, 7 + math.clamp(time - 2, 0, 4) * 5, f'Motion at {time}')
    end
 end
 

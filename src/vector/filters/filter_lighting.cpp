@@ -32,7 +32,8 @@ LightingFX: Enables the application of lighting effects.
 
 The lighting effect class applies a diffuse or specular lighting effect to the alpha channel of an input bitmap, which
 functions as a bump map.  The output is an RGBA representation of the light effect.  If no light #Colour is specified
-by the client then the output will be in grey scale.
+by the client then the output will be in grey scale.  The `COMBINED` #Type, described below, lights an albedo instead
+and produces a finished surface.
 
 For diffuse lighting, the resulting RGBA image is computed as follows:
 
@@ -84,8 +85,8 @@ are sRGB values.  In `LINEAR_RGB` the light #Colour is converted to linear RGB a
 storage, so a result of 0.5 is stored as approximately 0.735.
 
 The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit
-steps on gentle slopes.  When the @VectorScene.Compliance of the scene is `NONE` (the default), the enhancements
-selected by the #Features field are applied.  All of them are enabled by default:
+steps on gentle slopes.  When the @VectorScene.Compliance of the scene is `NONE` (the default), the enhanced pipeline
+applies the features selected by the #Features field.  All of them are enabled by default:
 
 <list type="bullet">
 <li>`DEQUANTISE`: Heights are read as floating point values, and areas that vary by no more than one alpha level are
@@ -93,19 +94,45 @@ smoothed to remove terracing.</li>
 <li>`SHARPEN`: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
 wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
 SVG kernel, reaching it at two pixels per unit.</li>
-<li>`CAVITY`: Narrow creases and pits receive less light, in proportion to their curvature.  When the bump map is
-magnified, curvature is measured at the scale of the kernel unit so that 8-bit steps are not darkened.</li>
+<li>`CAVITY`: Narrow creases and pits receive less light, in proportion to their curvature and the #Cavity strength.
+When the bump map is magnified, curvature is measured at the scale of the kernel unit so that 8-bit steps are not
+darkened.</li>
 <li>`DETAIL`: Fine detail is given more relief than broad shapes, so that it remains visible at a surface scale that
-suits the larger forms.</li>
+suits the larger forms.  The #Detail field sets the strength.</li>
 <li>`SHADOWS`: Distant lights cast shadows.  A point is unlit when the surface between it and the light rises above
-the light's elevation, and the edge of the shadow softens with distance from the surface that casts it.</li>
+the light's elevation, and the edge of the shadow softens with distance from the surface that casts it, at a rate set
+by #Penumbra.</li>
 <li>`SPECULAR_AA`: Specular highlights are widened where the surface varies within a pixel, so that high exponents
 do not produce isolated bright pixels.</li>
 </list>
 
 Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies
 beside a raised area.  Set the scene's Compliance to `SVG1` or `SVG2` for results that match the SVG specification
-exactly, or set #Features to zero to use the SVG algorithm for this effect alone.
+exactly, or set #Features to zero to use the SVG algorithm for this effect alone.  The enhanced pipeline is still used
+if #Ambient or #Intensity is set.
+
+An #Ambient light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by `CAVITY`.
+The #Intensity of the light multiplies its #Colour.  For the diffuse and specular types the light is limited to full
+strength before it is coloured, as the SVG algorithm does with #Constant, so a value above 1 cannot make a coloured
+light brighter than full strength.  Neither field has an effect when the scene's Compliance is `SVG1` or `SVG2`.
+
+The `COMBINED` type computes a lit surface in a single pass.  The #Mix input is the albedo, the colour of the surface,
+and the result is
+
+<pre>
+albedo * (ambient + kd * N.L * light) + ks * pow(N.H, specularExponent) * light
+</pre>
+
+where kd is #Constant and ks is #SpecularConstant.  The value is clamped once, when it is written, so light that is
+brighter than full strength keeps its colour through the albedo.  This is the result of multiplying the diffuse light
+by the albedo and adding the specular light with @CompositeFX, but the surface is analysed once and no intermediate
+result is limited to 8 bits.  Shadows and `CAVITY` reduce both light terms.  The alpha of the result is the albedo's
+alpha, raised to the brightest channel of the specular light, so that highlights can extend over transparent areas of
+the albedo.  If #Mix is not set, the albedo is opaque white and the result is the sum of the light terms.  The
+`COMBINED` type always uses the enhanced pipeline, whatever the scene's Compliance, and has no SVG equivalent.
+
+SVG documents can set #Features, #Cavity, #Detail, #Penumbra, #Ambient and #Intensity with `kotuku:` attributes, and
+the `COMBINED` type is available as the `kotuku:feLighting` element; refer to the SVG class for details.
 
 -END-
 
@@ -167,6 +194,18 @@ struct map_height {
    double x, y, xy;
 };
 
+// Default strengths of the enhanced features, also used to decide which values XMLDef writes.
+
+constexpr double DEFAULT_CAVITY   = 0.25; // Occlusion per unit of curvature
+constexpr double DEFAULT_DETAIL   = 1.5;  // Slope multiplier for fine detail
+constexpr double DEFAULT_PENUMBRA = 2.0;  // Degrees either side of the light's elevation
+
+// Colour of one albedo pixel in the filter's colour space, with straight alpha.
+
+struct albedo_sample {
+   float r, g, b, a;
+};
+
 //********************************************************************************************************************
 
 class extLightingFX : public extFilterEffect {
@@ -191,6 +230,14 @@ class extLightingFX : public extFilterEffect {
    LS     LightSource;      // Light source identifier, recorded for SVG output purposes only.
    bool   UnitXProvided = false, UnitYProvided = false;
    LFX    Features = LFX::ALL;  // Enhanced lighting features, applied when the scene's Compliance is NONE
+   double Cavity   = DEFAULT_CAVITY;   // Strength of the CAVITY feature
+   double Detail   = DEFAULT_DETAIL;   // Strength of the DETAIL feature
+   double Penumbra = DEFAULT_PENUMBRA; // Width of the shadow edge in degrees, for the SHADOWS feature
+   double SpecularConstant = 1.0;      // ks for the COMBINED type; Constant is kd
+   double Intensity = 1.0;             // Multiplier of the light's colour
+   FRGB   Ambient = { 0, 0, 0, 0 };    // Ambient light, scaled by its alpha
+   FRGB   AmbientLight = { 0, 0, 0, 0 }; // Ambient light in the filter's colour space, set by draw_enhanced()
+   double Strength = 1.0;              // Constant x Intensity for the DIFFUSE and SPECULAR types, set per draw
 
    // DISTANT LIGHT
    double Azimuth, Elevation;    // Distant light
@@ -296,6 +343,16 @@ class extLightingFX : public extFilterEffect {
       uint8_t, double Occlusion = 1.0);
    inline void specular_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double Occlusion = 1.0, double Exponent = 0);
+   inline void encode_light(const FRGB &, double, uint8_t *, uint8_t, uint8_t, uint8_t);
+   inline void enhanced_diffuse(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
+      uint8_t, double);
+   inline void enhanced_specular(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
+      uint8_t, double, double);
+   inline void enhanced_ambient(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
+      uint8_t, double, double);
+   inline void enhanced_combined(const point3 &, const point3 &, double, const point3 &, const FRGB &,
+      const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double);
+   inline uint8_t encode_channel(double, bool);
    void render_distant(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
    void render_spotlight(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
    void render_point(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
@@ -310,10 +367,26 @@ class extLightingFX : public extFilterEffect {
       return { filter_access::BOUNDED, radius, radius };
    }
 
-   // True if the enhanced pipeline is used: the scene is not bound to an SVG standard and a feature is enabled.
+   // True if ambient light is added to the result.  The specular type ignores it.
+
+   bool has_ambient() const {
+      return (Type != LT::SPECULAR) and (Ambient.Alpha > 0) and
+         ((Ambient.Red > 0) or (Ambient.Green > 0) or (Ambient.Blue > 0));
+   }
+
+   // True if the enhanced pipeline is used.  The combined type always uses it.  The other types use it when the scene
+   // is not bound to an SVG standard and a feature or an extension of the light is in use.
 
    bool enhanced() const {
-      return (Filter->Scene) and (Filter->Scene->Compliance IS VSC::NONE) and (Features != LFX::NIL);
+      if (Type IS LT::COMBINED) return true;
+      if ((not Filter->Scene) or (Filter->Scene->Compliance != VSC::NONE)) return false;
+      return (Features != LFX::NIL) or (Intensity != 1.0) or has_ambient();
+   }
+
+   // True if the effect reads an albedo from its Mix input.
+
+   bool reads_albedo() const {
+      return (Type IS LT::COMBINED) and (MixType != VSF::NONE);
    }
 
    // True if fine detail receives extra relief, given the radius of the base layer's blur in pixels.
@@ -321,7 +394,8 @@ class extLightingFX : public extFilterEffect {
    bool boost_detail(double Sigma) const;
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
-   ERR draw_enhanced(const objBitmap *, const point3 &, double, const map_height &, double, int, int);
+   ERR draw_enhanced(const objBitmap *, const filter_surface_view *, const point3 &, double, const map_height &,
+      double, int, int);
    template <class DELTA, class COLOUR>
    void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR);
 };
@@ -403,6 +477,119 @@ inline void extLightingFX::specular_light(const point3 &Normal, const point3 &ST
       Output[A] = Output[R] > Output[G] ? (Output[R] > Output[B] ? Output[R] : Output[B]) : (Output[G] > Output[B] ? Output[G] : Output[B]);
    }
    else Output[A] = r > g ? (r > b ? r : b) : (g > b ? g : b);
+}
+
+//********************************************************************************************************************
+// Output functions of the enhanced pipeline.  The SVG functions above truncate the light to an 8-bit value before
+// encoding it, which leaves only a few output codes for dark light in linear filters.  Here the light stays in floating
+// point until it is written: linear light is encoded through the 16-bit table, which gives every sRGB code a distinct
+// input, and rounded to the nearest code.  Light in sRGB filters is truncated as in the SVG functions, so that a flat
+// surface keeps the SVG result.  Scale is the light's strength and each channel of Colour is the light's colour, both
+// in the range 0 - 1.  draw_enhanced() limits the light colour to that range.
+
+inline void extLightingFX::encode_light(const FRGB &Colour, double Scale, uint8_t *Output, uint8_t R, uint8_t G,
+   uint8_t B)
+{
+   if (Linear) {
+      const float scale = float(Scale * 65535.0);
+      Output[R] = glLinearRGB.invert16(uint16_t((Colour.Red * scale) + 0.5f));
+      Output[G] = glLinearRGB.invert16(uint16_t((Colour.Green * scale) + 0.5f));
+      Output[B] = glLinearRGB.invert16(uint16_t((Colour.Blue * scale) + 0.5f));
+   }
+   else {
+      const float scale = float(Scale * 255.0);
+      Output[R] = uint8_t(Colour.Red * scale);
+      Output[G] = uint8_t(Colour.Green * scale);
+      Output[B] = uint8_t(Colour.Blue * scale);
+   }
+}
+
+// Strength is Constant multiplied by Intensity, which is exactly Constant when Intensity is 1.
+
+inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &STL, const FRGB &Colour,
+   uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion)
+{
+   encode_light(Colour, std::clamp(Strength * Normal.dot(STL) * Occlusion, 0.0, 1.0), Output, R, G, B);
+   Output[A] = 255;
+}
+
+// The alpha rule of specular_light() is kept: the maximum of the encoded channels for distant lights, and of the
+// light values otherwise.
+
+inline void extLightingFX::enhanced_specular(const point3 &Normal, const point3 &STL, const FRGB &Colour,
+   uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
+{
+   point3 half_dir(STL);
+   half_dir.z += 1.0; // Eye position is always (0, 0, 1)
+   half_dir.normalise();
+
+   const double scale = std::clamp(Strength * std::pow(std::max(0.0, Normal.dot(half_dir)), Exponent) * Occlusion,
+      0.0, 1.0);
+   encode_light(Colour, scale, Output, R, G, B);
+
+   if ((LightSource IS LS::DISTANT) or (not Linear)) Output[A] = std::max(std::max(Output[R], Output[G]), Output[B]);
+   else {
+      const float peak = std::max(std::max(Colour.Red, Colour.Green), Colour.Blue);
+      Output[A] = uint8_t((peak * float(scale * 255.0)) + 0.5f);
+   }
+}
+
+// Encodes one channel of light, clamped to 0 - 1, for output.  Round selects rounding in sRGB filters; otherwise the
+// value is truncated as the SVG functions do.  Linear light is always rounded.
+
+inline uint8_t extLightingFX::encode_channel(double Value, bool Round)
+{
+   const float value = float(std::clamp(Value, 0.0, 1.0));
+   if (Linear) return glLinearRGB.invert16(uint16_t((value * 65535.0f) + 0.5f));
+   else return uint8_t((value * 255.0f) + (Round ? 0.5f : 0.0f));
+}
+
+// Diffuse light with ambient light added.  The ambient light is reduced by the cavity term (Cavity), but not by
+// shadows; Occlusion includes both.  The sum is clamped per channel.
+
+inline void extLightingFX::enhanced_ambient(const point3 &Normal, const point3 &STL, const FRGB &Colour,
+   uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Cavity)
+{
+   const double scale = std::clamp(Strength * Normal.dot(STL) * Occlusion, 0.0, 1.0);
+   Output[R] = encode_channel((AmbientLight.Red * Cavity) + (Colour.Red * scale), false);
+   Output[G] = encode_channel((AmbientLight.Green * Cavity) + (Colour.Green * scale), false);
+   Output[B] = encode_channel((AmbientLight.Blue * Cavity) + (Colour.Blue * scale), false);
+   Output[A] = 255;
+}
+
+// The combined type.  Normal is the pixel's own normal, used for diffuse light, and Mean is the normal with which the
+// specular light is shaded, at the given Exponent (see row_toksvig()).  Light is not limited to full strength; the
+// result is clamped once, on output.  The albedo is premultiplied for the sum, so the specular light is added as the
+// arithmetic composite would add a premultiplied specular map.  The result's alpha is the albedo's alpha raised to the
+// brightest channel of the specular light, and its colour is divided by that alpha for storage.
+
+inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 &Mean, double Exponent,
+   const point3 &STL, const FRGB &Light, const albedo_sample &Albedo, uint8_t *Output, uint8_t R, uint8_t G,
+   uint8_t B, uint8_t A, double Occlusion, double Cavity)
+{
+   point3 half_dir(STL);
+   half_dir.z += 1.0; // Eye position is always (0, 0, 1)
+   half_dir.normalise();
+
+   const double diffuse = Constant * std::max(0.0, Normal.dot(STL)) * Occlusion;
+   const double specular = SpecularConstant * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) * Occlusion;
+
+   const double sr = specular * Light.Red, sg = specular * Light.Green, sb = specular * Light.Blue;
+   const double alpha = std::max(double(Albedo.a), std::min(1.0, std::max(std::max(sr, sg), sb)));
+   if (alpha <= 0) {
+      Output[R] = Output[G] = Output[B] = Output[A] = 0;
+      return;
+   }
+
+   const double coverage = Albedo.a;
+   const double demul = 1.0 / alpha;
+   Output[R] = encode_channel(((Albedo.r * coverage * ((AmbientLight.Red * Cavity) + (diffuse * Light.Red))) + sr)
+      * demul, true);
+   Output[G] = encode_channel(((Albedo.g * coverage * ((AmbientLight.Green * Cavity) + (diffuse * Light.Green))) + sg)
+      * demul, true);
+   Output[B] = encode_channel(((Albedo.b * coverage * ((AmbientLight.Blue * Cavity) + (diffuse * Light.Blue))) + sb)
+      * demul, true);
+   Output[A] = uint8_t((alpha * 255.0) + 0.5);
 }
 
 //********************************************************************************************************************
@@ -763,8 +950,14 @@ ERR extLightingFX::draw()
    // Scenes that are not bound to an SVG standard use the enhanced pipeline, which resolves finer surface detail.
 
    if (enhanced()) {
+      filter_surface_view albedo;
+      if (reads_albedo()) {
+         if (auto error = get_source_view(this, albedo, filter_input_role::MIX); error != ERR::Okay) return error;
+         if (albedo.Bitmap->BytesPerPixel != 4) return ERR::InvalidState;
+      }
       const double unit_size = unit_length(unit);
-      return draw_enhanced(bmp, lt, spot_height, normal_height, unit_size, width, height);
+      return draw_enhanced(bmp, reads_albedo() ? &albedo : nullptr, lt, spot_height, normal_height, unit_size, width,
+         height);
    }
 
    int num_threads = std::min(int(std::thread::hardware_concurrency()), height);
@@ -846,8 +1039,7 @@ This method applies a pointed light configuration to the lighting effect.  It wi
 light source setting.
 
 A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open
-flame is a good example of a point light.  The intensity of the light can be controlled by altering the alpha
-component of the light #Colour.
+flame is a good example of a point light.  The strength of the light is controlled by #Constant and #Intensity.
 
 -INPUT-
 double X: X location for the light source.
@@ -942,11 +1134,70 @@ static ERR LIGHTINGFX_SetSpotLight(extLightingFX *Self, struct lt::SetSpotLight 
 /*********************************************************************************************************************
 
 -FIELD-
+Ambient: Ambient light added to the diffuse and combined types.
+
+Ambient light reaches every point of the surface equally, from no particular direction, so that areas facing away from
+the light or lying in shadow are not black.  It is added to the diffuse light, and for the `COMBINED` type it is
+multiplied by the albedo.  It is not blocked by shadows, but it is reduced in creases and pits by the `CAVITY`
+feature.  The specular type ignores it.
+
+The light is the RGB value of the colour multiplied by its alpha.  The colour is in the same colour space as #Colour.
+The default is transparent black, which adds no light.
+
+This field has no effect when the scene's Compliance is `SVG1` or `SVG2`, unless the #Type is `COMBINED`.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Ambient(extLightingFX *Self, FRGB **Value)
+{
+   *Value = &Self->Ambient;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Ambient(extLightingFX *Self, FRGB *Value)
+{
+   if (Value) {
+      if ((not std::isfinite(Value->Red)) or (not std::isfinite(Value->Green)) or (not std::isfinite(Value->Blue)) or
+          (not std::isfinite(Value->Alpha))) return ERR::InvalidValue;
+      Self->Ambient = *Value;
+   }
+   else Self->Ambient = { 0, 0, 0, 0 };
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Cavity: Strength of the darkening applied to creases and pits by the `CAVITY` feature.
+
+Concave areas of the surface receive less light in proportion to their curvature, multiplied by this value.  The
+light is never reduced below 40% of its unoccluded level.  The default is 0.25, and a value of 0 has the same effect
+as disabling `CAVITY` in #Features.  The value must be zero or greater.
+
+This field has no effect unless the enhanced pipeline is in use; refer to #Features.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Cavity(extLightingFX *Self, double &Value)
+{
+   Value = Self->Cavity;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Cavity(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
+   Self->Cavity = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Colour: Defines the colour of the light source.
 
-Set the Colour field to define the colour of the light source.
-
-If the algorithm supports it, the Alpha component defines the intensity of the light source.
+Set the Colour field to define the colour of the light source.  The alpha component is not used; the strength of the
+light is set by #Constant and #Intensity.
 
 The default colour is pure white.
 
@@ -967,7 +1218,8 @@ static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, FRGB *Value)
 -FIELD-
 Constant: Specifies the ks/kd value in Phong lighting model.
 
-In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.
+In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.  For the
+`COMBINED` type it is kd, and #SpecularConstant is ks.
 
 *********************************************************************************************************************/
 
@@ -978,6 +1230,33 @@ static ERR LIGHTINGFX_SET_Constant(extLightingFX *Self, double Value)
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Detail: Strength of the relief given to fine detail by the `DETAIL` feature.
+
+The slope of fine detail, meaning features of a few kernel units, is multiplied by this value before the surface is
+lit.  Steep slopes are compressed so that strong values do not turn small features into hard edges.  Broad shapes are
+not affected.  The default is 1.5, and a value of 1 has the same effect as disabling `DETAIL` in #Features.  The value
+must be 1 or greater.
+
+This field has no effect unless the enhanced pipeline is in use; refer to #Features.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Detail(extLightingFX *Self, double &Value)
+{
+   Value = Self->Detail;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Detail(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 1.0)) return ERR::OutOfRange;
+   Self->Detail = Value;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1010,8 +1289,14 @@ enabled here.  The default is `ALL`.  Each feature can be disabled independently
 from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG
 algorithm.  Disabling `SHARPEN` measures slopes with the same kernel as the SVG algorithm.
 
-If no features are enabled, the SVG algorithm is used without modification.  Features have no effect when the
-Compliance of the scene is `SVG1` or `SVG2`.
+The strength of `CAVITY` and `DETAIL`, and the width of the shadow edge, are set by the #Cavity, #Detail and
+#Penumbra fields.
+
+If no features are enabled, and neither #Ambient nor #Intensity is set, the SVG algorithm is used without
+modification.  Features have no effect when the Compliance of the scene is `SVG1` or `SVG2`, except for the `COMBINED`
+type, which always uses the enhanced pipeline.  The SVG class renders its own scene with a Compliance of `SVG2`, unless
+the document declares a Kōtuku namespace, in which case the Compliance is `NONE` and the features apply.  In SVG
+markup, features are selected with the `kotuku:features` attribute of `feDiffuseLighting` and `feSpecularLighting`.
 
 *********************************************************************************************************************/
 
@@ -1031,14 +1316,99 @@ static ERR LIGHTINGFX_SET_Features(extLightingFX *Self, LFX Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Intensity: Multiplies the colour of the light.
+
+The light's #Colour is multiplied by this value.  For the diffuse and specular types, the light is limited to full
+strength before it is coloured, as it is for #Constant, so a value above 1 brightens the light only until it reaches
+full strength.  For the `COMBINED` type the light is not limited until the result is written, so a value above 1 can
+make an albedo brighter while it keeps its colour.
+
+The default is 1.  The value must be zero or greater.  It has no effect when the scene's Compliance is `SVG1` or
+`SVG2`, unless the #Type is `COMBINED`.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Intensity(extLightingFX *Self, double &Value)
+{
+   Value = Self->Intensity;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Intensity(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
+   Self->Intensity = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Penumbra: Width of the soft edge of shadows cast by the `SHADOWS` feature, in degrees.
+
+A point on the surface passes from light into shadow as the elevation at which the surface hides the light rises
+through the light's own elevation.  The transition is smoothed over this many degrees either side of the light's
+elevation, so the shadow's edge widens with distance from the area that casts it.  The width is limited to half of the
+light's elevation.  The default is 2, and a value of 0 produces hard shadows.  The value must be zero or greater.
+
+This field has no effect unless the enhanced pipeline is in use; refer to #Features.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Penumbra(extLightingFX *Self, double &Value)
+{
+   Value = Self->Penumbra;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Penumbra(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
+   Self->Penumbra = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Scale: The maximum height of the input surface (bump map) when the alpha input is 1.0.
 
 The height is measured in kernel units when computing the surface normal, so the steepness of the lit surface is
 determined by Scale in combination with #UnitX and #UnitY.  Refer to #UnitX for details.
 
+*********************************************************************************************************************/
+
+/*********************************************************************************************************************
+
 -FIELD-
-Type: Defines the type of surface light scattering, which can be specular or diffuse.
+SpecularConstant: The ks value of the `COMBINED` type.
+
+For the `COMBINED` type, this field specifies the ks value of the Phong lighting model, and #Constant specifies kd.
+It is not used by the diffuse and specular types, for which #Constant is the only constant.  The default is 1, and
+the value must be zero or greater.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_SpecularConstant(extLightingFX *Self, double &Value)
+{
+   Value = Self->SpecularConstant;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_SpecularConstant(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
+   Self->SpecularConstant = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Type: Defines the type of surface light scattering, which can be diffuse, specular or both combined.
 Lookup: LT
+
+The `COMBINED` type reads an albedo from the #Mix input; refer to the class description.
 
 -FIELD-
 UnitX: The intended distance in current filter units for dx in the surface normal calculation formulas.
@@ -1092,19 +1462,128 @@ static ERR LIGHTINGFX_SET_UnitY(extLightingFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the filter.
--END-
+XMLDef: Returns an SVG element that describes the effect.
+
+The result is a complete element, including its light source: `feDiffuseLighting` or `feSpecularLighting`, or
+`kotuku:feLighting` for the `COMBINED` type.  Settings that SVG cannot express are written as `kotuku:` attributes, and
+only when they differ from their defaults: `kotuku:features` if #Features is not `ALL`, `kotuku:cavity`,
+`kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, `kotuku:ambient` for #Ambient, and
+`kotuku:intensity` on the light source for #Intensity.  The attributes of `kotuku:feLighting` are written without the
+prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the
+prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
+
+The `in`, `in2`, `result` and primitive subregion attributes are not included.
 
 *********************************************************************************************************************/
+
+static void write_lfx_features(std::ostream &Stream, LFX Features)
+{
+   static const std::pair<LFX, CSTRING> names[] = {
+      { LFX::DEQUANTISE, "dequantise" }, { LFX::SHARPEN, "sharpen" }, { LFX::CAVITY, "cavity" },
+      { LFX::DETAIL, "detail" }, { LFX::SHADOWS, "shadows" }, { LFX::SPECULAR_AA, "specular-aa" }
+   };
+
+   if (Features IS LFX::NIL) {
+      Stream << "none";
+      return;
+   }
+
+   bool first = true;
+   for (auto &[flag, name] : names) {
+      if ((Features & flag) IS LFX::NIL) continue;
+      if (not first) Stream << ' ';
+      Stream << name;
+      first = false;
+   }
+}
+
+// Writes a colour in CSS rgb() notation.  Channels are written as 8-bit values if they are exactly representable, and
+// as percentages otherwise, so that the colour survives a round trip.
+
+static void write_rgb(std::ostream &Stream, const FRGB &Colour)
+{
+   auto exact = [](float Value) {
+      const float level = Value * 255.0f;
+      return (Value >= 0.0f) and (Value <= 1.0f) and (std::abs(level - std::round(level)) < 1e-3f);
+   };
+
+   Stream << "rgb(";
+   if (exact(Colour.Red) and exact(Colour.Green) and exact(Colour.Blue)) {
+      Stream << std::lround(Colour.Red * 255.0f) << ' ' << std::lround(Colour.Green * 255.0f) << ' '
+         << std::lround(Colour.Blue * 255.0f);
+   }
+   else {
+      Stream << (Colour.Red * 100.0) << "% " << (Colour.Green * 100.0) << "% " << (Colour.Blue * 100.0) << '%';
+   }
+   if (Colour.Alpha != 1.0f) Stream << " / " << Colour.Alpha;
+   Stream << ')';
+}
 
 static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 {
    std::stringstream stream;
-   std::string type(Self->Type IS LT::DIFFUSE ? "feDiffuseLighting" : "feSpecularLighting");
+   const bool combined = Self->Type IS LT::COMBINED;
+   CSTRING element = combined ? "kotuku:feLighting" : (Self->Type IS LT::DIFFUSE) ? "feDiffuseLighting" :
+      "feSpecularLighting";
+   CSTRING prefix = combined ? "" : "kotuku:"; // Extension attributes of kotuku:feLighting are unprefixed
 
-   // TODO
-   stream << type;
+   stream << '<' << element << " surfaceScale=\"" << Self->MapHeight << '"';
+   if (Self->Type IS LT::DIFFUSE) stream << " diffuseConstant=\"" << Self->Constant << '"';
+   else if (Self->Type IS LT::SPECULAR) stream << " specularConstant=\"" << Self->Constant << '"';
+   else {
+      stream << " diffuseConstant=\"" << Self->Constant << '"';
+      stream << " specularConstant=\"" << Self->SpecularConstant << '"';
+   }
+   if (Self->Type != LT::DIFFUSE) stream << " specularExponent=\"" << Self->SpecularExponent << '"';
 
+   if (Self->UnitXProvided or Self->UnitYProvided) {
+      stream << " kernelUnitLength=\"" << Self->UnitX << ' ' << Self->UnitY << '"';
+   }
+
+   const auto &c = Self->Colour;
+   if ((c.Red != 1.0f) or (c.Green != 1.0f) or (c.Blue != 1.0f) or (c.Alpha != 1.0f)) {
+      stream << " lighting-color=\"";
+      write_rgb(stream, c);
+      stream << '"';
+   }
+
+   if (Self->Features != LFX::ALL) {
+      stream << ' ' << prefix << "features=\"";
+      write_lfx_features(stream, Self->Features);
+      stream << '"';
+   }
+   if (Self->Cavity != DEFAULT_CAVITY) stream << ' ' << prefix << "cavity=\"" << Self->Cavity << '"';
+   if (Self->Detail != DEFAULT_DETAIL) stream << ' ' << prefix << "detail=\"" << Self->Detail << '"';
+   if (Self->Penumbra != DEFAULT_PENUMBRA) stream << ' ' << prefix << "penumbra=\"" << Self->Penumbra << '"';
+
+   const auto &a = Self->Ambient;
+   if ((a.Red != 0.0f) or (a.Green != 0.0f) or (a.Blue != 0.0f) or (a.Alpha != 0.0f)) {
+      stream << ' ' << prefix << "ambient=\"";
+      write_rgb(stream, a);
+      stream << '"';
+   }
+   stream << '>';
+
+   switch (Self->LightSource) {
+      case LS::POINT:
+         stream << "<fePointLight x=\"" << Self->X << "\" y=\"" << Self->Y << "\" z=\"" << Self->Z << '"';
+         break;
+
+      case LS::SPOT:
+         stream << "<feSpotLight x=\"" << Self->X << "\" y=\"" << Self->Y << "\" z=\"" << Self->Z << '"';
+         stream << " pointsAtX=\"" << Self->Spotlight.x << "\" pointsAtY=\"" << Self->Spotlight.y;
+         stream << "\" pointsAtZ=\"" << Self->Spotlight.z << "\" specularExponent=\"" << Self->SpotExponent << '"';
+         if (Self->ConeAngle) stream << " limitingConeAngle=\"" << Self->ConeAngle << '"';
+         break;
+
+      default:
+         stream << "<feDistantLight azimuth=\"" << Self->Azimuth << "\" elevation=\"" << Self->Elevation << '"';
+         break;
+   }
+   if (Self->Intensity != 1.0) stream << " kotuku:intensity=\"" << Self->Intensity << '"';
+   stream << "/>";
+
+   stream << "</" << element << '>';
    Value = stream.str();
    return ERR::Okay;
 }
@@ -1119,6 +1598,13 @@ static const FieldArray clLightingFXFields[] = {
    { "Constant", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Constant },
    { "Exponent", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Exponent },
    { "Features", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, LIGHTINGFX_GET_Features, LIGHTINGFX_SET_Features, &clLightingFXLFX },
+   { "Cavity",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Cavity, LIGHTINGFX_SET_Cavity },
+   { "Detail",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Detail, LIGHTINGFX_SET_Detail },
+   { "Penumbra", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Penumbra, LIGHTINGFX_SET_Penumbra },
+   { "Ambient",  FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Ambient, LIGHTINGFX_SET_Ambient, "FRGB" },
+   { "Intensity", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Intensity, LIGHTINGFX_SET_Intensity },
+   { "SpecularConstant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_SpecularConstant,
+     LIGHTINGFX_SET_SpecularConstant },
    { "Scale",    FDF_DOUBLE|FDF_RW },
    { "UnitX",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
