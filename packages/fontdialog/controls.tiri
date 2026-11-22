@@ -329,9 +329,14 @@ fdc.segmented = function(Picker:table!, Target:obj!, Options:table!):table
    group   = Target.new('VectorViewport', { x = Options.x ?? 0, y = Options.y ?? 0, width = 1, height = height })
 
    base_theme = {
-      bkgd = { cornerX = 3, cornerY = 3 },
+      bkgd = { },
       text = { size = size } -- The button centres the label for this size
    }
+
+   -- Icon-only buttons leave the text size to the button, which scales its icon to the button height like any other
+   -- icon button in the dialog.
+
+   icon_theme = { bkgd = base_theme.bkgd }
 
    pressed_theme = {
       bkgd = { fill = primary.bkgd.fill, stroke = primary.bkgd.stroke },
@@ -358,7 +363,8 @@ fdc.segmented = function(Picker:table!, Target:obj!, Options:table!):table
    for _, item in Options.items do
       btn = gui.button({
          target = group, x = x, y = y, height = height, width = item.width,
-         label = item.label, icon = item.icon, tip = item.tip, theme = base_theme,
+         label = item.label, icon = item.icon, tip = item.tip,
+         theme = (item.icon and not item.label) ? icon_theme : base_theme,
          events = {
             activate = function()
                if Options.multi then
@@ -572,7 +578,7 @@ fdc.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
    cb.button = gui.button({
       target = Target, x = Options.x ?? 0, y = Options.y ?? 0, width = Options.width, height = height,
       theme = {
-         bkgd = { fill = t.sunk, stroke = t.border, cornerX = 4, cornerY = 4 },
+         bkgd = { fill = t.sunk, stroke = t.border },
          highlight = { fill = t.accentSoft }
       },
       events = {

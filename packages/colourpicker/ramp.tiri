@@ -132,9 +132,9 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    -- use.  Each button has a transparent background over a swatch, so that its hover and focus styling still apply.
 
    theme = {
-      bkgd      = { fill = 'rgba(0,0,0,0)', stroke = t.swatchBorder, cornerX = ROUND, cornerY = ROUND },
+      bkgd      = { fill = 'rgba(0,0,0,0)', stroke = t.swatchBorder },
       highlight = { fill = 'rgba(0,0,0,0)' },
-      text      = { face = colourpicker_parts.FACE_MONO, size = 11 }
+      text      = { face = gui.fonts.small.face, size = gui.fonts.small.size }
    }
 
    for i in {0 to MAX_STEPS} do
@@ -313,9 +313,14 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
       colourpicker_parts.smallCaret(box, t)
 
       editor = colourpicker_curve.new(body, {
-         x = X, y = CURVE_TOP + BOX_H + CURVE_GAP, width = col_w, height = CURVE_H, tokens = t,
-         points = Presets[0].points, movableEnds = Presets[0].movableEnds, guide = Guide, caption = Key,
-         face = colourpicker_parts.FACE_MONO,
+         x = X, y = CURVE_TOP + BOX_H + CURVE_GAP,
+         width = col_w, height = CURVE_H,
+         tokens = t,
+         points = Presets[0].points,
+         movableEnds = Presets[0].movableEnds,
+         guide    = Guide,
+         caption  = Key,
+         face     = gui.fonts.small.face,
          onChange = function()
             box.setText(CUSTOM)
             refresh()

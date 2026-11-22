@@ -357,7 +357,8 @@ end
    local light = gui.setTheme(scene, 'light')
    local dark = gui.themes.dark
    local plain = gui.input({ target=root, x=10, y=10, width=200, label='Name', placeholder='Type here' })
-   local multi = gui.input({ target=root, x=10, y=60, width=200, multiline=true, text=lines(20) })
+   local multi = gui.input({ target=root, x=10, y=60, width=200, multiline=true, text=lines(20),
+      theme={ bkgd={ cornerX=8, cornerY=8 } } }) -- The default radius is too small to need a scrollbar margin
    local disabled = gui.input({ target=root, x=10, y=220, width=200, text='Fixed', disabled=true })
    local styled = gui.input({ target=root, x=10, y=260, width=200, theme={ bkgd={ fill='#ff0000' } } })
    check surface.acShow()

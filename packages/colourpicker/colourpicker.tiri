@@ -60,19 +60,13 @@ Documentation is available in the Kotuku Wiki.
 
    gui.dialog ?= { }
 
-CLIENT_WIDTH   <const> = 1022
 MODEBAR_HEIGHT <const> = 36
 FOOTER_HEIGHT  <const> = 42
-FOOTER_PAD     <const> = 12
+FOOTER_PAD     <const> = gui.sizing.window.gap
 FOOTER_GAP     <const> = 8
 BUTTON_HEIGHT  <const> = 26
 SCREEN_FILL    <const> = 0.9 -- Maximum share of the monitor that the initial window may occupy
 FOOTER_FONT    <const> = 11.5
-
--- The columns abut.  Panels in adjacent columns are 12 px apart, matching the vertical gap between panels: each column
--- leaves 6 px beside its neighbour.
-
-COLUMN_WIDTHS <const> = array<int> { 292, 478, 252 }
 
 DEFAULT_COLOUR <const> = 'rgb(200,200,200)'
 GREY_CHROMA    <const> = 0.0002 -- Parsed colours with less chroma than this keep the current hue
@@ -80,9 +74,9 @@ DRAG_ESCAPE_TIME <const> = 250000 -- Microseconds in which an Escape press is ta
 
 -- Left column
 
-LEFT_PAD       <const> = 14
+LEFT_PAD       <const> = gui.sizing.window.gap
 LEFT_INNER     <const> = 272 -- Left column width less its padding
-LEFT_GAP       <const> = 12  -- Between panels
+LEFT_GAP       <const> = gui.sizing.window.gap  -- Between panels
 LIST_PAD_X     <const> = 8
 LIST_PAD_TOP   <const> = 4  -- Above and below the scratch row
 LIST_PAD_BTM   <const> = 10
@@ -93,7 +87,7 @@ VIEW_EDGE      <const> = 4  -- Inset of the rows within a listview
 SCRATCH_DIVIDER <const> = LIST_PAD_TOP + ROW_HEIGHT + LIST_PAD_TOP -- Divider between the scratch row and the list
 LIST_TOP       <const> = SCRATCH_DIVIDER + 1 + VIEW_EDGE -- Top of the first palette row
 SMALL_BUTTON   <const> = 22
-PALETTE_META_GAP <const> = 12 -- Between the mode box and the name field, which insets its text by FIELD_PAD
+PALETTE_META_GAP <const> = gui.sizing.window.gap -- Between the mode box and the name field, which insets its text by FIELD_PAD
 EYEDROP_H      <const> = 144
 PREVIEW_H      <const> = 210
 PREVIEW_META   <const> = 'palette in context'
@@ -106,8 +100,8 @@ PALETTE_MODE_ITEMS <const> = colourpalette.MODES.map(Mode => { id = Mode.id, lab
 
 -- Centre column
 
-CENTRE_PAD_X     <const> = 6
-CENTRE_PAD_Y     <const> = 14
+CENTRE_PAD_X     <const> = gui.sizing.window.gap -- Left of the panels
+CENTRE_PAD_Y     <const> = gui.sizing.window.gap
 CENTRE_INNER     <const> = 466 -- Centre column width less its padding
 SELECT_HEIGHT    <const> = 26
 WHEEL_Y          <const> = 78
@@ -118,9 +112,9 @@ READOUT_PAD_X    <const> = 10
 READOUT_LABEL    <const> = 12   -- Font sizes of the readout labels and values
 READOUT_VALUE    <const> = 13.8
 READOUT_H        <const> = 1 + (READOUT_ROWS * (READOUT_ROW + 1))
-CHANNEL_PANEL_Y  <const> = READOUT_Y + READOUT_H + 12
+CHANNEL_PANEL_Y  <const> = READOUT_Y + READOUT_H + gui.sizing.window.gap
 CHANNEL_PANEL_H  <const> = 228
-PANEL_PAD        <const> = 12
+PANEL_PAD        <const> = gui.sizing.window.gap
 CHANNEL_ROW      <const> = 26
 CHANNEL_KEY_W    <const> = 20
 CHANNEL_VALUE_W  <const> = 48
@@ -139,10 +133,10 @@ SNAP_HUE         <const> = 4    -- Degrees within which a linked colour dragged 
 
 -- Right column
 
-RIGHT_PAD      <const> = 14 -- Above and below the panels
-RIGHT_PAD_X    <const> = 6  -- Left of the panels
+RIGHT_PAD      <const> = gui.sizing.window.gap -- Above and below the panels
+RIGHT_PAD_X    <const> = gui.sizing.window.gap -- Left and right of the panels
 RIGHT_INNER    <const> = 232 -- Right column width less its padding
-RIGHT_GAP      <const> = 12  -- Between panels
+RIGHT_GAP      <const> = gui.sizing.window.gap  -- Between panels
 REL_PANEL_H    <const> = 136 -- The header and three channel rows
 CONTRAST_H     <const> = 118
 REL_KEY_W      <const> = 34  -- Width of the channel mode toggles
@@ -154,6 +148,14 @@ CONTRAST_SW    <const> = 28  -- Contrast pair swatch size
 WCAG_AA        <const> = 4.5
 WCAG_AAA       <const> = 7
 EXPORT_MIN_H   <const> = 200 -- Includes the panel header, code tabs and scrollable text
+
+-- The columns abut.  Each column insets its panels on the left by the window gap, and the right column also leaves the
+-- gap on its right, so the window edges and the space between columns match the vertical gap between panels.
+
+COLUMN_WIDTHS <const> = array<int> {
+   LEFT_PAD + LEFT_INNER, CENTRE_PAD_X + CENTRE_INNER, RIGHT_PAD_X + RIGHT_INNER + RIGHT_PAD_X
+}
+CLIENT_WIDTH <const> = COLUMN_WIDTHS[0] + COLUMN_WIDTHS[1] + COLUMN_WIDTHS[2]
 
 -- Fixed panels contribute their full height; Palette and Export contribute only their minimum height.
 -- Each flexible panel receives all space left by its fixed neighbours, without an upper height limit.
@@ -835,9 +837,9 @@ function focusReadoutCell(self:table, Index:num!)
 end
 
 -- The readout grid: three rows of two cells, each with its label on the left and its value right-aligned on the
--- same baseline.  All cells share the panel fill, so the grid is a rounded card with 1 px dividers.  Clicking a cell
--- copies its value.  The grid is a tab stop: the arrow keys, Home and End move the outlined cell, and Enter, Space or
--- Ctrl+C copy it.
+-- same baseline.  The grid is a headerless panel with the page fill, and its cells are drawn in the panel body, which
+-- meets the panel edges and holds the 1 px dividers.  Clicking a cell copies its value.  The body is a tab stop: the
+-- arrow keys, Home and End move the outlined cell, and Enter, Space or Ctrl+C copy it.
 
 function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
    t       = self.tokens
@@ -845,12 +847,14 @@ function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
    left_w  = math.ceil((Width - 3) * 0.5)
    split_x = 1 + left_w
 
-   vp = Target.new('VectorViewport', { x = X, y = Y, width = Width, height = height, cursor = 'hand' })
-   self.readoutVP = vp
+   self.readoutPanel = gui.panel({
+      target = Target, x = X, y = math.round(Y), width = Width, height = height, header = false,
+      padding = colourpicker_parts.PANEL_PADDING, theme = { bkgd = { fill = &theme.page.bkgd.fill } }
+   })
 
-   vp.new('VectorRectangle', table.merge({
-      x = 0, y = 0, width = Width, height = height
-   }, table.merge(&theme.panel.bkgd, &theme.page.bkgd)))
+   vp = self.readoutPanel.body
+   vp.cursor = 'hand'
+   self.readoutVP = vp
 
    cells = array<table>
    for i, def in READOUT_CELLS do
@@ -1910,13 +1914,13 @@ function buildCentre()
    col  = &columns[1]
    half = (CENTRE_INNER - 4 - 8) * 0.5
 
-   &schemeBox = selector(&&, col, CENTRE_PAD_X + 2, CENTRE_PAD_Y, half, 'Scheme', SCHEME_ITEMS,
+   &schemeBox = selector(&&, col, CENTRE_PAD_X, CENTRE_PAD_Y, half, 'Scheme', SCHEME_ITEMS,
       &state.scheme, function[&&](Item:table!)
          &state.scheme = Item.id
          &refresh('scheme')
       end)
 
-   &clampBox = selector(&&, col, CENTRE_PAD_X + 2 + half + 8, CENTRE_PAD_Y, half, 'Clamp to', CLAMP_ITEMS,
+   &clampBox = selector(&&, col, CENTRE_PAD_X + half + 8, CENTRE_PAD_Y, half, 'Clamp to', CLAMP_ITEMS,
       &state.clamp, function[&&](Item:table!)
          &state.clamp = Item.id
          &savedClamp = Item.id
@@ -1958,9 +1962,9 @@ function buildCentre()
       target = col, width = &schemeChip.width, height = chip_h, label = 'Apply All',
       tip = 'Apply the scheme colours to linked swatches, darkening inner companions and adding links as needed',
       theme = {
-         bkgd = { cornerX = 3, cornerY = 3, stroke = 'none' },
+         bkgd = { stroke = 'none' },
          text = {
-            face = colourpicker_parts.FACE_MONO, size = 10, style = 'Medium'
+            face = colourpicker_parts.FACE_MONO
          }
       },
       events = { activate = function[&&]() &applyScheme() end }
@@ -3629,7 +3633,7 @@ gui.dialog.colour = function(Options:table)
             'relPanel', 'relSliders', 'relRows', 'btnSwap', 'contrastPanel', 'ramp', 'exportPanel', 'code',
             'copiedCell', 'wheel', 'loupe', 'btnPick', 'pickedSample', 'preview', 'paletteView', 'paletteModeBox',
             'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnImport',
-            'btnExport', 'btnResetPalette', 'btnDeleteSwatch', 'channels', 'readoutCells',
+            'btnExport', 'btnResetPalette', 'btnDeleteSwatch', 'channels', 'readoutCells', 'readoutPanel',
             'readoutRing', 'readoutVP', 'window', 'viewport', 'footer', 'modebar', 'columns', 'btnSelect',
             'btnCancel', 'btnReset', 'scratchGesture', 'paletteItems'
          }

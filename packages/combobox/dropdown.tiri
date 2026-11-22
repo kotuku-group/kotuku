@@ -37,7 +37,8 @@ gui._dropdown = function(Options)
       height    = 0, -- Unscaled height of the menu content
       scale     = 1, -- Scale applied to the menu when shown, e.g. to match a scaled client viewport
       lineLimit = Options.lineLimit, -- Maximum number of visible items before the menu scrolls
-      items     = { }
+      items     = { },
+      bkgd      = nil -- The VectorRectangle that draws the menu background and border
    }
 
    -- toggle() alternates the visible state of the menu.  A TimeLapse is supported so that rapid changes to
@@ -331,7 +332,7 @@ gui._dropdown = function(Options)
          bksetting.{ x = offset, y = offset, xOffset = offset, yOffset = offset }
       end
 
-      &viewport.new('VectorRectangle', bksetting)
+      &bkgd = &viewport.new('VectorRectangle', bksetting) -- The corners are resolved once the items are measured
 
       -- Items are placed in a page that scrolls within a clipped frame if there are more than lineLimit of them.
 
@@ -466,6 +467,12 @@ gui._dropdown = function(Options)
       &width  = TEXT_X + widestItem + (HMARGIN * 3) + widestKey + HMARGIN
       &height = y + VMARGIN
       &page.height = &height
+
+      -- The corner radius is relative to the height of a menu item
+
+      item_h = (#&items > 0) ? &items[0].height : math.round(FONT_MAX_HEIGHT * ITEM_SPACING)
+      &bkgd.cornerX = gui.sizing.widget.cornerSize * item_h
+      &bkgd.cornerY = &bkgd.cornerX
 
       layoutGroups()
 

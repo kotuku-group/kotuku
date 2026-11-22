@@ -95,6 +95,17 @@ gui.input = function(Options)
       if override then input_theme = table.merge(input_theme, override, true, true) end
    end
 
+   -- The corner radius is relative to the height of a single-line box, not the size of the box, so that it is the
+   -- same at any width and a multi-line box matches a single-line one.  A percentage radius in the theme is applied
+   -- to sqrt(h * h), and a number is a fixed radius.
+
+   round_height = 0 -- Set when the box is created
+
+   function roundCorners()
+      &bkgd.cornerX = gui.sizing.widget.cornerSize * round_height
+      &bkgd.cornerY = &bkgd.cornerX
+   end
+
    -- Compose the box style from the current focus and disabled states.  Focus styling is suppressed while the input
    -- is disabled.
 
@@ -105,6 +116,7 @@ gui.input = function(Options)
       elseif &_focus then
          gui.applyStyle(&bkgd, input_theme.focus)
       end
+      roundCorners()
    end
 
    self.disable = function()
@@ -127,13 +139,13 @@ gui.input = function(Options)
    -- the right corners, and margins keep the slider out of the rounded ends.
 
    function scrollbarTheme():table
-      edge = input_theme.bkgd.strokeWidth ?? 0
-      round_x = math.max(0, (tonumber(input_theme.bkgd.cornerX) ?? 0) - edge)
-      round_y = math.max(0, (tonumber(input_theme.bkgd.cornerY ?? input_theme.bkgd.cornerX) ?? 0) - edge)
+      edge      = input_theme.bkgd.strokeWidth ?? 0
+      r         = gui.sizing.widget.cornerSize * round_height
+      round     = math.max(0, r - edge)
       bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'
       return { [bar_style] = table.merge({
-         bkgd   = { corners = { 0, 0, round_x, round_y, round_x, round_y, 0, 0 } },
-         margin = round_y
+         bkgd   = { corners = { 0, 0, round, round, round, round, 0, 0 } },
+         margin = round
       }, input_theme.scrollbar ?? {}, true, true) }
    end
 
@@ -141,11 +153,11 @@ gui.input = function(Options)
 
    function restyle()
       sw = input_theme.bkgd.strokeWidth ?? 0
-      edge = sw * 0.5
+      edge = (sw * 0.5) % 1 -- Pixel-align the stroke edges only
       &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
       refreshStyle()
 
-      inset = math.ceil(sw)
+      inset = math.ceil(sw * .5)
       &_textClip.{ x = inset, y = inset, xOffset = inset, yOffset = inset }
 
       if input_theme.text.fill then
@@ -374,13 +386,16 @@ gui.input = function(Options)
          end
       end
 
-      edge = (input_theme.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
+      edge = ((input_theme.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
 
       &bkgd = &inputViewport.new('VectorRectangle', table.merge({
          x = edge, y = edge, xOffset = edge, yOffset = edge
       }, input_theme.bkgd))
 
-      clip_inset = math.ceil(input_theme.bkgd.strokeWidth ?? 0) -- Whole pixels keep the text sharp
+      round_height = (&multiline ? LINE_HEIGHT : BOX_HEIGHT) - (edge * 2)
+      roundCorners()
+
+      clip_inset = math.ceil((input_theme.bkgd.strokeWidth ?? 0) * .5) -- Whole pixels keep the text sharp
       &_textClip = &inputViewport.new('VectorViewport', {
          name = 'vp_input_clip',
          x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset,
@@ -392,9 +407,9 @@ gui.input = function(Options)
 
       local text_y
       if &multiline then
-         text_y = math.round(FONT_HEIGHT + math.floor((LINE_HEIGHT - FONT_HEIGHT - (input_theme.bkgd.strokeWidth * 2)) * 0.5))
+         text_y = math.round(FONT_HEIGHT + math.floor((LINE_HEIGHT - FONT_HEIGHT) * 0.5)) - clip_inset
       else
-         text_y = math.round((BOX_HEIGHT + ASCENT) * 0.5)
+         text_y = math.round((BOX_HEIGHT + ASCENT) * 0.5) - clip_inset
       end
 
       -- In multi-line mode, the text is drawn on a page that scrolls within a view.  The scrollbar narrows the view
@@ -428,7 +443,7 @@ gui.input = function(Options)
       if Options.placeholder then
          &placeholder = text_host.new('VectorText', {
             name      = 'vt_placeholder',
-            x         = TEXT_PAD,
+            x         = TEXT_PAD - clip_inset,
             y         = text_y,
             fontStyle = gui.fontStyle(input_theme.text),
             opacity   = 0.5,
@@ -443,7 +458,7 @@ gui.input = function(Options)
 
       &text = text_host.new('VectorText', {
          name         = 'InputBodyText',
-         x            = TEXT_PAD,
+         x            = TEXT_PAD - clip_inset,
          y            = text_y,
          fontStyle    = gui.fontStyle(input_theme.text),
          string       = Options.text,

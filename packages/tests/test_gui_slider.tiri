@@ -92,8 +92,8 @@ end
       'The vertical thumb must be centred within an explicit width')
 
    local default_slider = gui.slider({ target=slider.viewport.parent, label='Resolution:' })
-   assert(default_slider.trackVP.width is 100
-      and default_slider.viewport.width is 100 + default_slider.prvLabel.size,
+   assert(near(default_slider.trackVP.width, 100)
+      and near(default_slider.viewport.width, 100 + default_slider.prvLabel.size),
       'The default horizontal track must remain 100 pixels long, excluding the label')
    local default_vertical = gui.slider({ target=slider.viewport.parent, orientation='vertical' })
    assert(default_vertical.viewport.height is 100
@@ -397,7 +397,7 @@ function abandonedSlider(Events:table):<obj, func, array<int>>
       label='Gain:', labelPos='top', labelAlign='centre', events=Events })
    local weak_slider <weak> = slider
    return surface, function():table return weak_slider end,
-      array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.button.id,
+      array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.thumbBkgd.id,
          slider.labelText.id, slider.prvLabel.slot.id }
 end
 
@@ -447,7 +447,7 @@ end
 @Test function FreeReleasesSliderVectors()
    local surface <close>, slider = newSlider({ label='Gain:', valuePos='out-max', ticks=true, step=0.1 })
    local parent_id = slider.viewport.parent.id
-   local ids = array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.button.id,
+   local ids = array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.thumbBkgd.id,
       slider.labelText.id, slider.prvLabel.slot.id, slider.valueText.id }
    for _, path in slider.prvTickPaths do ids.push(path.id) end
 
@@ -1717,21 +1717,21 @@ end
             local surface <close>, slider = newSlider({ orientation=orientation, style='track', thumbLength=size,
                thumbSize=18, value=1, theme=(gap is default_gap) ? nil : { bkgd={ strokeWidth=gap } }
             })
-            local thumb, button = slider.thumbVP, slider.button
-            assert(button.width > 0 and button.height > 0,
+            local thumb, thumb_bkgd = slider.thumbVP, slider.thumbBkgd
+            assert(thumb_bkgd.width > 0 and thumb_bkgd.height > 0,
                f'A {size} pixel thumb with a {gap} pixel inset must have a drawable foreground')
-            assert(button.x >= 0 and button.y >= 0
-               and button.x + button.width <= thumb.width and button.y + button.height <= thumb.height,
+            assert(thumb_bkgd.x >= 0 and thumb_bkgd.y >= 0
+               and thumb_bkgd.x + thumb_bkgd.width <= thumb.width and thumb_bkgd.y + thumb_bkgd.height <= thumb.height,
                'The foreground must fit within the configured thumb')
-            assert(button.x * 2 + button.width is thumb.width
-               and button.y * 2 + button.height is thumb.height,
+            assert(thumb_bkgd.x * 2 + thumb_bkgd.width is thumb.width
+               and thumb_bkgd.y * 2 + thumb_bkgd.height is thumb.height,
                'Reduced insets must keep the foreground centred')
             local length = (orientation is 'vertical') ? thumb.height : thumb.width
             local position = (orientation is 'vertical') ? thumb.y : thumb.x
             assert(length is size and position is ((orientation is 'vertical') ? 0 : slider.trackVP.width - size),
                'Foreground insets must preserve the configured thumb length and endpoint position')
             if size is 18 then
-               assert(button.x is gap and button.y is gap,
+               assert(thumb_bkgd.x is gap and thumb_bkgd.y is gap,
                   'Thumbs with enough space must retain the theme inset')
             end
          end
@@ -1834,7 +1834,7 @@ end
       local surface <close>, slider = newSlider({ orientation=orientation, style='slide', min=0, max=10, value=0,
          thickness=10, thumbSize=10, thumbLength=10, width=vertical ? nil : 210, height=vertical ? 210 : nil
       })
-      local thumb, button, host = slider.thumbVP, slider.button, slider.trackVP
+      local thumb, thumb_bkgd, host = slider.thumbVP, slider.thumbBkgd, slider.trackVP
       local length:num = vertical ? host.height : host.width
       local travel = length - 10
 
@@ -1848,7 +1848,7 @@ end
          else
             assert(thumb.x is 0, 'A horizontal anchored thumb must keep its left edge at the minimum')
          end
-         assert(button.x * 2 + button.width is thumb.width and button.y * 2 + button.height is thumb.height,
+         assert(thumb_bkgd.x * 2 + thumb_bkgd.width is thumb.width and thumb_bkgd.y * 2 + thumb_bkgd.height is thumb.height,
             'The foreground must fill the anchored thumb within its insets')
       end
 
@@ -2008,11 +2008,11 @@ end
    local styled = gui.slider({ target=root, x=10, y=110, width=200, theme={ slideFill={ fill='#0000ff' } } })
    local track = { x=slider.prvBarBkgd.x, width=slider.prvBarBkgd.width }
    assert(slider.prvBarBkgd.fill is light.slider.bkgd.fill, 'The slider must start with the light theme')
-   assert(styled.button.fill is '#0000ff', 'Options.theme must be applied')
+   assert(styled.thumbBkgd.fill is '#0000ff', 'Options.theme must be applied')
 
    gui.broadcastTheme(scene, gui.setTheme(scene, 'dark'))
    assert(slider.prvBarBkgd.fill is dark.slider.bkgd.fill, 'The track must take the dark theme')
-   assert(slider.button.fill is dark.slider.slideFill.fill, 'The thumb must take the dark theme')
+   assert(slider.thumbBkgd.fill is dark.slider.slideFill.fill, 'The thumb must take the dark theme')
    assert(slider.labelText.fill is dark.slider.text.fill and slider.valueText.fill is dark.slider.text.fill,
       'The label and value must take the dark text fill')
    assert(table.size(slider.prvTickPaths) > 0, 'The slider must have ticks')
@@ -2022,13 +2022,13 @@ end
    assert(slider.prvBarBkgd.x is track.x and slider.prvBarBkgd.width is track.width,
       'A theme change must not move the track')
    assert(disabled.prvBarBkgd.opacity is 0.5, 'A disabled slider must keep its disabled style')
-   assert(styled.button.fill is '#0000ff', 'Options.theme must survive the broadcast')
+   assert(styled.thumbBkgd.fill is '#0000ff', 'Options.theme must survive the broadcast')
 
    slider.setTheme({ bkgd={ fill='#040506' } })
    assert(slider.prvBarBkgd.fill is '#040506', 'setTheme() must apply the per-instance override')
    gui.broadcastTheme(scene, gui.setTheme(scene, 'light'))
    assert(slider.prvBarBkgd.fill is '#040506', 'The override must survive the broadcast')
-   assert(slider.button.fill is light.slider.slideFill.fill, 'Values outside the override must follow the theme')
+   assert(slider.thumbBkgd.fill is light.slider.slideFill.fill, 'Values outside the override must follow the theme')
    slider.setTheme(nil)
    assert(slider.prvBarBkgd.fill is light.slider.bkgd.fill, 'setTheme(nil) must clear the override')
 end

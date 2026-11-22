@@ -41,9 +41,16 @@ fontdialog_parts.text = text
 
 fontdialog_parts.PANEL_PADDING = { left = 0, right = 0, top = 0, bottom = 0 }
 
--- Space to leave below an opaque list that ends a panel, so that it doesn't cover the panel's rounded corners.
-
-fontdialog_parts.LIST_INSET = math.ceil(gui.sizing.widget.edgeRound)
+@Doc(text=[[
+@desc Space to leave below an opaque list that ends a panel, so that it doesn't cover the panel's rounded corners.
+A full-width list meets the inside of the border, so it must clear the border and the radius of its inner corners.
+@input The panel that holds the list.
+@result The inset from the bottom of the panel, in whole pixels.
+]])
+fontdialog_parts.listInset = function(Panel:table!):num
+   _, round_y = Panel.innerCorners()
+   return math.ceil((Panel.bkgd.strokeWidth ?? 0) + round_y)
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -116,7 +123,7 @@ The rings are placed behind the thumb bar, so the slider's thumbSize must be at 
 @result The outer ring, whose stroke can be changed to show focus, and the inner ring
 ]])
 fontdialog_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
-   bar = Slider.button
+   bar = Slider.thumbBkgd
    outer = Slider.thumbVP.new('VectorRectangle', {
       x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, cornerX = 3, cornerY = 3,
       stroke = &theme.scheme is 'light' ? 'black' : 'white', fill=&theme.panel.bkgd.fill
