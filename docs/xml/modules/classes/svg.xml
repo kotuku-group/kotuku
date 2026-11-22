@@ -101,6 +101,39 @@ the content does not inherit from the ancestors of the referenced element.</li>
 document, not from the element that references them.</li>
 </list>
 <p>Custom property values are re-serialised by the CSS parser rather than kept as raw token text, so spacing and the spelling of some tokens may differ from the source.  <code>var()</code> and <code>env()</code> are not supported in presentation attributes such as <code>fill=&quot;var(--glaze)&quot;</code>, consistent with web browsers.  <code>@property</code> and pseudo-classes other than <code>:root</code> are not supported.</p>
+<header>Lighting Extensions</header>
+<p>A document that declares a Kōtuku namespace is rendered with a <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of <code>NONE</code> (see #Init), which enables the enhanced lighting of <class name="LightingFX">LightingFX</class>.  The following attributes of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code> configure it, using any prefix that is bound to the Kōtuku namespace:</p>
+<list type="bullet">
+<li><code>kotuku:features</code>: <code>all</code>, <code>none</code>, or a space-separated list of <code>dequantise</code>, <code>sharpen</code>, <code>cavity</code>, <code>detail</code>,
+<code>shadows</code> and <code>specular-aa</code>.  Unknown names are skipped with a warning.  Sets <class name="LightingFX" field="Features">LightingFX.Features</class>; the default is
+<code>all</code>.</li>
+<li><code>kotuku:cavity</code>: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
+<class name="LightingFX" field="Cavity">LightingFX.Cavity</class>.</li>
+<li><code>kotuku:detail</code>: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets <class name="LightingFX" field="Detail">LightingFX.Detail</class>.</li>
+<li><code>kotuku:penumbra</code>: width of the soft edge of shadows in degrees, 0 or greater, default 2.  Sets
+<class name="LightingFX" field="Penumbra">LightingFX.Penumbra</class>.</li>
+<li><code>kotuku:ambient</code>: a colour, or <code>none</code> (the default).  Ambient light added to the diffuse light; its alpha scales
+it.  Sets <class name="LightingFX" field="Ambient">LightingFX.Ambient</class>.  It has no effect on <code>feSpecularLighting</code>.</li>
+</list>
+<p>The light source element accepts <code>kotuku:intensity</code>, a multiplier of the light's colour, 0 or greater, default 1.  It sets <class name="LightingFX" field="Intensity">LightingFX.Intensity</class>.</p>
+<p>An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown namespace and draw the standard SVG lighting.</p>
+<pre>&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
+  &lt;filter id=&quot;relief&quot;&gt;
+    &lt;feDiffuseLighting in=&quot;SourceAlpha&quot; surfaceScale=&quot;8&quot; kotuku:features=&quot;shadows cavity&quot; kotuku:penumbra=&quot;4&quot;&gt;
+      &lt;feDistantLight azimuth=&quot;225&quot; elevation=&quot;35&quot;/&gt;
+    &lt;/feDiffuseLighting&gt;
+  &lt;/filter&gt;
+&lt;/svg&gt;
+</pre>
+<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive, producing a finished surface: <code>in</code> is the height (its alpha channel) and <code>in2</code> is the albedo.  Without <code>in2</code> the albedo is opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>, and the extension attributes above without their prefix, as the element is already in the Kōtuku namespace.  One light source element is required.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
+<pre>&lt;filter id=&quot;brass&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
+  &lt;feTurbulence type=&quot;fractalNoise&quot; baseFrequency=&quot;0.04&quot; numOctaves=&quot;3&quot; result=&quot;height&quot;/&gt;
+  &lt;kotuku:feLighting in=&quot;height&quot; in2=&quot;SourceGraphic&quot; surfaceScale=&quot;6&quot; diffuseConstant=&quot;0.9&quot;
+      specularConstant=&quot;0.6&quot; specularExponent=&quot;40&quot; ambient=&quot;#202830&quot;&gt;
+    &lt;feDistantLight azimuth=&quot;225&quot; elevation=&quot;35&quot; kotuku:intensity=&quot;1.4&quot;/&gt;
+  &lt;/kotuku:feLighting&gt;
+&lt;/filter&gt;
+</pre>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>

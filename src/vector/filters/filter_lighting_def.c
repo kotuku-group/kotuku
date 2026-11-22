@@ -3,6 +3,7 @@
 static const struct FieldDef clLightingFXLT[] = {
    { "Diffuse", 0x00000000 },
    { "Specular", 0x00000001 },
+   { "Combined", 0x00000002 },
    { nullptr, 0 }
 };
 

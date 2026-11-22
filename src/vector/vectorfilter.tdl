@@ -125,6 +125,7 @@
     ~struct(FRGB) Colour
     ~int(LT) Type
     ~int(LFX) Features
+    ~struct(FRGB) Ambient
   ]])
 
   klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[

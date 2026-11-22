@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The client has the option of providing a pre-allocated <class name="Bitmap">Bitmap</class> or the path to a <class name="Image">Image</class> file as the source.</p>
-<p>If a pre-allocated <class name="Bitmap">Bitmap</class> is to be used, it must be created under the ownership of the ImageFX object, and this must be configured prior to initialisation.  It is required that the bitmap uses 32 bits per pixel and that the alpha channel is enabled.</p>
+<p>If a pre-allocated <class name="Bitmap">Bitmap</class> is to be used, it must be owned by the ImageFX object before the ImageFX is initialised. The bitmap can be created as a child of the uninitialised ImageFX, or an existing bitmap can be assigned to it with <function module="Core">SetOwner</function>.  The bitmap must be initialised before the ImageFX, and it is required to use 32 bits per pixel with the alpha channel enabled.  The bitmap is retained for the lifetime of the ImageFX; an attempt to free it earlier is deferred until the ImageFX is freed.  Changes to the content of the bitmap are rendered on the next draw of the filter. Call <class name="Vector" method="Refresh">Vector.Refresh()</class> on the filtered vector to ensure that it is redrawn.</p>
 <p>If a source image file is referenced, it will be upscaled to meet the requirements automatically as needed.</p>
 <p>Technically the ImageFX object is represented by a new viewport, the bounds of which are defined by attributes <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code>.  The placement and scaling of the referenced image is controlled by the <fl>AspectRatio</fl> field.</p></description>
     <source>
@@ -55,7 +55,7 @@
       <access read="R">Read</access>
       <type>OBJECTPTR</type>
       <description>
-<p>Reading the Bitmap field will return the <class name="Bitmap">Bitmap</class> that is being used as the image source.  Note that if a custom Bitmap is to be used, the correct way to do this as to assign it to the ImageFX object via ownership rules.</p>
+<p>Reading the Bitmap field will return the <class name="Bitmap">Bitmap</class> that is being used as the image source.  A custom Bitmap is assigned by making the ImageFX object its owner prior to initialisation, as described in the class overview.</p>
 <p>If an image has been processed by setting the <fl>Path</fl>, the Bitmap will refer to the content that has been processed.</p>
       </description>
     </field>

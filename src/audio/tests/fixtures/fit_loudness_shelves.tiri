@@ -156,8 +156,8 @@ function fit_gains(Shared:array<double>, Level:num):<num, num, num>
       if determinant is 0 then break end
       local step_low = -(jhh * gl - jlh * gh) / determinant
       local step_high = -(jll * gh - jlh * gl) / determinant
-      low = math.min(math.max(low + step_low, 0), 40)
-      high = math.min(math.max(high + step_high, -12), 24)
+      low = math.clamp(low + step_low, 0, 40)
+      high = math.clamp(high + step_high, -12, 24)
       if math.max(math.abs(step_low), math.abs(step_high)) < 1e-6 then break end
    end
 

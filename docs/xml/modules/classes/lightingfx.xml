@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The lighting effect class applies a diffuse or specular lighting effect to the alpha channel of an input bitmap, which functions as a bump map.  The output is an RGBA representation of the light effect.  If no light <fl>Colour</fl> is specified by the client then the output will be in grey scale.</p>
+<p>The lighting effect class applies a diffuse or specular lighting effect to the alpha channel of an input bitmap, which functions as a bump map.  The output is an RGBA representation of the light effect.  If no light <fl>Colour</fl> is specified by the client then the output will be in grey scale.  The <code>COMBINED</code> <fl>Type</fl>, described below, lights an albedo instead and produces a finished surface.</p>
 <p>For diffuse lighting, the resulting RGBA image is computed as follows:</p>
 <pre>Dr = kd * N.L * Lr
 Dg = kd * N.L * Lg
@@ -44,23 +44,31 @@ Lr,Lg,Lb = RGB components of light
 </pre>
 <p>where <code>L</code> is the light unit vector.</p>
 <p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p>
-<p>The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit steps on gentle slopes.  When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code> (the default), the enhancements selected by the <fl>Features</fl> field are applied.  All of them are enabled by default:</p>
+<p>The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit steps on gentle slopes.  When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code> (the default), the enhanced pipeline applies the features selected by the <fl>Features</fl> field.  All of them are enabled by default:</p>
 <list type="bullet">
 <li><code>DEQUANTISE</code>: Heights are read as floating point values, and areas that vary by no more than one alpha level are
 smoothed to remove terracing.</li>
 <li><code>SHARPEN</code>: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
 wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
 SVG kernel, reaching it at two pixels per unit.</li>
-<li><code>CAVITY</code>: Narrow creases and pits receive less light, in proportion to their curvature.  When the bump map is
-magnified, curvature is measured at the scale of the kernel unit so that 8-bit steps are not darkened.</li>
+<li><code>CAVITY</code>: Narrow creases and pits receive less light, in proportion to their curvature and the <fl>Cavity</fl> strength.
+When the bump map is magnified, curvature is measured at the scale of the kernel unit so that 8-bit steps are not
+darkened.</li>
 <li><code>DETAIL</code>: Fine detail is given more relief than broad shapes, so that it remains visible at a surface scale that
-suits the larger forms.</li>
+suits the larger forms.  The <fl>Detail</fl> field sets the strength.</li>
 <li><code>SHADOWS</code>: Distant lights cast shadows.  A point is unlit when the surface between it and the light rises above
-the light's elevation, and the edge of the shadow softens with distance from the surface that casts it.</li>
+the light's elevation, and the edge of the shadow softens with distance from the surface that casts it, at a rate set
+by <fl>Penumbra</fl>.</li>
 <li><code>SPECULAR_AA</code>: Specular highlights are widened where the surface varies within a pixel, so that high exponents
 do not produce isolated bright pixels.</li>
 </list>
-<p>Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies beside a raised area.  Set the scene's Compliance to <code>SVG1</code> or <code>SVG2</code> for results that match the SVG specification exactly, or set <fl>Features</fl> to zero to use the SVG algorithm for this effect alone.</p></description>
+<p>Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies beside a raised area.  Set the scene's Compliance to <code>SVG1</code> or <code>SVG2</code> for results that match the SVG specification exactly, or set <fl>Features</fl> to zero to use the SVG algorithm for this effect alone.  The enhanced pipeline is still used if <fl>Ambient</fl> or <fl>Intensity</fl> is set.</p>
+<p>An <fl>Ambient</fl> light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by <code>CAVITY</code>. The <fl>Intensity</fl> of the light multiplies its <fl>Colour</fl>.  For the diffuse and specular types the light is limited to full strength before it is coloured, as the SVG algorithm does with <fl>Constant</fl>, so a value above 1 cannot make a coloured light brighter than full strength.  Neither field has an effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>.</p>
+<p>The <code>COMBINED</code> type computes a lit surface in a single pass.  The #Mix input is the albedo, the colour of the surface, and the result is</p>
+<pre>albedo * (ambient + kd * N.L * light) + ks * pow(N.H, specularExponent) * light
+</pre>
+<p>where kd is <fl>Constant</fl> and ks is <fl>SpecularConstant</fl>.  The value is clamped once, when it is written, so light that is brighter than full strength keeps its colour through the albedo.  This is the result of multiplying the diffuse light by the albedo and adding the specular light with <class name="CompositeFX">CompositeFX</class>, but the surface is analysed once and no intermediate result is limited to 8 bits.  Shadows and <code>CAVITY</code> reduce both light terms.  The alpha of the result is the albedo's alpha, raised to the brightest channel of the specular light, so that highlights can extend over transparent areas of the albedo.  If #Mix is not set, the albedo is opaque white and the result is the sum of the light terms.  The <code>COMBINED</code> type always uses the enhanced pipeline, whatever the scene's Compliance, and has no SVG equivalent.</p>
+<p>SVG documents can set <fl>Features</fl>, <fl>Cavity</fl>, <fl>Detail</fl>, <fl>Penumbra</fl>, <fl>Ambient</fl> and <fl>Intensity</fl> with <code>kotuku:</code> attributes, and the <code>COMBINED</code> type is available as the <code>kotuku:feLighting</code> element; refer to the SVG class for details.</p></description>
     <source>
       <file path="filters/">filter_lighting.cpp</file>
     </source>
@@ -111,7 +119,7 @@ do not produce isolated bright pixels.</li>
       </input>
       <description>
 <p>This method applies a pointed light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
-<p>A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open flame is a good example of a point light.  The intensity of the light can be controlled by altering the alpha component of the light <fl>Colour</fl>.</p>
+<p>A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open flame is a good example of a point light.  The strength of the light is controlled by <fl>Constant</fl> and <fl>Intensity</fl>.</p>
       </description>
       <tags>mutates-object</tags>
     </method>
@@ -142,13 +150,35 @@ do not produce isolated bright pixels.</li>
 
   <fields>
     <field>
+      <name>Ambient</name>
+      <comment>Ambient light added to the diffuse and combined types.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct FRGB</type>
+      <description>
+<p>Ambient light reaches every point of the surface equally, from no particular direction, so that areas facing away from the light or lying in shadow are not black.  It is added to the diffuse light, and for the <code>COMBINED</code> type it is multiplied by the albedo.  It is not blocked by shadows, but it is reduced in creases and pits by the <code>CAVITY</code> feature.  The specular type ignores it.</p>
+<p>The light is the RGB value of the colour multiplied by its alpha.  The colour is in the same colour space as <fl>Colour</fl>. The default is transparent black, which adds no light.</p>
+<p>This field has no effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>, unless the <fl>Type</fl> is <code>COMBINED</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Cavity</name>
+      <comment>Strength of the darkening applied to creases and pits by the <code>CAVITY</code> feature.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Concave areas of the surface receive less light in proportion to their curvature, multiplied by this value.  The light is never reduced below 40% of its unoccluded level.  The default is 0.25, and a value of 0 has the same effect as disabling <code>CAVITY</code> in <fl>Features</fl>.  The value must be zero or greater.</p>
+<p>This field has no effect unless the enhanced pipeline is in use; refer to <fl>Features</fl>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Colour</name>
       <comment>Defines the colour of the light source.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>struct FRGB</type>
       <description>
-<p>Set the Colour field to define the colour of the light source.</p>
-<p>If the algorithm supports it, the Alpha component defines the intensity of the light source.</p>
+<p>Set the Colour field to define the colour of the light source.  The alpha component is not used; the strength of the light is set by <fl>Constant</fl> and <fl>Intensity</fl>.</p>
 <p>The default colour is pure white.</p>
       </description>
     </field>
@@ -159,7 +189,18 @@ do not produce isolated bright pixels.</li>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.</p>
+<p>In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.  For the <code>COMBINED</code> type it is kd, and <fl>SpecularConstant</fl> is ks.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Detail</name>
+      <comment>Strength of the relief given to fine detail by the <code>DETAIL</code> feature.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The slope of fine detail, meaning features of a few kernel units, is multiplied by this value before the surface is lit.  Steep slopes are compressed so that strong values do not turn small features into hard edges.  Broad shapes are not affected.  The default is 1.5, and a value of 1 has the same effect as disabling <code>DETAIL</code> in <fl>Features</fl>.  The value must be 1 or greater.</p>
+<p>This field has no effect unless the enhanced pipeline is in use; refer to <fl>Features</fl>.</p>
       </description>
     </field>
 
@@ -180,8 +221,31 @@ do not produce isolated bright pixels.</li>
       <type lookup="LFX">LFX</type>
       <description>
 <p>When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code>, the lighting algorithm is extended with the features enabled here.  The default is <code>ALL</code>.  Each feature can be disabled independently, for instance to remove shadows from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG algorithm.  Disabling <code>SHARPEN</code> measures slopes with the same kernel as the SVG algorithm.</p>
-<p>If no features are enabled, the SVG algorithm is used without modification.  Features have no effect when the Compliance of the scene is <code>SVG1</code> or <code>SVG2</code>.</p>
+<p>The strength of <code>CAVITY</code> and <code>DETAIL</code>, and the width of the shadow edge, are set by the <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl> fields.</p>
+<p>If no features are enabled, and neither <fl>Ambient</fl> nor <fl>Intensity</fl> is set, the SVG algorithm is used without modification.  Features have no effect when the Compliance of the scene is <code>SVG1</code> or <code>SVG2</code>, except for the <code>COMBINED</code> type, which always uses the enhanced pipeline.  The SVG class renders its own scene with a Compliance of <code>SVG2</code>, unless the document declares a Kōtuku namespace, in which case the Compliance is <code>NONE</code> and the features apply.  In SVG markup, features are selected with the <code>kotuku:features</code> attribute of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code>.</p>
 <types lookup="LFX"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Intensity</name>
+      <comment>Multiplies the colour of the light.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The light's <fl>Colour</fl> is multiplied by this value.  For the diffuse and specular types, the light is limited to full strength before it is coloured, as it is for <fl>Constant</fl>, so a value above 1 brightens the light only until it reaches full strength.  For the <code>COMBINED</code> type the light is not limited until the result is written, so a value above 1 can make an albedo brighter while it keeps its colour.</p>
+<p>The default is 1.  The value must be zero or greater.  It has no effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>, unless the <fl>Type</fl> is <code>COMBINED</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Penumbra</name>
+      <comment>Width of the soft edge of shadows cast by the <code>SHADOWS</code> feature, in degrees.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>A point on the surface passes from light into shadow as the elevation at which the surface hides the light rises through the light's own elevation.  The transition is smoothed over this many degrees either side of the light's elevation, so the shadow's edge widens with distance from the area that casts it.  The width is limited to half of the light's elevation.  The default is 2, and a value of 0 produces hard shadows.  The value must be zero or greater.</p>
+<p>This field has no effect unless the enhanced pipeline is in use; refer to <fl>Features</fl>.</p>
       </description>
     </field>
 
@@ -196,11 +260,22 @@ do not produce isolated bright pixels.</li>
     </field>
 
     <field>
+      <name>SpecularConstant</name>
+      <comment>The ks value of the <code>COMBINED</code> type.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>For the <code>COMBINED</code> type, this field specifies the ks value of the Phong lighting model, and <fl>Constant</fl> specifies kd. It is not used by the diffuse and specular types, for which <fl>Constant</fl> is the only constant.  The default is 1, and the value must be zero or greater.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Type</name>
-      <comment>Defines the type of surface light scattering, which can be specular or diffuse.</comment>
+      <comment>Defines the type of surface light scattering, which can be diffuse, specular or both combined.</comment>
       <access read="R" write="W">Read/Write</access>
       <type lookup="LT">LT</type>
       <description>
+<p>The <code>COMBINED</code> type reads an albedo from the #Mix input; refer to the class description.</p>
 <types lookup="LT"/>
       </description>
     </field>
@@ -230,15 +305,19 @@ do not produce isolated bright pixels.</li>
 
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the filter.</comment>
+      <comment>Returns an SVG element that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <description>
+<p>The result is a complete element, including its light source: <code>feDiffuseLighting</code> or <code>feSpecularLighting</code>, or <code>kotuku:feLighting</code> for the <code>COMBINED</code> type.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes, and only when they differ from their defaults: <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:ambient</code> for <fl>Ambient</fl>, and <code>kotuku:intensity</code> on the light source for <fl>Intensity</fl>.  The attributes of <code>kotuku:feLighting</code> are written without the prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
+<p>The <code>in</code>, <code>in2</code>, <code>result</code> and primitive subregion attributes are not included.</p>
+      </description>
       <tags>caller-owns-result</tags>
     </field>
 
   </fields>
   <types>
-    <constants lookup="LFX" comment="Enhanced lighting features for the LightingFX class.  These apply only when the scene's Compliance is `NONE`.">
+    <constants lookup="LFX" comment="Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features.">
       <const name="ALL">Synonym for <code>DEQUANTISE | SHARPEN | CAVITY | DETAIL | SHADOWS | SPECULAR_AA</code></const>
       <const name="CAVITY">Darken narrow creases and pits in proportion to their curvature.</const>
       <const name="DEQUANTISE">Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.</const>
@@ -249,6 +328,7 @@ do not produce isolated bright pixels.</li>
     </constants>
 
     <constants lookup="LT" comment="Lighting algorithm for the LightingFX class.">
+      <const name="COMBINED">Light an albedo with diffuse, specular and ambient light in a single pass, producing a finished surface.</const>
       <const name="DIFFUSE">Select diffuse lighting.</const>
       <const name="SPECULAR">Select specular lighting.</const>
     </constants>

@@ -692,17 +692,19 @@ static constexpr CSTRING glFilterSurfaceTestClass = "FilterSurfaceTestFX";
 #endif
 
 //********************************************************************************************************************
-// Returns the input arrangement and sampling reach for an effect class.  Unrecognised classes are treated as
-// single-input effects that may read the whole of their input.
+// Returns the input arrangement and sampling reach for an effect.  Unrecognised classes are treated as single-input
+// effects that may read the whole of their input.  LightingFX reads a second input only for its combined type, and
+// only if a mix input has been set, as the albedo is optional.
 
-static filter_operation describe_filter_operation(CLASSID Class)
+static filter_operation describe_filter_operation(const extFilterEffect *Effect)
 {
    using enum filter_inputs;
+   const auto class_id = ((extFilterEffect *)Effect)->classID();
 #ifdef UNIT_TESTS
-   if (Class IS CLASSID(kt::strihash(glFilterMaskTestClass))) return { DUAL };
-   if (Class IS CLASSID(kt::strihash(glFilterSurfaceTestClass))) return { GENERATOR };
+   if (class_id IS CLASSID(kt::strihash(glFilterMaskTestClass))) return { DUAL };
+   if (class_id IS CLASSID(kt::strihash(glFilterSurfaceTestClass))) return { GENERATOR };
 #endif
-   switch (Class) {
+   switch (class_id) {
       case CLASSID::BLURFX:         return { SINGLE, effect_sampling<extBlurFX> };
       case CLASSID::COLOURFX:       return { SINGLE };
       case CLASSID::COMPOSITEFX:    return { DUAL };
@@ -710,7 +712,8 @@ static filter_operation describe_filter_operation(CLASSID Class)
       case CLASSID::DISPLACEMENTFX: return { DUAL, effect_sampling<extDisplacementFX> };
       case CLASSID::FLOODFX:        return { GENERATOR };
       case CLASSID::IMAGEFX:        return { GENERATOR };
-      case CLASSID::LIGHTINGFX:     return { SINGLE, effect_sampling<extLightingFX> };
+      case CLASSID::LIGHTINGFX:
+         return { ((const extLightingFX *)Effect)->reads_albedo() ? DUAL : SINGLE, effect_sampling<extLightingFX> };
       case CLASSID::MERGEFX:        return { MERGE };
       case CLASSID::MORPHOLOGYFX:   return { SINGLE, effect_sampling<extMorphologyFX> };
       case CLASSID::OFFSETFX:       return { SINGLE, effect_sampling<extOffsetFX> };
@@ -821,7 +824,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       }
 
       positions.emplace(effect, i);
-      const auto operation = describe_filter_operation(effect->classID());
+      const auto operation = describe_filter_operation(effect);
       const auto extension = effect->FilterExtension;
       Plan.Steps.push_back({ .Effect = effect, .Operation = operation, .Inputs = {},
          .Format = extension ? extension->Format : filter_surface_format::RGBA8 });
@@ -2353,12 +2356,58 @@ This field value will return a purpose-built string that defines the filter's ef
 static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
 {
    std::stringstream ss;
+   filter_positions results;
 
-   for (auto e : Self->Effects) {
-      ss << "<";
+   // Lighting inputs can reference another primitive.  Assign result names before writing their producers.
+
+   auto name_reference = [&](VSF Source, objFilterEffect *Producer) {
+      if ((Source IS VSF::REFERENCE) and Producer) results.try_emplace(Producer, results.size());
+   };
+   for (auto effect : Self->Effects) {
+      if (effect->classID() != CLASSID::LIGHTINGFX) continue;
+      name_reference(effect->SourceType, effect->Input);
+      if (((extLightingFX *)effect)->reads_albedo()) name_reference(effect->MixType, effect->Mix);
+   }
+
+   auto write_input = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer) {
+      CSTRING name;
+      switch (Source) {
+         case VSF::GRAPHIC:    name = "SourceGraphic"; break;
+         case VSF::ALPHA:      name = "SourceAlpha"; break;
+         case VSF::BKGD:       name = "BackgroundImage"; break;
+         case VSF::BKGD_ALPHA: name = "BackgroundAlpha"; break;
+         case VSF::FILL:       name = "FillPaint"; break;
+         case VSF::STROKE:     name = "StrokePaint"; break;
+         case VSF::REFERENCE: {
+            if (auto result = results.find(Producer); result != results.end()) {
+               ss << ' ' << Attribute << "=\"effect" << result->second << '"';
+            }
+            return;
+         }
+         default: return;
+      }
+      ss << ' ' << Attribute << "=\"" << name << '"';
+   };
+
+   // An effect's XMLDef is either the content of an empty element, or a complete element if it has children.
+
+   for (auto effect : Self->Effects) {
       std::string def;
-      if (e->getXMLDef(def) IS ERR::Okay) ss << def;
-      ss << "/>";
+      if (effect->getXMLDef(def) != ERR::Okay) def.clear();
+      const bool complete = def.starts_with('<');
+      const auto element_end = std::min(def.size(), def.find_first_of(" \t\r\n/>"));
+
+      if (not complete) ss << '<';
+      ss << std::string_view(def).substr(0, element_end);
+      if (effect->classID() IS CLASSID::LIGHTINGFX) {
+         write_input("in", effect->SourceType, effect->Input);
+         if (((extLightingFX *)effect)->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
+      }
+      if (auto result = results.find(effect); result != results.end()) {
+         ss << " result=\"effect" << result->second << '"';
+      }
+      ss << std::string_view(def).substr(element_end);
+      if (not complete) ss << "/>";
    }
 
    Value = ss.str();

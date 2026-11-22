@@ -106,9 +106,10 @@ enum class LT : int {
    NIL = 0,
    DIFFUSE = 0,
    SPECULAR = 1,
+   COMBINED = 2,
 };
 
-// Enhanced lighting features for the LightingFX class.  These apply only when the scene's Compliance is `NONE`.
+// Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features.
 
 enum class LFX : uint32_t {
    NIL = 0,
@@ -3071,6 +3072,11 @@ class objLightingFX : public objFilterEffect {
       return error;
    }
 
+   inline ERR getAmbient(struct FRGB * &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getConstant(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
@@ -3079,6 +3085,31 @@ class objLightingFX : public objFilterEffect {
    inline ERR getExponent(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
       return ERR::Okay;
+   }
+
+   inline ERR getCavity(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getDetail(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getPenumbra(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getIntensity(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getSpecularConstant(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getScale(double &Value) noexcept {
@@ -3105,12 +3136,12 @@ class objLightingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setType(const LT Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3119,23 +3150,53 @@ class objLightingFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setAmbient(const struct FRGB & Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
+
    inline ERR setConstant(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setExponent(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setScale(const double Value) noexcept {
+   inline ERR setCavity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setDetail(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setPenumbra(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setUnitX(const double Value) noexcept {
+   inline ERR setIntensity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setSpecularConstant(const double Value) noexcept {
       auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setScale(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setUnitX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4389,32 +4450,48 @@ class objVectorPath : public objVector {
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getTotalCommands(int &Value) noexcept {
       auto field = &this->Class->Dictionary[50];
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getPathLength(int &Value) noexcept {
+   inline ERR getY(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getXOffset(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[46];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getYOffset(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[49];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[51];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getTotalCommands(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getPathLength(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[47];
       return field->GetValue(this, &Value);
    }
 
@@ -4432,32 +4509,42 @@ class objVectorPath : public objVector {
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setWidth(const Unit Value) noexcept {
+   inline ERR setXOffset(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setYOffset(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setHeight(const Unit Value) noexcept {
+   inline ERR setWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
    inline ERR setTotalCommands(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+      auto field = &this->Class->Dictionary[52];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPathLength(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
+      auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

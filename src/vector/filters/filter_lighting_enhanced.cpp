@@ -25,15 +25,16 @@ replaces the gradient stage only; normals, kernel units and the light models are
 7. Specular highlights are anti-aliased with Toksvig's method.  Where the normals within a pixel's neighbourhood vary,
    the highlight is shaded with their mean and a reduced exponent, so that it spreads over the variation instead of
    sparkling.
+8. The combined type evaluates the diffuse and specular light together and applies them to an albedo, with ambient
+   light, clamping once on output.
 
 *********************************************************************************************************************/
 
 constexpr int LIGHT_PAD = 3; // Padding on each side of the height buffer; the gradient stencil reaches 2 px.
 
-// Occlusion is 1 - CAVITY_STRENGTH * curvature for concave regions, limited to CAVITY_FLOOR.  Curvature is the
-// Laplacian of the height in client units per kernel unit squared.
+// Occlusion is 1 - Cavity * curvature for concave regions, limited to CAVITY_FLOOR.  Curvature is the Laplacian of
+// the height in client units per kernel unit squared.
 
-constexpr double CAVITY_STRENGTH = 0.25;
 constexpr double CAVITY_FLOOR = 0.4;
 
 // Curvature is scaled by the square of the kernel unit's length in pixels, which also scales the Laplacian of the
@@ -66,11 +67,10 @@ static inline float central_diff(const float *H, ptrdiff_t Step, float Weight)
 }
 
 // Detail is the height minus a Gaussian base layer of DETAIL_SIGMA kernel units, and its slope is multiplied by
-// DETAIL_BOOST.  The added slope is compressed with s / sqrt(1 + (s / SLOPE_KNEE)^2).  The base layer's radius is
+// Detail.  The added slope is compressed with s / sqrt(1 + (s / SLOPE_KNEE)^2).  The base layer's radius is
 // limited to MAX_SIGMA pixels to bound the cost of the blur.  A sigma of 1 confines the boost to features of a few
 // kernel units: on the harness the 4 px band gains 14% of slope over the unboosted result and the 32 px band 1%.
 
-constexpr double DETAIL_BOOST = 1.5;
 constexpr double DETAIL_SIGMA = 1.0;
 constexpr double SLOPE_KNEE = 1.0;
 constexpr double MAX_SIGMA = 16.0;
@@ -81,13 +81,12 @@ constexpr double MAX_SIGMA = 16.0;
 constexpr float CORE_LOW = 0.5f;
 constexpr float CORE_HIGH = 1.5f;
 
-// The shadow edge is a smoothstep over SHADOW_PENUMBRA degrees either side of the light's elevation, limited to half
+// The shadow edge is a smoothstep over Penumbra degrees either side of the light's elevation, limited to half
 // of the elevation so that a flat surface is never shadowed.  The sweep tracks SHADOW_LEVELS elevations across the
 // penumbra and interpolates between them.  With the light at 30 degrees, a block 16 units high casts a shadow 28 px
 // long on the harness, against 27.7 px expected.  MAX_SHADOW_LENGTH limits the distance beyond the page edge from
 // which occluders are rendered.
 
-constexpr double SHADOW_PENUMBRA = 2.0;
 constexpr int SHADOW_LEVELS = 4;
 constexpr double MAX_SHADOW_LENGTH = 128;
 
@@ -98,6 +97,11 @@ struct lit_surface {
    const float *detail;  // Padded, cored detail layer, or nullptr if detail is not boosted
    const float *curve;   // Padded heights from which curvature is measured
    const float *shadow;  // Fraction of a distant light reaching each pixel, unpadded, or nullptr
+   const uint8_t *albedo; // First pixel of the albedo for the combined type, or nullptr if it is opaque white
+   const float *albedo_lut; // Converts a stored albedo channel to the filter's colour space, 0 - 1
+   int albedo_stride;    // Bytes per row of the albedo
+   int albedo_width, albedo_height; // Pixels beyond the albedo's extent are transparent
+   bool albedo_premul;   // True if the albedo's colour is premultiplied
    int stride;
    int height;           // Height of the surface in pixels, excluding the padding
    map_height normal;    // Maps height gradients to slopes
@@ -286,7 +290,7 @@ static ERR cast_shadows(extLightingFX *Effect, const float *Heights, int Stride,
 
    // Height lost by the shadow volume per step at each elevation, in alpha levels
 
-   const double penumbra = std::min(SHADOW_PENUMBRA * DEG2RAD, Elevation * 0.5);
+   const double penumbra = std::min(Effect->Penumbra * DEG2RAD, Elevation * 0.5);
    float fall[SHADOW_LEVELS];
    for (int k=0; k < SHADOW_LEVELS; ++k) {
       const double e = std::min(Elevation - penumbra + (2.0 * penumbra * k / (SHADOW_LEVELS - 1)), 89.5 * DEG2RAD);
@@ -422,14 +426,15 @@ static void row_slopes(const float *__restrict H, int Stride, const float *__res
 
 // Adds the boosted slope of the detail layer to one row.  Only the change that the boost makes to the compressed slope
 // is applied, so the slope is unaltered where there is no detail.  Project the boost onto the unboosted slope and
-// discard opposing components: the detail blur must not invent slopes on flat ground beside a hard edge.
+// discard opposing components: the detail blur must not invent slopes on flat ground beside a hard edge.  Boost is
+// the slope multiplier.
 
 static void row_boost(const float *__restrict X0, const float *__restrict X1, const float *__restrict X2,
-   const float *__restrict Y, const map_height &Normal, float Centre, float Scale, float *__restrict SX,
-   float *__restrict SY, int Width)
+   const float *__restrict Y, const map_height &Normal, float Centre, float Scale, double Boost,
+   float *__restrict SX, float *__restrict SY, int Width)
 {
    const float mx = float(Normal.x), my = float(Normal.y), mxy = float(Normal.xy);
-   const float boost = float(DETAIL_BOOST - 1.0);
+   const float boost = float(Boost - 1.0);
    const float knee = float(1.0 / (SLOPE_KNEE * SLOPE_KNEE));
    for (int x=0; x < Width; ++x) {
       const float ddx = boost * (X0[x] + Centre * X1[x] + X2[x]) * Scale;
@@ -446,10 +451,9 @@ static void row_boost(const float *__restrict X0, const float *__restrict X1, co
    }
 }
 
-// Converts slopes to unit normals in place, and applies the shadow to the occlusion if there is one.
+// Converts slopes to unit normals in place.
 
-static void row_normals(float *__restrict NX, float *__restrict NY, float *__restrict NZ,
-   float *__restrict Occlusion, const float *__restrict Shadow, int Width)
+static void row_normals(float *__restrict NX, float *__restrict NY, float *__restrict NZ, int Width)
 {
    for (int x=0; x < Width; ++x) {
       const float sx = NX[x], sy = NY[x];
@@ -458,9 +462,29 @@ static void row_normals(float *__restrict NX, float *__restrict NY, float *__res
       NY[x] = -sy * scale;
       NZ[x] = scale;
    }
-   if (Shadow) {
-      for (int x=0; x < Width; ++x) Occlusion[x] *= Shadow[x];
+}
+
+// Reads the albedo at X from a row, or returns transparent black if X is beyond the albedo.  Without an albedo row the
+// albedo is opaque white.
+
+static inline albedo_sample read_albedo(const lit_surface &Surface, const uint8_t *Row, int X, uint8_t R, uint8_t G,
+   uint8_t B, uint8_t A)
+{
+   if (not Surface.albedo) return { 1.0f, 1.0f, 1.0f, 1.0f };
+   if ((not Row) or (X >= Surface.albedo_width)) return { 0, 0, 0, 0 };
+
+   const uint8_t *pixel = Row + (X * 4);
+   const int alpha = pixel[A];
+   if (not alpha) return { 0, 0, 0, 0 };
+
+   int r = pixel[R], g = pixel[G], b = pixel[B];
+   if ((Surface.albedo_premul) and (alpha < 255)) {
+      r = std::min(255, ((r * 255) + (alpha / 2)) / alpha);
+      g = std::min(255, ((g * 255) + (alpha / 2)) / alpha);
+      b = std::min(255, ((b * 255) + (alpha / 2)) / alpha);
    }
+   const float *lut = Surface.albedo_lut;
+   return { lut[r], lut[g], lut[b], float(alpha) * (1.0f / 255.0f) };
 }
 
 // Toksvig's specular anti-aliasing for one row.  N is the mean of the unit normals over a pixel's 3x3 neighbourhood,
@@ -537,7 +561,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       slots[s] = { base, base + span, base + span * 2, base + span * 3 };
    }
 
-   const bool toksvig = (Type IS LT::SPECULAR) and ((Features & LFX::SPECULAR_AA) != LFX::NIL);
+   const bool toksvig = (Type != LT::DIFFUSE) and ((Features & LFX::SPECULAR_AA) != LFX::NIL);
+   const bool ambient = (Type IS LT::DIFFUSE) and has_ambient();
    const int last_row = Surface.height - 1;
    const int first = toksvig ? std::max(StartY - 1, 0) : StartY;
 
@@ -568,7 +593,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       if (Surface.detail) row_dx(row_of(Surface.detail, first - 1 + i), dx[i + 1]);
    }
 
-   const float cavity = ((Features & LFX::CAVITY) != LFX::NIL) ? float(CAVITY_STRENGTH * Surface.curvature) : 0.0f;
+   const float cavity = ((Features & LFX::CAVITY) != LFX::NIL) ? float(Cavity * Surface.curvature) : 0.0f;
 
    // Computes the normals of each row up to and including Y, in sequence.  A row's normals depend only on the
    // heights, so a row that is shared with a neighbouring chunk is identical in both.
@@ -590,9 +615,9 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
          float *nx = slot.x + 1, *ny = slot.y + 1, *nz = slot.z + 1;
          row_slopes(row_of(Surface.curve, ry), stride, hx[0] + 1, hx[1] + 1, hx[2] + 1, hy + 1, m, centre, smooth,
             cavity, nx, ny, slot.occlusion + 1, Width);
-         if (Surface.detail) row_boost(dx[0] + 1, dx[1] + 1, dx[2] + 1, dy + 1, m, centre, smooth, nx, ny, Width);
-         row_normals(nx, ny, nz, slot.occlusion + 1, Surface.shadow ? Surface.shadow + (ry * Width) : nullptr,
+         if (Surface.detail) row_boost(dx[0] + 1, dx[1] + 1, dx[2] + 1, dy + 1, m, centre, smooth, Detail, nx, ny,
             Width);
+         row_normals(nx, ny, nz, Width);
 
          for (float *n : { slot.x, slot.y, slot.z }) {
             n[0] = n[1];
@@ -613,18 +638,40 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       }
       else compute_to(y);
 
+      // Cavity is the occlusion from curvature alone.  Light is reduced by both cavity and shadow, ambient light by
+      // the cavity alone.
+
       const float *h = row_of(Surface.heights, y);
-      const float *nx = cur.x + 1, *ny = cur.y + 1, *nz = cur.z + 1, *occlusion = cur.occlusion + 1;
+      const float *nx = cur.x + 1, *ny = cur.y + 1, *nz = cur.z + 1, *cavity = cur.occlusion + 1;
+      const float *shadow = Surface.shadow ? Surface.shadow + (y * Width) : nullptr;
+      const uint8_t *albedo = ((Surface.albedo) and (y < Surface.albedo_height)) ?
+         Surface.albedo + (std::ptrdiff_t(y) * Surface.albedo_stride) : nullptr;
       auto dptr = dest_base + y * Target->LineWidth;
       for (int x=0; x < Width; ++x, dptr += bpp) {
          const point3 normal(nx[x], ny[x], nz[x]);
+         const float occlusion = shadow ? cavity[x] * shadow[x] : cavity[x];
          point3 stl = Delta(x, y, h[x]);
-         if (Type IS LT::DIFFUSE) diffuse_light(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion[x]);
-         else if (toksvig) {
-            specular_light(point3(mean_x[x], mean_y[x], mean_z[x]), stl, Tint(stl), dptr, R, G, B, A, occlusion[x],
-               SpecularExponent * double(factor[x]));
+         if (Type IS LT::DIFFUSE) {
+            if (ambient) enhanced_ambient(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, cavity[x]);
+            else enhanced_diffuse(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion);
          }
-         else specular_light(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion[x]);
+         else if (Type IS LT::COMBINED) {
+            const auto sample = read_albedo(Surface, albedo, x, R, G, B, A);
+            if (toksvig) {
+               enhanced_combined(normal, point3(mean_x[x], mean_y[x], mean_z[x]),
+                  SpecularExponent * double(factor[x]), stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
+                  cavity[x]);
+            }
+            else {
+               enhanced_combined(normal, normal, SpecularExponent, stl, Tint(stl), sample, dptr, R, G, B, A,
+                  occlusion, cavity[x]);
+            }
+         }
+         else if (toksvig) {
+            enhanced_specular(point3(mean_x[x], mean_y[x], mean_z[x]), stl, Tint(stl), dptr, R, G, B, A,
+               occlusion, SpecularExponent * double(factor[x]));
+         }
+         else enhanced_specular(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, SpecularExponent);
       }
    }
 }
@@ -633,14 +680,14 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
 
 bool extLightingFX::boost_detail(double Sigma) const
 {
-   return ((Features & LFX::DETAIL) != LFX::NIL) and (DETAIL_BOOST != 1.0) and (Sigma >= 0.5);
+   return ((Features & LFX::DETAIL) != LFX::NIL) and (Detail != 1.0) and (Sigma >= 0.5);
 }
 
 // Sigma in pixels of the blur applied to the heights before curvature is measured, or 0 if no blur is required.
 
 double extLightingFX::cavity_sigma(double UnitSize) const
 {
-   if (((Features & LFX::CAVITY) IS LFX::NIL) or (UnitSize <= 1.0)) return 0;
+   if (((Features & LFX::CAVITY) IS LFX::NIL) or (Cavity <= 0) or (UnitSize <= 1.0)) return 0;
    const double sigma = std::min(MAX_SIGMA, CAVITY_SIGMA * sqrt((UnitSize * UnitSize) - 1.0));
    return (sigma >= MIN_CAVITY_SIGMA) ? sigma : 0;
 }
@@ -673,7 +720,7 @@ double extLightingFX::reach() const
 
    if ((LightSource IS LS::DISTANT) and ((Features & LFX::SHADOWS) != LFX::NIL)) {
       const double elevation = Elevation * DEG2RAD;
-      const double lowest = elevation - std::min(SHADOW_PENUMBRA * DEG2RAD, elevation * 0.5);
+      const double lowest = elevation - std::min(Penumbra * DEG2RAD, elevation * 0.5);
       if ((elevation > 0) and (elevation < 89.0 * DEG2RAD)) {
          result += std::ceil(std::min(MAX_SHADOW_LENGTH, std::abs(MapHeight) * scale / tan(lowest)));
       }
@@ -683,13 +730,54 @@ double extLightingFX::reach() const
 
 //********************************************************************************************************************
 
-ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, double SpotHeight,
-   const map_height &NormalHeight, double UnitSize, int Width, int Height)
+ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_view *Albedo, const point3 &Light,
+   double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width, int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
    const size_t size = size_t(stride) * rows;
    const bool dequantise = (Features & LFX::DEQUANTISE) != LFX::NIL;
+
+   // The diffuse and specular output functions expect each channel of the light in the range 0 - 1, and apply the
+   // intensity to the light's strength.  A spot light only scales the colour down, so limiting it here is sufficient.
+   // The combined type takes the light at its full intensity and clamps on output.
+
+   if (Type IS LT::COMBINED) {
+      LightColour.Red   = std::max(0.0f, float(LightColour.Red * Intensity));
+      LightColour.Green = std::max(0.0f, float(LightColour.Green * Intensity));
+      LightColour.Blue  = std::max(0.0f, float(LightColour.Blue * Intensity));
+      Strength = Constant;
+   }
+   else {
+      LightColour.Red   = std::clamp(LightColour.Red, 0.0f, 1.0f);
+      LightColour.Green = std::clamp(LightColour.Green, 0.0f, 1.0f);
+      LightColour.Blue  = std::clamp(LightColour.Blue, 0.0f, 1.0f);
+      Strength = Constant * Intensity;
+   }
+
+   // Ambient light in the filter's colour space, scaled by its alpha.
+
+   AmbientLight = { 0, 0, 0, 0 };
+   if (has_ambient()) {
+      FRGB ambient = { std::max(0.0f, Ambient.Red), std::max(0.0f, Ambient.Green), std::max(0.0f, Ambient.Blue), 1 };
+      if (Linear) glLinearRGB.convert(ambient);
+      const float level = std::min(Ambient.Alpha, 1.0f);
+      AmbientLight = { ambient.Red * level, ambient.Green * level, ambient.Blue * level, 1 };
+   }
+
+   // The albedo's channels are converted to the filter's colour space through a table.
+
+   std::array<float, 256> albedo_lut;
+   if (Albedo) {
+      const bool linear_source = Albedo->Encoding IS CS::LINEAR_RGB;
+      for (int i=0; i < 256; i++) {
+         const float value = float(i) * (1.0f / 255.0f);
+         if (Linear IS linear_source) albedo_lut[i] = value;
+         else if (Linear) albedo_lut[i] = rgb_to_linear::f_convert(value);
+         else albedo_lut[i] = rgb_to_linear::f_invert(value);
+      }
+   }
+
    float *raw;
    if (auto error = get_filter_scratch(this, size, raw); error != ERR::Okay) return error;
    float *heights = raw;
@@ -796,10 +884,21 @@ ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const point3 &Light, d
       if (error != ERR::Okay) return error;
    }
 
-   const lit_surface surface = {
-      heights, detail, curve, shadow, stride, Height, NormalHeight, MapHeight * (1.0 / 255.0) * UnitSize * UnitSize,
-      sharpen_weight(UnitSize)
+   lit_surface surface = {
+      .heights = heights, .detail = detail, .curve = curve, .shadow = shadow, .albedo = nullptr,
+      .albedo_lut = albedo_lut.data(), .albedo_stride = 0, .albedo_width = 0, .albedo_height = 0,
+      .albedo_premul = false, .stride = stride, .height = Height, .normal = NormalHeight,
+      .curvature = MapHeight * (1.0 / 255.0) * UnitSize * UnitSize, .sharpen = sharpen_weight(UnitSize)
    };
+
+   if (Albedo) { // The albedo is aligned with the height input, as for the other dual-input effects
+      const auto mix = Albedo->Bitmap;
+      surface.albedo = mix->Data + (mix->Clip.Left * 4) + (mix->Clip.Top * mix->LineWidth);
+      surface.albedo_stride = mix->LineWidth;
+      surface.albedo_width  = std::max(0, mix->Clip.Right - mix->Clip.Left);
+      surface.albedo_height = std::max(0, mix->Clip.Bottom - mix->Clip.Top);
+      surface.albedo_premul = Albedo->Alpha IS filter_alpha::PREMULTIPLIED;
+   }
 
    const size_t chunk_floats = size_t(Width + 2) * LIGHT_ROW_BUFFERS;
    const size_t chunks = (Height + chunk_size - 1) / chunk_size;
