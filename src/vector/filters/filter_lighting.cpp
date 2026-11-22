@@ -30,10 +30,10 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -CLASS-
 LightingFX: Enables the application of lighting effects.
 
-The lighting effect class applies a diffuse or specular lighting effect to the alpha channel of an input bitmap, which
-functions as a bump map.  The output is an RGBA representation of the light effect.  If no light #Colour is specified
-by the client then the output will be in grey scale.  The `COMBINED` #Type, described below, lights an albedo instead
-and produces a finished surface.
+The lighting effect uses the alpha channel of an input bitmap as a bump map.  Enhanced lighting also accepts linear
+floating-point heights from @TurbulenceFX or @BlurFX in `HEIGHT` output mode.  The output is an RGBA representation
+of the light effect.  If the client leaves #Colour at its default, the output is greyscale.  The `COMBINED` #Type
+can use a separate image as its albedo to produce a finished surface.
 
 For diffuse lighting, the resulting RGBA image is computed as follows:
 
@@ -461,8 +461,8 @@ class extLightingFX : public extFilterEffect {
    bool boost_detail(double Sigma) const;
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
-   ERR draw_enhanced(const objBitmap *, const filter_surface_view *, const point3 &, double, const map_height &,
-      double, int, int);
+   ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, const point3 &, double,
+      const map_height &, double, int, int);
    ERR prepare_matcap();
    template <class DELTA, class COLOUR>
    void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR);
@@ -1049,10 +1049,9 @@ static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
 
 ERR extLightingFX::draw()
 {
-   const objBitmap *bmp;
-   if (auto error = get_source_bitmap(this, &bmp, filter_input_role::INPUT); error != ERR::Okay) {
-      return error;
-   }
+   filter_surface_view primary;
+   if (auto error = get_source_view(this, primary, filter_input_role::INPUT); error != ERR::Okay) return error;
+   const auto bmp = primary.Bitmap;
 
    // Light is computed in the filter's colour space.  Bitmaps are always sRGB encoded, so linear results are encoded
    // on output.
@@ -1111,15 +1110,14 @@ ERR extLightingFX::draw()
    lt.x -= Target->Clip.Left; // Re-orient the light source coordinates to (0,0)
    lt.y -= Target->Clip.Top;
 
-   // Note! Linear conversion of the source bitmap is unnecessary because only the alpha channel is used.
-
-   // The alpha channel of the source bitmap will function as the Z value for the bump map.  The RGB components
-   // are ignored for input purposes.
+   // The input height is linear and uses the stored alpha channel when the source is a bitmap.
 
    int width  = Target->Clip.Right - Target->Clip.Left;
    int height = Target->Clip.Bottom - Target->Clip.Top;
-   if (bmp->Clip.Right - bmp->Clip.Left < width) width = bmp->Clip.Right - bmp->Clip.Left;
-   if (bmp->Clip.Bottom - bmp->Clip.Top < height) height = bmp->Clip.Bottom - bmp->Clip.Top;
+   if (bmp) {
+      width = std::min(width, bmp->Clip.Right - bmp->Clip.Left);
+      height = std::min(height, bmp->Clip.Bottom - bmp->Clip.Top);
+   }
    if ((width < 1) or (height < 1)) return ERR::Okay;
 
    // The surface height is in client units, converted to pixels for locating the surface relative to the light.  The
@@ -1137,13 +1135,14 @@ ERR extLightingFX::draw()
       filter_surface_view albedo;
       if (reads_albedo()) {
          if (auto error = get_source_view(this, albedo, filter_input_role::MIX); error != ERR::Okay) return error;
-         if (albedo.Bitmap->BytesPerPixel != 4) return ERR::InvalidState;
+         if ((not albedo.Bitmap) or (albedo.Bitmap->BytesPerPixel != 4)) return ERR::InvalidState;
       }
       const double unit_size = unit_length(unit);
-      return draw_enhanced(bmp, reads_albedo() ? &albedo : nullptr, lt, spot_height, normal_height, unit_size, width,
-         height);
+      return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, lt, spot_height, normal_height, unit_size,
+         width, height);
    }
 
+   if (not bmp) return ERR::NoSupport;
    int num_threads = std::min(int(std::thread::hardware_concurrency()), height);
    if (num_threads < 1) num_threads = 1;
    const int min_rows_per_chunk = 4; // Minimum work per thread to avoid overhead

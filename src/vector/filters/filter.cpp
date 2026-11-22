@@ -114,6 +114,8 @@ struct filter_operation {
    filter_sampling (*Sampling)(const extFilterEffect *) = [](const extFilterEffect *) -> filter_sampling {
       return {};
    };
+   filter_input_kind Primary = filter_input_kind::IMAGE; // Contract kind of the ordinary Input binding
+   filter_surface_format Format = filter_surface_format::RGBA8; // Result format for the effect's current settings
 };
 
 //********************************************************************************************************************
@@ -172,6 +174,19 @@ struct filter_surface_view {
 
    const uint8_t * row(int Y) const { return Data + std::ptrdiff_t(Y) * Stride; }
 };
+
+//********************************************************************************************************************
+// Reads a height along a row, using the bitmap's stored alpha or a native float sample.  Missing samples read as zero.
+
+template<bool Scalar>
+static float filter_height_sample(const uint8_t *Row, int X, int Alpha)
+{
+   if constexpr (Scalar) {
+      const float height = ((const float *)Row)[X];
+      return std::isfinite(height) ? height : 0.0f;
+   }
+   else return Row[std::ptrdiff_t(X) * 4 + Alpha] / 255.0f;
+}
 
 //********************************************************************************************************************
 // A resolved input binding in the draw plan.  Producer is set for references to earlier effects, otherwise Source
@@ -290,6 +305,7 @@ static bool transform_filter_region(TClipRectangle<double> &, const agg::trans_a
 static ERR get_source_view(extFilterEffect *, filter_surface_view &, filter_input_role, size_t = 0);
 static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input_role, size_t = 0);
 static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
+static ERR get_numeric_target(extFilterEffect *, filter_surface_view &, float *&);
 static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
 static ERR draw_filter_capture(extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
 static ERR get_filter_bitmap(extVectorFilter *, filter_surface *&, objBitmap *&);
@@ -705,21 +721,31 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
    if (class_id IS CLASSID(kt::strihash(glFilterSurfaceTestClass))) return { GENERATOR };
 #endif
    switch (class_id) {
-      case CLASSID::BLURFX:         return { SINGLE, effect_sampling<extBlurFX> };
+      case CLASSID::BLURFX:
+         if (((const extBlurFX *)Effect)->OutputMode IS FOM::HEIGHT) {
+            return { SINGLE, effect_sampling<extBlurFX>, filter_input_kind::SCALAR_MAP,
+               filter_surface_format::SCALAR_F32 };
+         }
+         return { SINGLE, effect_sampling<extBlurFX> };
       case CLASSID::COLOURFX:       return { SINGLE };
       case CLASSID::COMPOSITEFX:    return { DUAL };
       case CLASSID::CONVOLVEFX:     return { SINGLE, effect_sampling<extConvolveFX> };
       case CLASSID::DISPLACEMENTFX: return { DUAL, effect_sampling<extDisplacementFX> };
       case CLASSID::FLOODFX:        return { GENERATOR };
       case CLASSID::IMAGEFX:        return { GENERATOR };
-      case CLASSID::LIGHTINGFX:
-         return { ((const extLightingFX *)Effect)->reads_albedo() ? DUAL : SINGLE, effect_sampling<extLightingFX> };
+      case CLASSID::LIGHTINGFX: {
+         const auto lighting = (const extLightingFX *)Effect;
+         return { lighting->reads_albedo() ? DUAL : SINGLE, effect_sampling<extLightingFX>,
+            lighting->enhanced() ? filter_input_kind::SCALAR_MAP : filter_input_kind::IMAGE };
+      }
       case CLASSID::MERGEFX:        return { MERGE };
       case CLASSID::MORPHOLOGYFX:   return { SINGLE, effect_sampling<extMorphologyFX> };
       case CLASSID::OFFSETFX:       return { SINGLE, effect_sampling<extOffsetFX> };
       case CLASSID::REMAPFX:        return { SINGLE };
       case CLASSID::SOURCEFX:       return { GENERATOR };
-      case CLASSID::TURBULENCEFX:   return { GENERATOR };
+      case CLASSID::TURBULENCEFX:
+         return { .Inputs = GENERATOR, .Format = ((const extTurbulenceFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+            filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8 };
       case CLASSID::WAVEFUNCTIONFX: return { GENERATOR };
       default:
          return { SINGLE, [](const extFilterEffect *) -> filter_sampling {
@@ -826,9 +852,9 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       positions.emplace(effect, i);
       const auto operation = describe_filter_operation(effect);
       const auto extension = effect->FilterExtension;
-      Plan.Steps.push_back({ .Effect = effect, .Operation = operation, .Inputs = {},
-         .Format = extension ? extension->Format : filter_surface_format::RGBA8 });
-      if (extension and (extension->Format != filter_surface_format::RGBA8) and
+      const auto format = extension ? extension->Format : operation.Format;
+      Plan.Steps.push_back({ .Effect = effect, .Operation = operation, .Inputs = {}, .Format = format });
+      if ((format != filter_surface_format::RGBA8) and
           (CheckAction(effect, AC::Draw) != ERR::True)) {
          log.warning("Numerical filter effect #%d requires a Draw action.", effect->UID);
          return ERR::NoSupport;
@@ -900,7 +926,8 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                Plan.standard_source(Type).Consumers++;
                break;
             case VSF::NONE:
-               if ((Role IS filter_input_role::MERGE) or (Contract.Kind != filter_input_kind::IMAGE)) break;
+               if ((Role IS filter_input_role::MERGE) or
+                   ((Role IS filter_input_role::NAMED) and (Contract.Kind != filter_input_kind::IMAGE))) break;
                return filter_input_error(effect, Role, Slot, ERR::FieldNotSet, "input is required");
             default: {
                char reason[64];
@@ -928,8 +955,8 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
             break;
          case filter_inputs::DUAL:
          case filter_inputs::SINGLE:
-            if (auto error = add_input(effect->SourceType, effect->Input, filter_input_role::INPUT);
-                error != ERR::Okay) return error;
+            if (auto error = add_input(effect->SourceType, effect->Input, filter_input_role::INPUT, 0,
+                { .Kind = operation.Primary }); error != ERR::Okay) return error;
             if (operation.Inputs IS filter_inputs::DUAL) {
                if (auto error = add_input(effect->MixType, effect->Mix, filter_input_role::MIX); error != ERR::Okay) {
                   return error;
@@ -1293,7 +1320,7 @@ static ERR acquire_numeric_target(extVectorFilter *Filter, filter_step &Step)
 // Returns the layout and float storage of the active numerical effect's output.  Fails with ERR::NoSupport for
 // effects that produce RGBA8 output.
 
-[[maybe_unused]] static ERR get_numeric_target(extFilterEffect *Effect, filter_surface_view &Layout, float *&Data)
+static ERR get_numeric_target(extFilterEffect *Effect, filter_surface_view &Layout, float *&Data)
 {
    Layout = {};
    Data = nullptr;
@@ -1434,8 +1461,7 @@ static ERR read_filter_input(extFilterEffect *Effect, const filter_input &Input,
 }
 
 //********************************************************************************************************************
-// Returns the RGBA8 view for the active effect's Input, Mix or SourceList[Slot] binding.  Numerical producers are
-// rejected with ERR::NoSupport.
+// Returns the view for the active effect's Input, Mix or SourceList[Slot] binding using its validated format.
 
 static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output, filter_input_role Role, size_t Slot)
 {
@@ -1446,13 +1472,7 @@ static ERR get_source_view(extFilterEffect *Effect, filter_surface_view &Output,
    if ((not step) or (Role IS filter_input_role::NAMED) or (index >= step->Inputs.size()) or
        (step->Inputs[index].Role != Role)) return ERR::InvalidState;
 
-   auto error = read_filter_input(Effect, step->Inputs[index], Output);
-
-   if ((error IS ERR::Okay) and (not Output.Bitmap)) {
-      Output = {};
-      return ERR::NoSupport;
-   }
-   return error;
+   return read_filter_input(Effect, step->Inputs[index], Output);
 }
 
 //********************************************************************************************************************
@@ -1463,6 +1483,7 @@ static ERR get_source_bitmap(extFilterEffect *Effect, const objBitmap **Bitmap, 
    filter_surface_view source;
    auto error = get_source_view(Effect, source, Role, Slot);
    *Bitmap = (error IS ERR::Okay) ? source.Bitmap : nullptr;
+   if ((error IS ERR::Okay) and (not *Bitmap)) return ERR::NoSupport;
    return error;
 }
 

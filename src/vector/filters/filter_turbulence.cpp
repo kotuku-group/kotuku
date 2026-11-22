@@ -46,6 +46,7 @@ class extTurbulenceFX : public extFilterEffect {
    int    Seed = 0;
    int    Stitch = false;
    TB     Type = TB::TURBULENCE;
+   FOM    OutputMode = FOM::IMAGE;
    objBitmap *Bitmap = nullptr;
    double Gradient[GSIZE][LSIZE][GSUBSIZE];
    int    Lattice[LSIZE];
@@ -101,7 +102,7 @@ class extTurbulenceFX : public extFilterEffect {
       return std::lerp(a, b, sy);
    }
 
-   uint8_t turbulence(uint8_t Channel, double X, double Y, double FrequencyX, double FrequencyY,
+   double noise_sum(uint8_t Channel, double X, double Y, double FrequencyX, double FrequencyY,
       int StitchWidth, int StitchHeight, int WrapX, int WrapY) {
       double sum = 0.0;
       double vx = X * FrequencyX;
@@ -122,11 +123,14 @@ class extTurbulenceFX : public extFilterEffect {
          }
       }
 
-      int col;
-      if (Type IS TB::NOISE) col = ((sum * 255.0) + 255.0) * 0.5;
-      else col = sum * 255.0;
+      return sum;
+   }
 
-      return std::clamp(col, 0, 255);
+   uint8_t image_channel(double Sum) const {
+      int channel;
+      if (Type IS TB::NOISE) channel = ((Sum * 255.0) + 255.0) * 0.5;
+      else channel = Sum * 255.0;
+      return std::clamp(channel, 0, 255);
    }
 
    ~extTurbulenceFX() {
@@ -163,7 +167,14 @@ Draw: Render the effect to the target bitmap.
 static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 {
    const auto step = active_filter_step(Self);
-   if ((not step) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
+   if (not step) return ERR::InvalidState;
+   const bool scalar = step->Format IS filter_surface_format::SCALAR_F32;
+   filter_surface_view layout;
+   float *heights = nullptr;
+   if (scalar) {
+      if (auto error = get_numeric_target(Self, layout, heights); error != ERR::Okay) return error;
+   }
+   else if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
 
    auto filter = Self->Filter;
    const auto &render = *filter->Render;
@@ -205,26 +216,28 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
        (samples.left >= region.right) or (samples.top >= region.bottom)) return ERR::Okay;
    samples.shrinking(region);
 
-   if (!Self->Bitmap) {
-      Self->Dirty = true;
-      if (!(Self->Bitmap = objBitmap::create::local(fl::Name("turbulence_bmp"),
-         fl::Width(width),
-         fl::Height(height),
-         fl::BitsPerPixel(32),
-         fl::Flags(BMF::ALPHA_CHANNEL),
-         fl::BlendMode(BLM::NONE),
-         fl::ColourSpace(CS::SRGB)))) return ERR::CreateObject;
-   }
-   else if ((Self->Bitmap->Width != width) or (Self->Bitmap->Height != height)) {
-      Self->Dirty = true;
-      if (auto error = Self->Bitmap->resize(width, height); error != ERR::Okay) return error;
+   if (not scalar) {
+      if (not Self->Bitmap) {
+         Self->Dirty = true;
+         if (not (Self->Bitmap = objBitmap::create::local(fl::Name("turbulence_bmp"),
+            fl::Width(width),
+            fl::Height(height),
+            fl::BitsPerPixel(32),
+            fl::Flags(BMF::ALPHA_CHANNEL),
+            fl::BlendMode(BLM::NONE),
+            fl::ColourSpace(CS::SRGB)))) return ERR::CreateObject;
+      }
+      else if ((Self->Bitmap->Width != width) or (Self->Bitmap->Height != height)) {
+         Self->Dirty = true;
+         if (auto error = Self->Bitmap->resize(width, height); error != ERR::Okay) return error;
+      }
+
+      if ((not Self->CacheTransform.is_equal(sampling, 0.0)) or (Self->CacheColourSpace != filter->ColourSpace) or
+          (Self->CacheRegion.left != region.left) or (Self->CacheRegion.top != region.top) or
+          (Self->CacheRegion.right != region.right) or (Self->CacheRegion.bottom != region.bottom)) Self->Dirty = true;
    }
 
-   if ((not Self->CacheTransform.is_equal(sampling, 0.0)) or (Self->CacheColourSpace != filter->ColourSpace) or
-       (Self->CacheRegion.left != region.left) or (Self->CacheRegion.top != region.top) or
-       (Self->CacheRegion.right != region.right) or (Self->CacheRegion.bottom != region.bottom)) Self->Dirty = true;
-
-   if (Self->Dirty) {
+   if (scalar or Self->Dirty) {
       const bool linear_rgb = filter->ColourSpace IS VCS::LINEAR_RGB;
       double fx = Self->FX, fy = Self->FY;
       int stitch_width = 0, stitch_height = 0, wrap_x = PerlinN, wrap_y = PerlinN;
@@ -272,33 +285,58 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       BS::thread_pool pool(thread_count);
 
       for (int i=0; i < thread_count; i++) {
-         pool.detach_task([Self, sampling, region, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y, linear_rgb,
-            Start = (height * i) / thread_count, End = (height * (i + 1)) / thread_count]() {
-            const uint8_t a = Self->Bitmap->ColourFormat->AlphaPos>>3;
-            const uint8_t r = Self->Bitmap->ColourFormat->RedPos>>3;
-            const uint8_t g = Self->Bitmap->ColourFormat->GreenPos>>3;
-            const uint8_t b = Self->Bitmap->ColourFormat->BluePos>>3;
-            for (int y=Start; y < End; y++) {
-               auto pixel = Self->Bitmap->Data + (Self->Bitmap->LineWidth * y);
-               for (int x=0; x < Self->Bitmap->Width; x++, pixel += 4) {
-                  double px, py;
-                  map_filter_pixel_centre(sampling, x, y, px, py);
-                  if ((px < region.left) or (px >= region.right) or (py < region.top) or (py >= region.bottom)) {
-                     pixel[r] = pixel[g] = pixel[b] = pixel[a] = 0;
-                     continue;
+         pool.detach_task([=, start = (height * i) / thread_count, end = (height * (i + 1)) / thread_count]() {
+            auto render = [&](auto WritePixel) {
+               for (int y=start; y < end; ++y) {
+                  for (int x=0; x < width; ++x) {
+                     double px, py;
+                     map_filter_pixel_centre(sampling, x, y, px, py);
+                     const bool covered = (px >= region.left) and (px < region.right) and
+                        (py >= region.top) and (py < region.bottom);
+                     auto sum = [&](uint8_t Channel) {
+                        return Self->noise_sum(Channel, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
+                     };
+                     WritePixel(x, y, covered, sum);
                   }
-                  const auto red = Self->turbulence(0, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
-                  const auto green = Self->turbulence(1, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
-                  const auto blue = Self->turbulence(2, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
+               }
+            };
+
+            if (scalar) {
+               render([&](int X, int Y, bool Covered, auto Sum) {
+                  auto row = heights + std::ptrdiff_t(Y) * (layout.Stride / sizeof(float));
+                  double value = 0;
+                  if (Covered) {
+                     value = Sum(3);
+                     if (Self->Type IS TB::NOISE) value = (value + 1.0) * 0.5;
+                  }
+                  row[X] = float(std::clamp(value, 0.0, 1.0));
+               });
+            }
+            else {
+               const auto bitmap = Self->Bitmap;
+               const uint8_t a = bitmap->ColourFormat->AlphaPos>>3;
+               const uint8_t r = bitmap->ColourFormat->RedPos>>3;
+               const uint8_t g = bitmap->ColourFormat->GreenPos>>3;
+               const uint8_t b = bitmap->ColourFormat->BluePos>>3;
+               render([&](int X, int Y, bool Covered, auto Sum) {
+                  auto pixel = bitmap->Data + std::ptrdiff_t(Y) * bitmap->LineWidth + std::ptrdiff_t(X) * 4;
+                  if (not Covered) {
+                     pixel[r] = pixel[g] = pixel[b] = pixel[a] = 0;
+                     return;
+                  }
+                  const auto red = Self->image_channel(Sum(0));
+                  const auto green = Self->image_channel(Sum(1));
+                  const auto blue = Self->image_channel(Sum(2));
                   pixel[r] = linear_rgb ? glLinearRGB.invert(red) : red;
                   pixel[g] = linear_rgb ? glLinearRGB.invert(green) : green;
                   pixel[b] = linear_rgb ? glLinearRGB.invert(blue) : blue;
-                  pixel[a] = Self->turbulence(3, px, py, fx, fy, stitch_width, stitch_height, wrap_x, wrap_y);
-               }
+                  pixel[a] = Self->image_channel(Sum(3));
+               });
             }
          });
       }
       pool.wait();
+      if (scalar) return ERR::Okay;
       Self->CacheTransform = sampling;
       Self->CacheRegion = region;
       Self->CacheColourSpace = filter->ColourSpace;
@@ -324,8 +362,10 @@ static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
             gradient[k][i][j] = (double)(((lSeed = random(lSeed)) % (BSIZE + BSIZE)) - BSIZE) / BSIZE;
          }
          double s = double(sqrt(gradient[k][i][0] * gradient[k][i][0] + gradient[k][i][1] * gradient[k][i][1]));
-         gradient[k][i][0] /= s;
-         gradient[k][i][1] /= s;
+         if (s > 0.0) {
+            gradient[k][i][0] /= s;
+            gradient[k][i][1] /= s;
+         }
       }
    }
 
@@ -463,6 +503,28 @@ static ERR TURBULENCEFX_SET_Type(extTurbulenceFX *Self, TB Value)
 /*********************************************************************************************************************
 
 -FIELD-
+OutputMode: Selects an image or a linear height result from the noise's alpha channel.
+Lookup: FOM
+
+Use `HEIGHT` when passing the result to enhanced @LightingFX or height-output @BlurFX.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR TURBULENCEFX_SET_OutputMode(extTurbulenceFX *Self, FOM Value)
+{
+   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::OutOfRange;
+   if (Self->OutputMode != Value) {
+      Self->OutputMode = Value;
+      if (Self->Filter) Self->Filter->GraphRevision++;
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 
@@ -472,7 +534,12 @@ static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
-   stream << "feTurbulence";
+   stream.precision(std::numeric_limits<double>::max_digits10);
+   stream << "feTurbulence baseFrequency=\"" << Self->FX << ' ' << Self->FY
+      << "\" numOctaves=\"" << Self->Octaves << "\" seed=\"" << Self->Seed
+      << "\" stitchTiles=\"" << (Self->Stitch ? "stitch" : "noStitch")
+      << "\" type=\"" << ((Self->Type IS TB::NOISE) ? "fractalNoise" : "turbulence") << '"';
+   if (Self->OutputMode IS FOM::HEIGHT) stream << " kotuku:outputMode=\"height\"";
 
    Value = stream.str();
    return ERR::Okay;
@@ -489,6 +556,7 @@ static const FieldArray clTurbulenceFXFields[] = {
    { "Seed",    FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Seed },
    { "Stitch",  FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Stitch },
    { "Type",    FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, TURBULENCEFX_SET_Type, &clTurbulenceFXTB },
+   { "OutputMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, TURBULENCEFX_SET_OutputMode, &clTurbulenceFXFOM },
    { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,      TURBULENCEFX_GET_XMLDef },
    END_FIELD
 };

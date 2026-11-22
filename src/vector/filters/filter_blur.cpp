@@ -87,6 +87,7 @@ class extBlurFX : public extFilterEffect {
 
    double SX = 0, SY = 0;
    FEM EdgeMode = FEM::TRANSPARENT;
+   FOM OutputMode = FOM::IMAGE;
 
    extBlurFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
@@ -105,8 +106,11 @@ class extBlurFX : public extFilterEffect {
       radii(x, y);
       if ((not std::isfinite(x)) or (not std::isfinite(y))) return { filter_access::BOUNDED, x, y };
       if (EdgeMode != FEM::TRANSPARENT) {
-         return { filter_access::FULL_INPUT, x >= MIN_BLUR_RADIUS ? filter_sampling::UNBOUNDED : 0,
-            y >= MIN_BLUR_RADIUS ? filter_sampling::UNBOUNDED : 0 };
+         const auto active = [&](double Radius) {
+            return (OutputMode IS FOM::HEIGHT) ? Radius > 0 : Radius >= MIN_BLUR_RADIUS;
+         };
+         return { filter_access::FULL_INPUT, active(x) ? filter_sampling::UNBOUNDED : 0,
+            active(y) ? filter_sampling::UNBOUNDED : 0 };
       }
       return { filter_access::BOUNDED, std::ceil(std::clamp(x, 0.0, double(MAX_BLUR_RADIUS))) + 1,
          std::ceil(std::clamp(y, 0.0, double(MAX_BLUR_RADIUS))) + 1 };
@@ -392,6 +396,122 @@ static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const filter
 }
 
 //********************************************************************************************************************
+// The scalar stack kernel uses the sums of the two halves of the triangle to advance one sample at a time.
+// Accumulate in double precision to keep rounding error bounded over long rows and columns.
+
+template<class READ>
+static void blur_height_axis(READ Read, float *Dest, int Width, int Height, int Stride, bool Vertical, double Radius,
+   const blur_edge &Edge)
+{
+   const int lines = Vertical ? Width : Height;
+   const int count = Vertical ? Height : Width;
+   const int line_step = Vertical ? 1 : Stride;
+   const int pixel_step = Vertical ? Stride : 1;
+   Radius = std::clamp(Radius, 0.0, double(MAX_BLUR_RADIUS));
+   const int lower = int(Radius);
+   const double blend = Radius - lower;
+
+   auto pass = [&](int R, double Blend, bool BlendOutput) {
+      const double normalise = 1.0 / ((R + 1) * (R + 1));
+      const int window = 2 * R + 1;
+      std::array<float, 2 * MAX_BLUR_RADIUS + 1> stack;
+      for (int line=0; line < lines; ++line) {
+         auto sample = [&](int64_t Index) -> float {
+            const int i = Edge.address(Index);
+            if (i < 0) return 0.0f;
+            return Vertical ? Read(line, i) : Read(i, line);
+         };
+
+         auto dest = Dest + std::ptrdiff_t(line) * line_step;
+         double sum = 0, left = 0, right = 0;
+         for (int i=-R; i <= R; ++i) {
+            const float height = sample(i);
+            stack[i + R] = height;
+            sum += double(height) * (R + 1 - std::abs(i));
+            if (i <= 0) left += height;
+            else right += height;
+         }
+
+         int first = 0, middle = R;
+         for (int i=0; i < count; ++i) {
+            auto &out = dest[std::ptrdiff_t(i) * pixel_step];
+            const double value = std::clamp(sum * normalise, 0.0, 1.0);
+            out = BlendOutput ? float(std::lerp(double(out), value, Blend)) : float(value);
+            if (i + 1 >= count) break;
+
+            sum -= left;
+            left -= stack[first];
+            stack[first] = sample(int64_t(i) + R + 1);
+            right += stack[first];
+            sum += right;
+            if (++first IS window) first = 0;
+            if (++middle IS window) middle = 0;
+            left += stack[middle];
+            right -= stack[middle];
+         }
+      }
+   };
+
+   pass(lower, 0.0, false);
+   if (blend > 0.0) pass(lower + 1, blend, true);
+}
+
+//********************************************************************************************************************
+
+template<bool Scalar>
+static ERR draw_height_blur(extBlurFX *Self, const filter_surface_view &Source, const filter_step *Producer,
+   double RadiusX, double RadiusY)
+{
+   filter_surface_view target;
+   float *dest;
+   if (auto error = get_numeric_target(Self, target, dest); error != ERR::Okay) return error;
+
+   const auto &clip = target.Valid;
+   const int width = clip.width(), height = clip.height(), stride = target.Stride / sizeof(float);
+   dest += std::ptrdiff_t(clip.top) * stride + clip.left;
+   const int x_shift = target.OriginX + clip.left - Source.OriginX;
+   const int y_shift = target.OriginY + clip.top - Source.OriginY;
+   int alpha = 0;
+   if constexpr (not Scalar) {
+      if ((not Source.Bitmap) or (Source.Bitmap->BytesPerPixel != 4)) return ERR::NoSupport;
+      alpha = Source.Bitmap->ColourFormat->AlphaPos >> 3;
+   }
+
+   auto read_height = [&](int X, int Y) -> float {
+      const int x = X + x_shift, y = Y + y_shift;
+      if ((x < Source.Valid.left) or (x >= Source.Valid.right) or
+          (y < Source.Valid.top) or (y >= Source.Valid.bottom)) return 0.0f;
+      return filter_height_sample<Scalar>(Source.row(y), x, alpha);
+   };
+
+   const bool blur_x = RadiusX > 0, blur_y = RadiusY > 0;
+   if ((not blur_x) and (not blur_y)) {
+      for (int y=0; y < height; ++y) {
+         auto row = dest + std::ptrdiff_t(y) * stride;
+         for (int x=0; x < width; ++x) row[x] = read_height(x, y);
+      }
+      return ERR::Okay;
+   }
+
+   const auto region = blur_input_region(Self, Source, Producer);
+   const blur_edge edge_x = { region.left - x_shift, region.right - x_shift, Self->EdgeMode };
+   const blur_edge edge_y = { region.top - y_shift, region.bottom - y_shift, Self->EdgeMode };
+
+   if (blur_x and blur_y) {
+      float *horizontal;
+      if (auto error = get_filter_scratch(Self, size_t(width) * height, horizontal); error != ERR::Okay) return error;
+      blur_height_axis(read_height, horizontal, width, height, width, false, RadiusX, edge_x);
+      auto read_horizontal = [&](int X, int Y) {
+         return ((Y >= 0) and (Y < height)) ? horizontal[std::ptrdiff_t(Y) * width + X] : 0.0f;
+      };
+      blur_height_axis(read_horizontal, dest, width, height, stride, true, RadiusY, edge_y);
+   }
+   else if (blur_x) blur_height_axis(read_height, dest, width, height, stride, false, RadiusX, edge_x);
+   else blur_height_axis(read_height, dest, width, height, stride, true, RadiusY, edge_y);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // This is the stack blur algorithm originally implemented in AGG.  It is intended to produce a near identical output
 // to that of a standard gaussian blur algorithm.
 //
@@ -403,17 +523,22 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    auto step = active_filter_step(Self);
    if (not step) return ERR::InvalidState;
    const auto producer = step->Inputs.front().Producer;
-   auto outBmp = Self->Target;
-   if (outBmp->BytesPerPixel != 4) return ERR::InvalidState;
-
    double rx, ry;
    Self->radii(rx, ry);
 
-   const bool blur_x = rx >= MIN_BLUR_RADIUS;
-   const bool blur_y = ry >= MIN_BLUR_RADIUS;
-
    filter_surface_view source;
    if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
+   if (step->Format IS filter_surface_format::SCALAR_F32) {
+      if (source.Format IS filter_surface_format::SCALAR_F32) return draw_height_blur<true>(Self, source, producer,
+         rx, ry);
+      return draw_height_blur<false>(Self, source, producer, rx, ry);
+   }
+
+   auto outBmp = Self->Target;
+   if ((not outBmp) or (outBmp->BytesPerPixel != 4)) return ERR::InvalidState;
+
+   const bool blur_x = rx >= MIN_BLUR_RADIUS;
+   const bool blur_y = ry >= MIN_BLUR_RADIUS;
 
    const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
    if ((not blur_x) and (not blur_y)) {
@@ -487,6 +612,13 @@ SVG reads and writes `CLAMP` as `edgeMode="duplicate"` and `REPEAT` as `edgeMode
 `MIRROR` uses the Kōtuku extension `kotuku:edgeMode="mirror"`.
 
 -FIELD-
+OutputMode: Selects an image or a linear height result.
+Lookup: FOM
+
+In `HEIGHT` mode, the input can be a native height or a bitmap whose alpha channel supplies the height.  Both axes
+preserve fractional heights.  Bind the result to enhanced @LightingFX or another height-output blur.
+
+-FIELD-
 SX: The standard deviation of the blur on the x axis.
 
 The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
@@ -513,9 +645,20 @@ static ERR BLURFX_SET_EdgeMode(extBlurFX *Self, FEM Value)
    return ERR::Okay;
 }
 
+static ERR BLURFX_SET_OutputMode(extBlurFX *Self, FOM Value)
+{
+   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::OutOfRange;
+   if (Self->OutputMode != Value) {
+      Self->OutputMode = Value;
+      if (Self->Filter) Self->Filter->GraphRevision++;
+   }
+   return ERR::Okay;
+}
+
 static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
 {
    std::stringstream stream;
+   if (Self->OutputMode IS FOM::HEIGHT) stream.precision(std::numeric_limits<double>::max_digits10);
    stream << "feGaussianBlur stdDeviation=\"" << Self->SX << " " << Self->SY << "\"";
    switch (Self->EdgeMode) {
       case FEM::CLAMP:  stream << " edgeMode=\"duplicate\""; break;
@@ -523,6 +666,7 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
       case FEM::MIRROR: stream << " kotuku:edgeMode=\"mirror\""; break;
       case FEM::TRANSPARENT: break;
    }
+   if (Self->OutputMode IS FOM::HEIGHT) stream << " kotuku:outputMode=\"height\"";
    Value = stream.str();
    return ERR::Okay;
 }
@@ -535,6 +679,7 @@ static const FieldArray clBlurFXFields[] = {
    { "SX",       FDF_DOUBLE|FDF_RW },
    { "SY",       FDF_DOUBLE|FDF_RW },
    { "EdgeMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_EdgeMode, &clBlurFXFEM },
+   { "OutputMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_OutputMode, &clBlurFXFOM },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
    END_FIELD
 };

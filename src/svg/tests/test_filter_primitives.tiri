@@ -938,3 +938,54 @@ end
       assert(diff is 0, f'SaveToObject must preserve the {albedo} albedo and SourceAlpha height (difference {diff})')
    end
 end
+
+@Test function HeightOutputsRoundTripWithNamedBindings()
+   local path = 'temp:svg_height_roundtrip.svg'
+   defer mSys.DeleteFile(path) end
+
+   local noise = '<feTurbulence type="fractalNoise" baseFrequency=".023 .037" numOctaves="3" seed="7" ' ..
+      'stitchTiles="stitch" result="noise"'
+   local blur = '<feGaussianBlur in="noise" stdDeviation="1.25 .75" k:outputMode="height" result="smooth"/>'
+   local ns = KOTUKU_NS .. ' xmlns:k="http://www.kotuku.dev/xmlns/svg"'
+   for _, mode in array<table> {
+      { effects=noise .. ' k:outputMode="height"/>', source='noise', height_count=1 },
+      { effects=noise .. ' k:outputMode="height"/>' .. blur, source='smooth', height_count=2 },
+      { effects=noise .. '/>' .. blur, source='smooth', height_count=1 }
+   } do
+      local effects = mode.effects .. f'<kotuku:feLighting in="{mode.source}" in2="SourceGraphic" features="none" ' ..
+         'surfaceScale="18" specularConstant="0">' ..
+         '<feDistantLight azimuth="175" elevation="40"/></kotuku:feLighting>'
+      local svg <close> = document(effects, COMBINED_CONTENT, 64, ns)
+      local original <close> = draw(svg, 64)
+      local pixel = mGfx.ReadRGBPixel(original, 32, 32)
+      assert(pixel.alpha > 0, 'The authored height chain must render')
+      do
+         local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+         check svg.acSaveToObject(file, 0)
+      end
+
+      local xml = io.readAll(path)
+      assert(xml.count('kotuku:outputMode="height"') is mode.height_count, 'Save lost a height opt-in')
+      local loaded <close> = obj.new('svg', { statement=xml })
+      local reopened <close> = draw(loaded, 64)
+      assert(imageDifference(original, reopened) is 0, 'Saving and reloading must preserve the height bindings')
+   end
+end
+
+@Test function ScopedHeightAttributeAndSharedProducer()
+   local noise = '<feTurbulence type="fractalNoise" baseFrequency=".02" result="raise"'
+   local effects = noise .. ' xmlns:h="http://www.kotuku.dev/xmlns/svg" h:outputMode="height"/>' ..
+      '<kotuku:feLighting in="raise" x="0" width="32" lighting-color="red" specularConstant="0" result="left">' ..
+      '<feDistantLight azimuth="0" elevation="40"/></kotuku:feLighting>' ..
+      '<kotuku:feLighting in="raise" x="32" width="32" lighting-color="blue" specularConstant="0" result="right">' ..
+      '<feDistantLight azimuth="90" elevation="40"/></kotuku:feLighting>' ..
+      '<feMerge><feMergeNode in="left"/><feMergeNode in="right"/></feMerge>'
+   local shared <close> = document(effects, nil, 64, KOTUKU_NS, 'primitiveUnits="userSpaceOnUse"')
+   local bitmap <close> = draw(shared, 64)
+   assert(mGfx.ReadRGBPixel(bitmap, 16, 32).red > 0, 'The first lighting reader must render')
+   assert(mGfx.ReadRGBPixel(bitmap, 48, 32).blue > 0, 'The second lighting reader must render')
+
+   local foreign <close> = document(noise .. ' xmlns:h="urn:foreign" h:outputMode="height"/>', nil, 64)
+   local image <close> = draw(foreign, 64)
+   assert(mGfx.ReadRGBPixel(image, 16, 32).alpha > 0, 'Foreign namespaces must leave the producer in image mode')
+end

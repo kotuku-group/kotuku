@@ -392,10 +392,10 @@ end
 
 -- kotuku:feLighting material terms, each a 3x3 matrix of surfaces.  Matcaps are loaded from filters/matcaps/.
 -- NOTE: These hashes are liable to change as lighting routines continue to improve
-@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0x6ad6ab66) end
-@Test global function LightingFresnel()    hashTestSVG('filters/lighting_fresnel.svg', 0x16cc9fdf) end
-@Test global function LightingWrap()       hashTestSVG('filters/lighting_wrap.svg', 0xa751a61b) end
-@Test global function LightingMatcap()     hashTestSVG('filters/lighting_matcap.svg', 0x5a57d16d) end
+@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0xf31a9414) end
+@Test global function LightingFresnel()    hashTestSVG('filters/lighting_fresnel.svg', 0x6512999f) end
+@Test global function LightingWrap()       hashTestSVG('filters/lighting_wrap.svg', 0x5c6097bc) end
+@Test global function LightingMatcap()     hashTestSVG('filters/lighting_matcap.svg', 0xc2e6ca7b) end
 
 -- Turbulence snapshots include sampling in user coordinates through the inverse transform at pixel centres.
 @Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x06560878) end

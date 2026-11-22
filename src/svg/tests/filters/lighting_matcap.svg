@@ -12,19 +12,48 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
   viewBox="0 0 1024 768">
   <defs>
-    <!-- Alpha profile of a hemisphere, sqrt(1 - r^2), used as a height map -->
+    <!-- Hemisphere alpha sampled at equal polar angles to capture the steep rim -->
     <radialGradient id="hemisphere">
       <stop offset="0" stop-color="white" stop-opacity="1"/>
-      <stop offset="0.2" stop-color="white" stop-opacity="0.98"/>
-      <stop offset="0.4" stop-color="white" stop-opacity="0.917"/>
-      <stop offset="0.5" stop-color="white" stop-opacity="0.866"/>
-      <stop offset="0.6" stop-color="white" stop-opacity="0.8"/>
-      <stop offset="0.7" stop-color="white" stop-opacity="0.714"/>
-      <stop offset="0.8" stop-color="white" stop-opacity="0.6"/>
-      <stop offset="0.85" stop-color="white" stop-opacity="0.527"/>
-      <stop offset="0.9" stop-color="white" stop-opacity="0.436"/>
-      <stop offset="0.95" stop-color="white" stop-opacity="0.312"/>
-      <stop offset="0.98" stop-color="white" stop-opacity="0.199"/>
+      <stop offset="0.039260" stop-color="white" stop-opacity="0.999229"/>
+      <stop offset="0.078459" stop-color="white" stop-opacity="0.996917"/>
+      <stop offset="0.117537" stop-color="white" stop-opacity="0.993068"/>
+      <stop offset="0.156434" stop-color="white" stop-opacity="0.987688"/>
+      <stop offset="0.195090" stop-color="white" stop-opacity="0.980785"/>
+      <stop offset="0.233445" stop-color="white" stop-opacity="0.972370"/>
+      <stop offset="0.271440" stop-color="white" stop-opacity="0.962455"/>
+      <stop offset="0.309017" stop-color="white" stop-opacity="0.951057"/>
+      <stop offset="0.346117" stop-color="white" stop-opacity="0.938191"/>
+      <stop offset="0.382683" stop-color="white" stop-opacity="0.923880"/>
+      <stop offset="0.418660" stop-color="white" stop-opacity="0.908143"/>
+      <stop offset="0.453990" stop-color="white" stop-opacity="0.891007"/>
+      <stop offset="0.488621" stop-color="white" stop-opacity="0.872496"/>
+      <stop offset="0.522499" stop-color="white" stop-opacity="0.852640"/>
+      <stop offset="0.555570" stop-color="white" stop-opacity="0.831470"/>
+      <stop offset="0.587785" stop-color="white" stop-opacity="0.809017"/>
+      <stop offset="0.619094" stop-color="white" stop-opacity="0.785317"/>
+      <stop offset="0.649448" stop-color="white" stop-opacity="0.760406"/>
+      <stop offset="0.678801" stop-color="white" stop-opacity="0.734323"/>
+      <stop offset="0.707107" stop-color="white" stop-opacity="0.707107"/>
+      <stop offset="0.734323" stop-color="white" stop-opacity="0.678801"/>
+      <stop offset="0.760406" stop-color="white" stop-opacity="0.649448"/>
+      <stop offset="0.785317" stop-color="white" stop-opacity="0.619094"/>
+      <stop offset="0.809017" stop-color="white" stop-opacity="0.587785"/>
+      <stop offset="0.831470" stop-color="white" stop-opacity="0.555570"/>
+      <stop offset="0.852640" stop-color="white" stop-opacity="0.522499"/>
+      <stop offset="0.872496" stop-color="white" stop-opacity="0.488621"/>
+      <stop offset="0.891007" stop-color="white" stop-opacity="0.453990"/>
+      <stop offset="0.908143" stop-color="white" stop-opacity="0.418660"/>
+      <stop offset="0.923880" stop-color="white" stop-opacity="0.382683"/>
+      <stop offset="0.938191" stop-color="white" stop-opacity="0.346117"/>
+      <stop offset="0.951057" stop-color="white" stop-opacity="0.309017"/>
+      <stop offset="0.962455" stop-color="white" stop-opacity="0.271440"/>
+      <stop offset="0.972370" stop-color="white" stop-opacity="0.233445"/>
+      <stop offset="0.980785" stop-color="white" stop-opacity="0.195090"/>
+      <stop offset="0.987688" stop-color="white" stop-opacity="0.156434"/>
+      <stop offset="0.993068" stop-color="white" stop-opacity="0.117537"/>
+      <stop offset="0.996917" stop-color="white" stop-opacity="0.078459"/>
+      <stop offset="0.999229" stop-color="white" stop-opacity="0.039260"/>
       <stop offset="1" stop-color="white" stop-opacity="0"/>
     </radialGradient>
 
@@ -34,7 +63,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="white"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="0" specularConstant="0"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
+      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0" specularConstant="0"
         matcap="matcaps/quadrant.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
@@ -45,7 +75,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="white"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
+      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
         matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
@@ -56,7 +87,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#3a7d5c"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.4"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
+      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.4"
         specularExponent="30" ambient="#202020" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
@@ -67,7 +99,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e8b850"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" specularConstant="1" specularExponent="40"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
+      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="1" specularExponent="40"
         ambient="#202020" metalness="1" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
@@ -76,7 +109,10 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
     <!-- 5: Hammered steel plate with the studio matcap -->
     <filter id="c5" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="1" seed="7"/>
-      <feComponentTransfer result="height"><feFuncA type="gamma" amplitude="1" exponent="0.5"/></feComponentTransfer>
+      <feComponentTransfer result="relief">
+        <feFuncA type="gamma" amplitude="1" exponent="0.5"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="relief" stdDeviation="1.25" result="height" kotuku:outputMode="height"/>
       <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="12" specularConstant="0.5" specularExponent="30"
         metalness="1" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
@@ -85,7 +121,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
 
     <!-- 6: Brushed aluminium plate with the softbox matcap and shadows -->
     <filter id="c6" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
-      <feTurbulence type="fractalNoise" baseFrequency="0.002 0.6" numOctaves="3" seed="8" result="height"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.002 0.6" numOctaves="3" seed="8" result="height"
+        kotuku:outputMode="height"/>
       <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="3" specularConstant="0.6" specularExponent="50"
         metalness="1" features="all" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="225" elevation="45"/>
@@ -97,7 +134,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#9c3b2e"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="20"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
+      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="20"
         specularExponent="100" ambient="#303030" fresnel="0.04" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
@@ -109,7 +147,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#3050c0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
+      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
         fresnel="0.5" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
@@ -118,7 +157,7 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
     <!-- 9: Bevelled chrome star with cavity: a blurred shape as the height, the studio matcap and a gold albedo at half
       metalness -->
     <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="height"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="height" kotuku:outputMode="height"/>
       <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="30" diffuseConstant="0.8" specularConstant="0.8"
         specularExponent="40" ambient="#303030" metalness="0.5" features="all" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>

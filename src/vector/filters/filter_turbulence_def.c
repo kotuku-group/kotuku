@@ -6,6 +6,12 @@ static const struct FieldDef clTurbulenceFXTB[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clTurbulenceFXFOM[] = {
+   { "Image", 0x00000000 },
+   { "Height", 0x00000001 },
+   { nullptr, 0 }
+};
+
 static ERR TURBULENCEFX_New(extTurbulenceFX *Self) {
    new (Self) extTurbulenceFX(Self->Class, Self->UID);
    return ERR::Okay;

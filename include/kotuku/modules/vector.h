@@ -398,6 +398,14 @@ enum class VPF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VPF)
 
+// Output modes for TurbulenceFX and BlurFX.
+
+enum class FOM : int {
+   NIL = 0,
+   IMAGE = 0,
+   HEIGHT = 1,
+};
+
 enum class TB : int {
    NIL = 0,
    TURBULENCE = 0,
@@ -2580,6 +2588,11 @@ class objBlurFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getOutputMode(FOM &Value) noexcept {
+      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 20));
+      return ERR::Okay;
+   }
+
    inline ERR getSX(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
@@ -2599,6 +2612,11 @@ class objBlurFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setEdgeMode(const FEM Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOutputMode(const FOM Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -3533,6 +3551,11 @@ class objTurbulenceFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getOutputMode(FOM &Value) noexcept {
+      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
+      return ERR::Okay;
+   }
+
    inline ERR getFX(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
@@ -3571,8 +3594,13 @@ class objTurbulenceFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setOutputMode(const FOM Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setFX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3582,12 +3610,12 @@ class objTurbulenceFX : public objFilterEffect {
    }
 
    inline ERR setOctaves(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSeed(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

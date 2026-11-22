@@ -172,11 +172,11 @@ namespace and draw the standard SVG lighting.
 </pre>
 
 The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It lights an albedo with diffuse, specular and
-ambient light in one primitive, producing a finished surface: `in` is the height (its alpha channel) and `in2` is the
-albedo.  Without `in2` the albedo is opaque white.  It accepts `surfaceScale`, `diffuseConstant`, `specularConstant`,
-`specularExponent`, `kernelUnitLength` and `lighting-color`, and the extension attributes above without their prefix,
-as the element is already in the Kōtuku namespace.  It also accepts the following material attributes, which the
-standard lighting elements do not:
+ambient light in one primitive.  The `in` attribute selects a floating-point height result or an image whose alpha
+supplies the height.  The `in2` attribute selects the albedo, which defaults to opaque white.  It accepts
+`surfaceScale`, `diffuseConstant`, `specularConstant`, `specularExponent`, `kernelUnitLength` and `lighting-color`.
+The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace.
+The element also accepts these material attributes:
 
 <list type="bullet">
 <li>`metalness`: 0 for a dielectric surface (the default) to 1 for a metal, whose highlights take the albedo's colour
@@ -195,10 +195,15 @@ warning is logged and the surface is drawn without it.  Sets @LightingFX.MatcapP
 One light source element is required.  The element is drawn
 whatever the document's compliance, but other renderers do not draw it.
 
+In documents using the Kōtuku namespace, `kotuku:outputMode="height"` on `feTurbulence` or `feGaussianBlur`
+produces a floating-point height result for enhanced lighting.  A height-output blur accepts both a height result
+and an image's alpha.  Supply the albedo through a separate image input.
+
 <pre>
 &lt;filter id="brass" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"&gt;
-  &lt;feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="height"/&gt;
-  &lt;kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="6" diffuseConstant="0.9"
+  &lt;feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" kotuku:outputMode="height" result="raw"/&gt;
+  &lt;feGaussianBlur in="raw" stdDeviation="1.5" kotuku:outputMode="height" result="smooth"/&gt;
+  &lt;kotuku:feLighting in="smooth" in2="SourceGraphic" surfaceScale="6" diffuseConstant="0.9"
       specularConstant="0.6" specularExponent="40" ambient="#202830"&gt;
     &lt;feDistantLight azimuth="225" elevation="35" kotuku:intensity="1.4"/&gt;
   &lt;/kotuku:feLighting&gt;

@@ -805,13 +805,30 @@ double extLightingFX::reach() const
 
 //********************************************************************************************************************
 
-ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_view *Albedo, const point3 &Light,
-   double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width, int Height)
+// Load a row of native heights in alpha-level units, aligned to the lighting output in scene coordinates.
+
+static void load_lighting_height_row(const filter_surface_view &Source, float *Dest, int SceneX, int SceneY, int Width)
+{
+   const int y = SceneY - Source.OriginY;
+   const int x = SceneX - Source.OriginX;
+   std::fill_n(Dest, Width, 0.0f);
+   if ((y < Source.Valid.top) or (y >= Source.Valid.bottom)) return;
+   const auto row = Source.row(y);
+   const int first = std::max(0, Source.Valid.left - x);
+   const int end = std::min(Width, Source.Valid.right - x);
+   for (int i=first; i < end; ++i) Dest[i] = 255.0f * filter_height_sample<true>(row, x + i, 0);
+}
+
+//********************************************************************************************************************
+
+ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter_surface_view *Albedo,
+   const point3 &Light, double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width, int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
    const size_t size = size_t(stride) * rows;
-   const bool dequantise = (Features & LFX::DEQUANTISE) != LFX::NIL;
+   const bool scalar = Source.Format IS filter_surface_format::SCALAR_F32;
+   const bool dequantise = (not scalar) and ((Features & LFX::DEQUANTISE) != LFX::NIL);
 
    // The diffuse and specular output functions expect each channel of the light in the range 0 - 1, and apply the
    // intensity to the light's strength.  A spot light only scales the colour down, so limiting it here is sufficient.
@@ -862,10 +879,10 @@ ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_v
       if (auto error = get_filter_scratch(this, size, heights); error != ERR::Okay) return error;
    }
 
-   const uint8_t A = Target->ColourFormat->AlphaPos>>3;
-   const auto bpp = Bitmap->BytesPerPixel;
-   const uint8_t *input_base = Bitmap->Data + (Bitmap->Clip.Left * bpp) +
-      (Bitmap->Clip.Top * Bitmap->LineWidth);
+   const auto bitmap = Source.Bitmap;
+   const auto &origin = Filter->Render->VectorClip;
+   const int scene_x = origin.left + Target->Clip.Left;
+   const int scene_y = origin.top + Target->Clip.Top;
 
    int num_threads = std::min(int(std::thread::hardware_concurrency()), Height);
    if (num_threads < 1) num_threads = 1;
@@ -879,16 +896,22 @@ ERR extLightingFX::draw_enhanced(const objBitmap *Bitmap, const filter_surface_v
       pool.wait();
    };
 
-   // Convert alpha to heights, replicating the edge pixels into the padding.
+   // Load heights in alpha-level units, replicating the processing boundary into the padding.
 
    for_rows(rows, [&](int Start, int End) {
       for (int py=Start; py < End; ++py) {
          const int y = std::clamp(py - LIGHT_PAD, 0, Height - 1);
-         const uint8_t *src = input_base + (y * Bitmap->LineWidth) + A;
          float *dest = raw + py * stride;
-         std::fill_n(dest, LIGHT_PAD, float(src[0]));
-         for (int x=0; x < Width; ++x) dest[LIGHT_PAD + x] = src[x * bpp];
-         std::fill_n(dest + LIGHT_PAD + Width, LIGHT_PAD, float(src[(Width - 1) * bpp]));
+         float *interior = dest + LIGHT_PAD;
+         if (scalar) load_lighting_height_row(Source, interior, scene_x, scene_y + y, Width);
+         else {
+            const int alpha = bitmap->ColourFormat->AlphaPos >> 3;
+            const int bpp = bitmap->BytesPerPixel;
+            const auto src = Source.row(bitmap->Clip.Top + y) + std::ptrdiff_t(bitmap->Clip.Left) * bpp + alpha;
+            for (int x=0; x < Width; ++x) interior[x] = src[x * bpp];
+         }
+         std::fill_n(dest, LIGHT_PAD, interior[0]);
+         std::fill_n(interior + Width, LIGHT_PAD, interior[Width - 1]);
       }
    });
 
