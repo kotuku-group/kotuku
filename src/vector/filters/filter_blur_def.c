@@ -8,6 +8,12 @@ static const struct FieldDef clBlurFXFEM[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clBlurFXFOM[] = {
+   { "Image", 0x00000000 },
+   { "Height", 0x00000001 },
+   { nullptr, 0 }
+};
+
 static ERR BLURFX_New(extBlurFX *Self) {
    new (Self) extBlurFX(Self->Class, Self->UID);
    return ERR::Okay;

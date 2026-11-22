@@ -95,8 +95,9 @@
     ~int(ARF) AspectRatio
   ]])
 
-  klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true, references={ 'FEM' } }, [[
+  klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true, references={ 'FEM', 'FOM' } }, [[
     ~int(FEM) EdgeMode
+    ~int(FOM) OutputMode
   ]])
 
   klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true, references={ 'CM' } }, [[
@@ -140,8 +141,9 @@
 
   klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 
-  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB' }, extended=true }, [[
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB', 'FOM' }, extended=true }, [[
     ~int(TB) Type
+    ~int(FOM) OutputMode
   ]])
 
   klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[

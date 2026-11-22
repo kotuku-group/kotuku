@@ -2,10 +2,9 @@
 --[[
 Lighting Workbench
 
-Experiment with the SVG lighting filters on surfaces that are generated from filter primitives.  The alpha channel of
-the last primitive in a surface declaration is used as a bump map, which is lit by feDiffuseLighting,
-feSpecularLighting or kotuku:feLighting according to the controls on the left.  For example, this declaration
-produces the surface of a moon:
+Experiment with the SVG lighting filters on surfaces that are generated from filter primitives.  The last primitive
+supplies a bump map as image alpha or float heights, lit by feDiffuseLighting, feSpecularLighting or
+kotuku:feLighting according to the controls on the left.  For example, this declaration produces the surface of a moon:
 
    <feTurbulence type="fractalNoise" baseFrequency=".01" numOctaves="9"/>
    <feComponentTransfer>
@@ -34,25 +33,31 @@ The 'combined' lighting mode replaces the standard primitive with kotuku:feLight
    </kotuku:feLighting>
 
 The albedo is the fill of the rectangle, chosen with the Albedo combobox beneath the preview.  Unlike a chain of
-lighting and composite primitives, the light is only clamped when the result is written, so a strong light brightens
-the albedo without washing out its colour.  The specular constant and the material sliders apply to this mode only:
-metalness blends the surface from a dielectric to a metal, whose highlights take the albedo's colour; Fresnel sets the
-reflectance where the surface faces the viewer (0 disables it, 0.04 suits most dielectrics but needs a larger specular
-constant); and wrap lets diffuse light reach past the terminator, as on wax.  The Matcap combobox adds the reflection
-of an environment, which is weak where the surface faces the viewer if Fresnel is set, and takes the albedo's colour
-as metalness rises.  The matcap is set on the effect as LightingFX.MatcapPath after the document is parsed, because
-the matcap attribute of a document only accepts paths that are relative to the document's folder.
+lighting and composite primitives, the light is only clamped when the result is written, so a strong light brightens the
+albedo without washing out its colour.  The Albedo and Matcap comboboxes, the specular constant and the material
+sliders apply to this mode only, and are disabled in the other modes: metalness blends the surface from a dielectric
+to a metal, whose highlights take the albedo's colour; Fresnel sets the reflectance where the surface faces the viewer
+(0 disables it, 0.04 suits most dielectrics but needs a larger specular constant); and wrap lets diffuse light reach
+past the terminator, as on wax.  The Matcap combobox adds the reflection of an environment, which is weak where the
+surface faces the viewer if Fresnel is set, and takes the albedo's colour as metalness rises.  The matcap is set on the
+effect as LightingFX.MatcapPath after the document is parsed, because the matcap attribute of a document only accepts
+paths that are relative to the document's folder.
 
 Surfaces are chosen from the presets in the Surface combobox, or entered in the editor beneath the preview.  Edits are
 applied after a short pause in typing.  Point and spot lights are positioned by clicking or dragging in the preview;
 spot lights point at the centre of the preview.
 
+Use kotuku:outputMode="height" on feTurbulence or feGaussianBlur to supply float heights to enhanced lighting.
+Smooth relief uses it on both primitives.  To see the reflected horizon, choose combined lighting, the Studio matcap
+and white albedo.  Set Metalness to 1 and Surface scale to 40, and lower the Specular constant.  When the lighting
+settings select standard SVG lighting, the preview uses image output and keeps the declarations in the editor.
+
 The Features toggles select the enhancements that LightingFX applies to the SVG lighting algorithm, and the sliders
 beneath them set the strength of the cavity and detail features and the width of the shadow edge.  The ambient light
 (diffuse and combined modes) and the light's intensity are also extensions.  They are written to the lighting
 primitive and its light source as kotuku: attributes.  The attributes take effect because the scene of the window has a
-Compliance of NONE; a standalone document that declares the Kotuku namespace is given the same Compliance.  Disabling
-every feature produces the result defined by the SVG specification.
+Compliance of NONE.  In diffuse and specular modes, disabling the features and using the default intensity and
+ambient settings selects standard SVG lighting.
 --]]
 
    include 'vector', 'svg', 'xml', 'scintilla'
@@ -61,7 +66,8 @@ every feature produces the result defined by the SVG specification.
    local glWindow, glViewport, glPreview, glSurfaceHost, glSurface, glMarker, glStatus, glEditor, glSVG, glEditTimer
    local glThemeXML -- Colours of the editor
    local glControls -- Scrollable page that holds the controls on the left
-   MATCAP_FOLDER <const> = obj.find('self').workingPath .. 'data/'
+   local glMatcapBox:table, glAlbedoBox:table -- Comboboxes that apply to the combined mode only
+   EXAMPLE_FOLDER <const> = obj.find('self').workingPath
 
    glWidgets = array<table> -- Strong references keep the widgets alive, as their callbacks hold weak references
    glSliders = { }          -- Sliders by parameter name, so that those that do not apply can be disabled
@@ -124,10 +130,16 @@ every feature produces the result defined by the SVG specification.
       { label = 'Bright', value = '#505050' }
    }
 
+   function matcapPath(Name:str):str
+      local err, path = mSys.ResolvePath(EXAMPLE_FOLDER .. 'data/' .. Name)
+      if err is ERR_Okay then return path end
+      return EXAMPLE_FOLDER .. '../src/svg/tests/filters/matcaps/' .. Name
+   end
+
    MATCAPS <const> = array<table> {
       { label = 'None' },
-      { label = 'Studio',  path = MATCAP_FOLDER .. 'studio.png' },
-      { label = 'Softbox', path = MATCAP_FOLDER .. 'softbox.png' }
+      { label = 'Studio',  path = matcapPath('studio.png') },
+      { label = 'Softbox', path = matcapPath('softbox.png') }
    }
 
    -- Surface colours for the combined mode.  Gradients are defined in the document and referenced by the fill.
@@ -179,13 +191,13 @@ every feature produces the result defined by the SVG specification.
 <feComponentTransfer>
   <feFuncA type="discrete" tableValues="0 0 .15 .3 .45 .6 .8 1"/>
 </feComponentTransfer>
-<feGaussianBlur stdDeviation="2"/>]] },
+<feGaussianBlur stdDeviation="2" kotuku:outputMode="height"/>]] },
 
       { label = 'Bubbles', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".04" numOctaves="2" seed="4"/>
 <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 16 -10.5"/>
 <feMorphology operator="dilate" radius="1"/>
-<feGaussianBlur stdDeviation="4"/>]] },
+<feGaussianBlur stdDeviation="4" kotuku:outputMode="height"/>]] },
 
       { label = 'Stucco', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".08" numOctaves="4" seed="3"/>
@@ -194,24 +206,29 @@ every feature produces the result defined by the SVG specification.
 </feComponentTransfer>]] },
 
       { label = 'Water', source = [[
-<feTurbulence type="turbulence" baseFrequency=".012 .035" numOctaves="2" seed="5"/>
-<feGaussianBlur stdDeviation="1.5"/>]] },
+<feTurbulence type="turbulence" baseFrequency=".012 .035" numOctaves="2" seed="5" kotuku:outputMode="height"/>
+<feGaussianBlur stdDeviation="1.5" kotuku:outputMode="height"/>]] },
+
+      { label = 'Smooth relief', source = [[
+<feTurbulence type="fractalNoise" baseFrequency=".004 .005" seed="7" kotuku:outputMode="height"/>
+<feGaussianBlur stdDeviation="3.25 2.75" kotuku:outputMode="height"/>]] },
 
       { label = 'Wood grain', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".003 .04" numOctaves="4" seed="21"/>
 <feComponentTransfer>
   <feFuncA type="table" tableValues="0 .3 .1 .4 .15 .45"/>
 </feComponentTransfer>
-<feGaussianBlur stdDeviation=".7"/>]] },
+<feGaussianBlur stdDeviation=".7" kotuku:outputMode="height"/>]] },
 
       { label = 'Brushed metal', source = [[
-<feTurbulence type="fractalNoise" baseFrequency=".002 .6" numOctaves="3" seed="8"/>]] },
+<feTurbulence type="fractalNoise" baseFrequency=".002 .6" numOctaves="3" seed="8" kotuku:outputMode="height"/>]] },
 
       { label = 'Hammered metal', source = [[
 <feTurbulence type="turbulence" baseFrequency=".05" numOctaves="1" seed="7"/>
 <feComponentTransfer>
   <feFuncA type="gamma" amplitude="1" exponent=".5"/>
-</feComponentTransfer>]] },
+</feComponentTransfer>
+<feGaussianBlur stdDeviation="1.25" kotuku:outputMode="height"/>]] },
 
       { label = 'Sand', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="1"/>]] },
@@ -296,22 +313,32 @@ function surfaceDocument(Source:str, ID:str):str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Returns the number of primitives in the filter, or nil if the filter was not created.
+-- Standard diffuse and specular lighting consume images, so use the same declarations with image output.
 
-function countPrimitives(ID:str):num
-   err, vf = glViewport.scene.mtFindDef(ID)
-   if err != ERR_Okay then return nil end
-   return #vf.children()
+function useImageHeights(Filter:obj):bool
+   local p = glParams
+   if (p.lighting is 'combined') or (glFeatures != 0) or (p.intensity != 1) or
+      ((p.lighting is 'diffuse') and p.ambient) then return false end
+
+   local changed = false
+   for _, class_name in array<str> { 'TurbulenceFX', 'BlurFX' } do
+      for _, id in Filter.children(class_name) do
+         local effect = obj.find(id)
+         if effect.outputMode is FOM_HEIGHT then
+            effect.outputMode = FOM_IMAGE
+            changed = true
+         end
+      end
+   end
+   return changed
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Sets the matcap of the combined mode's LightingFX, which is the last primitive of the filter.
 
-function applyMatcap(ID:str)
+function applyMatcap(Filter:obj)
    if (glParams.lighting != 'combined') or (glParams.matcap is nil) then return end
-   err, vf = glViewport.scene.mtFindDef(ID)
-   if err != ERR_Okay then return end
-   effects = vf.children('LightingFX')
+   effects = Filter.children('LightingFX')
    if #effects is 0 then return end
    obj.find(effects[#effects - 1]).matcapPath = glParams.matcap
 end
@@ -355,15 +382,17 @@ function render()
          target = glSurface, statement = surfaceDocument(glSource, id), flags = SVF_ENFORCE_TRACKING
       })
 
-      applyMatcap(id)
-      primitives = countPrimitives(id)
-      if primitives then
-         surface_count = primitives - 1 -- Excludes the lighting primitive
-         plural = (surface_count is 1) ? '' : 's'
+      local err, filter = glViewport.scene.mtFindDef(id)
+      if err != ERR_Okay then
+         glStatus.string = 'No filter was created.  Check the surface declaration for errors.'
+      elseif useImageHeights(filter) then
+         glStatus.string = 'Standard lighting uses 8-bit heights.'
+      else
+         applyMatcap(filter)
+         local surface_count = #filter.children() - 1 -- Excludes the lighting primitive
+         local plural = (surface_count is 1) ? '' : 's'
          glStatus.string = f'{surface_count} surface primitive{plural}, {glParams.lighting} lighting from a ' ..
             f'{glParams.source} light.'
-      else
-         glStatus.string = 'No filter was created.  Check the surface declaration for errors.'
       end
    except e
       glStatus.string = f'Error: {e.message}'
@@ -406,13 +435,16 @@ function updateMarker()
    end
 end
 
--- The exponent applies to the specular and combined modes, and the specular constant and material terms to the
--- combined mode alone.
+-- The exponent applies to the specular and combined modes, and the specular constant, material terms, matcap and
+-- albedo to the combined mode alone.
 
 function updateLightingSliders()
    if glParams.lighting is 'diffuse' then glSliders.exponent.disable() else glSliders.exponent.enable() end
    for _, name in MATERIAL_SLIDERS do
       if glParams.lighting is 'combined' then glSliders[name].enable() else glSliders[name].disable() end
+   end
+   for _, box in array<table> { glMatcapBox, glAlbedoBox } do
+      if glParams.lighting is 'combined' then box.enable() else box.disable() end
    end
 end
 
@@ -449,13 +481,15 @@ function addSlider(Name:str, Label:str, Min:num, Max:num, Step:num, Places:num)
    glY += 52
 end
 
-function addCombobox(Label:str, Text:str, Items:array<table>, Activate:func)
-   glWidgets.push(gui.combobox({
+function addCombobox(Label:str, Text:str, Items:array<table>, Activate:func):table
+   combobox = gui.combobox({
       target = glControls, label = Label, text = Text, x = 16, y = glY,
       width = CONTROL_WIDTH, labelWidth = 100, items = Items,
       events = { activate = Activate }
-   }))
+   })
+   glWidgets.push(combobox)
    glY += ROW_HEIGHT
+   return combobox
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -510,7 +544,7 @@ function buildControls()
    matcap_items = array<table>
    for _, matcap in MATCAPS do matcap_items.push({ label = matcap.label }) end
 
-   addCombobox('Matcap:', MATCAPS[0].label, matcap_items, function(Item:table!)
+   glMatcapBox = addCombobox('Matcap:', MATCAPS[0].label, matcap_items, function(Item:table!)
       for _, matcap in MATCAPS do
          if matcap.label is Item.label then glParams.matcap = matcap.path end
       end
@@ -564,7 +598,6 @@ function buildControls()
    addSlider('detail', 'Detail strength', 1, 4, nil, 2)
    addSlider('penumbra', 'Shadow penumbra (degrees)', 0.1, 15, nil, 1)
 
-   updateLightingSliders()
    updateLightSliders()
 
    glControls.height = glY + glWindow.margins.bottom
@@ -653,7 +686,7 @@ function buildPreview()
    albedo_items = array<table>
    for _, albedo in ALBEDOS do albedo_items.push({ label = albedo.label }) end
 
-   glWidgets.push(gui.combobox({
+   glAlbedoBox = gui.combobox({
       target = glViewport, label = 'Albedo:', text = ALBEDOS[0].label,
       x = PREVIEW_X + CONTROL_WIDTH + 16, yOffset = row_bottom, width = ALBEDO_WIDTH, labelWidth = 64,
       items = albedo_items,
@@ -665,7 +698,8 @@ function buildPreview()
             scheduleRender()
          end
       }
-   }))
+   })
+   glWidgets.push(glAlbedoBox)
 
    status_vp = glViewport.new('VectorViewport', {
       x = PREVIEW_X + CONTROL_WIDTH + ALBEDO_WIDTH + 32, xOffset = margin, yOffset = row_bottom, height = ROW_HEIGHT
@@ -726,6 +760,7 @@ end
 
    buildControls()
    buildPreview()
+   updateLightingSliders() -- After both builds, as it also covers the albedo combobox beneath the preview
    render()
    glWindow.show()
    processing.sleep()

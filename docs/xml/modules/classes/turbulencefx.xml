@@ -69,6 +69,17 @@
     </field>
 
     <field>
+      <name>OutputMode</name>
+      <comment>Selects an image or a linear height result from the noise's alpha channel.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FOM">FOM</type>
+      <description>
+<p>Use <code>HEIGHT</code> when passing the result to enhanced <class name="LightingFX">LightingFX</class> or height-output <class name="BlurFX">BlurFX</class>.</p>
+<types lookup="FOM"/>
+      </description>
+    </field>
+
+    <field>
       <name>Seed</name>
       <comment>The starting number for the pseudo random number generator.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -109,6 +120,11 @@
 
   </fields>
   <types>
+    <constants lookup="FOM" comment="Output modes for TurbulenceFX and BlurFX.">
+      <const name="HEIGHT">Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.</const>
+      <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+    </constants>
+
     <constants lookup="TB">
       <const name="NOISE">Use the fractal noise function.</const>
       <const name="TURBULENCE">Use the standard turbulence function.</const>

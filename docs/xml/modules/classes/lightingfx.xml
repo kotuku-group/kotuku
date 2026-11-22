@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The lighting effect class applies a diffuse or specular lighting effect to the alpha channel of an input bitmap, which functions as a bump map.  The output is an RGBA representation of the light effect.  If no light <fl>Colour</fl> is specified by the client then the output will be in grey scale.  The <code>COMBINED</code> <fl>Type</fl>, described below, lights an albedo instead and produces a finished surface.</p>
+<p>The lighting effect uses the alpha channel of an input bitmap as a bump map.  Enhanced lighting also accepts linear floating-point heights from <class name="TurbulenceFX">TurbulenceFX</class> or <class name="BlurFX">BlurFX</class> in <code>HEIGHT</code> output mode.  The output is an RGBA representation of the light effect.  If the client leaves <fl>Colour</fl> at its default, the output is greyscale.  The <code>COMBINED</code> <fl>Type</fl> can use a separate image as its albedo to produce a finished surface.</p>
 <p>For diffuse lighting, the resulting RGBA image is computed as follows:</p>
 <pre>Dr = kd * N.L * Lr
 Dg = kd * N.L * Lg

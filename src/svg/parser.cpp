@@ -1487,6 +1487,19 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
 //********************************************************************************************************************
 
+// Returns the local name of an attribute in a Kōtuku namespace, or an empty view if the attribute is not in one.
+
+static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string_view Name) noexcept
+{
+   const auto colon = Name.find(':');
+   if ((colon IS std::string_view::npos) or (colon IS 0)) return { };
+
+   uint32_t uri;
+   if (Self->XML->resolvePrefix(Name.substr(0, colon), Tag.ID, &uri) != ERR::Okay) return { };
+   if ((uri != glKotukuSVGNamespace) and (uri != glKotukuNamespace)) return { };
+   return Name.substr(colon + 1);
+}
+
 ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
@@ -1527,14 +1540,9 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_result: result_name = val; break;
 
          default: {
-            if (not iequals("mirror", val)) break;
-            const auto colon = name.find(':');
-            if ((colon IS std::string_view::npos) or (colon IS 0) or (name.substr(colon + 1) != "edgeMode")) break;
-
-            uint32_t uri;
-            if (Self->XML->resolvePrefix(name.substr(0, colon), Tag.ID, &uri) IS ERR::Okay) {
-               if ((uri IS glKotukuSVGNamespace) or (uri IS glKotukuNamespace)) mirror_edge = true;
-            }
+            const auto local = kotuku_attrib(Self, Tag, name);
+            if ((local IS "edgeMode") and iequals("mirror", val)) mirror_edge = true;
+            else if ((local IS "outputMode") and iequals("height", val)) fx->setOutputMode(FOM::HEIGHT);
             break;
          }
       }
@@ -1884,19 +1892,6 @@ static LFX read_lighting_features(std::string_view Value) noexcept
       pos = end;
    }
    return result;
-}
-
-// Returns the local name of an attribute in a Kōtuku namespace, or an empty view if the attribute is not in one.
-
-static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string_view Name) noexcept
-{
-   const auto colon = Name.find(':');
-   if ((colon IS std::string_view::npos) or (colon IS 0)) return { };
-
-   uint32_t uri;
-   if (Self->XML->resolvePrefix(Name.substr(0, colon), Tag.ID, &uri) != ERR::Okay) return { };
-   if ((uri != glKotukuSVGNamespace) and (uri != glKotukuNamespace)) return { };
-   return Name.substr(colon + 1);
 }
 
 // Filter resource references must be relative and cannot contain parent folder components.
@@ -2530,6 +2525,11 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
          case SVF_in:     parse_input_source(Self, fx, val); break;
          case SVF_result: result_name = val; break;
+         default:
+            if (iequals("height", val) and (kotuku_attrib(Self, Tag, Tag.Attribs[a].Name) IS "outputMode")) {
+               fx->setOutputMode(FOM::HEIGHT);
+            }
+            break;
       }
    }
 
