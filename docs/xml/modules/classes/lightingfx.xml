@@ -44,10 +44,12 @@ Lr,Lg,Lb = RGB components of light
 </pre>
 <p>where <code>L</code> is the light unit vector.</p>
 <p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p>
-<p>The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit steps on gentle slopes.  When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code> (the default), the enhanced pipeline applies the features selected by the <fl>Features</fl> field.  All of them are enabled by default:</p>
+<p>The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit steps on gentle slopes.  When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code> (the default), the enhanced pipeline applies the features selected by the <fl>Features</fl> field.  The default is <code>ALL</code>.</p>
 <list type="bullet">
 <li><code>DEQUANTISE</code>: Heights are read as floating point values, and areas that vary by no more than one alpha level are
 smoothed to remove terracing.</li>
+<li><code>DEQUANTISE_WIDE</code>: Reconstruct a gradual slope across flat runs of up to sixteen pixels bracketed by successive
+one-level steps in 8-bit heights. This opt-in overrides <code>DEQUANTISE</code> and is excluded from <code>ALL</code>.</li>
 <li><code>SHARPEN</code>: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
 wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
 SVG kernel, reaching it at two pixels per unit.</li>
@@ -226,6 +228,7 @@ do not produce isolated bright pixels.</li>
       <type lookup="LFX">LFX</type>
       <description>
 <p>When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code>, the lighting algorithm is extended with the features enabled here.  The default is <code>ALL</code>.  Each feature can be disabled independently, for instance to remove shadows from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG algorithm.  Disabling <code>SHARPEN</code> measures slopes with the same kernel as the SVG algorithm.</p>
+<p>Both dequantisation modes apply to 8-bit alpha inputs only. Use <code>DEQUANTISE_WIDE</code> for shallow slopes in existing 8-bit height maps. Isolated ledges and terraces without successive one-level steps keep their heights.</p>
 <p>The strength of <code>CAVITY</code> and <code>DETAIL</code>, and the width of the shadow edge, are set by the <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl> fields.</p>
 <p>If no features are enabled, and neither <fl>Ambient</fl> nor <fl>Intensity</fl> is set, the SVG algorithm is used without modification.  Features have no effect when the Compliance of the scene is <code>SVG1</code> or <code>SVG2</code>, except for the <code>COMBINED</code> type, which always uses the enhanced pipeline.  The SVG class renders its own scene with a Compliance of <code>SVG2</code>, unless the document declares a Kōtuku namespace, in which case the Compliance is <code>NONE</code> and the features apply.  In SVG markup, features are selected with the <code>kotuku:features</code> attribute of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code>.</p>
 <types lookup="LFX"/>
@@ -389,6 +392,7 @@ do not produce isolated bright pixels.</li>
       <const name="ALL">Synonym for <code>DEQUANTISE | SHARPEN | CAVITY | DETAIL | SHADOWS | SPECULAR_AA</code></const>
       <const name="CAVITY">Darken narrow creases and pits in proportion to their curvature.</const>
       <const name="DEQUANTISE">Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.</const>
+      <const name="DEQUANTISE_WIDE">Reconstruct gently sloping terraces in 8-bit heights. Overrides DEQUANTISE.</const>
       <const name="DETAIL">Give fine detail more relief than broad shapes.</const>
       <const name="SHADOWS">Distant lights cast shadows from raised areas of the surface.</const>
       <const name="SHARPEN">Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.</const>

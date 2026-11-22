@@ -86,11 +86,14 @@ storage, so a result of 0.5 is stored as approximately 0.735.
 
 The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit
 steps on gentle slopes.  When the @VectorScene.Compliance of the scene is `NONE` (the default), the enhanced pipeline
-applies the features selected by the #Features field.  All of them are enabled by default:
+applies the features selected by the #Features field.  The default is `ALL`.
 
 <list type="bullet">
 <li>`DEQUANTISE`: Heights are read as floating point values, and areas that vary by no more than one alpha level are
 smoothed to remove terracing.</li>
+<li>`DEQUANTISE_WIDE`: Reconstruct a gradual slope across flat runs of up to sixteen pixels bracketed by successive
+one-level steps in 8-bit heights.  Enable this mode explicitly.  When both modes are enabled, `DEQUANTISE` smooths
+samples the wide pass leaves unresolved.</li>
 <li>`SHARPEN`: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
 wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
 SVG kernel, reaching it at two pixels per unit.</li>
@@ -1472,6 +1475,10 @@ enabled here.  The default is `ALL`.  Each feature can be disabled independently
 from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG
 algorithm.  Disabling `SHARPEN` measures slopes with the same kernel as the SVG algorithm.
 
+Both dequantisation modes apply to 8-bit alpha inputs only.  Use `DEQUANTISE_WIDE` for shallow slopes in existing
+8-bit height maps.  Select it alone to keep isolated ledges and terraces without successive one-level steps at
+their original heights.
+
 The strength of `CAVITY` and `DETAIL`, and the width of the shadow edge, are set by the #Cavity, #Detail and
 #Penumbra fields.
 
@@ -1491,7 +1498,7 @@ static ERR LIGHTINGFX_GET_Features(extLightingFX *Self, LFX &Value)
 
 static ERR LIGHTINGFX_SET_Features(extLightingFX *Self, LFX Value)
 {
-   if ((Value & (~LFX::ALL)) != LFX::NIL) return ERR::InvalidValue;
+   if ((Value & ~(LFX::ALL | LFX::DEQUANTISE_WIDE)) != LFX::NIL) return ERR::InvalidValue;
    Self->Features = Value;
    return ERR::Okay;
 }
@@ -1890,7 +1897,8 @@ static void write_lfx_features(std::ostream &Stream, LFX Features)
 {
    static const std::pair<LFX, CSTRING> names[] = {
       { LFX::DEQUANTISE, "dequantise" }, { LFX::SHARPEN, "sharpen" }, { LFX::CAVITY, "cavity" },
-      { LFX::DETAIL, "detail" }, { LFX::SHADOWS, "shadows" }, { LFX::SPECULAR_AA, "specular-aa" }
+      { LFX::DETAIL, "detail" }, { LFX::SHADOWS, "shadows" }, { LFX::SPECULAR_AA, "specular-aa" },
+      { LFX::DEQUANTISE_WIDE, "dequantise-wide" }
    };
 
    if (Features IS LFX::NIL) {

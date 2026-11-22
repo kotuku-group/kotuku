@@ -596,6 +596,7 @@ end
       { value='shadows cavity', expected=LFX_SHADOWS | LFX_CAVITY },
       { value='  Detail\tSHARPEN  ', expected=LFX_DETAIL | LFX_SHARPEN },
       { value='dequantise specular-aa', expected=LFX_DEQUANTISE | LFX_SPECULAR_AA },
+      { value='all dequantise-wide', expected=LFX_ALL | LFX_DEQUANTISE_WIDE },
       { value='none', expected=0 },
       { value='all', expected=LFX_ALL },
       { value='shadows sky-occlusion bogus', expected=LFX_SHADOWS } -- Unknown names are skipped
@@ -672,6 +673,7 @@ end
    for _, case in array<table> {
       { attribs='', light=nil },
       { attribs='kotuku:features="shadows detail" kotuku:cavity="0.5" kotuku:penumbra="0"', light=nil },
+      { attribs='kotuku:features="dequantise-wide"', light=nil },
       { attribs='kotuku:features="none" lighting-color="#ffcc99" kernelUnitLength="2 1.5"',
         light='<fePointLight x="20" y="12" z="40"/>' },
       { attribs='kotuku:detail="3" lighting-color="rgb(64 128 255)"',
@@ -703,6 +705,85 @@ end
    local loaded <close> = document(xml, LIGHTING_CONTENT, 64, KOTUKU_NS)
    local diff = imageDifference(draw(specular, 64), draw(loaded, 64))
    assert(diff is 0, f'Specular XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+end
+
+@Test function WideDequantisationReconstructsRampsAndPreservesLedges()
+   local function measureSpread(Bitmap:obj!, Vertical:bool!):num
+      local lo, hi = 255, 0
+      for i in {18 to 46} do
+         local p = Vertical ? mGfx.ReadRGBPixel(Bitmap, 32, i) : mGfx.ReadRGBPixel(Bitmap, i, 32)
+         assert(p.alpha is 255, 'The lighting result must cover the ramp')
+         lo, hi = math.min(lo, p.red), math.max(hi, p.red)
+      end
+      return hi - lo
+   end
+
+   for axis in values(array<table> { { vertical=false, length=16 }, { vertical=true, length=4 } }) do
+      local vertical:bool = axis.vertical
+      local length:num = axis.length
+      local ramp = '<g filter="url(#f)">'
+      for i in {0 to 64 / length} do
+         local x, y = vertical ? 0 : length * i, vertical ? length * i : 0
+         local w, h = vertical ? 64 : length, vertical ? length : 64
+         ramp ..= f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill-opacity="{(100.25 + i) / 255}"/>'
+      end
+      ramp ..= '</g>'
+
+      local azimuth = vertical ? 270 : 180
+      local lighting = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
+         f'features="dequantise"><feDistantLight azimuth="{azimuth}" elevation="30"/></kotuku:feLighting>'
+      local svg <close> = document(lighting, ramp, 64, KOTUKU_NS)
+      local legacy <close> = draw(svg, 64)
+      local before = measureSpread(legacy, vertical)
+      for features in values(array<int> { LFX_DEQUANTISE_WIDE, LFX_DEQUANTISE_WIDE | LFX_DEQUANTISE }) do
+         lightingFX(svg).features = features
+         local wide <close> = draw(svg, 64)
+         local after = measureSpread(wide, vertical)
+         assert((before > 8) and (after <= 1),
+            f'Ramp lighting range must shrink from {before} to one level, got {after}')
+      end
+   end
+
+   local flat = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
+      'features="none"><feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
+   for width in values(array<int> { 1, 32 }) do
+      local ledge = '<g filter="url(#f)"><rect width="32" height="64" fill-opacity="0.4"/>' ..
+         f'<rect x="32" width="{width}" height="64" fill-opacity="{103.25 / 255}"/>' ..
+         f'<rect x="{32 + width}" width="{32 - width}" height="64" fill-opacity="0.4"/></g>'
+      local svg <close> = document(flat, ledge, 64, KOTUKU_NS)
+      local original <close> = draw(svg, 64)
+      lightingFX(svg).features = LFX_DEQUANTISE_WIDE
+      local wide <close> = draw(svg, 64)
+      assert(imageDifference(original, wide) is 0, f'Dequantisation must preserve the {width}-pixel ledge')
+   end
+end
+
+@Test function WideDequantisationFallsBackToLegacyOnLongTerraces()
+   local ramp = '<g filter="url(#f)">'
+   for i in {0 to 4} do
+      ramp ..= f'<rect x="{17 * i}" width="17" height="64" fill-opacity="{(100.25 + i) / 255}"/>'
+   end
+   ramp ..= '</g>'
+
+   local lighting = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" features="all">' ..
+      '<feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
+   local svg <close> = document(lighting, ramp, 64, KOTUKU_NS)
+   local legacy <close> = draw(svg, 64)
+   lightingFX(svg).features = LFX_ALL | LFX_DEQUANTISE_WIDE
+   local wide <close> = draw(svg, 64)
+   assert(imageDifference(legacy, wide) is 0, 'Both modes must keep legacy smoothing on 17-pixel terraces')
+end
+
+@Test function WideDequantisationLeavesNativeHeightsIntact()
+   local effects = '<feTurbulence type="fractalNoise" baseFrequency=".02" kotuku:outputMode="height" result="height"/>' ..
+      '<kotuku:feLighting in="height" surfaceScale="20" specularConstant="0" features="none">' ..
+      '<feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS)
+   local original <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(original, 32, 32).alpha is 255, 'The native height chain must render')
+   lightingFX(svg).features = LFX_DEQUANTISE_WIDE
+   local wide <close> = draw(svg, 64)
+   assert(imageDifference(original, wide) is 0, 'The wide dequantiser must bypass native float heights')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

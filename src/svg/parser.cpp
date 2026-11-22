@@ -1868,7 +1868,7 @@ static LFX read_lighting_features(std::string_view Value) noexcept
    static const std::pair<std::string_view, LFX> names[] = {
       { "all", LFX::ALL }, { "none", LFX::NIL }, { "dequantise", LFX::DEQUANTISE }, { "sharpen", LFX::SHARPEN },
       { "cavity", LFX::CAVITY }, { "detail", LFX::DETAIL }, { "shadows", LFX::SHADOWS },
-      { "specular-aa", LFX::SPECULAR_AA }
+      { "specular-aa", LFX::SPECULAR_AA }, { "dequantise-wide", LFX::DEQUANTISE_WIDE }
    };
 
    auto result = LFX::NIL;

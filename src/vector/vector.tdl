@@ -49,6 +49,7 @@ struct KeyValue;
     "DETAIL: Give fine detail more relief than broad shapes.",
     "SHADOWS: Distant lights cast shadows from raised areas of the surface.",
     "SPECULAR_AA: Widen specular highlights where the surface varies within a pixel, preventing sparkle at high exponents.",
+    "DEQUANTISE_WIDE: Reconstruct gently sloping terraces in 8-bit heights before DEQUANTISE smooths other samples.",
     { ALL = "DEQUANTISE|SHARPEN|CAVITY|DETAIL|SHADOWS|SPECULAR_AA" })
 
   enums("VUNIT", { type="int", start=0 },
