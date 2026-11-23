@@ -22,6 +22,11 @@ COLOUR(x,y) = (
    ) / Divisor + Bias * ALPHA(x,y)
 </pre>
 
+Colour values are premultiplied by alpha.  `ALPHA(x,y)` is the result alpha of the pixel.  When #PreserveAlpha is
+FALSE, the alpha channel is computed with the same formula, adding Bias in place of `Bias * ALPHA(x,y)`.  When
+#PreserveAlpha is TRUE, the result alpha is the source alpha, and the kernel is applied to unpremultiplied colour
+values that are premultiplied again afterwards.
+
 Note in the above formula that the values in the kernel matrix are applied such that the kernel matrix is rotated
 180 degrees relative to the source and destination images in order to match convolution theory as described in many
 computer graphics textbooks.
@@ -95,6 +100,68 @@ class extConvolveFX : public extFilterEffect {
       return { filter_access::BOUNDED, std::ceil(MatrixColumns * x) + 1, std::ceil(MatrixRows * y) + 1 };
    }
 
+   // Writes one result pixel from the channel sums.  SVG defines the result as COLOUR = SUM / Divisor + Bias * ALPHA,
+   // where ALPHA is the result alpha.  Scaling the colour bias by the result alpha applies Bias to the straight colour
+   // values.  Without PreserveAlpha the sums are premultiplied, and colour is clamped to alpha so that the pixel
+   // remains valid premultiplied data.  With PreserveAlpha the sums are straight colour, so Bias is added at full
+   // scale and the output is straight colour with the source alpha.
+
+   static void writePixel(uint8_t *Out, const uint8_t R, const uint8_t G, const uint8_t B, const uint8_t A,
+      const double Factor, const double Bias, const bool PreserveAlpha, const double Red, const double Green,
+      const double Blue, const double Alpha, const uint8_t SourceAlpha) {
+      if (PreserveAlpha) {
+         if (not SourceAlpha) {
+            Out[R] = Out[G] = Out[B] = Out[A] = 0;
+            return;
+         }
+
+         const double rgb_bias = Bias * 255.0;
+         Out[R] = std::clamp(int(std::lrint((Factor * Red) + rgb_bias)), 0, 255);
+         Out[G] = std::clamp(int(std::lrint((Factor * Green) + rgb_bias)), 0, 255);
+         Out[B] = std::clamp(int(std::lrint((Factor * Blue) + rgb_bias)), 0, 255);
+         Out[A] = SourceAlpha;
+         return;
+      }
+
+      const int alpha = std::clamp(int(std::lrint((Factor * Alpha) + (Bias * 255.0))), 0, 255);
+      const double rgb_bias = Bias * double(alpha);
+      Out[R] = std::clamp(int(std::lrint((Factor * Red) + rgb_bias)), 0, alpha);
+      Out[G] = std::clamp(int(std::lrint((Factor * Green) + rgb_bias)), 0, alpha);
+      Out[B] = std::clamp(int(std::lrint((Factor * Blue) + rgb_bias)), 0, alpha);
+      Out[A] = alpha;
+   }
+
+   // Converts a premultiplied RGBA8 grid to straight colour in place.  Transparent pixels have no colour.
+
+   static void unpremultiplyGrid(uint8_t *Grid, size_t Pixels, const objBitmap *Format) {
+      const uint8_t A = Format->ColourFormat->AlphaPos>>3;
+      const uint8_t R = Format->ColourFormat->RedPos>>3;
+      const uint8_t G = Format->ColourFormat->GreenPos>>3;
+      const uint8_t B = Format->ColourFormat->BluePos>>3;
+      for (size_t i=0; i < Pixels; i++, Grid += 4) {
+         const int alpha = Grid[A];
+         for (auto c : { R, G, B }) {
+            Grid[c] = alpha ? uint8_t(std::min(255, ((Grid[c] * 255) + (alpha>>1)) / alpha)) : 0;
+         }
+      }
+   }
+
+   // Converts a straight RGBA8 grid to premultiplied colour in place.
+
+   static void premultiplyGrid(uint8_t *Grid, size_t Pixels, const objBitmap *Format) {
+      const uint8_t A = Format->ColourFormat->AlphaPos>>3;
+      const uint8_t R = Format->ColourFormat->RedPos>>3;
+      const uint8_t G = Format->ColourFormat->GreenPos>>3;
+      const uint8_t B = Format->ColourFormat->BluePos>>3;
+      for (size_t i=0; i < Pixels; i++, Grid += 4) {
+         const int alpha = Grid[A];
+         for (auto c : { R, G, B }) Grid[c] = uint8_t(((Grid[c] * alpha) + 127) / 255);
+      }
+   }
+
+   // Convolves a grid in the working colour space.  The grid holds premultiplied colour, or straight colour when
+   // PreserveAlpha is set, and the output uses the same representation.
+
    void convolveGrid(const uint8_t *Input, uint8_t *Output, int Width, int Height, const objBitmap *SourceBitmap) {
       const uint8_t A = SourceBitmap->ColourFormat->AlphaPos>>3;
       const uint8_t R = SourceBitmap->ColourFormat->RedPos>>3;
@@ -102,8 +169,8 @@ class extConvolveFX : public extFilterEffect {
       const uint8_t B = SourceBitmap->ColourFormat->BluePos>>3;
 
       const double factor = 1.0 / Divisor;
-      const double alpha_bias = Bias * 255.0;
-      const bool linear_rgb = Filter->ColourSpace IS VCS::LINEAR_RGB;
+      const double bias = Bias;
+      const bool preserve_alpha = PreserveAlpha;
 
       const filter_rgba_sampler grid { Input, Width * 4, 0, 0, Width, Height };
       const auto edge = edge_policy();
@@ -128,15 +195,7 @@ class extConvolveFX : public extFilterEffect {
             }
 
             auto out = Output + ((y * Width) + x) * 4;
-            double rgb_bias = Bias * double(source_alpha);
-            int lr = std::clamp(int(std::lrint((factor * r) + rgb_bias)), 0, 255);
-            int lg = std::clamp(int(std::lrint((factor * g) + rgb_bias)), 0, 255);
-            int lb = std::clamp(int(std::lrint((factor * b) + rgb_bias)), 0, 255);
-            out[R] = linear_rgb ? glLinearRGB.invert(lr) : lr;
-            out[G] = linear_rgb ? glLinearRGB.invert(lg) : lg;
-            out[B] = linear_rgb ? glLinearRGB.invert(lb) : lb;
-            if (!PreserveAlpha) out[A] = std::clamp(int(std::lrint(factor * a + alpha_bias)), 0, 255);
-            else out[A] = source_alpha;
+            writePixel(out, R, G, B, A, factor, bias, preserve_alpha, r, g, b, a, source_alpha);
          }
       }
    }
@@ -176,12 +235,21 @@ class extConvolveFX : public extFilterEffect {
          }
       }
 
+      // Sampling uses premultiplied colour so that transparent pixels do not bleed.  PreserveAlpha convolves
+      // straight colour, so the grid is unpremultiplied before the kernel is applied and premultiplied again
+      // before it is resampled to device pixels.
+
+      if (PreserveAlpha) unpremultiplyGrid(grid_in, grid_pixels, InputBitmap);
       convolveGrid(grid_in, grid_out, grid_width, grid_height, InputBitmap);
+      if (PreserveAlpha) premultiplyGrid(grid_out, grid_pixels, InputBitmap);
 
       const filter_rgba_sampler grid { grid_out, grid_width * 4, 0, 0, grid_width, grid_height };
       const double grid_scale_x = double(grid_width) / double(width);
       const double grid_scale_y = double(grid_height) / double(height);
       const uint8_t A = InputBitmap->ColourFormat->AlphaPos>>3;
+      const uint8_t R = InputBitmap->ColourFormat->RedPos>>3;
+      const uint8_t G = InputBitmap->ColourFormat->GreenPos>>3;
+      const uint8_t B = InputBitmap->ColourFormat->BluePos>>3;
       uint8_t *outline = Output;
       const uint8_t *alpha_input = InputBitmap->Data + (pTop * InputBitmap->LineWidth);
       for (int y=0; y < height; y++) {
@@ -190,7 +258,15 @@ class extConvolveFX : public extFilterEffect {
          for (int x=0; x < width; x++) {
             const double gx = (filter_pixel_centre(x) * grid_scale_x) - 0.5;
             grid.sample<filter_interpolation::BILINEAR, FEM::CLAMP>(out, gx, gy);
-            if (PreserveAlpha) out[A] = (alpha_input + ((pLeft + x) * InputBitmap->BytesPerPixel))[A];
+            if (PreserveAlpha) {
+               // Restore the exact source alpha and keep fully transparent pixels black.
+               const auto source_alpha = (alpha_input + ((pLeft + x) * InputBitmap->BytesPerPixel))[A];
+               const int sampled = source_alpha ? out[A] : 0;
+               for (auto c : { R, G, B }) {
+                  out[c] = sampled ? uint8_t(std::min(255, ((out[c] * 255) + (sampled>>1)) / sampled)) : 0;
+               }
+               out[A] = source_alpha;
+            }
             out += 4;
          }
          alpha_input += InputBitmap->LineWidth;
@@ -217,8 +293,8 @@ class extConvolveFX : public extFilterEffect {
       const uint8_t B = InputBitmap->ColourFormat->BluePos>>3;
 
       const double factor = 1.0 / Divisor;
-      const double alpha_bias = Bias * 255.0;
-      const bool linear_rgb = Filter->ColourSpace IS VCS::LINEAR_RGB;
+      const double bias = Bias;
+      const bool preserve_alpha = PreserveAlpha;
       const int stride = InputBitmap->LineWidth;
       const int out_stride = (Target->Clip.Right - Target->Clip.Left) * Target->BytesPerPixel;
 
@@ -304,15 +380,7 @@ class extConvolveFX : public extFilterEffect {
                }
             }
 
-            double rgb_bias = Bias * double(source_alpha);
-            int lr = std::clamp(int(std::lrint((factor * r) + rgb_bias)), 0, 255);
-            int lg = std::clamp(int(std::lrint((factor * g) + rgb_bias)), 0, 255);
-            int lb = std::clamp(int(std::lrint((factor * b) + rgb_bias)), 0, 255);
-            out[R] = linear_rgb ? glLinearRGB.invert(lr) : lr;
-            out[G] = linear_rgb ? glLinearRGB.invert(lg) : lg;
-            out[B] = linear_rgb ? glLinearRGB.invert(lb) : lb;
-            if (!PreserveAlpha) out[A] = std::clamp(int(std::lrint(factor * a + alpha_bias)), 0, 255);
-            else out[A] = source_alpha;
+            writePixel(out, R, G, B, A, factor, bias, preserve_alpha, r, g, b, a, source_alpha);
             out += 4;
          }
          alpha_input += stride;
@@ -342,16 +410,23 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    if (std::abs(unit_x_pixel - 1.0) < 0.001) unit_x_pixel = 1.0;
    if (std::abs(unit_y_pixel - 1.0) < 0.001) unit_y_pixel = 1.0;
 
+   // PreserveAlpha convolves straight colour.  The resampled path takes premultiplied input in all cases because it
+   // must interpolate before it can unpremultiply.
+
+   const bool resampled = (unit_x_pixel != 1.0) or (unit_y_pixel != 1.0);
+   const auto input_alpha = (Self->PreserveAlpha and (not resampled)) ? filter_alpha::STRAIGHT :
+      filter_alpha::PREMULTIPLIED;
    filter_surface_view input;
    const auto encoding = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? CS::LINEAR_RGB : CS::SRGB;
-   if (auto error = premultiplied_input(Self, source, encoding, input); error != ERR::Okay) return error;
+   if (auto error = working_input(Self, source, encoding, input_alpha, input); error != ERR::Okay) return error;
    auto in_bmp = input.Bitmap;
    auto output = Self->Target->Data + (Self->Target->Clip.Top * Self->Target->LineWidth) +
       Self->Target->Clip.Left * Self->Target->BytesPerPixel;
 
-   if ((unit_x_pixel != 1.0) or (unit_y_pixel != 1.0)) {
-      return Self->processResampled(in_bmp, output, Self->Target->Clip.Left, Self->Target->Clip.Top,
+   if (resampled) {
+      auto error = Self->processResampled(in_bmp, output, Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right, Self->Target->Clip.Bottom, unit_x_pixel, unit_y_pixel);
+      if (error != ERR::Okay) return error;
    }
    else {
       int thread_count = std::thread::hardware_concurrency();
@@ -377,6 +452,17 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
       }
 
       pool.wait();
+   }
+
+   // The pipeline expects straight sRGB output from each effect.  PreserveAlpha output is already straight.
+
+   if (not Self->PreserveAlpha) {
+      Self->Target->Flags |= BMF::PREMUL;
+      if (auto error = Self->Target->demultiply(); error != ERR::Okay) return error;
+   }
+   if (encoding IS CS::LINEAR_RGB) {
+      Self->Target->ColourSpace = CS::LINEAR_RGB;
+      return Self->Target->convertToRGB();
    }
 
    return ERR::Okay;
@@ -451,6 +537,10 @@ After applying the #Matrix to the input image to yield a number and applying the
 each component.  One application of Bias is when it is desirable to have .5 grey value be the zero response of the
 filter.  The Bias value shifts the range of the filter.  This allows representation of values that would otherwise be
 clamped to 0 or 1.  The default is 0.
+
+Bias is added to the alpha channel unless #PreserveAlpha is TRUE.  The colour channels receive Bias multiplied by the
+result alpha, which is equivalent to adding Bias to the straight colour values.  For example, a Bias of 1 with
+#PreserveAlpha disabled produces opaque white wherever the convolved alpha is not negative.
 
 -FIELD-
 Divisor: Defines the divisor value in the convolution algorithm.
@@ -544,6 +634,11 @@ static ERR CONVOLVEFX_SET_MatrixColumns(extConvolveFX *Self, int Value)
 
 -FIELD-
 PreserveAlpha: If TRUE, the alpha channel is protected from the effects of the convolve algorithm.
+
+When PreserveAlpha is TRUE, the kernel is applied only to the colour channels.  The colour values are unpremultiplied
+before the kernel is applied, so translucent pixels contribute their full colour, and Bias is added to the
+unpremultiplied colour.  The result alpha is the source alpha.  When FALSE, the default, all four channels are
+convolved as premultiplied values.
 
 -FIELD-
 TargetX: The X position of the matrix in relation to the input image.

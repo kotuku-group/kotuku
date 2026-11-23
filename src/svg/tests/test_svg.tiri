@@ -361,16 +361,19 @@ end
 @Test global function Composite()          hashTestSVG('filters/composite.svg', 0xf3433f42) end
 @Test global function CompositeClamp()     hashTestSVG('filters/composite_linear_clamp.svg', 0x137886b9) end
 @Test global function Convolve()           pHashTestSVG('filters/convolve.svg', array<byte> { 28,28,240,225,65,158,207,99 }, 6, true) end
-@Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x87bad74f) end
-@Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0x19e54151) end
+@Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x580ae3ba) end
+@Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0x0f724019) end
 @Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x4199c499) end
 @Test global function ScaledLighting()     hashTestSVG('filters/lighting_scale.svg', 0x0ba5705d) end
+@Test global function MultipleLights()     hashTestSVG('filters/multiple_lights.svg', 0x8a569310) end
 @Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0xe1d40c77) end
 @Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0xf4b0397e) end
 @Test global function W3Convolve1()        hashTestSVG('filters/w3-filters-conv-01-f.svg', -1) end
-@Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0x95b0b6c9) end
-@Test; @Disabled global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x3e4d8a13) end
-@Test; @Disabled global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0xda23deb4) end
+@Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0xf7515b26) end
+-- The W3C draft reference for conv-04 omits bias from the alpha channel.  This hash follows the SVG 1.1 formula, which
+-- renders the bias=1 rect as opaque white, as Chrome does.
+@Test global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x0f81001d) end
+@Test global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0x817f535d) end
 @Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x0e100e52) end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0x24049bde) end
 @Test global function W3Transfer2()        pHashTestSVG('filters/w3-filters-color-02-b.svg', array<byte> { 121,185,134,7,233,135,134,84 }, 6, true) end
@@ -502,7 +505,7 @@ end
 @Test; @Disabled global function W3Fonts16() hashTestSVG('fonts/w3-fonts-kern-01-t.svg', -1) end
 @Test; @Disabled global function W3Fonts17() hashTestSVG('fonts/w3-fonts-overview-201-t.svg', -1) end
 
-@Test; @Disabled global function W3TextAlign1() hashTestSVG('text/w3-text-align-01-b.svg', -1) end
+@Test; global function W3TextAlign1() hashTestSVG('text/w3-text-align-01-b.svg', 0x7c88aa2f) end
 @Test; @Disabled global function W3TextAlign2() hashTestSVG('text/w3-text-align-02-b.svg', -1) end
 @Test; @Disabled global function W3TextAlign3() hashTestSVG('text/w3-text-align-03-b.svg', -1) end
 @Test; @Disabled global function W3TextAlign4() hashTestSVG('text/w3-text-align-04-b.svg', -1) end
