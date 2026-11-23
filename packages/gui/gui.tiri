@@ -1208,7 +1208,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          disabled    = { opacity = 0.5 }
       },
       button = {
-         path      = gui.paths.boombox,
+         path      = gui.paths.taper,
          bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, opacity = 1 },
          highlight = { fill = Palette.contrast },
          focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },

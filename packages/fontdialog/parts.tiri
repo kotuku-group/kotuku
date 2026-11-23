@@ -48,8 +48,8 @@ A full-width list meets the inside of the border, so it must clear the border an
 @result The inset from the bottom of the panel, in whole pixels.
 ]])
 fontdialog_parts.listInset = function(Panel:table!):num
-   _, round_y = Panel.innerCorners()
-   return math.ceil((Panel.bkgd.strokeWidth ?? 0) + round_y)
+   round = Panel.innerCorners()
+   return math.ceil((Panel.bkgd.strokeWidth ?? 0) + round)
 end
 
 ----------------------------------------------------------------------------------------------------------------------

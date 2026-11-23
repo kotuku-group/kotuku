@@ -53,6 +53,8 @@ gui.button = function(Options)
             end
          end
 
+         result.path ?= gui.paths.rectangle
+
          HEIGHT    = Options.height ?? FONT_HEIGHT * 1.8
          L_GAP     = HEIGHT * .7
          R_GAP     = HEIGHT * .7
@@ -158,35 +160,21 @@ gui.button = function(Options)
          end
       end
 
-      bkgd_height = nil -- Height that the current background path was generated for
-
-      function shapeBkgd(Viewport:obj!, Force:bool)
-         vp_height = Viewport.height
-         if Force or (vp_height != bkgd_height) then
-            if theme.path then -- Custom path support
-               &bkgd.sequence = theme.path(Viewport, theme.bkgd)
-            else
-               &bkgd.sequence = gui.paths.rectangle(Viewport)
-            end
-            bkgd_height = vp_height
-         end
-      end
-
       function createBkgd()
          replaced = &bkgd?? ? true : false
          &bkgd?.free()
 
          align = ((theme.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
+
          &bkgd = &viewport.new('VectorPath', {
-            x = align, y = align, xOffset=align, yOffset=align,
+            x = align, y = align, xOffset = align, yOffset = align,
             resizeEvent = function(Viewport:obj, Vector:obj, X:num, Y:num, Width:num, Height:num)
-               shapeBkgd(Viewport)
+               &bkgd.sequence = theme.path(Viewport).path
                arrange(false, true) -- Fit the label again, as arrange() restores it to full size before measuring
             end
          })
 
-         bkgd_height = nil
-         shapeBkgd(&viewport, true)
+         &bkgd.sequence = theme.path(&viewport).path
          if replaced then &bkgd.acMoveToBack() end
 
          refreshStyle()
@@ -227,12 +215,9 @@ gui.button = function(Options)
       -- Apply the current theme to the existing vectors.
 
       function restyle()
-         if ('VectorPath' != &bkgd.class.className) then
-            createBkgd()
-         else
-            shapeBkgd(&viewport, true)
-            refreshStyle()
-         end
+         &bkgd.sequence = theme.path(&viewport).path
+
+         refreshStyle()
 
          inset = math.ceil(theme.bkgd.strokeWidth)
 

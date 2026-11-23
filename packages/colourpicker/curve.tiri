@@ -128,7 +128,7 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
    edge = ((&theme.input.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Adjustment for crisp strokes
    self.bkgd = vp.new('VectorPath', table.merge({
       x = edge, y = edge, xOffset = edge, yOffset = edge,
-      sequence = gui.paths.rectangle(vp)
+      sequence = gui.paths.rectangle(vp).path
    }, &theme.input.bkgd, true, true))
 
    self.toGraph = function(X:num!, Y:num!):<num, num>
