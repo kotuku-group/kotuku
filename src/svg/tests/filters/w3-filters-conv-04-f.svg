@@ -19,9 +19,11 @@ row, but not in the upper.
     <filter id="convolve-without-bias" filterUnits="objectBoundingBox" x="0%" y="0%" width="100%" height="100%">
       <feConvolveMatrix kernelMatrix="1 1 1 1 -7 1 1 1 1" preserveAlpha="false"/>
     </filter>
+
     <filter id="convolve-with-bias05" filterUnits="objectBoundingBox" x="0%" y="0%" width="100%" height="100%">
       <feConvolveMatrix kernelMatrix="1 1 1 1 -7 1 1 1 1" preserveAlpha="false" bias="0.5"/>
     </filter>
+
     <filter id="convolve-with-bias1" filterUnits="objectBoundingBox" x="0%" y="0%" width="100%" height="100%">
       <feConvolveMatrix kernelMatrix="1 1 1 1 -7 1 1 1 1" preserveAlpha="false" bias="1"/>
     </filter>

@@ -47,6 +47,23 @@ end
    assert((p.red is 255) and (p.alpha is 255), 'Matrix offsets must also apply to transparent input')
 end
 
+@Test function ConvolutionPreserveAlphaClearsTransparentColour()
+   for spacing in values(array<str> { 'kernelUnitLength="0.5"', '' }) do
+      local svg <close> = document('<feConvolveMatrix order="1" kernelMatrix="1" bias="0.5" ' ..
+         f'preserveAlpha="true" {spacing}/>' ..
+         '<feConvolveMatrix order="2 1" targetX="1" kernelMatrix="0 1" preserveAlpha="true"/>',
+         '<rect x="20" y="10" width="30" height="10" filter="url(#f)"/>', 64, nil, 'filterUnits="userSpaceOnUse"')
+      local bmp <close> = draw(svg, 64)
+      local p = mGfx.ReadRGBPixel(bmp, 20, 12)
+      assert((p.red is 0) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
+         f'Expected opaque black from the transparent neighbour ({spacing}), ' ..
+         f'got {p.red},{p.green},{p.blue},{p.alpha}')
+      p = mGfx.ReadRGBPixel(bmp, 24, 12)
+      assert((math.abs(p.red - 128) <= 1) and (p.alpha is 255),
+         f'Expected opaque gray where the bias applies, got {p.red},{p.alpha}')
+   end
+end
+
 @Test function MergeResultCanBeReferencedAfterAnotherEffect()
    for input in values(array<str> { '', 'in2="r"' }) do
       local p = pixel([[<feFlood flood-color="#0f0" result="g"/>

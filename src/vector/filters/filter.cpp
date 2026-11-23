@@ -306,6 +306,7 @@ static ERR get_source_view(extFilterEffect *, filter_surface_view &, filter_inpu
 static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input_role, size_t = 0);
 static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
 static ERR get_numeric_target(extFilterEffect *, filter_surface_view &, float *&);
+static ERR working_input(extFilterEffect *, const filter_surface_view &, CS, filter_alpha, filter_surface_view &);
 static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
 static ERR draw_filter_capture(extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
 static ERR get_filter_bitmap(extVectorFilter *, filter_surface *&, objBitmap *&);
@@ -1674,14 +1675,15 @@ struct filter_map_view {
 }
 
 //********************************************************************************************************************
-// Decode before premultiplying.  The filter bank uses a common RGBA8 layout, so a working copy preserves the
-// source bytes exactly before the bitmap conversion routines perform their usual rounding.
+// Returns the input in the requested encoding and alpha representation, copying it to a working surface only when
+// a conversion is needed.  Decode before premultiplying.  The filter bank uses a common RGBA8 layout, so a working
+// copy preserves the source bytes exactly before the bitmap conversion routines perform their usual rounding.
 
-static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_view &Source, CS Encoding,
+static ERR working_input(extFilterEffect *Effect, const filter_surface_view &Source, CS Encoding, filter_alpha Alpha,
    filter_surface_view &Output)
 {
    if (not active_filter_step(Effect)) return ERR::InvalidState;
-   if ((Source.Alpha IS filter_alpha::PREMULTIPLIED) and (Source.Encoding IS Encoding)) {
+   if ((Source.Alpha IS Alpha) and (Source.Encoding IS Encoding)) {
       Output = Source;
       return ERR::Okay;
    }
@@ -1710,9 +1712,17 @@ static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_vie
       if (error != ERR::Okay) return error;
    }
 
-   if (auto error = work->premultiply(); error != ERR::Okay) return error;
+   if (Alpha IS filter_alpha::PREMULTIPLIED) {
+      if (auto error = work->premultiply(); error != ERR::Okay) return error;
+   }
    Output = filter_view(*filter->Render, work);
    return ERR::Okay;
+}
+
+static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_view &Source, CS Encoding,
+   filter_surface_view &Output)
+{
+   return working_input(Effect, Source, Encoding, filter_alpha::PREMULTIPLIED, Output);
 }
 
 //********************************************************************************************************************
