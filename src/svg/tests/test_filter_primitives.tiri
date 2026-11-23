@@ -939,6 +939,14 @@ end
    end
 end
 
+function writeRedPNG(Path:str!)
+   local pic <close> = obj.new('image', { width=9, height=9, bitsPerPixel=32, flags='NEW' })
+   pic.bitmap.bkgd = '255,0,0,255'
+   pic.bitmap.acClear()
+   local file <close> = obj.new('file', { flags=FL_NEW|FL_WRITE, path=Path })
+   check pic.acSaveImage(file)
+end
+
 -- The matcap attribute of kotuku:feLighting is resolved against the document's folder, as the href of feImage is.  The
 -- surface is flat and unlit, so it takes the colour at the matcap's centre.  Paths that leave the folder are refused,
 -- and a refused or missing matcap leaves the surface unlit.
@@ -949,13 +957,7 @@ end
    local err = mSys.CreateFolder(folder .. 'caps/', 0)
    assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
 
-   do
-      local pic <close> = obj.new('image', { width=9, height=9, bitsPerPixel=32, flags='NEW' })
-      pic.bitmap.bkgd = '255,0,0,255'
-      pic.bitmap.acClear()
-      local file <close> = obj.new('file', { flags=FL_NEW|FL_WRITE, path=folder .. 'caps/red.png' })
-      check pic.acSaveImage(file)
-   end
+   writeRedPNG(folder .. 'caps/red.png')
 
    local function load(Matcap:str):obj
       io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
@@ -1001,22 +1003,76 @@ end
 end
 
 @Test function CombinedLightingSavePreservesInputBindings()
-   local path = 'temp:svg_combined_lighting_roundtrip.svg'
-   defer mSys.DeleteFile(path) end
+   local folder = 'temp:svg_combined_lighting_roundtrip/'
+   defer mSys.DeleteFile(folder) end
+   local err = mSys.CreateFolder(folder .. 'caps/', 0)
+   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
+   writeRedPNG(folder .. 'caps/red.png')
 
-   for albedo in values(array<str> { 'SourceGraphic', 'paint' }) do
-      local svg <close> = document('<feOffset dx="3" result="paint"/><feOffset dy="5"/>' ..
-         f'<kotuku:feLighting in="SourceAlpha" in2="{albedo}" surfaceScale="20" specularConstant="0">' ..
-         '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS)
+   for _, case in array<table> {
+      { albedo='SourceGraphic', matcap='' },
+      { albedo='paint', matcap='' },
+      { albedo='paint', matcap='matcap="caps/red.png"' }
+   } do
+      local albedo:str = case.albedo
+      local matcap:str = case.matcap
+      io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
+         'height="64"><filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
+         '<feOffset dx="3" result="paint"/><feOffset dy="5"/>' ..
+         f'<kotuku:feLighting in="SourceAlpha" in2="{albedo}" surfaceScale="20" specularConstant="0" {matcap}>' ..
+         '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>' .. f'</filter>{COMBINED_CONTENT}</svg>')
+      local svg <close> = obj.new('svg', { path=folder .. 'doc.svg' })
+      if matcap != '' then assert(lightingFX(svg).matcap != nil, 'The original SVG must load its matcap') end
       local original <close> = draw(svg, 64)
       do
-         local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+         local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
          check svg.acSaveToObject(file, 0)
       end
 
-      local loaded <close> = obj.new('svg', { statement=io.readAll(path) })
-      local diff = imageDifference(original, draw(loaded, 64))
+      local loaded <close> = obj.new('svg', { path=folder .. 'saved.svg' })
+      if matcap != '' then assert(lightingFX(loaded).matcap != nil, 'The reopened SVG must load its matcap') end
+      local reopened <close> = draw(loaded, 64)
+      local diff = imageDifference(original, reopened)
       assert(diff is 0, f'SaveToObject must preserve the {albedo} albedo and SourceAlpha height (difference {diff})')
+   end
+end
+
+@Test function ExternalFilterImageRoundTrips()
+   local folder = 'temp:svg_filter_image_roundtrip/'
+   defer mSys.DeleteFile(folder) end
+   local err = mSys.CreateFolder(folder .. 'images/', 0)
+   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
+   writeRedPNG(folder .. 'images/red&blue.png')
+
+   for href in values(array<str> { 'xlink:href="images/red&amp;blue.png"',
+      'xlink:href="#unused" href="images/red&amp;blue.png"' }) do
+      io.writeAll(folder .. 'doc.svg', '<svg xmlns="http://www.w3.org/2000/svg" ' ..
+         'xmlns:xlink="http://www.w3.org/1999/xlink" width="26" height="26">' ..
+         '<filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
+         f'<feImage {href} x="78.84615384615383%" y="8" width="50%" height="16" preserveAspectRatio="none" ' ..
+         'image-rendering="optimizeQuality"/></filter><rect width="26" height="26" filter="url(#f)"/></svg>')
+      local svg <close> = obj.new('svg', { path=folder .. 'doc.svg' })
+      local original <close> = draw(svg, 26)
+      local p = mGfx.ReadRGBPixel(original, 24, 16)
+      assert((p.red >= 250) and (p.green is 0) and (p.blue is 0) and (p.alpha >= 250),
+         f'The original feImage must render red, got {p.red},{p.green},{p.blue},{p.alpha}')
+      assert(mGfx.ReadRGBPixel(original, 24, 8).alpha > 0, 'The image must stretch to fill its subregion')
+      assert(mGfx.ReadRGBPixel(original, 8, 16).alpha is 0, 'The original feImage must respect its subregion')
+
+      do
+         local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
+         check svg.acSaveToObject(file, 0)
+      end
+      local xml = io.readAll(folder .. 'saved.svg')
+      assert(xml.find('<svg version="1.2"', 0, true) != nil, 'Save must declare SVG 1.2')
+      assert(xml.find('xlink:href="images/red&amp;blue.png"', 0, true) != nil,
+         'Save must preserve the relative image path as an XLink reference')
+      assert(xml.find('preserveAspectRatio="none"', 0, true) != nil, 'Save must retain the aspect ratio setting')
+      assert(xml.find('image-rendering="optimizeQuality"', 0, true) != nil, 'Save must retain the sampling mode')
+
+      local loaded <close> = obj.new('svg', { path=folder .. 'saved.svg' })
+      local reopened <close> = draw(loaded, 26)
+      assert(imageDifference(original, reopened) is 0, 'Saving and reopening must preserve the feImage rendering')
    end
 end
 

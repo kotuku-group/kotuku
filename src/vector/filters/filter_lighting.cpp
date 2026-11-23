@@ -1986,16 +1986,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
       if (Self->Fresnel != 0) stream << " fresnel=\"" << Self->Fresnel << '"';
       if (Self->Wrap != 0) stream << " wrap=\"" << Self->Wrap << '"';
       const auto &reference = Self->MatcapReference.empty() ? Self->MatcapPath : Self->MatcapReference;
-      if (not reference.empty()) {
-         stream << " matcap=\"";
-         for (char c : reference) {
-            if (c IS '&') stream << "&amp;";
-            else if (c IS '<') stream << "&lt;";
-            else if (c IS '"') stream << "&quot;";
-            else stream << c;
-         }
-         stream << '"';
-      }
+      if (not reference.empty()) write_filter_xml_attribute(stream, "matcap", reference);
    }
    stream << '>';
 
