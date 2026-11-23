@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+  xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="408" viewBox="0 0 1024 408"
+  font-family="sans-serif">
+  <title>Lighting a flat surface with an RGB normal map</title>
+  <desc>An opaque RGB map encodes a diamond bevel pattern. Two teal swatches use the same flat height and
+    lighting. The swatch that reads the map shows the bevels.</desc>
+
+  <defs>
+    <!-- Each bevel face encodes a different outward direction. Face centres and the ground face the viewer. -->
+    <pattern id="bevelNormals" patternUnits="userSpaceOnUse" width="100" height="100">
+      <rect width="100" height="100" fill="#8080ff"/>
+      <path d="M50 6 6 50 20 50 50 20Z" fill="#3030ba"/>
+      <path d="M50 6 94 50 80 50 50 20Z" fill="#d030ba"/>
+      <path d="M94 50 50 94 50 80 80 50Z" fill="#d0d0ba"/>
+      <path d="M50 94 6 50 20 50 50 80Z" fill="#30d0ba"/>
+    </pattern>
+    <rect id="encodedNormals" width="300" height="200" fill="url(#bevelNormals)"/>
+    <clipPath id="swatch">
+      <rect width="300" height="200" rx="10"/>
+    </clipPath>
+
+    <filter id="flat" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="200"
+      color-interpolation-filters="linearRGB">
+      <kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none"
+        diffuseConstant=".85" specularConstant=".44" specularExponent="14" ambient="#536873">
+        <feDistantLight azimuth="225" elevation="38"/>
+      </kotuku:feLighting>
+    </filter>
+
+    <filter id="mapped" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="200"
+      color-interpolation-filters="linearRGB">
+      <feImage xlink:href="#encodedNormals" result="normals"/>
+      <kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none"
+        normalMap="normals" diffuseConstant=".85" specularConstant=".44" specularExponent="14" ambient="#536873">
+        <feDistantLight azimuth="225" elevation="38"/>
+      </kotuku:feLighting>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="408" fill="#17232c"/>
+  <text x="40" y="55" font-size="30" fill="#f3f8f8">Lighting with an RGB normal map</text>
+  <text x="40" y="83" font-size="16"
+    fill="#afc4cc">Both teal swatches use the same flat height, colour and light.</text>
+
+  <g transform="translate(40 120)">
+    <use xlink:href="#encodedNormals" clip-path="url(#swatch)"/>
+    <text y="235" font-size="18" fill="#f3f8f8">RGB normal map</text>
+    <text y="260" font-size="14" fill="#afc4cc">The four colours encode the bevel directions.</text>
+  </g>
+  <g transform="translate(362 120)">
+    <g clip-path="url(#swatch)">
+      <rect width="300" height="200" fill="#4a8886" filter="url(#flat)"/>
+    </g>
+    <text y="235" font-size="18" fill="#f3f8f8">Height-derived normals</text>
+    <text y="260" font-size="14" fill="#afc4cc">The flat surface has uniform lighting.</text>
+  </g>
+  <g transform="translate(684 120)">
+    <g clip-path="url(#swatch)">
+      <rect width="300" height="200" fill="#4a8886" filter="url(#mapped)"/>
+    </g>
+    <text y="235" font-size="18" fill="#f3f8f8">Normals from RGB</text>
+    <text y="260" font-size="14" fill="#afc4cc">The bevels catch the light.</text>
+  </g>
+</svg>

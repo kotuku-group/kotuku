@@ -123,6 +123,8 @@ struct lit_surface {
    std::span<const lit_light> lights; // Every light, if more than one is rendered; otherwise empty
    double spot_height;   // Converts a height in alpha levels to pixels
    int width;            // Width of the surface in pixels
+   const filter_surface_view *normal_map; // Optional RGB directions in scene coordinates
+   int scene_x, scene_y;  // Scene coordinates of the first output pixel
 };
 
 // Dequantises elements Start to End of the row R1, where R0 and R2 are the rows above and below.  A neighbourhood
@@ -764,6 +766,38 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
 }
 
 //********************************************************************************************************************
+// Overwrites the height-derived normal where the map supplies a valid direction.
+
+static void apply_normal_map_row(const filter_surface_view &Source, int SceneX, int SceneY, int Width,
+   float *NX, float *NY, float *NZ)
+{
+   const int y = SceneY - Source.OriginY;
+   if ((y < Source.Valid.top) or (y >= Source.Valid.bottom)) return;
+
+   const int x = SceneX - Source.OriginX;
+   const int first = std::max(0, Source.Valid.left - x);
+   const int end = std::min(Width, Source.Valid.right - x);
+   const auto row = Source.row(y);
+   const auto format = Source.Bitmap->ColourFormat;
+   const int r = format->RedPos >> 3, g = format->GreenPos >> 3, b = format->BluePos >> 3;
+   const int a = format->AlphaPos >> 3;
+   for (int i = first; i < end; ++i) {
+      const auto pixel = row + std::ptrdiff_t(x + i) * 4;
+      if (not pixel[a]) continue;
+      const float nx = int(pixel[r]) - NORMAL_MAP_CENTRE;
+      const float ny = int(pixel[g]) - NORMAL_MAP_CENTRE;
+      const float nz = int(pixel[b]) - NORMAL_MAP_CENTRE;
+      const float length_sq = (nx * nx) + (ny * ny) + (nz * nz);
+      if (length_sq > 0) {
+         const float inv_length = 1.0f / std::sqrt(length_sq);
+         NX[i] = nx * inv_length;
+         NY[i] = ny * inv_length;
+         NZ[i] = nz * inv_length;
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Renders rows StartY to EndY from the padded height buffer.  Delta(x, y, height) returns the surface-to-light unit
 // vector and Tint(stl) returns the colour of the light arriving from that direction.  Falloff(x, y, height) returns
 // the attenuation of a ranged light, or exactly 1.  With several lights, the shading of each pixel is delegated to
@@ -844,8 +878,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
    const float cavity = ((not normal_map) and ((Features & LFX::CAVITY) != LFX::NIL)) ?
       float(Cavity * Surface.curvature) : 0.0f;
 
-   // Computes the normals of each row up to and including Y, in sequence.  A row's normals depend only on the
-   // heights, so a row that is shared with a neighbouring chunk is identical in both.
+   // Computes the normals of each row up to and including Y, in sequence.  A row shared with a neighbouring
+   // chunk uses the same heights and normal map samples.
 
    int computed = first - 1;
    auto compute_to = [&](int Y) {
@@ -867,6 +901,9 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
          if (Surface.detail) row_boost(dx[0] + 1, dx[1] + 1, dx[2] + 1, dy + 1, m, centre, smooth, Detail, nx, ny,
             Width);
          row_normals(nx, ny, nz, Width);
+         if (Surface.normal_map) {
+            apply_normal_map_row(*Surface.normal_map, Surface.scene_x, Surface.scene_y + ry, Width, nx, ny, nz);
+         }
 
          for (float *n : { slot.x, slot.y, slot.z }) {
             n[0] = n[1];
@@ -992,9 +1029,9 @@ float extLightingFX::sharpen_weight(double UnitSize) const
 // attenuation, and any two samples within the light's sphere are no further apart than its diameter, so heights within
 // that distance of a lit pixel are required.  The larger of the two reaches is added.
 
-double extLightingFX::reach() const
+double extLightingFX::reach(filter_surface_format PrimaryFormat) const
 {
-   if (not enhanced()) return 2;
+   if (not enhanced(PrimaryFormat)) return 2;
 
    const double scale = Filter->Render->ToScene.scale();
    const double unit_size = unit_length(kernel_unit_pixels(scale));
@@ -1045,8 +1082,8 @@ static void load_lighting_height_row(const filter_surface_view &Source, float *D
 //********************************************************************************************************************
 
 ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter_surface_view *Albedo,
-   std::span<lit_light> Prepared, double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width,
-   int Height)
+   const filter_surface_view *Normals, std::span<lit_light> Prepared, double SpotHeight, const map_height &NormalHeight,
+   double UnitSize, int Width, int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
@@ -1346,7 +1383,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       .albedo_premul = false, .stride = stride, .height = Height, .normal = NormalHeight,
       .curvature = MapHeight * (1.0 / 255.0) * UnitSize * UnitSize, .sharpen = sharpen_weight(UnitSize),
       .lights = multiple ? std::span<const lit_light>(Prepared) : std::span<const lit_light>(),
-      .spot_height = SpotHeight, .width = Width
+      .spot_height = SpotHeight, .width = Width, .normal_map = Normals, .scene_x = scene_x, .scene_y = scene_y
    };
 
    if (Albedo) { // The albedo is aligned with the height input, as for the other dual-input effects

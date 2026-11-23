@@ -134,8 +134,9 @@ alpha, raised to the brightest channel of the specular light, so that highlights
 the albedo.  If #Mix is not set, the albedo is opaque white and the result is the sum of the light terms.  The
 `COMBINED` type always uses the enhanced pipeline, whatever the scene's Compliance, and has no SVG equivalent.
 
-The `NORMAL` type writes the enhanced pipeline's per-pixel unit normals before lighting.  The input is a native
-height map or the alpha channel of an image.  Red, green and blue store the X, Y and Z components in image axes,
+The `NORMAL` type writes the enhanced pipeline's per-pixel unit normals before lighting.  It takes the normals
+from #NormalMap where available and derives them from the height elsewhere.  Red, green and blue store the X, Y and Z
+components in image axes,
 with each encoded as the nearest byte to <code>128 + 127 * component</code>.  The result is opaque within the
 primitive subregion.  Flat areas produce RGB (128, 128, 255).
 
@@ -422,7 +423,12 @@ class extLightingFX : public extFilterEffect {
    const float *MatcapTexels = nullptr; // Premultiplied RGB0 in the filter's colour space, or nullptr; per draw
    int    MatcapWidth = 0, MatcapHeight = 0; // Dimensions of MatcapTexels, set per draw
 
-   extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+   filter_named_input NormalMap = { "NormalMap", { .ContributesRegion = false, .Optional = true } };
+   filter_effect_extension Extension = { std::span(&NormalMap, 1) };
+
+   extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
+      FilterExtension = &Extension;
+   }
 
    ~extLightingFX() {
       release_matcap();
@@ -555,7 +561,7 @@ class extLightingFX : public extFilterEffect {
    void render_distant(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
    void render_spotlight(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
    void render_point(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
-   double reach() const;
+   double reach(filter_surface_format) const;
 
    // The number of lights that a draw renders.  Only the COMBINED type accepts more than one; the guard covers a
    // type that was changed by direct access to the field.
@@ -571,12 +577,12 @@ class extLightingFX : public extFilterEffect {
       return (first.Intensity != 1.0) or (first.HasColour) or ((first.Range > 0) and (first.Kind != LS::DISTANT));
    }
 
-   filter_sampling sampling() const {
+   filter_sampling sampling(filter_surface_format PrimaryFormat) const {
       if ((not std::isfinite(UnitX)) or (not std::isfinite(UnitY))) {
          constexpr double invalid = std::numeric_limits<double>::quiet_NaN();
          return { filter_access::BOUNDED, invalid, invalid };
       }
-      const double radius = reach();
+      const double radius = reach(PrimaryFormat);
       return { filter_access::BOUNDED, radius, radius };
    }
 
@@ -587,12 +593,13 @@ class extLightingFX : public extFilterEffect {
          ((Ambient.Red > 0) or (Ambient.Green > 0) or (Ambient.Blue > 0));
    }
 
-   // Combined shading and normal maps always use the enhanced pipeline.
+   // Combined shading and normal maps opt in under any compliance.  Native heights opt in for Kōtuku scenes.
 
-   bool enhanced() const {
-      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL)) return true;
+   bool enhanced(filter_surface_format PrimaryFormat) const {
+      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL) or NormalMap.Reference) return true;
       if ((not Filter->Scene) or (Filter->Scene->Compliance != VSC::NONE)) return false;
-      return (Features != LFX::NIL) or extended_light() or has_ambient();
+      return (PrimaryFormat IS filter_surface_format::SCALAR_F32) or (Features != LFX::NIL) or
+         extended_light() or has_ambient();
    }
 
    // True if the effect reads an albedo from its Mix input.
@@ -613,8 +620,8 @@ class extLightingFX : public extFilterEffect {
    bool boost_detail(double Sigma) const;
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
-   ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, std::span<lit_light>, double,
-      const map_height &, double, int, int);
+   ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, const filter_surface_view *,
+      std::span<lit_light>, double, const map_height &, double, int, int);
    ERR prepare_matcap();
    template <class DELTA, class COLOUR, class FALLOFF>
    void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR, FALLOFF);
@@ -1367,18 +1374,25 @@ ERR extLightingFX::draw()
    const double normal_scale = MapHeight * (1.0 / 255.0);
    const map_height normal_height = { unit.x * normal_scale, unit.y * normal_scale, unit.xy * normal_scale };
 
-   // Scenes that are not bound to an SVG standard use the enhanced pipeline, which resolves finer surface detail.
-
-   if (enhanced()) {
+   if (enhanced(primary.Format)) {
       filter_surface_view albedo;
       if (reads_albedo()) {
          if (auto error = get_source_view(this, albedo, filter_input_role::MIX); error != ERR::Okay) return error;
          if ((not albedo.Bitmap) or (albedo.Bitmap->BytesPerPixel != 4)) return ERR::InvalidState;
       }
 
+      filter_surface_view normals;
+      if (NormalMap.Reference) {
+         filter_surface_view source;
+         if (auto error = get_named_filter_bitmap(this, NormalMap.Name, source); error != ERR::Okay) return error;
+         if (source.Bitmap->BytesPerPixel != 4) return ERR::InvalidState;
+         if (auto error = working_input(this, source, source.Encoding, filter_alpha::STRAIGHT, normals);
+             error != ERR::Okay) return error;
+      }
+
       const double unit_size = unit_length(unit);
-      return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, lights, spot_height, normal_height,
-         unit_size, width, height);
+      return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, normals.Bitmap ? &normals : nullptr,
+         lights, spot_height, normal_height, unit_size, width, height);
    }
 
    if (not bmp) return ERR::NoSupport;
@@ -2176,6 +2190,35 @@ static ERR LIGHTINGFX_SET_Metalness(extLightingFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
+NormalMap: An optional filter result supplying RGB surface directions.
+
+Bind an earlier image-producing effect in the same filter.  Red, green and blue encode X, Y and Z in image axes.
+The channels are read as data in either filter colour space.  The vector is centred on `rgb(128,128,128)` and
+normalised before shading, so `rgb(128,128,255)` faces the viewer.  Transparent pixels, zero vectors and pixels
+outside the map use the height-derived normal.
+
+The primary @FilterEffect.Input still supplies height for shadows, cavity occlusion and the surface position
+relative to point and spot lights.  Set #Scale to zero to use a flat height field.  Removing the producer clears
+this binding.  Binding a map enables enhanced lighting.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_NormalMap(extLightingFX *Self, objFilterEffect **Value)
+{
+   *Value = Self->NormalMap.Reference;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_NormalMap(extLightingFX *Self, objFilterEffect *Value)
+{
+   return set_named_filter_input(Self, Self->NormalMap.Name, Value ? VSF::REFERENCE : VSF::NONE, Value);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Penumbra: Width of the soft edge of shadows cast by the `SHADOWS` feature, in degrees.
 
 A point on the surface passes from light into shadow as the elevation at which the surface hides the light rises
@@ -2506,6 +2549,7 @@ static const FieldArray clLightingFXFields[] = {
    { "Matcap",     FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Matcap, LIGHTINGFX_SET_Matcap, CLASSID::BITMAP },
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
    { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },
+   { "NormalMap",  FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalMap, LIGHTINGFX_SET_NormalMap, CLASSID::FILTEREFFECT },
    { "Scale",      FDF_DOUBLE|FDF_RW },
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },

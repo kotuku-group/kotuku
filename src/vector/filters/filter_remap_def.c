@@ -9,13 +9,13 @@ FDEF maSelectInvert[] = { { "Component", FD_INT }, { 0, 0 } };
 FDEF maSelectMask[] = { { "Component", FD_INT }, { "Mask", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clRemapFXMethods[] = {
-   { AC(-20), (APTR)REMAPFX_SelectGamma, "SelectGamma", maSelectGamma, sizeof(struct rf::SelectGamma) },
-   { AC(-21), (APTR)REMAPFX_SelectTable, "SelectTable", maSelectTable, sizeof(struct rf::SelectTable) },
-   { AC(-22), (APTR)REMAPFX_SelectLinear, "SelectLinear", maSelectLinear, sizeof(struct rf::SelectLinear) },
-   { AC(-23), (APTR)REMAPFX_SelectIdentity, "SelectIdentity", maSelectIdentity, sizeof(struct rf::SelectIdentity) },
-   { AC(-24), (APTR)REMAPFX_SelectDiscrete, "SelectDiscrete", maSelectDiscrete, sizeof(struct rf::SelectDiscrete) },
-   { AC(-25), (APTR)REMAPFX_SelectInvert, "SelectInvert", maSelectInvert, sizeof(struct rf::SelectInvert) },
-   { AC(-26), (APTR)REMAPFX_SelectMask, "SelectMask", maSelectMask, sizeof(struct rf::SelectMask) },
+   { AC(-10), (APTR)REMAPFX_SelectGamma, "SelectGamma", maSelectGamma, sizeof(struct rf::SelectGamma) },
+   { AC(-11), (APTR)REMAPFX_SelectTable, "SelectTable", maSelectTable, sizeof(struct rf::SelectTable) },
+   { AC(-12), (APTR)REMAPFX_SelectLinear, "SelectLinear", maSelectLinear, sizeof(struct rf::SelectLinear) },
+   { AC(-13), (APTR)REMAPFX_SelectIdentity, "SelectIdentity", maSelectIdentity, sizeof(struct rf::SelectIdentity) },
+   { AC(-14), (APTR)REMAPFX_SelectDiscrete, "SelectDiscrete", maSelectDiscrete, sizeof(struct rf::SelectDiscrete) },
+   { AC(-15), (APTR)REMAPFX_SelectInvert, "SelectInvert", maSelectInvert, sizeof(struct rf::SelectInvert) },
+   { AC(-16), (APTR)REMAPFX_SelectMask, "SelectMask", maSelectMask, sizeof(struct rf::SelectMask) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

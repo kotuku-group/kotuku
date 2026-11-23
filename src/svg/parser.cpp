@@ -2003,6 +2003,12 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             const auto local = bare ? name : kotuku_attrib(Self, Tag, name);
 
             if ((name IS "in2") and (combined)) parse_input_mix(Self, fx, val);
+            else if (local IS "normalMap") {
+               const auto input = Self->Effects.find(val);
+               if ((input IS Self->Effects.end()) or (fx->setNormalMap(input->second) != ERR::Okay)) {
+                  log.warning("Invalid normal map result '%s' on %s.", val.c_str(), Tag.name());
+               }
+            }
             else if (normal_map and (local IS "kernelUnitX")) {
                set_light_number("kernelUnitX", val, &objLightingFX::setUnitX);
             }

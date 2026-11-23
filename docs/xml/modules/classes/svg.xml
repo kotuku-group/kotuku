@@ -114,6 +114,8 @@ document, not from the element that references them.</li>
 <class name="LightingFX" field="Penumbra">LightingFX.Penumbra</class>.</li>
 <li><code>kotuku:ambient</code>: a colour, or <code>none</code> (the default).  Ambient light added to the diffuse light; its alpha scales
 it.  Sets <class name="LightingFX" field="Ambient">LightingFX.Ambient</class>.  It has no effect on <code>feSpecularLighting</code>.</li>
+<li><code>kotuku:normalMap</code> selects the named image result of an earlier primitive for RGB surface directions.
+Sets <class name="LightingFX" field="NormalMap">LightingFX.NormalMap</class>.  The primary input still supplies height.</li>
 </list>
 <p>The light source elements <code>feDistantLight</code>, <code>fePointLight</code> and <code>feSpotLight</code> accept these attributes, which set the light's options with <class name="LightingFX" method="SetLightOptions">LightingFX.SetLightOptions()</class>:</p>
 <list type="bullet">
@@ -136,7 +138,7 @@ have a range; the attribute is reported and ignored.</li>
   &lt;/filter&gt;
 &lt;/svg&gt;
 </pre>
-<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive.  The <code>in</code> attribute selects a floating-point height result or an image whose alpha supplies the height.  The <code>in2</code> attribute selects the albedo, which defaults to opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>. The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace. The element also accepts these material attributes:</p>
+<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive.  The <code>in</code> attribute selects a floating-point height result or an image whose alpha supplies the height.  The <code>in2</code> attribute selects the albedo, which defaults to opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>. Use <code>normalMap</code> to supply an RGB normal map from an earlier primitive, such as an image loaded by <code>feImage</code>. The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace. The element also accepts these material attributes:</p>
 <list type="bullet">
 <li><code>metalness</code>: 0 for a dielectric surface (the default) to 1 for a metal, whose highlights take the albedo's colour
 and which has no diffuse light.  Sets <class name="LightingFX" field="Metalness">LightingFX.Metalness</class>.</li>
@@ -166,7 +168,7 @@ warning is logged and the surface is drawn without it.  Sets <class name="Lighti
   &lt;/kotuku:feLighting&gt;
 &lt;/filter&gt;
 </pre>
-<p>The <code>kotuku:feNormalMap</code> element writes the surface normals from the height selected by <code>in</code>.  It accepts <code>surfaceScale</code>, <code>kernelUnitLength</code>, <code>features</code> and <code>detail</code>.  Use <code>kernelUnitX</code> or <code>kernelUnitY</code> to set a kernel unit on one axis and keep the default on the other.  See <class name="LightingFX" field="UnitX">LightingFX.UnitX</class> for how the default is resolved.</p>
+<p>The <code>kotuku:feNormalMap</code> element writes the surface normals from the height selected by <code>in</code> or from the map selected by <code>normalMap</code>.  It accepts <code>surfaceScale</code>, <code>kernelUnitLength</code>, <code>features</code> and <code>detail</code>.  Use <code>kernelUnitX</code> or <code>kernelUnitY</code> to set a kernel unit on one axis and keep the default on the other.  See <class name="LightingFX" field="UnitX">LightingFX.UnitX</class> for how the default is resolved.</p>
 <p>Use the normal map's named result as <code>in2</code> on <code>feDisplacementMap</code> with red for X and green for Y.  For example, these primitives distort the graphic at changes in its alpha.  To refract an image behind a surface, select that image as the displacement primitive's <code>in</code>.</p>
 <pre>&lt;filter id=&quot;refraction&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
   &lt;kotuku:feNormalMap in=&quot;SourceAlpha&quot; surfaceScale=&quot;8&quot; result=&quot;normals&quot;/&gt;

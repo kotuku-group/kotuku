@@ -153,6 +153,8 @@ enables the enhanced lighting of @LightingFX.  The following attributes of `feDi
 @LightingFX.Penumbra.</li>
 <li>`kotuku:ambient`: a colour, or `none` (the default).  Ambient light added to the diffuse light; its alpha scales
 it.  Sets @LightingFX.Ambient.  It has no effect on `feSpecularLighting`.</li>
+<li>`kotuku:normalMap` selects the named image result of an earlier primitive for RGB surface directions.
+Sets @LightingFX.NormalMap.  The primary input still supplies height.</li>
 </list>
 
 The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` accept these attributes, which set the
@@ -187,6 +189,7 @@ The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It light
 ambient light in one primitive.  The `in` attribute selects a floating-point height result or an image whose alpha
 supplies the height.  The `in2` attribute selects the albedo, which defaults to opaque white.  It accepts
 `surfaceScale`, `diffuseConstant`, `specularConstant`, `specularExponent`, `kernelUnitLength` and `lighting-color`.
+Use `normalMap` to supply an RGB normal map from an earlier primitive, such as an image loaded by `feImage`.
 The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace.
 The element also accepts these material attributes:
 
@@ -233,9 +236,10 @@ and an image's alpha.  Supply the albedo through a separate image input.
 &lt;/filter&gt;
 </pre>
 
-The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in`.  It accepts
-`surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX` or `kernelUnitY` to set a kernel unit
-on one axis and keep the default on the other.  See @LightingFX.UnitX for how the default is resolved.
+The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in` or from the map
+selected by `normalMap`.  It accepts `surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX`
+or `kernelUnitY` to set a kernel unit on one axis and keep the default on the other.  See @LightingFX.UnitX for how
+the default is resolved.
 
 Use the normal map's named result as `in2` on `feDisplacementMap` with red for X and green for Y.  For example,
 these primitives distort the graphic at changes in its alpha.  To refract an image behind a surface, select that

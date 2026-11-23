@@ -71,13 +71,13 @@
   ]])
 
   methods('RemapFX', 'RF', {
-    { id=20, name='SelectGamma' },
-    { id=21, name='SelectTable' },
-    { id=22, name='SelectLinear' },
-    { id=23, name='SelectIdentity' },
-    { id=24, name='SelectDiscrete' },
-    { id=25, name='SelectInvert' },
-    { id=26, name='SelectMask' }
+    { id=10, name='SelectGamma' },
+    { id=11, name='SelectTable' },
+    { id=12, name='SelectLinear' },
+    { id=13, name='SelectIdentity' },
+    { id=14, name='SelectDiscrete' },
+    { id=15, name='SelectInvert' },
+    { id=16, name='SelectMask' }
   })
 
   structdef('LightOptions', { comment='Options for one light of LightingFX, applied by SetLightOptions().' }, [[
@@ -88,13 +88,13 @@
   ]])
 
   methods('LightingFX', 'LT', {
-    { id=20, name='SetDistantLight' },
-    { id=22, name='SetPointLight' },
-    { id=21, name='SetSpotLight' },
-    { id=23, name='AddDistantLight' },
-    { id=24, name='AddPointLight' },
-    { id=25, name='AddSpotLight' },
-    { id=26, name='SetLightOptions' }
+    { id=10, name='SetDistantLight' },
+    { id=12, name='SetPointLight' },
+    { id=11, name='SetSpotLight' },
+    { id=13, name='AddDistantLight' },
+    { id=14, name='AddPointLight' },
+    { id=15, name='AddSpotLight' },
+    { id=16, name='SetLightOptions' }
   })
 
   klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[

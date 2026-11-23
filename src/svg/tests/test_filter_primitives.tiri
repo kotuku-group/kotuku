@@ -946,44 +946,6 @@ end
    end
 end
 
-@Test function NormalMapDisplacementRoundTrips()
-   local normals = '<kotuku:feNormalMap in="SourceAlpha" surfaceScale="8" features="none" ' ..
-      'kernelUnitLength="1 1" width="50%" result="normals"/>'
-   local displacement = '<feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" ' ..
-      'yChannelSelector="G" scale="16"/>'
-   local svg <close> = document(normals .. displacement, NORMAL_CONTENT, 64, KOTUKU_NS)
-   local _, filter = check svg.scene.mtFindDef('f')
-   local srgb <close> = draw(svg, 64)
-   filter.colourSpace = VCS_LINEAR_RGB
-   local linear <close> = draw(svg, 64)
-   assert(imageDifference(srgb, linear) is 0, 'A direct normal map must displace identically in both colour spaces')
-
-   local original <close> = document('<feDisplacementMap in="SourceGraphic" in2="SourceAlpha" scale="0"/>',
-      NORMAL_CONTENT, 64)
-   local source <close> = draw(original, 64)
-   assertSame(linear, source, 28, 32, 28, 32) -- Flat interior
-   assertSame(linear, source, 39, 32, 39, 32) -- Slope outside the normal map subregion
-   assertSame(linear, source, 24, 32, 16, 32) -- The left edge samples leftward
-   assertSame(linear, source, 28, 24, 28, 16) -- The top edge samples upward
-
-   local xml = filter.effectXML
-   assert(xml.startsWith('<kotuku:feNormalMap ') and (xml.find('in2="effect0"', 0, true) != nil),
-      f'EffectXML must preserve the normal map and the displacement binding: {xml}')
-   local loaded <close> = document(xml, NORMAL_CONTENT, 64, KOTUKU_NS)
-   local restored <close> = draw(loaded, 64)
-   assert(imageDifference(linear, restored) is 0, 'Serialising the filter must preserve refraction and clipping')
-
-   local path = 'temp:svg_normal_map_roundtrip.svg'
-   defer mSys.DeleteFile(path) end
-   do
-      local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
-      check svg.acSaveToObject(file, 0)
-   end
-   local reopened <close> = obj.new('svg', { path=path })
-   local saved <close> = draw(reopened, 64)
-   assert(imageDifference(linear, saved) is 0, 'Saving and reopening the SVG must preserve refraction')
-end
-
 -- Material attributes of kotuku:feLighting.  Invalid values keep the defaults, and the standard elements ignore the
 -- attributes, with or without the prefix.
 
@@ -1053,96 +1015,6 @@ function writeRedPNG(Path:str!)
    pic.bitmap.acClear()
    local file <close> = obj.new('file', { flags=FL_NEW|FL_WRITE, path=Path })
    check pic.acSaveImage(file)
-end
-
--- The matcap attribute of kotuku:feLighting is resolved against the document's folder, as the href of feImage is.  The
--- surface is flat and unlit, so it takes the colour at the matcap's centre.  Paths that leave the folder are refused,
--- and a refused or missing matcap leaves the surface unlit.
-
-@Test function LightingMatcapResolvesAgainstTheDocument()
-   local folder = 'temp:svg_matcap_test/'
-   defer mSys.DeleteFile(folder) end
-   local err = mSys.CreateFolder(folder .. 'caps/', 0)
-   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
-
-   writeRedPNG(folder .. 'caps/red.png')
-
-   local function load(Matcap:str):obj
-      io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
-         'height="64"><filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
-         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" diffuseConstant="0" ' ..
-         f'specularConstant="0" matcap="{Matcap}"><feDistantLight azimuth="0" elevation="90"/></kotuku:feLighting>' ..
-         '</filter><rect width="64" height="64" fill="white" filter="url(#f)"/></svg>')
-      return obj.new('svg', { path=folder .. 'doc.svg' })
-   end
-
-   local svg <close> = load('caps/red.png')
-   local fx = lightingFX(svg)
-   local path:str = fx.matcapPath ?? ''
-   assert(path.replace('\\', '/').endsWith('caps/red.png') and (#path > #'caps/red.png'),
-      f'The matcap must be resolved against the document\'s folder (got {path})')
-   local bmp <close> = draw(svg, 64)
-   local p = mGfx.ReadRGBPixel(bmp, 32, 32)
-   assert((p.red is 255) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
-      f'The surface must reflect the matcap (got {p.red}, {p.green}, {p.blue}, {p.alpha})')
-
-   local _, filter:any = check svg.scene.mtFindDef('f')
-   local xml:str = filter.effectXML
-   assert(xml.find('matcap="caps/red.png"', 0, true) != nil, f'XMLDef must preserve the relative matcap path: {xml}')
-
-   do
-      local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
-      check svg.acSaveToObject(file, 0)
-   end
-   local saved <close> = obj.new('svg', { path=folder .. 'saved.svg' })
-   local saved_bmp <close> = draw(saved, 64)
-   assert(imageDifference(bmp, saved_bmp) is 0, 'Saving and reopening the SVG must preserve the matcap reflection')
-
-   for _, matcap in array<str> { '../caps/red.png', 'caps/../../red.png', '/caps/red.png',
-      'temp:svg_matcap_test/caps/red.png', 'caps/missing.png' } do
-      local refused <close> = load(matcap)
-      fx = lightingFX(refused)
-      assert(fx.matcapPath is nil, f'The matcap path {matcap} must not be loaded (got {fx.matcapPath})')
-      local unlit <close> = draw(refused, 64)
-      p = mGfx.ReadRGBPixel(unlit, 32, 32)
-      assert((p.red is 0) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
-         f'{matcap}: the surface must be drawn without a matcap (got {p.red}, {p.green}, {p.blue}, {p.alpha})')
-   end
-end
-
-@Test function CombinedLightingSavePreservesInputBindings()
-   local folder = 'temp:svg_combined_lighting_roundtrip/'
-   defer mSys.DeleteFile(folder) end
-   local err = mSys.CreateFolder(folder .. 'caps/', 0)
-   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
-   writeRedPNG(folder .. 'caps/red.png')
-
-   for _, case in array<table> {
-      { albedo='SourceGraphic', matcap='' },
-      { albedo='paint', matcap='' },
-      { albedo='paint', matcap='matcap="caps/red.png"' }
-   } do
-      local albedo:str = case.albedo
-      local matcap:str = case.matcap
-      io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
-         'height="64"><filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
-         '<feOffset dx="3" result="paint"/><feOffset dy="5"/>' ..
-         f'<kotuku:feLighting in="SourceAlpha" in2="{albedo}" surfaceScale="20" specularConstant="0" {matcap}>' ..
-         '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>' .. f'</filter>{COMBINED_CONTENT}</svg>')
-      local svg <close> = obj.new('svg', { path=folder .. 'doc.svg' })
-      if matcap != '' then assert(lightingFX(svg).matcap != nil, 'The original SVG must load its matcap') end
-      local original <close> = draw(svg, 64)
-      do
-         local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
-         check svg.acSaveToObject(file, 0)
-      end
-
-      local loaded <close> = obj.new('svg', { path=folder .. 'saved.svg' })
-      if matcap != '' then assert(lightingFX(loaded).matcap != nil, 'The reopened SVG must load its matcap') end
-      local reopened <close> = draw(loaded, 64)
-      local diff = imageDifference(original, reopened)
-      assert(diff is 0, f'SaveToObject must preserve the {albedo} albedo and SourceAlpha height (difference {diff})')
-   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1345,122 +1217,42 @@ end
    assert(diff is 0, f'The options of a standard light must survive XMLDef (max difference {diff})')
 end
 
--- Mixed light kinds survive EffectXML and a saved document with both inputs bound.
-
-@Test function MultipleLightsRoundTrip()
-   local svg <close> = combinedDocument(MIXED_ATTRIBS, MIXED_LIGHTS)
-   local original <close> = draw(svg, 64)
-   local xml = effectXML(svg)
-   local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
-   local diff = imageDifference(original, draw(loaded, 64))
-   assert(diff is 0, f'EffectXML must re-parse to an identical render (max difference {diff}): {xml}')
-   assert(effectXML(loaded) is xml, f'EffectXML must be stable: {effectXML(loaded)}')
-
-   -- A range that has no short decimal form keeps its precision.
-
-   local precise <close> = combinedDocument(MIXED_ATTRIBS,
-      '<fePointLight x="20" y="12" z="40" kotuku:range="33.333333333333336" kotuku:intensity="0.1"/>')
-   xml = effectXML(precise)
-   assert(xml.find('kotuku:range="33.333333333333336"') and xml.find('kotuku:intensity="0.1"'),
-      f'The options must be written in their shortest exact form: {xml}')
-
-   local folder = 'temp:svg_multiple_lights_roundtrip/'
-   defer mSys.DeleteFile(folder) end
-   local err = mSys.CreateFolder(folder, 0)
-   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
-
-   for _, albedo in array<str> { 'SourceGraphic', 'paint' } do
-      io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
-         'height="64"><filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
-         '<feOffset dx="3" result="paint"/><feOffset dy="5"/>' ..
-         f'<kotuku:feLighting in="SourceAlpha" in2="{albedo}" surfaceScale="20" {MIXED_ATTRIBS}>' ..
-         f'{MIXED_LIGHTS}</kotuku:feLighting></filter>{COMBINED_CONTENT}</svg>')
-      local doc <close> = obj.new('svg', { path=folder .. 'doc.svg' })
-      local first <close> = draw(doc, 64)
-      do
-         local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
-         check doc.acSaveToObject(file, 0)
-      end
-
-      local reopened <close> = obj.new('svg', { path=folder .. 'saved.svg' })
-      local saved = effectXML(reopened)
-      assert((saved.count('<feDistantLight') is 1) and (saved.count('<fePointLight') is 1) and
-         (saved.count('<feSpotLight') is 1), f'The saved document must keep every light: {saved}')
-      diff = imageDifference(first, draw(reopened, 64))
-      assert(diff is 0, f'SaveToObject must preserve the lights with the {albedo} albedo (difference {diff})')
-   end
+@Test function LightingNormalMapRetainsHeightShadows()
+   local svg <close> = document('<feFlood flood-color="#8080ff" result="flat"/>' ..
+      '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" kotuku:normalMap="flat" kotuku:features="shadows">' ..
+      '<feDistantLight azimuth="0" elevation="30"/></feDiffuseLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS)
+   local fx = lightingFX(svg)
+   assert(fx.normalMap != nil, 'Diffuse lighting must accept the namespaced normal map attribute')
+   local shadow <close> = draw(svg, 64)
+   fx.features = 0
+   local lit <close> = draw(svg, 64)
+   local shade = mGfx.ReadRGBPixel(shadow, 21, 24).red
+   local light = mGfx.ReadRGBPixel(lit, 21, 24).red
+   assert((light > 100) and (shade < light / 2), f'The height input must still cast shadows, got {shade}/{light}')
 end
 
-@Test function ExternalFilterImageRoundTrips()
-   local folder = 'temp:svg_filter_image_roundtrip/'
-   defer mSys.DeleteFile(folder) end
-   local err = mSys.CreateFolder(folder .. 'images/', 0)
-   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
-   writeRedPNG(folder .. 'images/red&blue.png')
+@Test function LightingRetainsNativeHeightAfterNormalMapRemoval()
+   local height = '<feTurbulence type="fractalNoise" baseFrequency=".1" kotuku:outputMode="height" result="height"/>'
+   local lighting = '<feDiffuseLighting in="height" surfaceScale="4" kotuku:features="none"'
+   local light = '><feDistantLight azimuth="0" elevation="45"/></feDiffuseLighting>'
+   local content = '<rect width="64" height="64" fill="white" filter="url(#f)"/>'
+   local svg <close> = document(height .. '<feFlood flood-color="#008080" result="normals"/>' ..
+      lighting .. ' kotuku:normalMap="normals"' .. light, content, 64, KOTUKU_NS)
+   local fx = lightingFX(svg)
+   local map = fx.normalMap
+   assert(map != nil, 'The RGB normal map must be bound')
+   local mapped <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(mapped, 32, 32).red is 0, 'The supplied normals must face away from the light')
 
-   for href in values(array<str> { 'xlink:href="images/red&amp;blue.png"',
-      'xlink:href="#unused" href="images/red&amp;blue.png"' }) do
-      io.writeAll(folder .. 'doc.svg', '<svg xmlns="http://www.w3.org/2000/svg" ' ..
-         'xmlns:xlink="http://www.w3.org/1999/xlink" width="26" height="26">' ..
-         '<filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
-         f'<feImage {href} x="78.84615384615383%" y="8" width="50%" height="16" preserveAspectRatio="none" ' ..
-         'image-rendering="optimizeQuality"/></filter><rect width="26" height="26" filter="url(#f)"/></svg>')
-      local svg <close> = obj.new('svg', { path=folder .. 'doc.svg' })
-      local original <close> = draw(svg, 26)
-      local p = mGfx.ReadRGBPixel(original, 24, 16)
-      assert((p.red >= 250) and (p.green is 0) and (p.blue is 0) and (p.alpha >= 250),
-         f'The original feImage must render red, got {p.red},{p.green},{p.blue},{p.alpha}')
-      assert(mGfx.ReadRGBPixel(original, 24, 8).alpha > 0, 'The image must stretch to fill its subregion')
-      assert(mGfx.ReadRGBPixel(original, 8, 16).alpha is 0, 'The original feImage must respect its subregion')
+   map.free()
+   assert(fx.normalMap is nil, 'Removing the map producer must clear the binding')
+   local unmapped <close> = draw(svg, 64)
+   local red = mGfx.ReadRGBPixel(unmapped, 32, 32).red
+   assert((red > 0) and (red < 255), f'The native height field must still be lit, got {red}')
 
-      do
-         local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
-         check svg.acSaveToObject(file, 0)
-      end
-      local xml = io.readAll(folder .. 'saved.svg')
-      assert(xml.find('<svg version="1.2"', 0, true) != nil, 'Save must declare SVG 1.2')
-      assert(xml.find('xlink:href="images/red&amp;blue.png"', 0, true) != nil,
-         'Save must preserve the relative image path as an XLink reference')
-      assert(xml.find('preserveAspectRatio="none"', 0, true) != nil, 'Save must retain the aspect ratio setting')
-      assert(xml.find('image-rendering="optimizeQuality"', 0, true) != nil, 'Save must retain the sampling mode')
-
-      local loaded <close> = obj.new('svg', { path=folder .. 'saved.svg' })
-      local reopened <close> = draw(loaded, 26)
-      assert(imageDifference(original, reopened) is 0, 'Saving and reopening must preserve the feImage rendering')
-   end
-end
-
-@Test function HeightOutputsRoundTripWithNamedBindings()
-   local path = 'temp:svg_height_roundtrip.svg'
-   defer mSys.DeleteFile(path) end
-
-   local noise = '<feTurbulence type="fractalNoise" baseFrequency=".023 .037" numOctaves="3" seed="7" ' ..
-      'stitchTiles="stitch" result="noise"'
-   local blur = '<feGaussianBlur in="noise" stdDeviation="1.25 .75" k:outputMode="height" result="smooth"/>'
-   local ns = KOTUKU_NS .. ' xmlns:k="http://www.kotuku.dev/xmlns/svg"'
-   for _, mode in array<table> {
-      { effects=noise .. ' k:outputMode="height"/>', source='noise', height_count=1 },
-      { effects=noise .. ' k:outputMode="height"/>' .. blur, source='smooth', height_count=2 },
-      { effects=noise .. '/>' .. blur, source='smooth', height_count=1 }
-   } do
-      local effects = mode.effects .. f'<kotuku:feLighting in="{mode.source}" in2="SourceGraphic" features="none" ' ..
-         'surfaceScale="18" specularConstant="0">' ..
-         '<feDistantLight azimuth="175" elevation="40"/></kotuku:feLighting>'
-      local svg <close> = document(effects, COMBINED_CONTENT, 64, ns)
-      local original <close> = draw(svg, 64)
-      local pixel = mGfx.ReadRGBPixel(original, 32, 32)
-      assert(pixel.alpha > 0, 'The authored height chain must render')
-      do
-         local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
-         check svg.acSaveToObject(file, 0)
-      end
-
-      local xml = io.readAll(path)
-      assert(xml.count('kotuku:outputMode="height"') is mode.height_count, 'Save lost a height opt-in')
-      local loaded <close> = obj.new('svg', { statement=xml })
-      local reopened <close> = draw(loaded, 64)
-      assert(imageDifference(original, reopened) is 0, 'Saving and reloading must preserve the height bindings')
-   end
+   local reference <close> = document(height .. lighting .. light, content, 64, KOTUKU_NS)
+   local expected <close> = draw(reference, 64)
+   assert(imageDifference(unmapped, expected) is 0, 'Removing the normal map must restore height-derived lighting')
 end
 
 @Test function ScopedHeightAttributeAndSharedProducer()

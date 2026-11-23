@@ -108,12 +108,12 @@ struct filter_sampling {
 //********************************************************************************************************************
 // The input arrangement and sampling reach of an effect class.  See describe_filter_operation().
 
+struct filter_step;
+
 struct filter_operation {
    filter_inputs Inputs; // The standard input fields that the effect consumes
-   // Returns the effect's sampling reach for its current settings.  The default is pointwise.
-   filter_sampling (*Sampling)(const extFilterEffect *) = [](const extFilterEffect *) -> filter_sampling {
-      return {};
-   };
+   // Returns the effect's sampling reach for its current settings and planned inputs.  The default is pointwise.
+   filter_sampling (*Sampling)(const filter_step &) = [](const filter_step &) -> filter_sampling { return {}; };
    filter_input_kind Primary = filter_input_kind::IMAGE; // Contract kind of the ordinary Input binding
    filter_surface_format Format = filter_surface_format::RGBA8; // Result format for the effect's current settings
 };
@@ -125,6 +125,7 @@ struct filter_operation {
 struct filter_input_contract {
    filter_input_kind Kind = filter_input_kind::IMAGE; // An RGBA8 image, or a scalar or vector map
    bool ContributesRegion = true; // If true, the input is considered when defaulting the primitive subregion
+   bool Optional = false; // An image binding can be unset if the consumer supplies its own fallback
    // RGBA8 channels that supply the map's X and Y components.  YChannel applies to vector maps only.
    filter_map_channel XChannel = filter_map_channel::ALPHA, YChannel = filter_map_channel::ALPHA;
    filter_map_transfer Transfer = filter_map_transfer::STORED; // LINEAR decodes sRGB colour channels before use
@@ -310,6 +311,7 @@ static ERR get_source_view(extFilterEffect *, filter_surface_view &, filter_inpu
 static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input_role, size_t = 0);
 static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
 static ERR get_numeric_target(extFilterEffect *, filter_surface_view &, float *&);
+static ERR get_named_filter_bitmap(extFilterEffect *, std::string_view, filter_surface_view &);
 static ERR working_input(extFilterEffect *, const filter_surface_view &, CS, filter_alpha, filter_surface_view &);
 static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
 static ERR draw_filter_capture(extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
@@ -321,6 +323,7 @@ static void clear_filter_references(extFilterEffect *, objFilterEffect * = nullp
 static void update_filter_links(extVectorFilter *);
 static ERR check_filter_reference(extFilterEffect *, objFilterEffect *, filter_input_role, size_t = 0,
    const filter_positions * = nullptr);
+static ERR set_named_filter_input(extFilterEffect *, std::string_view, VSF, objFilterEffect * = nullptr);
 
 //********************************************************************************************************************
 // Returns true if every component of the transform is finite.
@@ -647,11 +650,11 @@ static ERR check_filter_reference(extFilterEffect *Effect, objFilterEffect *Prod
 }
 
 //********************************************************************************************************************
-// Assigns the source of a named input declared by the effect's extension.  Map inputs may be cleared with
-// VSF::NONE, in which case they resolve to their contract's fallback value.
+// Assigns the source of a named input declared by the effect's extension.  Map inputs and optional images
+// may be cleared with VSF::NONE.
 
-[[maybe_unused]] static ERR set_named_filter_input(extFilterEffect *Effect, std::string_view Name, VSF Source,
-   objFilterEffect *Reference = nullptr)
+static ERR set_named_filter_input(extFilterEffect *Effect, std::string_view Name, VSF Source,
+   objFilterEffect *Reference)
 {
    if (not Effect->FilterExtension) return ERR::NoSupport;
    const auto inputs = Effect->FilterExtension->Inputs;
@@ -663,7 +666,7 @@ static ERR check_filter_reference(extFilterEffect *Effect, objFilterEffect *Prod
    }
    else if ((Source < VSF::GRAPHIC) or (Source > VSF::BKGD_ALPHA)) {
       if (Source != VSF::NONE) return ERR::NoSupport;
-      if (slot->Contract.Kind IS filter_input_kind::IMAGE) return ERR::FieldNotSet;
+      if ((slot->Contract.Kind IS filter_input_kind::IMAGE) and (not slot->Contract.Optional)) return ERR::FieldNotSet;
    }
 
    slot->Source = Source;
@@ -687,7 +690,10 @@ static void clear_filter_references(extFilterEffect *Effect, objFilterEffect *Pr
    }
    if (auto extension = Effect->FilterExtension; extension) {
       for (auto &input : extension->Inputs) {
-         if ((not Producer) or (input.Reference IS Producer)) input.Reference = nullptr;
+         if ((not Producer) or (input.Reference IS Producer)) {
+            input.Reference = nullptr;
+            if (input.Contract.Optional and (input.Source IS VSF::REFERENCE)) input.Source = VSF::NONE;
+         }
       }
    }
 }
@@ -732,9 +738,9 @@ extFilterEffect::~extFilterEffect()
 // Adapts an effect class's sampling() method to the filter_operation::Sampling function signature.
 
 template<class Effect>
-static filter_sampling effect_sampling(const extFilterEffect *Instance)
+static filter_sampling effect_sampling(const filter_step &Step)
 {
-   return ((const Effect *)Instance)->sampling();
+   return ((const Effect *)Step.Effect)->sampling();
 }
 
 #ifdef UNIT_TESTS
@@ -770,8 +776,15 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
       case CLASSID::IMAGEFX:        return { GENERATOR };
       case CLASSID::LIGHTINGFX: {
          const auto lighting = (const extLightingFX *)Effect;
-         return { lighting->reads_albedo() ? DUAL : SINGLE, effect_sampling<extLightingFX>,
-            lighting->enhanced() ? filter_input_kind::SCALAR_MAP : filter_input_kind::IMAGE };
+         const auto primary = lighting->enhanced(filter_surface_format::SCALAR_F32) ?
+            filter_input_kind::SCALAR_MAP : filter_input_kind::IMAGE;
+         return { lighting->reads_albedo() ? DUAL : SINGLE,
+            [](const filter_step &Step) {
+               const auto producer = Step.Inputs.front().Producer;
+               const auto format = producer ? producer->Format : filter_surface_format::RGBA8;
+               return ((const extLightingFX *)Step.Effect)->sampling(format);
+            },
+            primary };
       }
       case CLASSID::MERGEFX:        return { MERGE };
       case CLASSID::MORPHOLOGYFX:   return { SINGLE, effect_sampling<extMorphologyFX> };
@@ -783,7 +796,7 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
             filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8 };
       case CLASSID::WAVEFUNCTIONFX: return { GENERATOR };
       default:
-         return { SINGLE, [](const extFilterEffect *) -> filter_sampling {
+         return { SINGLE, [](const filter_step &) -> filter_sampling {
             return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED };
          } };
    }
@@ -962,7 +975,8 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                break;
             case VSF::NONE:
                if ((Role IS filter_input_role::MERGE) or
-                   ((Role IS filter_input_role::NAMED) and (Contract.Kind != filter_input_kind::IMAGE))) break;
+                   ((Role IS filter_input_role::NAMED) and
+                    (Contract.Optional or (Contract.Kind != filter_input_kind::IMAGE)))) break;
                return filter_input_error(effect, Role, Slot, ERR::FieldNotSet, "input is required");
             default: {
                char reason[64];
@@ -1643,10 +1657,10 @@ struct filter_map_view {
 }
 
 //********************************************************************************************************************
-// An explicit unit-channel adapter for a named bitmap input.  Finite scalar values are grey, vectors use R/G.
-// Values clamp to [0,1] and round to 8 bits.  Invalid pixels remain transparent, and no transfer curve is applied.
+// Reads a named image input.  For inputs that permit unit-channel conversion, finite scalar values are grey and
+// vectors use R/G.  Values clamp to [0,1] and round to 8 bits.  Invalid pixels remain transparent.
 
-[[maybe_unused]] static ERR get_named_filter_bitmap(extFilterEffect *Effect, std::string_view Name,
+static ERR get_named_filter_bitmap(extFilterEffect *Effect, std::string_view Name,
    filter_surface_view &Output)
 {
    Output = {};
@@ -1843,7 +1857,7 @@ static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
 {
    ReachX = ReachY = 0;
    for (const auto &step : Plan.Steps) {
-      const auto sampling = step.Operation.Sampling(step.Effect);
+      const auto sampling = step.Operation.Sampling(step);
       const auto valid = [](const filter_sampling &Sampling) {
          const bool unbounded = Sampling.Access IS filter_access::FULL_INPUT;
          return (Sampling.X >= 0) and (Sampling.Y >= 0) and
@@ -2434,8 +2448,10 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
    };
    for (auto effect : Self->Effects) {
       if (effect->classID() IS CLASSID::LIGHTINGFX) {
+         const auto lighting = (const extLightingFX *)effect;
          name_reference(effect->SourceType, effect->Input);
-         if (((extLightingFX *)effect)->reads_albedo()) name_reference(effect->MixType, effect->Mix);
+         if (lighting->reads_albedo()) name_reference(effect->MixType, effect->Mix);
+         name_reference(lighting->NormalMap.Source, lighting->NormalMap.Reference);
       }
       else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          name_reference(effect->SourceType, effect->Input);
@@ -2474,8 +2490,10 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
       if (not complete) ss << '<';
       ss << std::string_view(def).substr(0, element_end);
       if (effect->classID() IS CLASSID::LIGHTINGFX) {
+         const auto lighting = (const extLightingFX *)effect;
          write_input("in", effect->SourceType, effect->Input);
-         if (((extLightingFX *)effect)->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
+         if (lighting->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
+         write_input("kotuku:normalMap", lighting->NormalMap.Source, lighting->NormalMap.Reference);
       }
       else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          write_input("in", effect->SourceType, effect->Input);
