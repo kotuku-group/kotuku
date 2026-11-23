@@ -134,6 +134,16 @@ alpha, raised to the brightest channel of the specular light, so that highlights
 the albedo.  If #Mix is not set, the albedo is opaque white and the result is the sum of the light terms.  The
 `COMBINED` type always uses the enhanced pipeline, whatever the scene's Compliance, and has no SVG equivalent.
 
+The `NORMAL` type writes the enhanced pipeline's per-pixel unit normals before lighting.  The input is a native
+height map or the alpha channel of an image.  Red, green and blue store the X, Y and Z components in image axes,
+with each encoded as the nearest byte to <code>128 + 127 * component</code>.  The result is opaque within the
+primitive subregion.  Flat areas produce RGB (128, 128, 255).
+
+Use this result as the Mix input of @DisplacementFX with red for X and green for Y, and use the image to bend as
+its primary input.  Match #Scale, #UnitX, #UnitY and the slope features on both lighting effects to align
+refraction with the shading of the same surface.  `NORMAL` uses dequantisation, sharpening and the detail boost.
+It works under any scene compliance and is available as `kotuku:feNormalMap`.
+
 The `COMBINED` type also accepts three material terms, all of which are disabled by default.  With #Metalness m,
 #Fresnel f0 and #Wrap w, the result is
 
@@ -573,15 +583,14 @@ class extLightingFX : public extFilterEffect {
    // True if ambient light is added to the result.  The specular type ignores it.
 
    bool has_ambient() const {
-      return (Type != LT::SPECULAR) and (Ambient.Alpha > 0) and
+      return ((Type IS LT::DIFFUSE) or (Type IS LT::COMBINED)) and (Ambient.Alpha > 0) and
          ((Ambient.Red > 0) or (Ambient.Green > 0) or (Ambient.Blue > 0));
    }
 
-   // True if the enhanced pipeline is used.  The combined type always uses it.  The other types use it when the scene
-   // is not bound to an SVG standard and a feature or an extension of the light is in use.
+   // Combined shading and normal maps always use the enhanced pipeline.
 
    bool enhanced() const {
-      if (Type IS LT::COMBINED) return true;
+      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL)) return true;
       if ((not Filter->Scene) or (Filter->Scene->Compliance != VSC::NONE)) return false;
       return (Features != LFX::NIL) or extended_light() or has_ambient();
    }
@@ -1332,7 +1341,7 @@ ERR extLightingFX::draw()
 
    // Light positions are prepared for this draw.  The SVG algorithm uses the first light and the effect's colour.
 
-   std::vector<lit_light> lights(light_count());
+   std::vector<lit_light> lights((Type IS LT::NORMAL) ? 0 : light_count());
    for (size_t i=0; i < lights.size(); i++) {
       prepare_light(Lights[i], lights[i], scale);
       lights[i].colour = LightColour;
@@ -2228,7 +2237,7 @@ static ERR LIGHTINGFX_SET_SpecularConstant(extLightingFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Type: Defines the type of surface light scattering, which can be diffuse, specular or both combined.
+Type: Selects diffuse lighting, specular lighting, combined shading or normal map output.
 Lookup: LT
 
 The `COMBINED` type reads an albedo from the #Mix input; refer to the class description.  It is the only type that
@@ -2244,7 +2253,10 @@ static ERR LIGHTINGFX_SET_Type(extLightingFX *Self, LT Value)
       log.warning("The type must be COMBINED while the effect has %d lights.", int(Self->Lights.size()));
       return ERR::InvalidState;
    }
-   Self->Type = Value;
+   if (Self->Type != Value) {
+      Self->Type = Value;
+      if (Self->Filter) Self->Filter->GraphRevision++;
+   }
    return ERR::Okay;
 }
 
@@ -2341,28 +2353,50 @@ static ERR LIGHTINGFX_SET_Wrap(extLightingFX *Self, double Value)
 -FIELD-
 XMLDef: Returns an SVG element that describes the effect.
 
-The result is a complete element, including its light sources: `feDiffuseLighting` or `feSpecularLighting`, or
-`kotuku:feLighting` for the `COMBINED` type.  Settings that SVG cannot express are written as `kotuku:` attributes, and
-only when they differ from their defaults: `kotuku:features` if #Features is not `ALL`, `kotuku:cavity`,
+The result is a complete element.  The lighting types use `feDiffuseLighting`, `feSpecularLighting` or
+`kotuku:feLighting` and include their light sources.  The `NORMAL` type uses `kotuku:feNormalMap` and includes
+the primitive subregion and surface settings.  Settings that SVG cannot express are written as `kotuku:`
+attributes when they differ from their defaults.  These include `kotuku:features` if #Features is not `ALL`, and
+`kotuku:cavity`,
 `kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, and `kotuku:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
 zero, and `matcap` for #MatcapPath when it is set.  An SVG-loaded matcap keeps its original relative reference so the
 image can be reloaded from the same document folder.  For API-loaded images the supplied #MatcapPath is written.  A
-matcap supplied as a #Matcap bitmap is omitted.  The attributes of `kotuku:feLighting` are written without the
-prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the
+matcap supplied as a #Matcap bitmap is omitted.  The attributes of `kotuku:feLighting` and `kotuku:feNormalMap` are
+written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the
 prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
 
 Each light is written as a child element, in the order in which the lights were added.  The options of
 #SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
 `kotuku:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
 
-The `in`, `in2`, `result` and primitive subregion attributes are not included.
+The parent filter writes the `in`, `in2` and `result` attributes separately.
 
 *********************************************************************************************************************/
 
 static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 {
    std::stringstream stream;
+   if (Self->Type IS LT::NORMAL) {
+      stream.precision(std::numeric_limits<double>::max_digits10);
+      stream << "<kotuku:feNormalMap surfaceScale=\"" << Self->MapHeight << '"';
+      write_filter_xml_subregion(stream, *Self);
+      if (Self->UnitXProvided and Self->UnitYProvided) {
+         stream << " kernelUnitLength=\"" << Self->UnitX << ' ' << Self->UnitY << '"';
+      }
+      else if (Self->UnitXProvided) stream << " kernelUnitX=\"" << Self->UnitX << '"';
+      else if (Self->UnitYProvided) stream << " kernelUnitY=\"" << Self->UnitY << '"';
+      if (Self->Features != LFX::ALL) {
+         stream << " features=\"";
+         write_lfx_features(stream, Self->Features);
+         stream << '"';
+      }
+      if (Self->Detail != DEFAULT_DETAIL) stream << " detail=\"" << Self->Detail << '"';
+      stream << "/>";
+      Value = stream.str();
+      return ERR::Okay;
+   }
+
    const bool combined = Self->Type IS LT::COMBINED;
    CSTRING element = combined ? "kotuku:feLighting" : (Self->Type IS LT::DIFFUSE) ? "feDiffuseLighting" : "feSpecularLighting";
    CSTRING prefix = combined ? "" : "kotuku:"; // Extension attributes of kotuku:feLighting are unprefixed

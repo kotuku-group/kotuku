@@ -1926,9 +1926,8 @@ static ERR resolve_matcap_path(extSVG *Self, std::string_view Reference, std::st
    return Path.starts_with(base) ? ERR::Okay : ERR::InvalidPath;
 }
 
-// Parses feDiffuseLighting, feSpecularLighting and kotuku:feLighting, which is the COMBINED type.  Extension attributes
-// carry the kotuku: prefix on the standard elements.  On kotuku:feLighting they are also accepted without it, as the
-// element is already in the Kōtuku namespace, and its in2 attribute selects the albedo.
+// Parses the standard lighting elements and the Kōtuku combined lighting and normal map extensions.
+// Extension attributes can omit their prefix on elements in the Kōtuku namespace.
 
 ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noexcept
 {
@@ -1940,6 +1939,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
 
    fx->setType(Type);
    const bool combined = Type IS LT::COMBINED;
+   const bool normal_map = Type IS LT::NORMAL;
 
    // Reads a colour, which may be currentColor.  Returns false if the value is not a colour.
 
@@ -1999,10 +1999,16 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
 
          default: { // Kōtuku extensions
             const std::string_view name = Tag.Attribs[a].Name;
-            const bool bare = (combined) and (name.find(':') IS std::string_view::npos);
+            const bool bare = (combined or normal_map) and (name.find(':') IS std::string_view::npos);
             const auto local = bare ? name : kotuku_attrib(Self, Tag, name);
 
             if ((name IS "in2") and (combined)) parse_input_mix(Self, fx, val);
+            else if (normal_map and (local IS "kernelUnitX")) {
+               set_light_number("kernelUnitX", val, &objLightingFX::setUnitX);
+            }
+            else if (normal_map and (local IS "kernelUnitY")) {
+               set_light_number("kernelUnitY", val, &objLightingFX::setUnitY);
+            }
             else if (local IS "features") fx->setFeatures(read_lighting_features(val));
             else if (local IS "cavity") set_light_number("cavity", val, &objLightingFX::setCavity);
             else if (local IS "detail") set_light_number("detail", val, &objLightingFX::setDetail);
@@ -2174,7 +2180,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
          else log.warning("Unrecognised %s child node '%s'", Tag.name(), child.name());
       }
    }
-   else if (!Tag.Children.empty()) light_error = parse_light(Tag.Children[0], false);
+   else if ((not normal_map) and (not Tag.Children.empty())) light_error = parse_light(Tag.Children[0], false);
 
    if (light_error != ERR::Okay) {
       FreeResource(fx);
@@ -2918,6 +2924,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
                case SVF_feDiffuseLighting:   parse_fe_lighting(filter, child, LT::DIFFUSE); break;
                case SVF_feSpecularLighting:  parse_fe_lighting(filter, child, LT::SPECULAR); break;
                case SVF_kotuku_feLighting:   parse_fe_lighting(filter, child, LT::COMBINED); break;
+               case SVF_kotuku_feNormalMap:  parse_fe_lighting(filter, child, LT::NORMAL); break;
                case SVF_feDisplacementMap:   parse_fe_displacement_map(filter, child); break;
                case SVF_feWaveFunction:      parse_fe_wavefunction(filter, child); break;
                case SVF_feTile:

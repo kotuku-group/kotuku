@@ -893,6 +893,97 @@ end
    end
 end
 
+NORMAL_CONTENT <const> = '<g filter="url(#f)">' ..
+   '<rect width="64" height="64" fill="#4070a0" fill-opacity=".5"/>' ..
+   '<rect x="24" y="24" width="16" height="16" fill="white"/></g>'
+
+@Test function NormalMapEncodesSurfaceSlopes()
+   local svg <close> = document('<k:feNormalMap in="SourceAlpha" surfaceScale="8" features="none"/>',
+      NORMAL_CONTENT, 64, 'xmlns:k="http://www.kotuku.dev/xmlns/svg"')
+   local fx = lightingFX(svg)
+   assert(fx.type is LT_NORMAL, 'The Kōtuku normal map element must select the NORMAL type')
+   local bitmap <close> = draw(svg, 64)
+   local flat = mGfx.ReadRGBPixel(bitmap, 32, 32)
+   assert((flat.red is 128) and (flat.green is 128) and (flat.blue is 255) and (flat.alpha is 255),
+      'A flat normal must encode as opaque RGB (128, 128, 255)')
+   local edge = mGfx.ReadRGBPixel(bitmap, 24, 32)
+   assert((edge.red < 128) and (edge.green is 128) and (edge.blue < 255), 'The left edge must face left')
+   assert(mGfx.ReadRGBPixel(bitmap, 39, 32).red > 128, 'The right edge must face right')
+   assert(mGfx.ReadRGBPixel(bitmap, 32, 24).green < 128, 'The top edge must face up')
+   assert(mGfx.ReadRGBPixel(bitmap, 32, 39).green > 128, 'The bottom edge must face down')
+
+   fx.type = 'Diffuse'
+   fx.type = 'Normal'
+   local restored <close> = draw(svg, 64)
+   assert(imageDifference(bitmap, restored) is 0, 'The Normal lookup must work after initialisation')
+end
+
+@Test function NormalMapAcceptsNativeHeight()
+   local svg <close> = document('<feTurbulence baseFrequency=".04" kotuku:outputMode="height" result="height"/>' ..
+      '<kotuku:feNormalMap in="height" surfaceScale="16"/>', nil, 64, KOTUKU_NS)
+   local bitmap <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(bitmap, 32, 32)
+   assert((p.alpha is 255) and ((p.red != 128) or (p.green != 128)),
+      'A sloped native height must produce an opaque, non-flat normal')
+end
+
+@Test function NormalMapPreservesSingleAxisKernelUnits()
+   local settings = 'primitiveUnits="objectBoundingBox"'
+   for axis in values(array<str> { 'X', 'Y' }) do
+      local svg <close> = document('<kotuku:feNormalMap in="SourceAlpha" surfaceScale="8" features="none"/>',
+         NORMAL_CONTENT, 64, KOTUKU_NS, settings)
+      local fx = lightingFX(svg)
+      if axis is 'X' then fx.unitX = 0.02
+      else fx.unitY = 0.02 end
+
+      local original <close> = draw(svg, 64)
+      local _, filter = check svg.scene.mtFindDef('f')
+      local xml = filter.effectXML
+      local loaded <close> = document(xml, NORMAL_CONTENT, 64, KOTUKU_NS, settings)
+      local restored <close> = draw(loaded, 64)
+      local diff = imageDifference(original, restored)
+      assert(diff is 0, f'Exporting a normal map with only Unit{axis} set changed pixels by {diff}: {xml}')
+   end
+end
+
+@Test function NormalMapDisplacementRoundTrips()
+   local normals = '<kotuku:feNormalMap in="SourceAlpha" surfaceScale="8" features="none" ' ..
+      'kernelUnitLength="1 1" width="50%" result="normals"/>'
+   local displacement = '<feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" ' ..
+      'yChannelSelector="G" scale="16"/>'
+   local svg <close> = document(normals .. displacement, NORMAL_CONTENT, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local srgb <close> = draw(svg, 64)
+   filter.colourSpace = VCS_LINEAR_RGB
+   local linear <close> = draw(svg, 64)
+   assert(imageDifference(srgb, linear) is 0, 'A direct normal map must displace identically in both colour spaces')
+
+   local original <close> = document('<feDisplacementMap in="SourceGraphic" in2="SourceAlpha" scale="0"/>',
+      NORMAL_CONTENT, 64)
+   local source <close> = draw(original, 64)
+   assertSame(linear, source, 28, 32, 28, 32) -- Flat interior
+   assertSame(linear, source, 39, 32, 39, 32) -- Slope outside the normal map subregion
+   assertSame(linear, source, 24, 32, 16, 32) -- The left edge samples leftward
+   assertSame(linear, source, 28, 24, 28, 16) -- The top edge samples upward
+
+   local xml = filter.effectXML
+   assert(xml.startsWith('<kotuku:feNormalMap ') and (xml.find('in2="effect0"', 0, true) != nil),
+      f'EffectXML must preserve the normal map and the displacement binding: {xml}')
+   local loaded <close> = document(xml, NORMAL_CONTENT, 64, KOTUKU_NS)
+   local restored <close> = draw(loaded, 64)
+   assert(imageDifference(linear, restored) is 0, 'Serialising the filter must preserve refraction and clipping')
+
+   local path = 'temp:svg_normal_map_roundtrip.svg'
+   defer mSys.DeleteFile(path) end
+   do
+      local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+      check svg.acSaveToObject(file, 0)
+   end
+   local reopened <close> = obj.new('svg', { path=path })
+   local saved <close> = draw(reopened, 64)
+   assert(imageDifference(linear, saved) is 0, 'Saving and reopening the SVG must preserve refraction')
+end
+
 -- Material attributes of kotuku:feLighting.  Invalid values keep the defaults, and the standard elements ignore the
 -- attributes, with or without the prefix.
 

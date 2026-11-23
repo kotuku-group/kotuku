@@ -233,6 +233,21 @@ and an image's alpha.  Supply the albedo through a separate image input.
 &lt;/filter&gt;
 </pre>
 
+The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in`.  It accepts
+`surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX` or `kernelUnitY` to set a kernel unit
+on one axis and keep the default on the other.  See @LightingFX.UnitX for how the default is resolved.
+
+Use the normal map's named result as `in2` on `feDisplacementMap` with red for X and green for Y.  For example,
+these primitives distort the graphic at changes in its alpha.  To refract an image behind a surface, select that
+image as the displacement primitive's `in`.
+
+<pre>
+&lt;filter id="refraction" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"&gt;
+  &lt;kotuku:feNormalMap in="SourceAlpha" surfaceScale="8" result="normals"/&gt;
+  &lt;feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" yChannelSelector="G" scale="12"/&gt;
+&lt;/filter&gt;
+</pre>
+
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
 enhanced programmatic access unique to Kotuku.

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"
+  width="968" height="424" viewBox="0 0 968 424" font-family="sans-serif">
+  <title>Water ripples with a shared normal map</title>
+  <desc>A straight tile grid, its water surface normal map, and the grid refracted and lit by that surface.</desc>
+  <defs>
+    <pattern id="tiles" patternUnits="userSpaceOnUse" width="48" height="48">
+      <rect width="48" height="48" fill="#164858"/>
+      <path d="M24 0h24v24H24z M0 24h24v24H0z" fill="#215c6d"/>
+      <path d="M24 0v48 M0 24h48" stroke="#83babc" stroke-width="1"/>
+      <path d="M0 48V0h48" fill="none" stroke="#b5dbd0" stroke-width="2"/>
+      <circle cx="12" cy="12" r="2" fill="#e7c68e"/>
+    </pattern>
+    <clipPath id="panel">
+      <rect width="288" height="232" rx="8"/>
+    </clipPath>
+
+    <!-- Both filter chains use the same seed, smoothing and surface scale. -->
+    <filter id="surface-normals" filterUnits="userSpaceOnUse" x="-24" y="-24" width="336" height="280">
+      <feTurbulence type="fractalNoise" baseFrequency=".019 .035" seed="17" numOctaves="2"
+        kotuku:outputMode="height" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="1.6" kotuku:outputMode="height" result="height"/>
+      <kotuku:feNormalMap in="height" surfaceScale="30" features="none"/>
+    </filter>
+
+    <filter id="water" filterUnits="userSpaceOnUse" x="-24" y="-24" width="336" height="280"
+      color-interpolation-filters="linearRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".019 .035" seed="17" numOctaves="2"
+        kotuku:outputMode="height" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="1.6" kotuku:outputMode="height" result="height"/>
+      <!-- Red and green are the signed horizontal and vertical components of the surface normal. -->
+      <kotuku:feNormalMap in="height" surfaceScale="30" features="none" result="normals"/>
+      <feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" yChannelSelector="G"
+        scale="30" result="refracted"/>
+      <!-- Light the refracted grid with the same height field to align the glints with the distortion. -->
+      <kotuku:feLighting in="height" in2="refracted" surfaceScale="30" features="none"
+        diffuseConstant=".48" specularConstant=".52" specularExponent="26" ambient="#b7c5c7">
+        <feDistantLight azimuth="235" elevation="55"/>
+      </kotuku:feLighting>
+    </filter>
+  </defs>
+
+  <rect width="968" height="424" fill="#0b1722"/>
+  <text x="32" y="53" font-size="29" fill="#eff7f6">Refraction through rippled water</text>
+  <text x="33" y="81" font-size="15" fill="#adc4ce">One height field controls both the tile distortion and the light.</text>
+
+  <g transform="translate(32 108)">
+    <g clip-path="url(#panel)">
+      <rect width="288" height="232" fill="url(#tiles)"/>
+    </g>
+    <text x="0" y="262" font-size="17" fill="#eff7f6">Original grid</text>
+    <text x="0" y="285" font-size="13" fill="#adc4ce">Straight grout lines reveal the distortion.</text>
+  </g>
+
+  <g transform="translate(340 108)">
+    <g clip-path="url(#panel)">
+      <rect x="-24" y="-24" width="336" height="280" filter="url(#surface-normals)"/>
+    </g>
+    <text x="0" y="262" font-size="17" fill="#eff7f6">Surface normals</text>
+    <text x="0" y="285" font-size="13" fill="#adc4ce">Red encodes X, green Y, and blue Z.</text>
+  </g>
+
+  <g transform="translate(648 108)">
+    <g clip-path="url(#panel)">
+      <rect x="-24" y="-24" width="336" height="280" fill="url(#tiles)" filter="url(#water)"/>
+    </g>
+    <text x="0" y="262" font-size="17" fill="#eff7f6">Refracted and lit</text>
+    <text x="0" y="285" font-size="13" fill="#adc4ce">Red and green shift the grid along each axis.</text>
+  </g>
+</svg>
