@@ -289,6 +289,7 @@ private:
    void proc_pathtransition(XTag &) noexcept;
    void proc_pattern(XTag &) noexcept;
    ERR  proc_shape(CLASSID, XTag &, OBJECTPTR, objVector * &) noexcept;
+   bool conditions_pass(const XTag &) const noexcept;
    void proc_switch(XTag &, OBJECTPTR, objVector * &) noexcept;
    void proc_use(XTag &, OBJECTPTR) noexcept;
    void proc_clippath(XTag &) noexcept;

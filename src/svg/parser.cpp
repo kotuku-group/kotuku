@@ -4125,36 +4125,41 @@ void svgState::proc_link(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 // For each immediate child, evaluate any requiredFeatures, requiredExtensions and systemLanguage attributes.
 // The first child where these attributes evaluate to true is rendered, the rest are ignored.
 
+bool svgState::conditions_pass(const XTag &Tag) const noexcept
+{
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      switch(strhash(Tag.Attribs[a].Name)) {
+         case SVF_requiredFeatures:
+            // requiredFeatures is deprecated as of SVG2, but the following features are explicitly not supported
+            // by our SVG implementation:
+            if (val IS "http://www.w3.org/TR/SVG11/feature#SVG-dynamic") return false;
+            else if (val IS "http://www.w3.org/TR/SVG11/feature#DocumentEventsAttribute") return false;
+            else if (val IS "http://www.w3.org/TR/SVG11/feature#GraphicalEventsAttribute") return false;
+            else if (val IS "http://www.w3.org/TR/SVG11/feature#Script") return false;
+            break;
+
+         case SVF_requiredExtensions: // Allows the client to check if a given customised extension is supported.
+            if (val IS "http://www.kotuku.dev/TR/Kotuku/1.0");
+            else return false;
+            break;
+
+         case SVF_systemLanguage: // CSV list of language codes from BCP47
+            // GetLocaleInfoEx() LOCALE_SISO639LANGNAME
+            break;
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
 void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    for (auto &child : Tag.Children) {
-      bool render = true;
-      for (int a=1; a < std::ssize(child.Attribs); a++) {
-         auto &val = child.Attribs[a].Value;
-         if (val.empty()) continue;
-
-         switch(strhash(child.Attribs[a].Name)) {
-            case SVF_requiredFeatures:
-               // requiredFeatures is deprecated as of SVG2, but the following features are explicitly not supported
-               // by our SVG implementation:
-               if (val IS "http://www.w3.org/TR/SVG11/feature#SVG-dynamic") render = false;
-               else if (val IS "http://www.w3.org/TR/SVG11/feature#DocumentEventsAttribute") render = false;
-               else if (val IS "http://www.w3.org/TR/SVG11/feature#GraphicalEventsAttribute") render = false;
-               else if (val IS "http://www.w3.org/TR/SVG11/feature#Script") render = false;
-               break;
-
-            case SVF_requiredExtensions: // Allows the client to check if a given customised extension is supported.
-               if (val IS "http://www.kotuku.dev/TR/Kotuku/1.0");
-               else render = false;
-               break;
-
-            case SVF_systemLanguage: // CSV list of language codes from BCP47
-               // GetLocaleInfoEx() LOCALE_SISO639LANGNAME
-               break;
-         }
-      }
-
-      if (render) {
+      if (conditions_pass(child)) {
          if (Tag.Attribs.size() > 1) { // The <switch> element is treated as a container type
             kt::Log log(__FUNCTION__);
             log.traceBranch("Tag: %d", Tag.ID);
