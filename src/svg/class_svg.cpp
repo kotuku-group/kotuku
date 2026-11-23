@@ -155,8 +155,20 @@ enables the enhanced lighting of @LightingFX.  The following attributes of `feDi
 it.  Sets @LightingFX.Ambient.  It has no effect on `feSpecularLighting`.</li>
 </list>
 
-The light source element accepts `kotuku:intensity`, a multiplier of the light's colour, 0 or greater, default 1.  It
-sets @LightingFX.Intensity.
+The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` accept these attributes, which set the
+light's options with @LightingFX.SetLightOptions():
+
+<list type="bullet">
+<li>`kotuku:colour`: the colour of this light, in the syntax of `lighting-color`.  If it is omitted the light takes
+the primitive's `lighting-color`, which defaults to white.</li>
+<li>`kotuku:intensity`: a multiplier of the light's colour, 0 or greater, default 1.  Zero turns off the light's
+direct light.</li>
+<li>`kotuku:range`: for point and spot lights, the distance at which the light fades to nothing, in the units of its
+`z` coordinate, or `none`.  The light is at full strength at the point of the surface nearest to it and falls with the
+square of the distance from there.  Omitting it, `none` and 0 leave the light unlimited.  A distant light cannot
+have a range; the attribute is reported and ignored.</li>
+<li>`kotuku:shadows`: `true` (the default) or `false`.  With `false` a distant light casts no shadows.</li>
+</list>
 
 An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown
 namespace and draw the standard SVG lighting.
@@ -192,8 +204,19 @@ parent folder components and paths that resolve outside that folder are refused.
 warning is logged and the surface is drawn without it.  Sets @LightingFX.MatcapPath.</li>
 </list>
 
-One light source element is required.  The element is drawn
-whatever the document's compliance, but other renderers do not draw it.
+The element accepts any number of light source elements, which light the surface together in document order.
+Their light is added before the result is limited to full strength, so a key light and fill lights can share one
+primitive.  `desc`, `title` and `metadata` children are ignored, and without a light source the default light is
+used.  The standard lighting primitives keep the SVG rule of one light source, their first child; combine separate
+primitives with `feComposite` to light a standard document with several sources.  The element is drawn whatever the
+document's compliance, but other renderers do not draw it.
+
+<pre>
+&lt;kotuku:feLighting in="SourceAlpha" in2="paint" surfaceScale="6" specularConstant="0.6" specularExponent="24"&gt;
+  &lt;feDistantLight azimuth="225" elevation="40"/&gt;
+  &lt;fePointLight x="40" y="120" z="60" kotuku:colour="#8af" kotuku:intensity="0.6" kotuku:range="200"/&gt;
+&lt;/kotuku:feLighting&gt;
+</pre>
 
 In documents using the Kōtuku namespace, `kotuku:outputMode="height"` on `feTurbulence` or `feGaussianBlur`
 produces a floating-point height result for enhanced lighting.  A height-output blur accepts both a height result

@@ -154,13 +154,27 @@ the point on the sphere that faces the same way as the surface.  The reflection 
 `matcap * F * albedo.alpha`, where F is the reflectance above, computed with the albedo's colour.  It is reduced by
 `CAVITY` but not by shadows, and it is independent of the light, so it remains if #SpecularConstant is zero.
 
-SVG documents can set #Features, #Cavity, #Detail, #Penumbra, #Ambient and #Intensity with `kotuku:` attributes, and
-the `COMBINED` type is available as the `kotuku:feLighting` element, which also accepts the material terms; refer to
-the SVG class for details.
+The `COMBINED` type can be lit by several lights, such as a key light and fill lights.  #SetDistantLight(),
+#SetPointLight() and #SetSpotLight() configure a single light, replacing any others, and #AddDistantLight(),
+#AddPointLight() and #AddSpotLight() add further lights in order.  #SetLightOptions() gives each light its own
+colour, intensity, range and shadow switch.  The surface is analysed once and the diffuse and specular light of every
+light is summed before it is applied to the albedo, so the result is the sum of the lights' separate results until it
+reaches full strength.  Ambient light and the matcap are added once.  Each distant light casts its own shadows, so
+the cost of the `SHADOWS` feature rises with the number of distant lights that cast them.
+
+A point or spot light with a range fades to nothing at that distance.  It is at its full strength at the point of the
+surface nearest to it, and falls from there with the square of the distance, multiplied by a smooth window that
+reaches zero at the range.  A light without a range is not attenuated, as in SVG.
+
+SVG documents can set #Features, #Cavity, #Detail, #Penumbra, #Ambient and the options of each light with `kotuku:`
+attributes, and the `COMBINED` type is available as the `kotuku:feLighting` element, which also accepts the material
+terms and several light sources; refer to the SVG class for details.
 
 -END-
 
 *********************************************************************************************************************/
+
+#include <charconv>
 
 #define USE_SIMD 1
 
@@ -175,6 +189,18 @@ the SVG class for details.
     #define PREFETCH(ptr) __builtin_prefetch(ptr, 0, 3)
 #else
     #define PREFETCH(ptr) // No-op for other compilers
+#endif
+
+// Per-pixel shading functions that must be inlined into each instantiation of render_enhanced().  GCC stops inlining
+// enhanced_specular() once render_enhanced() has five instantiations (one per kind of light, ranged or not), which
+// cost the specular type 6.5% more instructions per pixel.
+
+#ifdef _MSC_VER
+   #define LIGHT_INLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+   #define LIGHT_INLINE inline __attribute__((always_inline))
+#else
+   #define LIGHT_INLINE inline
 #endif
 
 class point3 {
@@ -230,6 +256,113 @@ struct albedo_sample {
    float r, g, b, a;
 };
 
+// A configured light source.  Geometry is in the filter's primitive units.  The first light of an effect also holds the
+// value of the Intensity field.  An effect that has no configured light uses the implicit light, a distant light whose
+// direction is zero, which lights nothing.
+
+struct light_record {
+   LS     Kind = LS::DISTANT;
+   double Azimuth = 0, Elevation = 0;     // DISTANT, in degrees
+   point3 Direction = { 0, 0, 0 };        // DISTANT: unit vector from the surface to the light
+   point3 Position = { 0, 0, 0 };         // POINT and SPOT
+   point3 Target = { 0, 0, 0 };           // SPOT: the point that the light is aimed at
+   double SpotExponent = 1, ConeAngle = 0; // SPOT
+   FRGB   Colour = { 1, 1, 1, 1 };        // Overrides the effect's Colour if HasColour is set
+   FRGB   LinearColour = { 1, 1, 1, 1 };  // Colour in linear RGB
+   double Intensity = 1.0;                // Multiplier of the light's colour
+   double Range = 0;                      // POINT and SPOT: distance at which the light reaches zero, or 0
+   bool   HasColour = false;
+   bool   Shadows = true;                 // Distant lights cast shadows if the SHADOWS feature is enabled
+
+   static light_record distant(double Azimuth, double Elevation) {
+      light_record result;
+      result.Azimuth   = Azimuth;
+      result.Elevation = Elevation;
+      result.Direction = point3(cos(Azimuth * DEG2RAD) * cos(Elevation * DEG2RAD),
+         sin(Azimuth * DEG2RAD) * cos(Elevation * DEG2RAD), sin(Elevation * DEG2RAD));
+      return result;
+   }
+
+   static light_record point(double X, double Y, double Z) {
+      light_record result;
+      result.Kind = LS::POINT;
+      result.Position = point3(X, Y, Z);
+      return result;
+   }
+
+   static light_record spot(double X, double Y, double Z, double PX, double PY, double PZ, double Exponent,
+      double ConeAngle) {
+      light_record result;
+      result.Kind = LS::SPOT;
+      result.Position = point3(X, Y, Z);
+      result.Target = point3(PX, PY, PZ);
+      result.SpotExponent = Exponent;
+      result.ConeAngle = ConeAngle;
+      return result;
+   }
+};
+
+// Squared distance in pixels below which a sample is treated as coincident with a ranged light.
+
+constexpr double LIGHT_COINCIDENCE_SQUARED = 1e-12;
+
+// A light prepared for one draw.  Positions are in pixels relative to the target's clip region and the colour is in
+// the filter's colour space.  The shadow maps are owned by the filter's scratch memory until the draw completes.
+
+struct lit_light {
+   LS     kind = LS::DISTANT;
+   point3 position = { 0, 0, 0 };   // POINT and SPOT
+   point3 direction = { 0, 0, 0 };  // DISTANT: unit vector from the surface to the light
+   point3 half = { 0, 0, 1 };       // DISTANT: half vector between the light and the eye
+   point3 spot_delta = { 0, 0, -1 }; // SPOT: unit vector from the light to its target
+   double spot_exponent = 1, cone_angle = 0, cos_inner = 0, cos_outer = 0, cone_scale = 0;
+   FRGB   colour = { 1, 1, 1, 1 };  // Colour in the filter's colour space
+   double strength = 1.0;           // Constant x Intensity, for the DIFFUSE and SPECULAR types
+   double elevation = 0;            // DISTANT, in radians
+   double range = 0;                // In pixels, or 0 if the light is unlimited
+   double nearest = 0;              // Distance in pixels from the light to the nearest sample within range
+   double nearest_term = 1;         // Squared distance to the nearest sample, floored at the coincidence threshold
+   bool   reaches = true;           // False if a ranged light reaches no sample of the surface
+   bool   wrap_shadows = false;     // True if wrapped faces take shadows from the raised light
+   double wrap_blend = 0;           // N.L below which faces take the raised shadow
+   const float *shadow = nullptr;   // Fraction of the light reaching each pixel, or nullptr
+   const float *raised = nullptr;   // As shadow, with the light raised by the wrap angle
+
+   // Colour of the light arriving along STL, which is reduced outside of a spot light's cone.  Resulting RGB values
+   // are 0 - 1.0 if the light's colour is in that range.
+
+   FRGB spot_colour(const point3 &STL) const {
+      if (cone_angle) {
+         const double cos_angle = -STL.dot(spot_delta);
+         if (cos_angle < cos_outer) return FRGB(0.0, 0.0, 0.0, 1.0);
+
+         double scale = pow(std::max(0.0, cos_angle), spot_exponent);
+         if (cos_angle < cos_inner) {
+            scale = scale * (cos_angle - cos_outer);
+            scale *= cone_scale;
+         }
+         return FRGB(colour.Red * scale, colour.Green * scale, colour.Blue * scale, colour.Alpha * scale);
+      }
+      else {
+         const double scale = pow(std::max(0.0, -STL.dot(spot_delta)), spot_exponent);
+         return FRGB(colour.Red * scale, colour.Green * scale, colour.Blue * scale, colour.Alpha * scale);
+      }
+   }
+
+   // Attenuation of a ranged light at the squared distance D2 in pixels.  The smooth window (1 - t)^2 (1 + 2t)
+   // falls from 1 at the nearest sample to zero, with zero slope, at the range.  It multiplies the inverse-square
+   // fall-off, normalised to 1 at the nearest sample.  The result is zero at and beyond the range.
+
+   double attenuation(double D2) const {
+      if (not reaches) return 0;
+      const double distance = sqrt(D2);
+      if (not (distance < range)) return 0;
+      const double t = std::clamp((distance - nearest) / (range - nearest), 0.0, 1.0);
+      const double window = (1.0 - t) * (1.0 - t) * (1.0 + (2.0 * t));
+      return window * (nearest_term / std::max(D2, LIGHT_COINCIDENCE_SQUARED));
+   }
+};
+
 //********************************************************************************************************************
 
 class extLightingFX : public extFilterEffect {
@@ -250,15 +383,15 @@ class extLightingFX : public extFilterEffect {
    FRGB   LinearColour = { 1.0, 1.0, 1.0, 1.0 }; // Colour of the light source in linear sRGB space.
    FRGB   LightColour = { 1.0, 1.0, 1.0, 1.0 };  // Colour of the light source in the filter's colour space.
    bool   Linear = false;                        // True if lighting is computed in linear RGB.
-   double X, Y, Z;                     // Position of light source.
-   LS     LightSource;                 // Light source identifier, recorded for SVG output purposes only.
+   std::vector<light_record> Lights = { light_record() }; // Configured lights in order; never empty
+   bool   Configured = false;          // True once a light method has replaced the implicit light
+   LS     LightSource = LS::DISTANT;   // Kind of the first light, set per draw
    bool   UnitXProvided = false, UnitYProvided = false;
    LFX    Features = LFX::ALL;         // Enhanced lighting features, applied when the scene's Compliance is NONE
    double Cavity   = DEFAULT_CAVITY;   // Strength of the CAVITY feature
    double Detail   = DEFAULT_DETAIL;   // Strength of the DETAIL feature
    double Penumbra = DEFAULT_PENUMBRA; // Width of the shadow edge in degrees, for the SHADOWS feature
    double SpecularConstant = 1.0;      // ks for the COMBINED type; Constant is kd
-   double Intensity = 1.0;             // Multiplier of the light's colour
    FRGB   Ambient = { 0,0,0,0 };       // Ambient light, scaled by its alpha
    FRGB   AmbientLight = { 0,0,0,0 };  // Ambient light in the filter's colour space, set by draw_enhanced()
    double Strength = 1.0;              // Constant x Intensity for the DIFFUSE and SPECULAR types, set per draw
@@ -278,18 +411,6 @@ class extLightingFX : public extFilterEffect {
    bool   MatcapPinned = false;         // True if Matcap is a client bitmap that holds our strong pin
    const float *MatcapTexels = nullptr; // Premultiplied RGB0 in the filter's colour space, or nullptr; per draw
    int    MatcapWidth = 0, MatcapHeight = 0; // Dimensions of MatcapTexels, set per draw
-
-   // DISTANT LIGHT
-   double Azimuth, Elevation;    // Distant light
-   point3 Direction;             // Pre-calculated value for distant light.
-
-   // SPOT LIGHT
-   double SpotExponent, ConeAngle; // Spot light
-   point3 Spotlight;               // Position of spot light source.
-   double CosInnerConeAngle;
-   double CosOuterConeAngle;
-   double ConeScale;
-   point3 SpotDelta;
 
    extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
@@ -400,7 +521,8 @@ class extLightingFX : public extFilterEffect {
    }
 
    ERR draw();
-   FRGB colour_spot_light(point3 &Point);
+   void prepare_light(const light_record &, lit_light &, double) const;
+   double scaled_range(double) const;
    inline void diffuse_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double Occlusion = 1.0);
    inline void specular_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
@@ -408,20 +530,36 @@ class extLightingFX : public extFilterEffect {
    inline void encode_light(const FRGB &, double, uint8_t *, uint8_t, uint8_t, uint8_t);
    inline void enhanced_diffuse(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double);
-   inline void enhanced_specular(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
-      uint8_t, double, double);
+   LIGHT_INLINE void enhanced_specular(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t,
+      uint8_t, uint8_t, double, double);
    inline void enhanced_ambient(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double, double);
    inline void enhanced_combined(const point3 &, const point3 &, double, const point3 &, const FRGB &,
       const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double);
    inline void enhanced_material(const point3 &, const point3 &, double, const point3 &, const FRGB &,
       const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double, double);
+   inline void enhanced_lights(const struct lit_surface &, const point3 &, const point3 &, double,
+      const albedo_sample &, int, int, float, float, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
    inline void sample_matcap(const point3 &, float *) const;
    inline uint8_t encode_channel(double, bool);
-   void render_distant(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
-   void render_spotlight(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
-   void render_point(int, int, const objBitmap *, const point3 &, double, const map_height &, int, int);
+   void render_distant(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
+   void render_spotlight(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
+   void render_point(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
    double reach() const;
+
+   // The number of lights that a draw renders.  Only the COMBINED type accepts more than one; the guard covers a
+   // type that was changed by direct access to the field.
+
+   size_t light_count() const {
+      return (Type IS LT::COMBINED) ? Lights.size() : 1;
+   }
+
+   // True if the first light uses an extension that only the enhanced pipeline supports.
+
+   bool extended_light() const {
+      const auto &first = Lights.front();
+      return (first.Intensity != 1.0) or (first.HasColour) or ((first.Range > 0) and (first.Kind != LS::DISTANT));
+   }
 
    filter_sampling sampling() const {
       if ((not std::isfinite(UnitX)) or (not std::isfinite(UnitY))) {
@@ -445,7 +583,7 @@ class extLightingFX : public extFilterEffect {
    bool enhanced() const {
       if (Type IS LT::COMBINED) return true;
       if ((not Filter->Scene) or (Filter->Scene->Compliance != VSC::NONE)) return false;
-      return (Features != LFX::NIL) or (Intensity != 1.0) or has_ambient();
+      return (Features != LFX::NIL) or extended_light() or has_ambient();
    }
 
    // True if the effect reads an albedo from its Mix input.
@@ -466,35 +604,98 @@ class extLightingFX : public extFilterEffect {
    bool boost_detail(double Sigma) const;
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
-   ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, const point3 &, double,
+   ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, std::span<lit_light>, double,
       const map_height &, double, int, int);
    ERR prepare_matcap();
-   template <class DELTA, class COLOUR>
-   void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR);
+   template <class DELTA, class COLOUR, class FALLOFF>
+   void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR, FALLOFF);
 };
 
 //********************************************************************************************************************
-// Colour computation for spot light.  Resulting RGB values are 0 - 1.0
+// Prepares a light for a draw.  Positions are converted to pixels relative to the target's clip region, and ranges
+// use the lengths of the transformed axes.  Scale is the z-coordinate scale.  The colour, strength, shadows and
+// the nearest distance of a ranged light are set by the caller.
 
-FRGB extLightingFX::colour_spot_light(point3 &Point)
+void extLightingFX::prepare_light(const light_record &Record, lit_light &Light, double Scale) const
 {
-   if (ConeAngle) {
-      const double cosAngle = -Point.dot(SpotDelta);
-      if (cosAngle < CosOuterConeAngle) return FRGB(0.0, 0.0, 0.0, 1.0);
+   const auto &render = *Filter->Render;
+   Light.kind = Record.Kind;
 
-      double scale = pow(std::max(0.0, cosAngle), SpotExponent);
-      if (cosAngle < CosInnerConeAngle) {
-         scale = scale * (cosAngle - CosOuterConeAngle);
-         scale *= ConeScale;
+   if (Record.Kind IS LS::DISTANT) {
+      Light.direction = Record.Direction;
+      Light.half = Record.Direction;
+      Light.half.z += 1.0; // Eye position is always (0, 0, 1)
+      Light.half.normalise();
+      Light.elevation = Record.Elevation * DEG2RAD;
+      return;
+   }
+
+   auto lt = Record.Position; // Light source
+   auto pt = Record.Target;   // Target for the light source, used by LS::SPOT only.
+
+   if (render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      // Light positions are relative to the client's own path bounds.
+      const auto &bounds = render.ClientPathBounds;
+      const double width = bounds.width(), height = bounds.height();
+      const auto diagonal = filter_render_context::normalised_diagonal(width, height);
+
+      lt.x = (lt.x * width) + bounds.left;
+      lt.y = (lt.y * height) + bounds.top;
+      lt.z *= diagonal;
+
+      if (Record.Kind IS LS::SPOT) {
+         pt.x = (pt.x * width) + bounds.left;
+         pt.y = (pt.y * height) + bounds.top;
+         pt.z *= diagonal;
       }
-      return FRGB(LightColour.Red * scale, LightColour.Green * scale, LightColour.Blue * scale,
-         LightColour.Alpha * scale);
    }
-   else {
-      const double scale = pow(std::max(0.0, -Point.dot(SpotDelta)), SpotExponent);
-      return FRGB(LightColour.Red * scale, LightColour.Green * scale, LightColour.Blue * scale,
-         LightColour.Alpha * scale);
+
+   const auto &t = render.Transform;
+   lt.z *= Scale;
+   t.transform(&lt.x, &lt.y);
+   if (Record.Range > 0) Light.range = scaled_range(Record.Range);
+
+   // Rendering algorithm requires light source coordinates to be relative to the exposed bitmap.
+
+   if (Record.Kind IS LS::SPOT) {
+      t.transform(&pt.x, &pt.y);
+      pt.z *= Scale;
+
+      // The spot delta is the direction from the light to its target.
+
+      Light.spot_delta = point3(pt.x, pt.y, pt.z) - point3(lt.x, lt.y, lt.z);
+
+      if (Light.spot_delta.dot(Light.spot_delta) > 1e-10) Light.spot_delta.normalise();
+      else Light.spot_delta = point3(0, 0, -1);
+
+      Light.spot_exponent = Record.SpotExponent;
+      Light.cone_angle = Record.ConeAngle;
+      if (Record.ConeAngle) {
+         Light.cos_outer = cos(Record.ConeAngle * DEG2RAD);
+         const double AA_THRESHOLD = 0.016;
+         Light.cos_inner = Light.cos_outer + AA_THRESHOLD;
+         Light.cone_scale = 1.0 / AA_THRESHOLD;
+      }
    }
+
+   lt.x -= Target->Clip.Left; // Re-orient the light source coordinates to (0,0)
+   lt.y -= Target->Clip.Top;
+   Light.position = lt;
+}
+
+//********************************************************************************************************************
+// Converts a range from primitive units to pixels using the lengths of the transformed axes.  This also works
+// before the clip region is known.
+
+double extLightingFX::scaled_range(double Range) const
+{
+   const auto &render = *Filter->Render;
+   if (render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+      const auto &bounds = render.ClientPathBounds;
+      Range *= filter_render_context::normalised_diagonal(bounds.width(), bounds.height());
+   }
+   const auto [sx, sy] = render.axis_scales();
+   return Range * std::hypot(sx * INV_SQRT2, sy * INV_SQRT2);
 }
 
 //********************************************************************************************************************
@@ -593,7 +794,7 @@ inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &
 // The alpha rule of specular_light() is kept: the maximum of the encoded channels for distant lights, and of the
 // light values otherwise.
 
-inline void extLightingFX::enhanced_specular(const point3 &Normal, const point3 &STL, const FRGB &Colour,
+LIGHT_INLINE void extLightingFX::enhanced_specular(const point3 &Normal, const point3 &STL, const FRGB &Colour,
    uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
 {
    point3 half_dir(STL);
@@ -795,7 +996,7 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
 
 //********************************************************************************************************************
 
-void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap, const point3 &Light,
+void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap, const lit_light &Light,
    double SpotHeight, const map_height &NormalHeight, int Width, int Height)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
@@ -833,7 +1034,7 @@ void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap
 
       if (Type IS LT::DIFFUSE) {
          // Process left edge pixel
-         diffuse_light(leftNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
+         diffuse_light(leftNormal(m, NormalHeight), Light.direction, Light.colour, dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -841,18 +1042,18 @@ void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap
             m[2] = row0[A]; row0 += bpp;
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
-            diffuse_light(interiorNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
+            diffuse_light(interiorNormal(m, NormalHeight), Light.direction, Light.colour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          // Process right edge pixel
          if (Width > 1) {
             shiftMatrixLeft(m);
-            diffuse_light(rightNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
+            diffuse_light(rightNormal(m, NormalHeight), Light.direction, Light.colour, dptr, R, G, B, A);
          }
       }
       else { // SPECULAR
-         specular_light(leftNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
+         specular_light(leftNormal(m, NormalHeight), Light.direction, Light.colour, dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -860,13 +1061,13 @@ void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap
             m[2] = row0[A]; row0 += bpp;
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
-            specular_light(interiorNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
+            specular_light(interiorNormal(m, NormalHeight), Light.direction, Light.colour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          if (Width > 1) {
             shiftMatrixLeft(m);
-            specular_light(rightNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
+            specular_light(rightNormal(m, NormalHeight), Light.direction, Light.colour, dptr, R, G, B, A);
          }
       }
    }
@@ -874,7 +1075,7 @@ void extLightingFX::render_distant(int StartY, int EndY, const objBitmap *Bitmap
 
 //********************************************************************************************************************
 
-void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitmap, const point3 &Light,
+void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitmap, const lit_light &Light,
    double SpotHeight, const map_height &NormalHeight, int Width, int Height)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
@@ -889,7 +1090,8 @@ void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitm
 
    // Compute the light direction vector based on the light source position and the alpha value of the pixel.
    auto read_light_delta = [&Light, SpotHeight](double X, double Y, uint8_t alpha_val) -> point3 {
-      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(alpha_val) * (1.0 / 255.0) * SpotHeight));
+      const auto &lt = Light.position;
+      point3 direction(lt.x - X, lt.y - Y, lt.z - (double(alpha_val) * (1.0 / 255.0) * SpotHeight));
       direction.normalise();
       return direction;
    };
@@ -918,7 +1120,7 @@ void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitm
 
       if (Type IS LT::DIFFUSE) {
          point3 stl = read_light_delta(0, y, m[4]);
-         diffuse_light(leftNormal(m, NormalHeight), stl, colour_spot_light(stl), dptr, R, G, B, A);
+         diffuse_light(leftNormal(m, NormalHeight), stl, Light.spot_colour(stl), dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -927,19 +1129,19 @@ void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitm
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
             stl = read_light_delta(x, y, m[4]);
-            diffuse_light(interiorNormal(m, NormalHeight), stl, colour_spot_light(stl), dptr, R, G, B, A);
+            diffuse_light(interiorNormal(m, NormalHeight), stl, Light.spot_colour(stl), dptr, R, G, B, A);
             dptr += bpp;
          }
 
          if (Width > 1) {
             shiftMatrixLeft(m);
             stl = read_light_delta(Width-1, y, m[4]);
-            diffuse_light(rightNormal(m, NormalHeight), stl, colour_spot_light(stl), dptr, R, G, B, A);
+            diffuse_light(rightNormal(m, NormalHeight), stl, Light.spot_colour(stl), dptr, R, G, B, A);
          }
       }
       else { // SPECULAR
          point3 stl = read_light_delta(0, y, m[4]);
-         specular_light(leftNormal(m, NormalHeight), stl, colour_spot_light(stl), dptr, R, G, B, A);
+         specular_light(leftNormal(m, NormalHeight), stl, Light.spot_colour(stl), dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -948,14 +1150,14 @@ void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitm
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
             stl = read_light_delta(x, y, m[4]);
-            specular_light(interiorNormal(m, NormalHeight), stl, colour_spot_light(stl), dptr, R, G, B, A);
+            specular_light(interiorNormal(m, NormalHeight), stl, Light.spot_colour(stl), dptr, R, G, B, A);
             dptr += bpp;
          }
 
          if (Width > 1) {
             shiftMatrixLeft(m);
             stl = read_light_delta(Width-1, y, m[4]);
-            specular_light(rightNormal(m, NormalHeight), stl, colour_spot_light(stl), dptr, R, G, B, A);
+            specular_light(rightNormal(m, NormalHeight), stl, Light.spot_colour(stl), dptr, R, G, B, A);
          }
       }
    }
@@ -963,7 +1165,7 @@ void extLightingFX::render_spotlight(int StartY, int EndY, const objBitmap *Bitm
 
 //********************************************************************************************************************
 
-void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, const point3 &Light,
+void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, const lit_light &Light,
    double SpotHeight, const map_height &NormalHeight, int Width, int Height)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
@@ -978,7 +1180,8 @@ void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, 
 
    // Compute the light direction vector based on the light source position and the alpha value of the pixel.
    auto read_light_delta = [&Light, SpotHeight](double X, double Y, uint8_t alpha_val) -> point3 {
-      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(alpha_val) * (1.0 / 255.0) * SpotHeight));
+      const auto &lt = Light.position;
+      point3 direction(lt.x - X, lt.y - Y, lt.z - (double(alpha_val) * (1.0 / 255.0) * SpotHeight));
       direction.normalise();
       return direction;
    };
@@ -1007,7 +1210,7 @@ void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, 
 
       if (Type IS LT::DIFFUSE) {
          point3 stl = read_light_delta(0, y, m[4]);
-         diffuse_light(leftNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
+         diffuse_light(leftNormal(m, NormalHeight), stl, Light.colour, dptr, R, G, B, A);
          if (Width <= 1) continue;
 
          dptr += bpp;
@@ -1018,17 +1221,17 @@ void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, 
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
             stl = read_light_delta(x, y, m[4]);
-            diffuse_light(interiorNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
+            diffuse_light(interiorNormal(m, NormalHeight), stl, Light.colour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          shiftMatrixLeft(m);
          stl = read_light_delta(Width-1, y, m[4]);
-         diffuse_light(rightNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
+         diffuse_light(rightNormal(m, NormalHeight), stl, Light.colour, dptr, R, G, B, A);
       }
       else { // SPECULAR
          point3 stl = read_light_delta(0, y, m[4]);
-         specular_light(leftNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
+         specular_light(leftNormal(m, NormalHeight), stl, Light.colour, dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -1037,14 +1240,14 @@ void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, 
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
             stl = read_light_delta(x, y, m[4]);
-            specular_light(interiorNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
+            specular_light(interiorNormal(m, NormalHeight), stl, Light.colour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          if (Width > 1) {
             shiftMatrixLeft(m);
             stl = read_light_delta(Width-1, y, m[4]);
-            specular_light(rightNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
+            specular_light(rightNormal(m, NormalHeight), stl, Light.colour, dptr, R, G, B, A);
          }
       }
    }
@@ -1097,6 +1300,17 @@ static void write_rgb(std::ostream &Stream, const FRGB &Colour)
    Stream << ')';
 }
 
+//********************************************************************************************************************
+// Writes a light setting as a kotuku: attribute, in the shortest form that reads back as the same value.
+
+static void write_light_number(std::ostream &Stream, CSTRING Name, double Value)
+{
+   char buffer[32];
+   auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value);
+   Stream << " kotuku:" << Name << "=\"" << std::string_view(buffer, (error IS std::errc()) ? end - buffer : 0)
+      << '"';
+}
+
 //*********************************************************************************************************************
 
 ERR extLightingFX::draw()
@@ -1110,57 +1324,19 @@ ERR extLightingFX::draw()
 
    Linear = Filter->ColourSpace IS VCS::LINEAR_RGB;
    LightColour = Linear ? LinearColour : Colour;
-
-   auto lt = point3(X, Y, Z); // Light source
-   auto pt = Spotlight; // Target for the light source, used by LS::SPOT only.
+   LightSource = Lights.front().Kind;
 
    const auto &render = *Filter->Render;
-   if (render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      // Light positions are relative to the client's own path bounds.
-      const auto &bounds = render.ClientPathBounds;
-      const double width = bounds.width(), height = bounds.height();
-      const auto diagonal = filter_render_context::normalised_diagonal(width, height);
-
-      lt.x = (lt.x * width) + bounds.left;
-      lt.y = (lt.y * height) + bounds.top;
-      lt.z *= diagonal;
-
-      if (LightSource IS LS::SPOT) {
-         pt.x = (pt.x * width) + bounds.left;
-         pt.y = (pt.y * height) + bounds.top;
-         pt.z *= diagonal;
-      }
-   }
-
    const auto &t = render.Transform;
    const double scale = (t.sx IS t.sy) ? t.sx : filter_render_context::normalised_diagonal(t.sx, t.sy);
 
-   lt.z *= scale;
-   t.transform(&lt.x, &lt.y);
+   // Light positions are prepared for this draw.  The SVG algorithm uses the first light and the effect's colour.
 
-   // Rendering algorithm requires light source coordinates to be relative to the exposed bitmap.
-
-   if (LightSource IS LS::SPOT) {
-      t.transform(&pt.x, &pt.y);
-      pt.z *= scale;
-
-      // SpotDelta gives the center of the rendered light, expressed in relative coordinates 0 - 1.0
-
-      SpotDelta = point3(pt.x, pt.y, pt.z) - point3(lt.x, lt.y, lt.z);
-
-      if (SpotDelta.dot(SpotDelta) > 1e-10) SpotDelta.normalise();
-      else SpotDelta = point3(0, 0, -1);
-
-      if (ConeAngle) {
-         CosOuterConeAngle = cos(ConeAngle * DEG2RAD);
-         const double AA_THRESHOLD = 0.016;
-         CosInnerConeAngle = CosOuterConeAngle + AA_THRESHOLD;
-         ConeScale = 1.0 / AA_THRESHOLD;
-      }
+   std::vector<lit_light> lights(light_count());
+   for (size_t i=0; i < lights.size(); i++) {
+      prepare_light(Lights[i], lights[i], scale);
+      lights[i].colour = LightColour;
    }
-
-   lt.x -= Target->Clip.Left; // Re-orient the light source coordinates to (0,0)
-   lt.y -= Target->Clip.Top;
 
    // The input height is linear and uses the stored alpha channel when the source is a bitmap.
 
@@ -1192,8 +1368,8 @@ ERR extLightingFX::draw()
       }
 
       const double unit_size = unit_length(unit);
-      return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, lt, spot_height, normal_height, unit_size,
-         width, height);
+      return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, lights, spot_height, normal_height,
+         unit_size, width, height);
    }
 
    if (not bmp) return ERR::NoSupport;
@@ -1206,6 +1382,7 @@ ERR extLightingFX::draw()
    const int num_chunks = (height + chunk_size - 1) / chunk_size;
 
    BS::thread_pool pool(num_threads);
+   const auto &light = lights.front();
 
    for (int chunk=0; chunk < num_chunks; ++chunk) {
       const int start_y = chunk * chunk_size;
@@ -1213,13 +1390,13 @@ ERR extLightingFX::draw()
 
       pool.detach_task([&, start_row = start_y, end_row = end_y]() {
          if (LightSource IS LS::DISTANT) {
-            render_distant(start_row, end_row, bmp, lt, spot_height, normal_height, width, height);
+            render_distant(start_row, end_row, bmp, light, spot_height, normal_height, width, height);
          }
          else if (LightSource IS LS::SPOT) {
-            render_spotlight(start_row, end_row, bmp, lt, spot_height, normal_height, width, height);
+            render_spotlight(start_row, end_row, bmp, light, spot_height, normal_height, width, height);
          }
          else if (LightSource IS LS::POINT) {
-            render_point(start_row, end_row, bmp, lt, spot_height, normal_height, width, height);
+            render_point(start_row, end_row, bmp, light, spot_height, normal_height, width, height);
          }
       });
    }
@@ -1240,13 +1417,151 @@ static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
    return Self->draw();
 }
 
+//********************************************************************************************************************
+// Replaces the light list with one light, which keeps the first light's intensity.
+
+static void replace_lights(extLightingFX *Self, light_record Light)
+{
+   Light.Intensity = Self->Lights.front().Intensity;
+   Self->Lights.assign(1, Light);
+   Self->Configured = true;
+}
+
+// Appends a light.  The first append replaces the implicit light and keeps its intensity.  Further lights require the
+// COMBINED type.
+
+static ERR append_light(extLightingFX *Self, light_record Light)
+{
+   kt::Log log;
+
+   if (not Self->Configured) {
+      replace_lights(Self, Light);
+      return ERR::Okay;
+   }
+
+   if (Self->Type != LT::COMBINED) {
+      log.warning("Multiple lights require the COMBINED type.");
+      return ERR::InvalidState;
+   }
+
+   Self->Lights.push_back(Light);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+AddDistantLight: Add a distant light source to the effect.
+
+This method adds a distant light to the effect, after any lights that are already configured.  The arguments are
+those of #SetDistantLight().
+
+If no light has been configured, the new light replaces the default light and keeps the value of #Intensity.  Each
+further light requires a #Type of `COMBINED`, which is the only type that renders more than one light; otherwise
+`ERR::InvalidState` is returned and the lights are unchanged.  The new light uses the effect's #Colour, an intensity
+of 1, an unlimited range and shadows.  Use #SetLightOptions() to change them.
+
+-INPUT-
+double Azimuth: Direction angle for the light source on the XY plane (clockwise), in degrees from the X axis.
+double Elevation: Direction angle for the light source from the XY plane towards the Z axis, in degrees.  A positive value points towards the viewer of the content.
+
+-RESULT-
+Okay:
+NullArgs:
+InvalidState: The effect already has a light and its type is not `COMBINED`.
+
+-TAGS-
+mutates-object
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_AddDistantLight(extLightingFX *Self, struct lt::AddDistantLight *Args)
+{
+   kt::Log log;
+   if (not Args) return log.warning(ERR::NullArgs);
+   return append_light(Self, light_record::distant(Args->Azimuth, Args->Elevation));
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+AddPointLight: Add a point light source to the effect.
+
+This method adds a point light to the effect, after any lights that are already configured.  The arguments are those
+of #SetPointLight(), and the rules of #AddDistantLight() apply.
+
+-INPUT-
+double X: X location for the light source.
+double Y: Y location for the light source.
+double Z: Z location for the light source.
+
+-RESULT-
+Okay:
+NullArgs:
+InvalidState: The effect already has a light and its type is not `COMBINED`.
+
+-TAGS-
+mutates-object
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_AddPointLight(extLightingFX *Self, struct lt::AddPointLight *Args)
+{
+   kt::Log log;
+   if (not Args) return log.warning(ERR::NullArgs);
+   return append_light(Self, light_record::point(Args->X, Args->Y, Args->Z));
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+AddSpotLight: Add a spot light source to the effect.
+
+This method adds a spot light to the effect, after any lights that are already configured.  The arguments are those
+of #SetSpotLight(), and the rules of #AddDistantLight() apply.
+
+-INPUT-
+double X: X location for the light source.
+double Y: Y location for the light source.
+double Z: Z location for the light source.
+double PX: X location of the light source's target.
+double PY: Y location of the light source's target.
+double PZ: Z location of the light source's target.
+double Exponent: Exponent value controlling the focus for the light source.
+double ConeAngle: A limiting cone which restricts the region where the light is projected, or 0 to disable.  Specified in degrees.
+
+-RESULT-
+Okay:
+NullArgs:
+InvalidState: The effect already has a light and its type is not `COMBINED`.
+
+-TAGS-
+mutates-object
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_AddSpotLight(extLightingFX *Self, struct lt::AddSpotLight *Args)
+{
+   kt::Log log;
+   if (not Args) return log.warning(ERR::NullArgs);
+   return append_light(Self, light_record::spot(Args->X, Args->Y, Args->Z, Args->PX, Args->PY, Args->PZ,
+      Args->Exponent, Args->ConeAngle));
+}
+
 /*********************************************************************************************************************
 
 -METHOD-
 SetDistantLight: Configure lighting with a distant light source.
 
-This method applies a distant light configuration to the lighting effect.  It will override any previously defined
-light source setting.
+This method applies a distant light configuration to the lighting effect.  It replaces every configured light with
+the new light, which keeps the intensity of the first light and uses the effect's #Colour, an unlimited range and
+shadows.
 
 A distant light can be thought of as like the light from the sun.  An infinite amount of parallel light rays travel
 in the direction that the distant light points to.  Distant lights are handy when you want equal illumination on
@@ -1274,10 +1589,88 @@ static ERR LIGHTINGFX_SetDistantLight(extLightingFX *Self, struct lt::SetDistant
 
    if (!Args) return log.warning(ERR::NullArgs);
 
-   Self->Azimuth     = Args->Azimuth;
-   Self->Elevation   = Args->Elevation;
-   Self->LightSource = LS::DISTANT;
-   Self->Direction   = point3(cos(Self->Azimuth * DEG2RAD) * cos(Self->Elevation * DEG2RAD), sin(Self->Azimuth * DEG2RAD) * cos(Self->Elevation * DEG2RAD), sin(Self->Elevation * DEG2RAD));
+   replace_lights(Self, light_record::distant(Args->Azimuth, Args->Elevation));
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+SetLightOptions: Set the colour, intensity, range and shadows of a light.
+
+This method sets the options of the light at Index, where 0 is the first light that was configured with a light
+method.  All of the options in the !LightOptions structure are applied together.  The options are validated before
+the light is changed, so the light is unchanged if an error is returned.
+
+<list type="bullet">
+<li>`Colour` replaces the effect's #Colour for this light if `Flags` includes `COLOUR`.  It is in the same colour space
+as #Colour, and its alpha is ignored.  Without the flag the light uses the effect's #Colour.</li>
+<li>`Intensity` multiplies the light's colour, as #Intensity does for the first light.  It must be zero or greater.</li>
+<li>`Range` is the distance at which a point or spot light fades to nothing, in the units of its z coordinate.  Zero
+means that the light is unlimited.  A distant light cannot have a range.</li>
+<li>The `NO_SHADOWS` flag stops a distant light from casting shadows.</li>
+</list>
+
+A light with a range is brightest at the point of the surface nearest to it, where its strength is unchanged.  Its
+strength falls with the square of the distance from there, and is multiplied by a smooth window that reaches zero at
+the range.  If no point of the surface lies within range, the light has no effect.
+
+The options are extensions of the SVG lighting model.  They take effect when the enhanced pipeline is in use, which is
+always the case for the `COMBINED` type; refer to #Features.  #SetDistantLight() and its siblings reset the options
+of the light they configure, except for the intensity of the first light.
+
+-INPUT-
+int Index: Index of the light, from zero.
+struct(*LightOptions) Options: The options to apply.
+
+-RESULT-
+Okay:
+NullArgs:
+OutOfRange: The Index does not refer to a light, or the Intensity or Range is negative or not finite.
+InvalidValue: A colour channel is not finite, the Flags are not recognised or a distant light was given a Range.
+
+-TAGS-
+mutates-object
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_SetLightOptions(extLightingFX *Self, struct lt::SetLightOptions *Args)
+{
+   kt::Log log;
+
+   if ((not Args) or (not Args->Options)) return log.warning(ERR::NullArgs);
+
+   if ((Args->Index < 0) or (size_t(Args->Index) >= Self->Lights.size())) return log.warning(ERR::OutOfRange);
+
+   const auto &options = *Args->Options;
+   auto &light = Self->Lights[Args->Index];
+
+   if ((not std::isfinite(options.Intensity)) or (options.Intensity < 0)) return log.warning(ERR::OutOfRange);
+   if ((not std::isfinite(options.Range)) or (options.Range < 0)) return log.warning(ERR::OutOfRange);
+   if ((options.Flags & ~(LOF::COLOUR | LOF::NO_SHADOWS)) != LOF::NIL) return log.warning(ERR::InvalidValue);
+
+   const bool has_colour = (options.Flags & LOF::COLOUR) != LOF::NIL;
+   if ((has_colour) and ((not std::isfinite(options.Colour.Red)) or (not std::isfinite(options.Colour.Green)) or
+       (not std::isfinite(options.Colour.Blue)))) return log.warning(ERR::InvalidValue);
+
+   if ((options.Range > 0) and (light.Kind IS LS::DISTANT)) {
+      log.warning("A distant light cannot have a range.");
+      return ERR::InvalidValue;
+   }
+
+   light.HasColour = has_colour;
+   if (has_colour) {
+      light.Colour = { options.Colour.Red, options.Colour.Green, options.Colour.Blue, 1.0f };
+      light.LinearColour = light.Colour;
+      glLinearRGB.convert(light.LinearColour);
+   }
+   else light.Colour = light.LinearColour = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+   light.Intensity = options.Intensity;
+   light.Range = options.Range;
+   light.Shadows = (options.Flags & LOF::NO_SHADOWS) IS LOF::NIL;
    return ERR::Okay;
 }
 
@@ -1286,8 +1679,8 @@ static ERR LIGHTINGFX_SetDistantLight(extLightingFX *Self, struct lt::SetDistant
 -METHOD-
 SetPointLight: Configure lighting with a pointed light source.
 
-This method applies a pointed light configuration to the lighting effect.  It will override any previously defined
-light source setting.
+This method applies a pointed light configuration to the lighting effect.  It replaces every configured light with
+the new light, which keeps the intensity of the first light and uses the effect's #Colour and an unlimited range.
 
 A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open
 flame is a good example of a point light.  The strength of the light is controlled by #Constant and #Intensity.
@@ -1317,12 +1710,7 @@ static ERR LIGHTINGFX_SetPointLight(extLightingFX *Self, struct lt::SetPointLigh
 
    log.function("Source: %.2fx%.2fx%.2f", Args->X, Args->Y, Args->Z);
 
-   Self->LightSource = LS::POINT;
-
-   Self->X = Args->X;
-   Self->Y = Args->Y;
-   Self->Z = Args->Z;
-
+   replace_lights(Self, light_record::point(Args->X, Args->Y, Args->Z));
    return ERR::Okay;
 }
 
@@ -1331,8 +1719,8 @@ static ERR LIGHTINGFX_SetPointLight(extLightingFX *Self, struct lt::SetPointLigh
 -METHOD-
 SetSpotLight: Configure lighting with a spot light source.
 
-This method applies a spot light configuration to the lighting effect.  It will override any previously defined
-light source setting.
+This method applies a spot light configuration to the lighting effect.  It replaces every configured light with the
+new light, which keeps the intensity of the first light and uses the effect's #Colour and an unlimited range.
 
 A spot light beams light rays from the defined (X, Y, Z) position to the (PX, PY, PZ) position.  The Exponent and
 ConeAngle work together to constrain the edge of the light projection.
@@ -1367,18 +1755,8 @@ static ERR LIGHTINGFX_SetSpotLight(extLightingFX *Self, struct lt::SetSpotLight 
 
    log.function("Source: %.2fx%.2fx%.2f, Target: %.2fx%.2fx%.2f, Exp: %.2f, Cone Angle: %.2f", Args->X, Args->Y, Args->Z, Args->PX, Args->PY, Args->PZ, Args->Exponent, Args->ConeAngle);
 
-   Self->LightSource = LS::SPOT;
-
-   Self->X  = Args->X;
-   Self->Y  = Args->Y;
-   Self->Z  = Args->Z;
-   Self->Spotlight.x = Args->PX;
-   Self->Spotlight.y = Args->PY;
-   Self->Spotlight.z = Args->PZ;
-
-   Self->SpotExponent = Args->Exponent;
-   Self->ConeAngle    = Args->ConeAngle;
-
+   replace_lights(Self, light_record::spot(Args->X, Args->Y, Args->Z, Args->PX, Args->PY, Args->PZ, Args->Exponent,
+      Args->ConeAngle));
    return ERR::Okay;
 }
 
@@ -1622,18 +2000,22 @@ make an albedo brighter while it keeps its colour.
 The default is 1.  The value must be zero or greater.  It has no effect when the scene's Compliance is `SVG1` or
 `SVG2`, unless the #Type is `COMBINED`.
 
+If the effect has more than one light, this field is the intensity of the first light; use #SetLightOptions() for the
+others.  The value can be set before or after the light is configured, as #SetDistantLight() and its siblings keep
+the intensity of the first light.
+
 *********************************************************************************************************************/
 
 static ERR LIGHTINGFX_GET_Intensity(extLightingFX *Self, double &Value)
 {
-   Value = Self->Intensity;
+   Value = Self->Lights.front().Intensity;
    return ERR::Okay;
 }
 
 static ERR LIGHTINGFX_SET_Intensity(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
-   Self->Intensity = Value;
+   Self->Lights.front().Intensity = Value;
    return ERR::Okay;
 }
 
@@ -1849,7 +2231,24 @@ static ERR LIGHTINGFX_SET_SpecularConstant(extLightingFX *Self, double Value)
 Type: Defines the type of surface light scattering, which can be diffuse, specular or both combined.
 Lookup: LT
 
-The `COMBINED` type reads an albedo from the #Mix input; refer to the class description.
+The `COMBINED` type reads an albedo from the #Mix input; refer to the class description.  It is the only type that
+renders more than one light, so the type cannot be changed while the effect has more than one light.  Call
+#SetDistantLight() or one of its siblings first to reduce the lights to one.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_SET_Type(extLightingFX *Self, LT Value)
+{
+   if ((Value != LT::COMBINED) and (Self->Lights.size() > 1)) {
+      kt::Log log;
+      log.warning("The type must be COMBINED while the effect has %d lights.", int(Self->Lights.size()));
+      return ERR::InvalidState;
+   }
+   Self->Type = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 UnitX: The intended distance in current filter units for dx in the surface normal calculation formulas.
@@ -1942,17 +2341,20 @@ static ERR LIGHTINGFX_SET_Wrap(extLightingFX *Self, double Value)
 -FIELD-
 XMLDef: Returns an SVG element that describes the effect.
 
-The result is a complete element, including its light source: `feDiffuseLighting` or `feSpecularLighting`, or
+The result is a complete element, including its light sources: `feDiffuseLighting` or `feSpecularLighting`, or
 `kotuku:feLighting` for the `COMBINED` type.  Settings that SVG cannot express are written as `kotuku:` attributes, and
 only when they differ from their defaults: `kotuku:features` if #Features is not `ALL`, `kotuku:cavity`,
-`kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, `kotuku:ambient` for #Ambient, and
-`kotuku:intensity` on the light source for #Intensity.  The `COMBINED` type also writes `metalness`, `fresnel` and
-`wrap` for #Metalness, #Fresnel and #Wrap when they are not zero, and `matcap` for #MatcapPath when it is set.  An
-SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder.
-For API-loaded images the supplied #MatcapPath is written.  A matcap supplied as a #Matcap bitmap is omitted.
-The attributes of `kotuku:feLighting` are written
-without the prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must
-declare the prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
+`kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, and `kotuku:ambient` for #Ambient.  The
+`COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
+zero, and `matcap` for #MatcapPath when it is set.  An SVG-loaded matcap keeps its original relative reference so the
+image can be reloaded from the same document folder.  For API-loaded images the supplied #MatcapPath is written.  A
+matcap supplied as a #Matcap bitmap is omitted.  The attributes of `kotuku:feLighting` are written without the
+prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the
+prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
+
+Each light is written as a child element, in the order in which the lights were added.  The options of
+#SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
+`kotuku:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
 
 The `in`, `in2`, `result` and primitive subregion attributes are not included.
 
@@ -2012,25 +2414,36 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 
    stream << '>';
 
-   switch (Self->LightSource) {
-      case LS::POINT:
-         stream << "<fePointLight x=\"" << Self->X << "\" y=\"" << Self->Y << "\" z=\"" << Self->Z << '"';
-         break;
+   for (const auto &light : Self->Lights) {
+      switch (light.Kind) {
+         case LS::POINT:
+            stream << "<fePointLight x=\"" << light.Position.x << "\" y=\"" << light.Position.y << "\" z=\""
+               << light.Position.z << '"';
+            break;
 
-      case LS::SPOT:
-         stream << "<feSpotLight x=\"" << Self->X << "\" y=\"" << Self->Y << "\" z=\"" << Self->Z << '"';
-         stream << " pointsAtX=\"" << Self->Spotlight.x << "\" pointsAtY=\"" << Self->Spotlight.y;
-         stream << "\" pointsAtZ=\"" << Self->Spotlight.z << "\" specularExponent=\"" << Self->SpotExponent << '"';
-         if (Self->ConeAngle) stream << " limitingConeAngle=\"" << Self->ConeAngle << '"';
-         break;
+         case LS::SPOT:
+            stream << "<feSpotLight x=\"" << light.Position.x << "\" y=\"" << light.Position.y << "\" z=\""
+               << light.Position.z << '"';
+            stream << " pointsAtX=\"" << light.Target.x << "\" pointsAtY=\"" << light.Target.y;
+            stream << "\" pointsAtZ=\"" << light.Target.z << "\" specularExponent=\"" << light.SpotExponent << '"';
+            if (light.ConeAngle) stream << " limitingConeAngle=\"" << light.ConeAngle << '"';
+            break;
 
-      default:
-         stream << "<feDistantLight azimuth=\"" << Self->Azimuth << "\" elevation=\"" << Self->Elevation << '"';
-         break;
+         default:
+            stream << "<feDistantLight azimuth=\"" << light.Azimuth << "\" elevation=\"" << light.Elevation << '"';
+            break;
+      }
+
+      if (light.HasColour) {
+         stream << " kotuku:colour=\"";
+         write_rgb(stream, light.Colour);
+         stream << '"';
+      }
+      if (light.Intensity != 1.0) write_light_number(stream, "intensity", light.Intensity);
+      if (light.Range > 0) write_light_number(stream, "range", light.Range);
+      if (not light.Shadows) stream << " kotuku:shadows=\"false\"";
+      stream << "/>";
    }
-
-   if (Self->Intensity != 1.0) stream << " kotuku:intensity=\"" << Self->Intensity << '"';
-   stream << "/>";
 
    stream << "</" << element << '>';
    Value = stream.str();
@@ -2062,7 +2475,7 @@ static const FieldArray clLightingFXFields[] = {
    { "Scale",      FDF_DOUBLE|FDF_RW },
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
-   { "Type",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clLightingFXLT },
+   { "Type",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, LIGHTINGFX_SET_Type, &clLightingFXLT },
    { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };

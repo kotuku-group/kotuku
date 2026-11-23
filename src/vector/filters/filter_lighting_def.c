@@ -19,14 +19,28 @@ static const struct FieldDef clLightingFXLFX[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clLightingFXLOF[] = {
+   { "Colour", 0x00000001 },
+   { "NoShadows", 0x00000002 },
+   { nullptr, 0 }
+};
+
 FDEF maSetDistantLight[] = { { "Azimuth", FD_DOUBLE }, { "Elevation", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetPointLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "PX", FD_DOUBLE }, { "PY", FD_DOUBLE }, { "PZ", FD_DOUBLE }, { "Exponent", FD_DOUBLE }, { "ConeAngle", FD_DOUBLE }, { 0, 0 } };
+FDEF maAddDistantLight[] = { { "Azimuth", FD_DOUBLE }, { "Elevation", FD_DOUBLE }, { 0, 0 } };
+FDEF maAddPointLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { 0, 0 } };
+FDEF maAddSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "PX", FD_DOUBLE }, { "PY", FD_DOUBLE }, { "PZ", FD_DOUBLE }, { "Exponent", FD_DOUBLE }, { "ConeAngle", FD_DOUBLE }, { 0, 0 } };
+FDEF maSetLightOptions[] = { { "Index", FD_INT }, { "LightOptions:Options", FD_PTR|FD_STRUCT }, { 0, 0 } };
 
 static const struct MethodEntry clLightingFXMethods[] = {
    { AC(-20), (APTR)LIGHTINGFX_SetDistantLight, "SetDistantLight", maSetDistantLight, sizeof(struct lt::SetDistantLight) },
    { AC(-22), (APTR)LIGHTINGFX_SetPointLight, "SetPointLight", maSetPointLight, sizeof(struct lt::SetPointLight) },
    { AC(-21), (APTR)LIGHTINGFX_SetSpotLight, "SetSpotLight", maSetSpotLight, sizeof(struct lt::SetSpotLight) },
+   { AC(-23), (APTR)LIGHTINGFX_AddDistantLight, "AddDistantLight", maAddDistantLight, sizeof(struct lt::AddDistantLight) },
+   { AC(-24), (APTR)LIGHTINGFX_AddPointLight, "AddPointLight", maAddPointLight, sizeof(struct lt::AddPointLight) },
+   { AC(-25), (APTR)LIGHTINGFX_AddSpotLight, "AddSpotLight", maAddSpotLight, sizeof(struct lt::AddSpotLight) },
+   { AC(-26), (APTR)LIGHTINGFX_SetLightOptions, "SetLightOptions", maSetLightOptions, sizeof(struct lt::SetLightOptions) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

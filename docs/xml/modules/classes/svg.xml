@@ -115,7 +115,18 @@ document, not from the element that references them.</li>
 <li><code>kotuku:ambient</code>: a colour, or <code>none</code> (the default).  Ambient light added to the diffuse light; its alpha scales
 it.  Sets <class name="LightingFX" field="Ambient">LightingFX.Ambient</class>.  It has no effect on <code>feSpecularLighting</code>.</li>
 </list>
-<p>The light source element accepts <code>kotuku:intensity</code>, a multiplier of the light's colour, 0 or greater, default 1.  It sets <class name="LightingFX" field="Intensity">LightingFX.Intensity</class>.</p>
+<p>The light source elements <code>feDistantLight</code>, <code>fePointLight</code> and <code>feSpotLight</code> accept these attributes, which set the light's options with <class name="LightingFX" method="SetLightOptions">LightingFX.SetLightOptions()</class>:</p>
+<list type="bullet">
+<li><code>kotuku:colour</code>: the colour of this light, in the syntax of <code>lighting-color</code>.  If it is omitted the light takes
+the primitive's <code>lighting-color</code>, which defaults to white.</li>
+<li><code>kotuku:intensity</code>: a multiplier of the light's colour, 0 or greater, default 1.  Zero turns off the light's
+direct light.</li>
+<li><code>kotuku:range</code>: for point and spot lights, the distance at which the light fades to nothing, in the units of its
+<code>z</code> coordinate, or <code>none</code>.  The light is at full strength at the point of the surface nearest to it and falls with the
+square of the distance from there.  Omitting it, <code>none</code> and 0 leave the light unlimited.  A distant light cannot
+have a range; the attribute is reported and ignored.</li>
+<li><code>kotuku:shadows</code>: <code>true</code> (the default) or <code>false</code>.  With <code>false</code> a distant light casts no shadows.</li>
+</list>
 <p>An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown namespace and draw the standard SVG lighting.</p>
 <pre>&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
   &lt;filter id=&quot;relief&quot;&gt;
@@ -139,7 +150,12 @@ such as those of chrome or glass.  The path is relative to the document's folder
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
 warning is logged and the surface is drawn without it.  Sets <class name="LightingFX" field="MatcapPath">LightingFX.MatcapPath</class>.</li>
 </list>
-<p>One light source element is required.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
+<p>The element accepts any number of light source elements, which light the surface together in document order. Their light is added before the result is limited to full strength, so a key light and fill lights can share one primitive.  <code>desc</code>, <code>title</code> and <code>metadata</code> children are ignored, and without a light source the default light is used.  The standard lighting primitives keep the SVG rule of one light source, their first child; combine separate primitives with <code>feComposite</code> to light a standard document with several sources.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
+<pre>&lt;kotuku:feLighting in=&quot;SourceAlpha&quot; in2=&quot;paint&quot; surfaceScale=&quot;6&quot; specularConstant=&quot;0.6&quot; specularExponent=&quot;24&quot;&gt;
+  &lt;feDistantLight azimuth=&quot;225&quot; elevation=&quot;40&quot;/&gt;
+  &lt;fePointLight x=&quot;40&quot; y=&quot;120&quot; z=&quot;60&quot; kotuku:colour=&quot;#8af&quot; kotuku:intensity=&quot;0.6&quot; kotuku:range=&quot;200&quot;/&gt;
+&lt;/kotuku:feLighting&gt;
+</pre>
 <p>In documents using the Kōtuku namespace, <code>kotuku:outputMode=&quot;height&quot;</code> on <code>feTurbulence</code> or <code>feGaussianBlur</code> produces a floating-point height result for enhanced lighting.  A height-output blur accepts both a height result and an image's alpha.  Supply the albedo through a separate image input.</p>
 <pre>&lt;filter id=&quot;brass&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
   &lt;feTurbulence type=&quot;fractalNoise&quot; baseFrequency=&quot;0.04&quot; numOctaves=&quot;3&quot; kotuku:outputMode=&quot;height&quot; result=&quot;raw&quot;/&gt;

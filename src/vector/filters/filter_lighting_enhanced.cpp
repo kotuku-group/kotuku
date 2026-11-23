@@ -22,7 +22,8 @@ replaces the gradient stage only; normals, kernel units and the light models are
 6. Distant lights cast shadows.  The surface is swept from the side nearest the light, carrying the height of the
    shadow from pixel to pixel, so the cost per pixel does not depend on the length of the shadows.  The edge of the
    shadow is softened over a small angle, so the penumbra widens with distance from the occluder.  With Wrap, a
-   second sweep casts shadows from the light raised by the wrap angle, for faces that turn away from the light.
+   second sweep casts shadows from the light raised by the wrap angle, for faces that turn away from the light.  Each
+   distant light that casts shadows has its own sweep and shadow map; the heights and the worker pool are shared.
 7. Specular highlights are anti-aliased with Toksvig's method.  Where the normals within a pixel's neighbourhood vary,
    the highlight is shaded with their mean and a reduced exponent, so that it spreads over the variation instead of
    sparkling.
@@ -31,6 +32,12 @@ replaces the gradient stage only; normals, kernel units and the light models are
    for the draw; with all of them at their defaults enhanced_combined() is used, so the result is unchanged.  A matcap
    is converted once per draw to premultiplied colour in the filter's colour space, and sampled with the shading
    normal.
+9. Several lights (combined type only) share the surface analysis: normals, cavity and the Toksvig rows are computed
+   once per row, and enhanced_lights() accumulates the light of each one before the albedo, ambient light and matcap
+   are applied and the result is encoded once.  A single light keeps the specialised path above.
+10. A point or spot light with a range is attenuated by a smooth window times an inverse-square fall-off that is
+   normalised to the sample nearest the light.  The nearest sample is found once per draw within the light's range;
+   reach() extends the processing region by twice the range so that clipped draws see the same samples.
 
 *********************************************************************************************************************/
 
@@ -113,6 +120,9 @@ struct lit_surface {
    map_height normal;    // Maps height gradients to slopes
    double curvature;     // Maps the Laplacian of the height to curvature per kernel unit
    float sharpen;        // Weight of the 4th-order gradient, from 0 to 1
+   std::span<const lit_light> lights; // Every light, if more than one is rendered; otherwise empty
+   double spot_height;   // Converts a height in alpha levels to pixels
+   int width;            // Width of the surface in pixels
 };
 
 // Dequantises elements Start to End of the row R1, where R0 and R2 are the rows above and below.  A neighbourhood
@@ -633,12 +643,135 @@ static void row_toksvig(const float *__restrict X0, const float *__restrict X1, 
 }
 
 //********************************************************************************************************************
-// Renders rows StartY to EndY from the padded height buffer.  Delta(x, y, height) returns the surface-to-light unit
-// vector and Tint(stl) returns the colour of the light arriving from that direction.
+// The combined type lit by several lights, in the order in which they were added.  Each light has its own direction,
+// spot cone, attenuation and shadows, and its diffuse and specular light are accumulated in floating point.  The terms
+// of each light are those of enhanced_combined(), or of enhanced_material() if a material term is in use.  The
+// reflectance does not depend on the light, so it is applied to the sum of the specular light.  Ambient light and the
+// matcap are added once, and the result is composed and encoded once, so only the final output is clamped.
 
-template <class DELTA, class COLOUR>
+inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const point3 &Normal, const point3 &Mean,
+   double Exponent, const albedo_sample &Albedo, int X, int Y, float Height, float Cavity, uint8_t *Output,
+   uint8_t R, uint8_t G, uint8_t B, uint8_t A)
+{
+   const std::ptrdiff_t offset = (std::ptrdiff_t(Y) * Surface.width) + X;
+   const double surface_z = double(Height) * (1.0 / 255.0) * Surface.spot_height;
+   const double cavity = Cavity;
+   const double kd = Material ? Constant * (1.0 - Metalness) : Constant;
+   double dr = 0, dg = 0, db = 0, sr = 0, sg = 0, sb = 0;
+
+   for (const auto &light : Surface.lights) {
+      point3 stl, half;
+      double falloff = 1.0;
+      FRGB colour;
+
+      if (light.kind IS LS::DISTANT) {
+         stl = light.direction;
+         half = light.half;
+         colour = light.colour;
+      }
+      else {
+         stl = point3(light.position.x - X, light.position.y - Y, light.position.z - surface_z);
+         if (light.range > 0) {
+            const double d2 = stl.dot(stl);
+            falloff = light.attenuation(d2);
+            if (falloff <= 0) continue;
+            if (d2 < LIGHT_COINCIDENCE_SQUARED) stl = point3(0, 0, 1);
+            else stl.normalise();
+         }
+         else stl.normalise();
+
+         half = stl;
+         half.z += 1.0; // Eye position is always (0, 0, 1)
+         half.normalise();
+         colour = (light.kind IS LS::SPOT) ? light.spot_colour(stl) : light.colour;
+      }
+
+      const double occlusion = double(light.shadow ? Cavity * light.shadow[offset] : Cavity) * falloff;
+      const double nl = Normal.dot(stl);
+      double diffuse;
+
+      if (Material) {
+         double diffuse_occlusion = occlusion;
+         if ((light.wrap_shadows) and (nl < light.wrap_blend)) {
+            const double raised = double(light.raised ? Cavity * light.raised[offset] : Cavity) * falloff;
+            const double turned = (nl <= 0) ? 1.0 : 1.0 - (nl / light.wrap_blend);
+            diffuse_occlusion += turned * (raised - occlusion);
+         }
+         diffuse = kd * std::max(0.0, (nl + Wrap) * WrapScale) * diffuse_occlusion;
+      }
+      else diffuse = kd * std::max(0.0, nl) * occlusion;
+
+      const double specular = SpecularConstant * std::pow(std::max(0.0, Mean.dot(half)), Exponent) * occlusion;
+      dr += diffuse * colour.Red;
+      dg += diffuse * colour.Green;
+      db += diffuse * colour.Blue;
+      sr += specular * colour.Red;
+      sg += specular * colour.Green;
+      sb += specular * colour.Blue;
+   }
+
+   const double coverage = Albedo.a;
+
+   if (Material) {
+      const double base = (Fresnel > 0) ? Fresnel : 1.0;
+      double fr = base + (Metalness * ((Albedo.r * coverage) - base));
+      double fg = base + (Metalness * ((Albedo.g * coverage) - base));
+      double fb = base + (Metalness * ((Albedo.b * coverage) - base));
+      double grazing = 0;
+
+      if (Fresnel > 0) {
+         const double q = 1.0 - std::clamp(Mean.z, 0.0, 1.0);
+         const double q2 = q * q;
+         grazing = q2 * q2 * q;
+         fr += (1.0 - fr) * grazing;
+         fg += (1.0 - fg) * grazing;
+         fb += (1.0 - fb) * grazing;
+      }
+
+      sr *= fr;
+      sg *= fg;
+      sb *= fb;
+
+      if ((MatcapTexels) and (coverage > 0)) {
+         alignas(16) float matcap[4];
+         sample_matcap(Mean, matcap);
+
+         const double weight = cavity * coverage;
+         double cr = base + (Metalness * (Albedo.r - base));
+         double cg = base + (Metalness * (Albedo.g - base));
+         double cb = base + (Metalness * (Albedo.b - base));
+
+         cr += (1.0 - cr) * grazing;
+         cg += (1.0 - cg) * grazing;
+         cb += (1.0 - cb) * grazing;
+         sr += matcap[0] * cr * weight;
+         sg += matcap[1] * cg * weight;
+         sb += matcap[2] * cb * weight;
+      }
+   }
+
+   const double alpha = std::max(coverage, std::min(1.0, std::max(std::max(sr, sg), sb)));
+   if (alpha <= 0) {
+      Output[R] = Output[G] = Output[B] = Output[A] = 0;
+      return;
+   }
+
+   const double demul = 1.0 / alpha;
+   Output[R] = encode_channel(((Albedo.r * coverage * ((AmbientLight.Red * cavity) + dr)) + sr) * demul, true);
+   Output[G] = encode_channel(((Albedo.g * coverage * ((AmbientLight.Green * cavity) + dg)) + sg) * demul, true);
+   Output[B] = encode_channel(((Albedo.b * coverage * ((AmbientLight.Blue * cavity) + db)) + sb) * demul, true);
+   Output[A] = uint8_t((alpha * 255.0) + 0.5);
+}
+
+//********************************************************************************************************************
+// Renders rows StartY to EndY from the padded height buffer.  Delta(x, y, height) returns the surface-to-light unit
+// vector and Tint(stl) returns the colour of the light arriving from that direction.  Falloff(x, y, height) returns
+// the attenuation of a ranged light, or exactly 1.  With several lights, the shading of each pixel is delegated to
+// enhanced_lights() and the three functions are not used.
+
+template <class DELTA, class COLOUR, class FALLOFF>
 void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Surface, int Width, float *Buffer,
-   DELTA Delta, COLOUR Tint)
+   DELTA Delta, COLOUR Tint, FALLOFF Falloff)
 {
    const uint8_t R = Target->ColourFormat->RedPos>>3;
    const uint8_t G = Target->ColourFormat->GreenPos>>3;
@@ -762,9 +895,22 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       const uint8_t *albedo = ((Surface.albedo) and (y < Surface.albedo_height)) ?
          Surface.albedo + (std::ptrdiff_t(y) * Surface.albedo_stride) : nullptr;
       auto dptr = dest_base + y * Target->LineWidth;
+
+      if (not Surface.lights.empty()) { // Several lights; only the COMBINED type accepts them
+         for (int x=0; x < Width; ++x, dptr += bpp) {
+            const point3 normal(nx[x], ny[x], nz[x]);
+            const auto sample = read_albedo(Surface, albedo, x, R, G, B, A);
+            const point3 mean = toksvig ? point3(mean_x[x], mean_y[x], mean_z[x]) : normal;
+            const double exponent = toksvig ? SpecularExponent * double(factor[x]) : SpecularExponent;
+            enhanced_lights(Surface, normal, mean, exponent, sample, x, y, h[x], cavity[x], dptr, R, G, B, A);
+         }
+         continue;
+      }
+
       for (int x=0; x < Width; ++x, dptr += bpp) {
          const point3 normal(nx[x], ny[x], nz[x]);
-         const float occlusion = shadow ? cavity[x] * shadow[x] : cavity[x];
+         const double falloff = Falloff(x, y, h[x]); // Exactly 1 for an unlimited light
+         const double occlusion = double(shadow ? cavity[x] * shadow[x] : cavity[x]) * falloff;
          point3 stl = Delta(x, y, h[x]);
          if (Type IS LT::DIFFUSE) {
             if (ambient) enhanced_ambient(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, cavity[x]);
@@ -775,7 +921,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
             const point3 mean = toksvig ? point3(mean_x[x], mean_y[x], mean_z[x]) : normal;
             const double exponent = toksvig ? SpecularExponent * double(factor[x]) : SpecularExponent;
             if (Material) {
-               const float lifted = raised ? cavity[x] * raised[x] : cavity[x];
+               const double lifted = double(raised ? cavity[x] * raised[x] : cavity[x]) * falloff;
                enhanced_material(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
                   cavity[x], lifted);
             }
@@ -820,9 +966,13 @@ float extLightingFX::sharpen_weight(double UnitSize) const
 //********************************************************************************************************************
 // Distance in pixels over which the lighting samples neighbouring pixels.  The SVG kernel is 3x3.  The enhanced
 // gradient reaches 2 px into heights that are usually dequantised over 1 px, and the specular Toksvig factor averages the
-// normals over a further 1 px.  The detail layer and the curvature blur add the larger of their blur radii, and
-// shadows add the length of the longest shadow, limited to MAX_SHADOW_LENGTH.  Each addition applies only if its
-// feature is enabled.
+// normals over a further 1 px.  The detail layer and the curvature blur add the larger of their blur radii.  Each
+// addition applies only if its feature is enabled.
+//
+// Beyond that shared support, shadows read up to the length of the longest shadow of a distant light, limited to
+// MAX_SHADOW_LENGTH, and a ranged light reads twice its range.  The nearest sample to the light normalises its
+// attenuation, and any two samples within the light's sphere are no further apart than its diameter, so heights within
+// that distance of a lit pixel are required.  The larger of the two reaches is added.
 
 double extLightingFX::reach() const
 {
@@ -834,16 +984,28 @@ double extLightingFX::reach() const
    double blur = cavity_sigma(unit_size);
    if (boost_detail(sigma)) blur = std::max(blur, sigma);
    const int dequantise_reach = ((Features & LFX::DEQUANTISE_WIDE) != LFX::NIL) ? MAX_TERRACE : 1;
-   double result = 3 + dequantise_reach + std::ceil(blur * 3.0);
+   const double result = 3 + dequantise_reach + std::ceil(blur * 3.0);
 
-   if ((LightSource IS LS::DISTANT) and ((Features & LFX::SHADOWS) != LFX::NIL)) {
-      const double elevation = Elevation * DEG2RAD;
-      const double lowest = elevation - std::min(Penumbra * DEG2RAD, elevation * 0.5);
-      if ((elevation > 0) and (elevation < 89.0 * DEG2RAD)) {
-         result += std::ceil(std::min(MAX_SHADOW_LENGTH, std::abs(MapHeight) * scale / tan(lowest)));
+   double shadow_reach = 0, range_reach = 0;
+   const bool shadows = (Features & LFX::SHADOWS) != LFX::NIL;
+   for (size_t i=0; i < light_count(); i++) {
+      const auto &light = Lights[i];
+      if (light.Kind IS LS::DISTANT) {
+         if ((not shadows) or (not light.Shadows)) continue;
+         const double elevation = light.Elevation * DEG2RAD;
+         const double lowest = elevation - std::min(Penumbra * DEG2RAD, elevation * 0.5);
+         if ((elevation > 0) and (elevation < 89.0 * DEG2RAD)) {
+            shadow_reach = std::max(shadow_reach,
+               std::ceil(std::min(MAX_SHADOW_LENGTH, std::abs(MapHeight) * scale / tan(lowest))));
+         }
+      }
+      else if (light.Range > 0) {
+         const double range = std::min(scaled_range(light.Range), std::numeric_limits<double>::max() * 0.5);
+         range_reach = std::max(range_reach, std::ceil(2.0 * range));
       }
    }
-   return result;
+
+   return result + std::max(shadow_reach, range_reach);
 }
 
 //********************************************************************************************************************
@@ -864,7 +1026,8 @@ static void load_lighting_height_row(const filter_surface_view &Source, float *D
 //********************************************************************************************************************
 
 ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter_surface_view *Albedo,
-   const point3 &Light, double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width, int Height)
+   std::span<lit_light> Prepared, double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width,
+   int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
@@ -876,21 +1039,31 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
 
    // The diffuse and specular output functions expect each channel of the light in the range 0 - 1, and apply the
    // intensity to the light's strength.  A spot light only scales the colour down, so limiting it here is sufficient.
-   // The combined type takes the light at its full intensity and clamps on output.
+   // The combined type takes the light at its full intensity and clamps on output.  A light without a colour of its
+   // own uses the effect's colour.
 
-   if (Type IS LT::COMBINED) {
-      LightColour.Red   = std::max(0.0f, float(LightColour.Red * Intensity));
-      LightColour.Green = std::max(0.0f, float(LightColour.Green * Intensity));
-      LightColour.Blue  = std::max(0.0f, float(LightColour.Blue * Intensity));
-      Strength = Constant;
-   }
-   else {
-      LightColour.Red   = std::clamp(LightColour.Red, 0.0f, 1.0f);
-      LightColour.Green = std::clamp(LightColour.Green, 0.0f, 1.0f);
-      LightColour.Blue  = std::clamp(LightColour.Blue, 0.0f, 1.0f);
-      Strength = Constant * Intensity;
+   for (size_t i=0; i < Prepared.size(); i++) {
+      const auto &record = Lights[i];
+      auto &light = Prepared[i];
+      light.colour = record.HasColour ? (Linear ? record.LinearColour : record.Colour) : LightColour;
+
+      if (Type IS LT::COMBINED) {
+         light.colour.Red   = std::max(0.0f, float(light.colour.Red * record.Intensity));
+         light.colour.Green = std::max(0.0f, float(light.colour.Green * record.Intensity));
+         light.colour.Blue  = std::max(0.0f, float(light.colour.Blue * record.Intensity));
+         light.strength = Constant;
+      }
+      else {
+         light.colour.Red   = std::clamp(light.colour.Red, 0.0f, 1.0f);
+         light.colour.Green = std::clamp(light.colour.Green, 0.0f, 1.0f);
+         light.colour.Blue  = std::clamp(light.colour.Blue, 0.0f, 1.0f);
+         light.strength = Constant * record.Intensity;
+      }
    }
 
+   const auto &first = Prepared.front();
+   const bool multiple = Prepared.size() > 1;
+   Strength = first.strength;
    Material = has_material();
    WrapScale = 1.0 / (1.0 + Wrap);
 
@@ -1015,10 +1188,27 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
 
    // Surface positions for point and spot lights are measured from the dequantised height.
 
-   auto surface_delta = [&Light, SpotHeight](double X, double Y, float Alpha) -> point3 {
-      point3 direction(Light.x - X, Light.y - Y, Light.z - (double(Alpha) * (1.0 / 255.0) * SpotHeight));
+   auto surface_delta = [&first, SpotHeight](double X, double Y, float Alpha) -> point3 {
+      const auto &lt = first.position;
+      point3 direction(lt.x - X, lt.y - Y, lt.z - (double(Alpha) * (1.0 / 255.0) * SpotHeight));
       direction.normalise();
       return direction;
+   };
+
+   // A ranged light lights a sample that coincides with it from directly above.
+
+   auto ranged_delta = [&first, SpotHeight](double X, double Y, float Alpha) -> point3 {
+      const auto &lt = first.position;
+      point3 direction(lt.x - X, lt.y - Y, lt.z - (double(Alpha) * (1.0 / 255.0) * SpotHeight));
+      if (direction.dot(direction) < LIGHT_COINCIDENCE_SQUARED) return point3(0, 0, 1);
+      direction.normalise();
+      return direction;
+   };
+
+   auto ranged_falloff = [&first, SpotHeight](double X, double Y, float Alpha) -> double {
+      const auto &lt = first.position;
+      const point3 delta(lt.x - X, lt.y - Y, lt.z - (double(Alpha) * (1.0 / 255.0) * SpotHeight));
+      return first.attenuation(delta.dot(delta));
    };
 
    // Detail layer for the boost.  The raw buffer is no longer needed once it has been dequantised, so it serves as the
@@ -1049,41 +1239,94 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       curve = blurred;
    }
 
-   // Shadows for distant lights.  Heights are converted to pixels with the same scale that positions the surface
-   // relative to point and spot lights.  A negative surface scale inverts the surface, which is not supported.
-
-   float *shadow = nullptr;
-   const double elevation = Elevation * DEG2RAD;
-   if ((LightSource IS LS::DISTANT) and ((Features & LFX::SHADOWS) != LFX::NIL) and (SpotHeight > 0) and
-       (elevation > 0) and (elevation < 89.0 * DEG2RAD)) {
-      if (auto error = get_filter_scratch(this, size_t(Width) * Height, shadow); error != ERR::Okay) return error;
-      auto error = cast_shadows(this, heights + (LIGHT_PAD * stride) + LIGHT_PAD, stride, Width, Height, shadow,
-         Direction, elevation, SpotHeight * (1.0 / 255.0), pool);
-      if (error != ERR::Okay) return error;
-   }
-
-   // With Wrap, faces that turn away from the light take their shadows from the light raised by the wrap angle, which
+   // Shadows for distant lights, one map per light that casts them.  Heights are converted to pixels with the same
+   // scale that positions the surface relative to point and spot lights.  A negative surface scale inverts the
+   // surface, which is not supported.  The maps remain in scratch memory until the draw completes.
+   //
+   // With Wrap, faces that turn away from a light take their shadows from the light raised by the wrap angle, which
    // their own slope does not block.  The raised light is unshadowed within 1 degree of overhead.
 
-   float *raised = nullptr;
-   WrapShadows = (shadow) and (Material) and (Wrap > 0);
-   if (WrapShadows) {
-      const double lifted = elevation + asin(Wrap);
-      if (lifted < 89.0 * DEG2RAD) {
-         if (auto error = get_filter_scratch(this, size_t(Width) * Height, raised); error != ERR::Okay) return error;
+   const bool shadows = ((Features & LFX::SHADOWS) != LFX::NIL) and (SpotHeight > 0);
+   const float *surface_heights = heights + (LIGHT_PAD * stride) + LIGHT_PAD;
 
-         auto error = cast_shadows(this, heights + (LIGHT_PAD * stride) + LIGHT_PAD, stride, Width, Height, raised,
-            Direction, lifted, SpotHeight * (1.0 / 255.0), pool);
-         if (error != ERR::Okay) return error;
+   for (size_t i=0; i < Prepared.size(); i++) {
+      auto &light = Prepared[i];
+      const double elevation = light.elevation;
+      if ((light.kind != LS::DISTANT) or (not shadows) or (not Lights[i].Shadows) or (elevation <= 0) or
+          (elevation >= 89.0 * DEG2RAD)) continue;
+
+      float *shadow;
+      if (auto error = get_filter_scratch(this, size_t(Width) * Height, shadow); error != ERR::Okay) return error;
+      auto error = cast_shadows(this, surface_heights, stride, Width, Height, shadow, light.direction, elevation,
+         SpotHeight * (1.0 / 255.0), pool);
+      if (error != ERR::Okay) return error;
+      light.shadow = shadow;
+
+      light.wrap_shadows = (Material) and (Wrap > 0);
+      if (light.wrap_shadows) {
+         const double lifted = elevation + asin(Wrap);
+         if (lifted < 89.0 * DEG2RAD) {
+            float *raised;
+            if (auto error = get_filter_scratch(this, size_t(Width) * Height, raised); error != ERR::Okay) return error;
+
+            auto error = cast_shadows(this, surface_heights, stride, Width, Height, raised, light.direction, lifted,
+               SpotHeight * (1.0 / 255.0), pool);
+            if (error != ERR::Okay) return error;
+            light.raised = raised;
+         }
+         light.wrap_blend = sin(std::min(Penumbra * DEG2RAD, elevation * 0.5));
       }
-      WrapBlend = sin(std::min(Penumbra * DEG2RAD, elevation * 0.5));
+   }
+
+   WrapShadows = first.wrap_shadows;
+   WrapBlend = first.wrap_blend;
+
+   // The nearest sample to each ranged light normalises its attenuation.  It is found among the samples of the
+   // surface, excluding the padding, within the light's range.  Rows are reduced in chunks and the chunk minima are
+   // combined, so the result does not depend on the order in which the chunks complete.
+
+   std::vector<double> minima;
+   for (auto &light : Prepared) {
+      if ((light.kind IS LS::DISTANT) or (not (light.range > 0))) continue;
+
+      const auto &lt = light.position;
+      const double range = light.range;
+      const int x0 = int(std::clamp(std::floor(lt.x - range), 0.0, double(Width)));
+      const int x1 = int(std::clamp(std::ceil(lt.x + range) + 1.0, 0.0, double(Width)));
+      const int y0 = int(std::clamp(std::floor(lt.y - range), 0.0, double(Height)));
+      const int y1 = int(std::clamp(std::ceil(lt.y + range) + 1.0, 0.0, double(Height)));
+      double nearest = std::numeric_limits<double>::infinity();
+
+      if ((x0 < x1) and (y0 < y1)) {
+         minima.assign((Height + chunk_size - 1) / chunk_size, std::numeric_limits<double>::infinity());
+         for_rows(Height, [&](int Start, int End) {
+            double result = std::numeric_limits<double>::infinity();
+            for (int y=std::max(Start, y0); y < std::min(End, y1); ++y) {
+               const float *h = heights + ((y + LIGHT_PAD) * stride) + LIGHT_PAD;
+               const double dy = lt.y - y;
+               for (int x=x0; x < x1; ++x) {
+                  const double dx = lt.x - x;
+                  const double dz = lt.z - (double(h[x]) * (1.0 / 255.0) * SpotHeight);
+                  result = std::min(result, (dx * dx) + (dy * dy) + (dz * dz));
+               }
+            }
+            minima[Start / chunk_size] = result;
+         });
+         for (double value : minima) nearest = std::min(nearest, value);
+      }
+
+      light.nearest = sqrt(nearest);
+      light.reaches = light.nearest < range;
+      light.nearest_term = std::max(nearest, LIGHT_COINCIDENCE_SQUARED);
    }
 
    lit_surface surface = {
-      .heights = heights, .detail = detail, .curve = curve, .shadow = shadow, .raised = raised, .albedo = nullptr,
-      .albedo_lut = albedo_lut.data(), .albedo_stride = 0, .albedo_width = 0, .albedo_height = 0,
+      .heights = heights, .detail = detail, .curve = curve, .shadow = first.shadow, .raised = first.raised,
+      .albedo = nullptr, .albedo_lut = albedo_lut.data(), .albedo_stride = 0, .albedo_width = 0, .albedo_height = 0,
       .albedo_premul = false, .stride = stride, .height = Height, .normal = NormalHeight,
-      .curvature = MapHeight * (1.0 / 255.0) * UnitSize * UnitSize, .sharpen = sharpen_weight(UnitSize)
+      .curvature = MapHeight * (1.0 / 255.0) * UnitSize * UnitSize, .sharpen = sharpen_weight(UnitSize),
+      .lights = multiple ? std::span<const lit_light>(Prepared) : std::span<const lit_light>(),
+      .spot_height = SpotHeight, .width = Width
    };
 
    if (Albedo) { // The albedo is aligned with the height input, as for the other dual-input effects
@@ -1101,21 +1344,29 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
 
    if (auto error = get_filter_scratch(this, chunks * chunk_floats, row_buffers); error != ERR::Okay) return error;
 
+   // A single light is rendered with functions specialised for its kind.  Several lights are rendered by
+   // enhanced_lights(), which does not use the functions.
+
+   auto unlimited = [](double, double, float) -> double { return 1.0; };
+   auto colour = [&first](const point3 &) -> const FRGB & { return first.colour; };
+   auto spot_colour = [&first](const point3 &STL) { return first.spot_colour(STL); };
+
    for_rows(Height, [&](int Start, int End) {
       auto buffer = row_buffers + (Start / chunk_size) * chunk_floats;
-      if (LightSource IS LS::DISTANT) {
+      if ((multiple) or (first.kind IS LS::DISTANT)) {
          render_enhanced(Start, End, surface, Width, buffer,
-            [this](int, int, float) { return Direction; },
-            [this](const point3 &) -> const FRGB & { return LightColour; });
+            [&first](int, int, float) { return first.direction; }, colour, unlimited);
       }
-      else if (LightSource IS LS::SPOT) {
-         render_enhanced(Start, End, surface, Width, buffer, surface_delta,
-            [this](point3 &STL) { return colour_spot_light(STL); });
+      else if (first.range > 0) {
+         if (first.kind IS LS::SPOT) {
+            render_enhanced(Start, End, surface, Width, buffer, ranged_delta, spot_colour, ranged_falloff);
+         }
+         else render_enhanced(Start, End, surface, Width, buffer, ranged_delta, colour, ranged_falloff);
       }
-      else if (LightSource IS LS::POINT) {
-         render_enhanced(Start, End, surface, Width, buffer, surface_delta,
-            [this](const point3 &) -> const FRGB & { return LightColour; });
+      else if (first.kind IS LS::SPOT) {
+         render_enhanced(Start, End, surface, Width, buffer, surface_delta, spot_colour, unlimited);
       }
+      else render_enhanced(Start, End, surface, Width, buffer, surface_delta, colour, unlimited);
    });
 
    return ERR::Okay;

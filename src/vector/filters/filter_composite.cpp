@@ -613,6 +613,79 @@ struct blend_invert_rgb {
    }
 };
 
+// Arithmetic uses premultiplied channels in the selected colour space.  The bitmap storage is sRGB encoded.
+
+template <bool Linear>
+static void composite_arithmetic_rows(const extCompositeFX *Self, int Width, int Height,
+   uint8_t *Dest, const uint8_t *In, int InStride, const uint8_t *Mix, int MixStride)
+{
+   const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
+   const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
+   const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
+   const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
+
+   constexpr double alpha_scale = 1.0 / 255.0;
+
+   const double k1 = Self->K1, k2 = Self->K2, k3 = Self->K3, k4 = Self->K4;
+
+   static const auto decode = [] {
+      std::array<double, 256> table;
+      for (size_t i=0; i < table.size(); ++i) {
+         if constexpr (Linear) table[i] = double(glLinearRGB.convert16(uint8_t(i))) * (1.0 / 65535.0);
+         else table[i] = double(i) * alpha_scale;
+      }
+      return table;
+   }();
+
+   auto encode = [](double Value) -> uint8_t {
+      if constexpr (Linear) {
+         const int v = int(Value * 65535.0);
+         if (v > 0xffff) return 0xff;
+         else if (v < 0) return 0;
+         else return glLinearRGB.invert16(v);
+      }
+      else if (Value >= 1.0) return 0xff;
+      else if (Value <= 0.0) return 0;
+      else return uint8_t(std::lround(Value * 255.0));
+   };
+
+   for (int y=0; y < Height; y++) {
+      auto dp = Dest + std::ptrdiff_t(y) * Self->Target->LineWidth;
+      auto sp = In + std::ptrdiff_t(y) * InStride;
+      auto mp = Mix + std::ptrdiff_t(y) * MixStride;
+      for (int x=0; x < Width; x++) {
+         if ((mp[A]) or (sp[A])) {
+            // Scale RGB to 0 - 1.0 and premultiply the values.
+            const double sA = double(sp[A]) * alpha_scale;
+            const double sR = decode[sp[R]] * sA;
+            const double sG = decode[sp[G]] * sA;
+            const double sB = decode[sp[B]] * sA;
+
+            const double mA = double(mp[A]) * alpha_scale;
+            const double mR = decode[mp[R]] * mA;
+            const double mG = decode[mp[G]] * mA;
+            const double mB = decode[mp[B]] * mA;
+
+            double dA = (k1 * sA * mA) + (k2 * sA) + (k3 * mA) + k4;
+
+            if (dA > 0.0) {
+               if (dA > 1.0) dA = 1.0;
+
+               double demul = 1.0 / dA;
+               dp[R] = encode(((k1 * sR * mR) + (k2 * sR) + (k3 * mR) + k4) * demul);
+               dp[G] = encode(((k1 * sG * mG) + (k2 * sG) + (k3 * mG) + k4) * demul);
+               dp[B] = encode(((k1 * sB * mB) + (k2 * sB) + (k3 * mB) + k4) * demul);
+               dp[A] = int(dA * 255.0);
+            }
+         }
+
+         dp += 4;
+         sp += 4;
+         mp += 4;
+      }
+   }
+}
+
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -630,12 +703,12 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
    auto first_pixel = [](const filter_surface_view &View) {
       return View.row(View.Valid.top) + std::ptrdiff_t(View.Valid.left) * 4;
    };
-   auto dest = Self->Target->Data + (Self->Target->Clip.Left * 4) +
-      (Self->Target->Clip.Top * Self->Target->LineWidth);
-   auto in_bmp = input.Bitmap;
+
+   auto dest    = Self->Target->Data + (Self->Target->Clip.Left * 4) + (Self->Target->Clip.Top * Self->Target->LineWidth);
+   auto in_bmp  = input.Bitmap;
    auto mix_bmp = mixture.Bitmap;
-   auto in = first_pixel(input);
-   auto mix = first_pixel(mixture);
+   auto in      = first_pixel(input);
+   auto mix     = first_pixel(mixture);
 
    switch (Self->Operator) {
       case OP::OVER: Self->doMix<composite_over>(in_bmp, mix_bmp, dest, in, mix); break;
@@ -650,91 +723,48 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
          if (in_bmp->Clip.Right - in_bmp->Clip.Left < width) width = in_bmp->Clip.Right - in_bmp->Clip.Left;
          if (in_bmp->Clip.Bottom - in_bmp->Clip.Top < height) height = in_bmp->Clip.Bottom - in_bmp->Clip.Top;
 
-         const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
-         const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
-         const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
-         const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
+         const auto arithmetic_rows = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ?
+            composite_arithmetic_rows<true> : composite_arithmetic_rows<false>;
 
-         constexpr double alpha_scale = 1.0 / 255.0;
-
-         // The arithmetic is performed in the filter's colour space.  Bitmaps are always sRGB encoded, so
-         // linear processing decodes the inputs and encodes the result.
-
-         const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
-
-         auto decode = [linear](uint8_t Value) -> double {
-            if (linear) return double(glLinearRGB.convert16(Value)) * (1.0 / 65535.0);
-            else return double(Value) * alpha_scale;
+         auto render_rows = [&](int StartY, int EndY) {
+            auto dp = dest + std::ptrdiff_t(StartY) * Self->Target->LineWidth;
+            auto sp = in + std::ptrdiff_t(StartY) * in_bmp->LineWidth;
+            auto mp = mix + std::ptrdiff_t(StartY) * mix_bmp->LineWidth;
+            arithmetic_rows(Self, width, EndY - StartY, dp, sp, in_bmp->LineWidth, mp, mix_bmp->LineWidth);
          };
 
-         auto encode = [linear](double Value) -> uint8_t {
-            if (linear) {
-               const int v = int(Value * 65535.0);
-               if (v > 0xffff) return 0xff;
-               else if (v < 0) return 0;
-               else return glLinearRGB.invert16(v);
-            }
-            else if (Value >= 1.0) return 0xff;
-            else if (Value <= 0.0) return 0;
-            else return uint8_t(std::lround(Value * 255.0));
-         };
+         constexpr size_t MIN_PIXELS_PER_WORKER = 32 * 1024;
+         constexpr int MIN_ROWS_PER_WORKER = 4;
+         if ((width <= 0) or (height <= 0)) break;
 
-         for (int y=0; y < height; y++) {
-            auto dp = dest;
-            auto sp = in;
-            auto mp = mix;
-            for (int x=0; x < width; x++) {
-               if ((mp[A]) or (sp[A])) {
-                  // Scale RGB to 0 - 1.0 and premultiply the values.
-                  const double sA = double(sp[A]) * alpha_scale;
-                  const double sR = decode(sp[R]) * sA;
-                  const double sG = decode(sp[G]) * sA;
-                  const double sB = decode(sp[B]) * sA;
+         const size_t blocks = std::min(size_t(height / MIN_ROWS_PER_WORKER),
+            (size_t(width) * height) / MIN_PIXELS_PER_WORKER);
+         const size_t workers = (blocks < 2) ? blocks : std::min(blocks, size_t(std::thread::hardware_concurrency()));
 
-                  const double mA = double(mp[A]) * alpha_scale;
-                  const double mR = decode(mp[R]) * mA;
-                  const double mG = decode(mp[G]) * mA;
-                  const double mB = decode(mp[B]) * mA;
-
-                  double dA = (Self->K1 * sA * mA) + (Self->K2 * sA) + (Self->K3 * mA) + Self->K4;
-
-                  if (dA > 0.0) {
-                     if (dA > 1.0) dA = 1.0;
-
-                     double demul = 1.0 / dA;
-                     dp[R] = encode(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) *
-                        demul);
-                     dp[G] = encode(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) *
-                        demul);
-                     dp[B] = encode(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) *
-                        demul);
-                     dp[A] = int(dA * 255.0);
-                  }
-               }
-
-               dp += 4;
-               sp += 4;
-               mp += 4;
-            }
-            dest += Self->Target->LineWidth;
-            in   += in_bmp->LineWidth;
-            mix  += mix_bmp->LineWidth;
+         if (workers < 2) render_rows(0, height);
+         else {
+            BS::thread_pool pool(workers);
+            pool.detach_blocks(0, height, render_rows);
+            pool.wait();
          }
+
          break;
       }
 
       default: { // These mix routines use pre-multiplied content.
          filter_surface_view in_work, mix_work;
+
          if (auto error = premultiplied_input(Self, input, CS::SRGB, in_work); error != ERR::Okay) return error;
+
          if (input.Bitmap IS mixture.Bitmap) mix_work = in_work;
          else if (auto error = premultiplied_input(Self, mixture, CS::SRGB, mix_work); error != ERR::Okay) {
             return error;
          }
 
-         in_bmp = in_work.Bitmap;
+         in_bmp  = in_work.Bitmap;
          mix_bmp = mix_work.Bitmap;
-         in = first_pixel(in_work);
-         mix = first_pixel(mix_work);
+         in      = first_pixel(in_work);
+         mix     = first_pixel(mix_work);
          switch (Self->Operator) {
             case OP::MULTIPLY:    Self->doMix<blend_multiply>(in_bmp, mix_bmp, dest, in, mix); break;
             case OP::SCREEN:      Self->doMix<blend_screen>(in_bmp, mix_bmp, dest, in, mix); break;

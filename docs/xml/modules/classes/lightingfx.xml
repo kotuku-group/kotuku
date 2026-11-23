@@ -100,6 +100,59 @@ do not produce isolated bright pixels.</li>
 
   <methods>
     <method>
+      <name>AddDistantLight</name>
+      <comment>Add a distant light source to the effect.</comment>
+      <prototype>ERR lt::AddDistantLight(OBJECTPTR Object, DOUBLE Azimuth, DOUBLE Elevation)</prototype>
+      <tiriPrototype>err = AddDistantLight(Azimuth:num, Elevation:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Azimuth">Direction angle for the light source on the XY plane (clockwise), in degrees from the X axis.</param>
+        <param type="DOUBLE" name="Elevation">Direction angle for the light source from the XY plane towards the Z axis, in degrees.  A positive value points towards the viewer of the content.</param>
+      </input>
+      <description>
+<p>This method adds a distant light to the effect, after any lights that are already configured.  The arguments are those of <method>SetDistantLight</method>.</p>
+<p>If no light has been configured, the new light replaces the default light and keeps the value of <fl>Intensity</fl>.  Each further light requires a <fl>Type</fl> of <code>COMBINED</code>, which is the only type that renders more than one light; otherwise <code>ERR::InvalidState</code> is returned and the lights are unchanged.  The new light uses the effect's <fl>Colour</fl>, an intensity of 1, an unlimited range and shadows.  Use <method>SetLightOptions</method> to change them.</p>
+      </description>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>AddPointLight</name>
+      <comment>Add a point light source to the effect.</comment>
+      <prototype>ERR lt::AddPointLight(OBJECTPTR Object, DOUBLE X, DOUBLE Y, DOUBLE Z)</prototype>
+      <tiriPrototype>err = AddPointLight(X:num, Y:num, Z:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">X location for the light source.</param>
+        <param type="DOUBLE" name="Y">Y location for the light source.</param>
+        <param type="DOUBLE" name="Z">Z location for the light source.</param>
+      </input>
+      <description>
+<p>This method adds a point light to the effect, after any lights that are already configured.  The arguments are those of <method>SetPointLight</method>, and the rules of <method>AddDistantLight</method> apply.</p>
+      </description>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>AddSpotLight</name>
+      <comment>Add a spot light source to the effect.</comment>
+      <prototype>ERR lt::AddSpotLight(OBJECTPTR Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE PX, DOUBLE PY, DOUBLE PZ, DOUBLE Exponent, DOUBLE ConeAngle)</prototype>
+      <tiriPrototype>err = AddSpotLight(X:num, Y:num, Z:num, PX:num, PY:num, PZ:num, Exponent:num, ConeAngle:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">X location for the light source.</param>
+        <param type="DOUBLE" name="Y">Y location for the light source.</param>
+        <param type="DOUBLE" name="Z">Z location for the light source.</param>
+        <param type="DOUBLE" name="PX">X location of the light source's target.</param>
+        <param type="DOUBLE" name="PY">Y location of the light source's target.</param>
+        <param type="DOUBLE" name="PZ">Z location of the light source's target.</param>
+        <param type="DOUBLE" name="Exponent">Exponent value controlling the focus for the light source.</param>
+        <param type="DOUBLE" name="ConeAngle">A limiting cone which restricts the region where the light is projected, or 0 to disable.  Specified in degrees.</param>
+      </input>
+      <description>
+<p>This method adds a spot light to the effect, after any lights that are already configured.  The arguments are those of <method>SetSpotLight</method>, and the rules of <method>AddDistantLight</method> apply.</p>
+      </description>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
       <name>SetDistantLight</name>
       <comment>Configure lighting with a distant light source.</comment>
       <prototype>ERR lt::SetDistantLight(OBJECTPTR Object, DOUBLE Azimuth, DOUBLE Elevation)</prototype>
@@ -109,8 +162,33 @@ do not produce isolated bright pixels.</li>
         <param type="DOUBLE" name="Elevation">Direction angle for the light source from the XY plane towards the Z axis, in degrees.  A positive value points towards the viewer of the content.</param>
       </input>
       <description>
-<p>This method applies a distant light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
+<p>This method applies a distant light configuration to the lighting effect.  It replaces every configured light with the new light, which keeps the intensity of the first light and uses the effect's <fl>Colour</fl>, an unlimited range and shadows.</p>
 <p>A distant light can be thought of as like the light from the sun.  An infinite amount of parallel light rays travel in the direction that the distant light points to.  Distant lights are handy when you want equal illumination on objects in a scene.</p>
+      </description>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>SetLightOptions</name>
+      <comment>Set the colour, intensity, range and shadows of a light.</comment>
+      <prototype>ERR lt::SetLightOptions(OBJECTPTR Object, INT Index, struct LightOptions * Options)</prototype>
+      <tiriPrototype>err = SetLightOptions(Index:num, Options:any)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">Index of the light, from zero.</param>
+        <param type="struct LightOptions *" name="Options">The options to apply.</param>
+      </input>
+      <description>
+<p>This method sets the options of the light at Index, where 0 is the first light that was configured with a light method.  All of the options in the <st>LightOptions</st> structure are applied together.  The options are validated before the light is changed, so the light is unchanged if an error is returned.</p>
+<list type="bullet">
+<li><code>Colour</code> replaces the effect's <fl>Colour</fl> for this light if <code>Flags</code> includes <code>COLOUR</code>.  It is in the same colour space
+as <fl>Colour</fl>, and its alpha is ignored.  Without the flag the light uses the effect's <fl>Colour</fl>.</li>
+<li><code>Intensity</code> multiplies the light's colour, as <fl>Intensity</fl> does for the first light.  It must be zero or greater.</li>
+<li><code>Range</code> is the distance at which a point or spot light fades to nothing, in the units of its z coordinate.  Zero
+means that the light is unlimited.  A distant light cannot have a range.</li>
+<li>The <code>NO_SHADOWS</code> flag stops a distant light from casting shadows.</li>
+</list>
+<p>A light with a range is brightest at the point of the surface nearest to it, where its strength is unchanged.  Its strength falls with the square of the distance from there, and is multiplied by a smooth window that reaches zero at the range.  If no point of the surface lies within range, the light has no effect.</p>
+<p>The options are extensions of the SVG lighting model.  They take effect when the enhanced pipeline is in use, which is always the case for the <code>COMBINED</code> type; refer to <fl>Features</fl>.  <method>SetDistantLight</method> and its siblings reset the options of the light they configure, except for the intensity of the first light.</p>
       </description>
       <tags>mutates-object</tags>
     </method>
@@ -126,7 +204,7 @@ do not produce isolated bright pixels.</li>
         <param type="DOUBLE" name="Z">Z location for the light source.</param>
       </input>
       <description>
-<p>This method applies a pointed light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
+<p>This method applies a pointed light configuration to the lighting effect.  It replaces every configured light with the new light, which keeps the intensity of the first light and uses the effect's <fl>Colour</fl> and an unlimited range.</p>
 <p>A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open flame is a good example of a point light.  The strength of the light is controlled by <fl>Constant</fl> and <fl>Intensity</fl>.</p>
       </description>
       <tags>mutates-object</tags>
@@ -148,7 +226,7 @@ do not produce isolated bright pixels.</li>
         <param type="DOUBLE" name="ConeAngle">A limiting cone which restricts the region where the light is projected, or 0 to disable.  Specified in degrees.</param>
       </input>
       <description>
-<p>This method applies a spot light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
+<p>This method applies a spot light configuration to the lighting effect.  It replaces every configured light with the new light, which keeps the intensity of the first light and uses the effect's <fl>Colour</fl> and an unlimited range.</p>
 <p>A spot light beams light rays from the defined (X, Y, Z) position to the (PX, PY, PZ) position.  The Exponent and ConeAngle work together to constrain the edge of the light projection.</p>
       </description>
       <tags>mutates-object</tags>
@@ -257,6 +335,7 @@ do not produce isolated bright pixels.</li>
       <description>
 <p>The light's <fl>Colour</fl> is multiplied by this value.  For the diffuse and specular types, the light is limited to full strength before it is coloured, as it is for <fl>Constant</fl>, so a value above 1 brightens the light only until it reaches full strength.  For the <code>COMBINED</code> type the light is not limited until the result is written, so a value above 1 can make an albedo brighter while it keeps its colour.</p>
 <p>The default is 1.  The value must be zero or greater.  It has no effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>, unless the <fl>Type</fl> is <code>COMBINED</code>.</p>
+<p>If the effect has more than one light, this field is the intensity of the first light; use <method>SetLightOptions</method> for the others.  The value can be set before or after the light is configured, as <method>SetDistantLight</method> and its siblings keep the intensity of the first light.</p>
       </description>
     </field>
 
@@ -334,7 +413,7 @@ do not produce isolated bright pixels.</li>
       <access read="R" write="W">Read/Write</access>
       <type lookup="LT">LT</type>
       <description>
-<p>The <code>COMBINED</code> type reads an albedo from the #Mix input; refer to the class description.</p>
+<p>The <code>COMBINED</code> type reads an albedo from the #Mix input; refer to the class description.  It is the only type that renders more than one light, so the type cannot be changed while the effect has more than one light.  Call <method>SetDistantLight</method> or one of its siblings first to reduce the lights to one.</p>
 <types lookup="LT"/>
       </description>
     </field>
@@ -381,7 +460,8 @@ do not produce isolated bright pixels.</li>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The result is a complete element, including its light source: <code>feDiffuseLighting</code> or <code>feSpecularLighting</code>, or <code>kotuku:feLighting</code> for the <code>COMBINED</code> type.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes, and only when they differ from their defaults: <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:ambient</code> for <fl>Ambient</fl>, and <code>kotuku:intensity</code> on the light source for <fl>Intensity</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder. For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted. The attributes of <code>kotuku:feLighting</code> are written without the prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
+<p>The result is a complete element, including its light sources: <code>feDiffuseLighting</code> or <code>feSpecularLighting</code>, or <code>kotuku:feLighting</code> for the <code>COMBINED</code> type.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes, and only when they differ from their defaults: <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, and <code>kotuku:ambient</code> for <fl>Ambient</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder.  For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted.  The attributes of <code>kotuku:feLighting</code> are written without the prefix, as the element is already in the Kōtuku namespace.  A document that includes any of them must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
+<p>Each light is written as a child element, in the order in which the lights were added.  The options of <method>SetLightOptions</method> are written on the light's element as <code>kotuku:colour</code>, <code>kotuku:intensity</code>, <code>kotuku:range</code> and <code>kotuku:shadows</code>, when they differ from their defaults.  The intensity of the first light is <fl>Intensity</fl>.</p>
 <p>The <code>in</code>, <code>in2</code>, <code>result</code> and primitive subregion attributes are not included.</p>
       </description>
       <tags>caller-owns-result</tags>
@@ -400,6 +480,11 @@ do not produce isolated bright pixels.</li>
       <const name="SPECULAR_AA">Widen specular highlights where the surface varies within a pixel, preventing sparkle at high exponents.</const>
     </constants>
 
+    <constants lookup="LOF" comment="Options for a light of the LightingFX class; refer to LightOptions.">
+      <const name="COLOUR">The light uses its own Colour in place of the colour of the effect.</const>
+      <const name="NO_SHADOWS">The light casts no shadows.</const>
+    </constants>
+
     <constants lookup="LT" comment="Lighting algorithm for the LightingFX class.">
       <const name="COMBINED">Light an albedo with diffuse, specular and ambient light in a single pass, producing a finished surface.</const>
       <const name="DIFFUSE">Select diffuse lighting.</const>
@@ -408,5 +493,12 @@ do not produce isolated bright pixels.</li>
 
   </types>
   <structs>
+    <struct name="LightOptions" comment="Options for one light of LightingFX, applied by SetLightOptions().">
+      <field name="Colour" type="struct FRGB">Colour of the light if Flags includes COLOUR, in the colour space of LightingFX.Colour.  Alpha is ignored.</field>
+      <field name="Intensity" type="DOUBLE">Multiplies the colour of the light.  Zero or greater; 1 leaves the light unchanged.</field>
+      <field name="Range" type="DOUBLE">Distance at which a point or spot light reaches zero, in the units of its z coordinate, or 0 for an unlimited light.</field>
+      <field name="Flags" type="LOF" lookup="LOF">Optional settings.</field>
+    </struct>
+
   </structs>
 </book>
