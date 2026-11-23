@@ -2036,43 +2036,45 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       }
    }
 
-   // One child tag specifying the light source is required.
+   // Configures a light from a light source element.  Append is true for kotuku:feLighting, which renders every
+   // light child in document order.  Extension attributes in the Kōtuku namespace set the light's options; a malformed
+   // value is reported and the option keeps its default.
 
-   if (!Tag.Children.empty()) {
+   int light_index = 0;
+   auto parse_light = [&](XTag &Child, bool Append) -> ERR {
       ERR error;
-      auto &child = Tag.Children[0];
-      if (svg_tag_is(child, SVF_feDistantLight)) {
+      if (svg_tag_is(Child, SVF_feDistantLight)) {
          double azimuth = 0, elevation = 0;
 
-         for (int a=1; a < std::ssize(child.Attribs); a++) {
-            switch(strhash(child.Attribs[a].Name)) {
-               case SVF_azimuth:   svtonum(child.Attribs[a].Value, azimuth); break;
-               case SVF_elevation: svtonum(child.Attribs[a].Value, elevation); break;
+         for (int a=1; a < std::ssize(Child.Attribs); a++) {
+            switch(strhash(Child.Attribs[a].Name)) {
+               case SVF_azimuth:   svtonum(Child.Attribs[a].Value, azimuth); break;
+               case SVF_elevation: svtonum(Child.Attribs[a].Value, elevation); break;
             }
          }
 
-         error = fx->setDistantLight(azimuth, elevation);
+         error = Append ? fx->addDistantLight(azimuth, elevation) : fx->setDistantLight(azimuth, elevation);
       }
-      else if (svg_tag_is(child, SVF_fePointLight)) {
+      else if (svg_tag_is(Child, SVF_fePointLight)) {
          double x = 0, y = 0, z = 0;
 
-         for (int a=1; a < std::ssize(child.Attribs); a++) {
-            switch(strhash(child.Attribs[a].Name)) {
-               case SVF_x: svtonum(child.Attribs[a].Value, x); break;
-               case SVF_y: svtonum(child.Attribs[a].Value, y); break;
-               case SVF_z: svtonum(child.Attribs[a].Value, z); break;
+         for (int a=1; a < std::ssize(Child.Attribs); a++) {
+            switch(strhash(Child.Attribs[a].Name)) {
+               case SVF_x: svtonum(Child.Attribs[a].Value, x); break;
+               case SVF_y: svtonum(Child.Attribs[a].Value, y); break;
+               case SVF_z: svtonum(Child.Attribs[a].Value, z); break;
             }
          }
 
-         error = fx->setPointLight(x, y, z);
+         error = Append ? fx->addPointLight(x, y, z) : fx->setPointLight(x, y, z);
       }
-      else if (svg_tag_is(child, SVF_feSpotLight)) {
+      else if (svg_tag_is(Child, SVF_feSpotLight)) {
          double x = 0, y = 0, z = 0, px = 0, py = 0, pz = 0;
          double exponent = 1, cone_angle = 0;
 
-         for (int a=1; a < std::ssize(child.Attribs); a++) {
-            auto &val = child.Attribs[a].Value;
-            switch(strhash(child.Attribs[a].Name)) {
+         for (int a=1; a < std::ssize(Child.Attribs); a++) {
+            auto &val = Child.Attribs[a].Value;
+            switch(strhash(Child.Attribs[a].Name)) {
                case SVF_x:                 svtonum(val, x); break;
                case SVF_y:                 svtonum(val, y); break;
                case SVF_z:                 svtonum(val, z); break;
@@ -2084,23 +2086,99 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             }
          }
 
-         error = fx->setSpotLight(x, y, z, px, py, pz, exponent, cone_angle);
+         error = Append ? fx->addSpotLight(x, y, z, px, py, pz, exponent, cone_angle) :
+            fx->setSpotLight(x, y, z, px, py, pz, exponent, cone_angle);
       }
       else {
-         log.warning("Unrecognised %s child node '%s'", Tag.name(), child.name());
-         error = ERR::NoSupport;
+         log.warning("Unrecognised %s child node '%s'", Tag.name(), Child.name());
+         return ERR::NoSupport;
       }
 
-      if (error != ERR::Okay) {
-         FreeResource(fx);
-         return error;
+      if (error != ERR::Okay) return error;
+
+      LightOptions options = { .Colour = { 1, 1, 1, 1 }, .Intensity = 1.0, .Range = 0, .Flags = LOF::NIL };
+      bool extended = false;
+      const bool distant = svg_tag_is(Child, SVF_feDistantLight);
+
+      for (int a=1; a < std::ssize(Child.Attribs); a++) {
+         const auto local = kotuku_attrib(Self, Child, Child.Attribs[a].Name);
+         if (local.empty()) continue;
+
+         const auto &val = Child.Attribs[a].Value;
+         auto invalid = [&]() {
+            log.warning("Invalid %s value for 'kotuku:%.*s': '%s'", Child.name(), int(local.size()), local.data(),
+               val.c_str());
+         };
+
+         if (local IS "colour") {
+            FRGB rgb;
+            if (read_light_colour(val, rgb)) {
+               options.Colour = rgb;
+               options.Flags |= LOF::COLOUR;
+               extended = true;
+            }
+            else invalid();
+         }
+         else if (local IS "intensity") {
+            auto number = kt::font_traits::parse_number(val);
+            if ((number) and (std::isfinite(*number)) and (*number >= 0)) {
+               options.Intensity = *number;
+               extended = true;
+            }
+            else invalid();
+         }
+         else if (local IS "range") {
+            auto number = iequals("none", val) ? std::optional<double>(0.0) : kt::font_traits::parse_number(val);
+            if ((not number) or (not std::isfinite(*number)) or (*number < 0)) invalid();
+            else if ((distant) and (*number > 0)) {
+               log.warning("A distant light cannot have a range; 'kotuku:range' is ignored.");
+            }
+            else {
+               options.Range = *number;
+               extended = true;
+            }
+         }
+         else if (local IS "shadows") {
+            if (iequals("false", val)) {
+               options.Flags |= LOF::NO_SHADOWS;
+               extended = true;
+            }
+            else if (not iequals("true", val)) invalid();
+         }
+         else log.warning("Unknown %s attribute %s", Child.name(), Child.Attribs[a].Name.c_str());
       }
 
-      for (int a=1; a < std::ssize(child.Attribs); a++) { // Light extensions
-         if (kotuku_attrib(Self, child, child.Attribs[a].Name) IS "intensity") {
-            set_light_number("intensity", child.Attribs[a].Value, &objLightingFX::setIntensity);
+      if (extended) {
+         if (auto error = fx->setLightOptions(light_index, &options); error != ERR::Okay) {
+            log.warning("Failed to set the options of light %d: %s", light_index, GetErrorMsg(error));
          }
       }
+      light_index++;
+      return ERR::Okay;
+   };
+
+   // The standard elements take their light source from their first child.  kotuku:feLighting renders every light
+   // child in document order, skipping descriptive elements.  Without a light child the default light is used.
+
+   ERR light_error = ERR::Okay;
+   if (combined) {
+      for (auto &child : Tag.Children) {
+         if (not child.isTag()) continue;
+         if (svg_tag_is(child, SVF_desc) or svg_tag_is(child, SVF_title) or iequals("metadata", child.name())) {
+            continue;
+         }
+         if (svg_tag_is(child, SVF_feDistantLight) or svg_tag_is(child, SVF_fePointLight) or
+             svg_tag_is(child, SVF_feSpotLight)) {
+            if (light_error = parse_light(child, true); light_error != ERR::Okay) break;
+         }
+         else log.warning("Unrecognised %s child node '%s'", Tag.name(), child.name());
+      }
+   }
+   else if (!Tag.Children.empty()) light_error = parse_light(Tag.Children[0], false);
+
+   if (light_error != ERR::Okay) {
+      FreeResource(fx);
+      return light_error;
    }
 
    if (!fx->init()) {

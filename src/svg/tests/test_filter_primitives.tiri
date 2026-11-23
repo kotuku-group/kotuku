@@ -1037,6 +1037,252 @@ end
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Multiple lights.  kotuku:feLighting renders every light child in document order, and the Kotuku attributes of a
+-- light child set its colour, intensity, range and shadows.
+
+function lightTags(XML:str!):array<str>
+   local result = array<str> { }
+   local pos:num = XML.find('>') -- Skips the effect's own element
+   while true do
+      local start = XML.find('<fe', pos)
+      if start is nil then break end
+      local stop = XML.find('/>', start)
+      result.push(XML.sub(start, stop + 2))
+      pos = stop
+   end
+   return result
+end
+
+function effectXML(SVG:obj!):str
+   local _, filter = check SVG.scene.mtFindDef('f')
+   return filter.effectXML
+end
+
+-- A key light, a coloured fill with a range and a spot light, separated by descriptive elements.
+
+MIXED_LIGHTS <const> = '<desc>Key, fill and spot</desc>' ..
+   '<feDistantLight azimuth="0" elevation="30" kotuku:shadows="false"/><title>Lights</title>' ..
+   '<fePointLight x="12" y="44" z="30" kotuku:colour="#ff8040" kotuku:intensity="0.5" kotuku:range="60"/>' ..
+   '<metadata/><feSpotLight x="60" y="4" z="50" pointsAtX="30" pointsAtY="30" pointsAtZ="0" specularExponent="4" ' ..
+   'limitingConeAngle="25" kotuku:colour="rgb(64 128 255)" kotuku:intensity="1.25"/>'
+
+MIXED_ATTRIBS <const> = 'features="shadows cavity" specularConstant="0.4" specularExponent="16"'
+
+@Test function CombinedLightingParsesEveryLight()
+   local svg <close> = combinedDocument(MIXED_ATTRIBS, MIXED_LIGHTS)
+   local tags = lightTags(effectXML(svg))
+   assert((#tags is 3) and tags[0].startsWith('<feDistantLight') and tags[1].startsWith('<fePointLight') and
+      tags[2].startsWith('<feSpotLight'), f'Every light must be parsed in document order ({tags})')
+   assert(tags[0].find('kotuku:shadows="false"') and (not tags[0].find('kotuku:intensity')),
+      f'The key light must keep its options alone ({tags[0]})')
+   assert(tags[1].find('kotuku:colour="rgb(255 128 64)"') and tags[1].find('kotuku:intensity="0.5"') and
+      tags[1].find('kotuku:range="60"'), f'The fill light must have its options ({tags[1]})')
+   assert(tags[2].find('kotuku:colour="rgb(64 128 255)"') and tags[2].find('kotuku:intensity="1.25"') and
+      (not tags[2].find('kotuku:range')), f'The spot light must have its options ({tags[2]})')
+   local doc <close> = draw(svg, 64)
+
+   -- The same lights configured through the API render identically.
+
+   local plain <close> = combinedDocument(MIXED_ATTRIBS)
+   local fx = lightingFX(plain)
+   check fx.mtSetDistantLight(0, 30)
+   check fx.mtAddPointLight(12, 44, 30)
+   check fx.mtAddSpotLight(60, 4, 50, 30, 30, 0, 4, 25)
+   local options = struct<LightOptions> { intensity=1, range=0, flags=LOF_NO_SHADOWS }
+   check fx.mtSetLightOptions(0, options)
+   options = struct<LightOptions> { intensity=0.5, range=60, flags=LOF_COLOUR }
+   options.colour.red = 1
+   options.colour.green = 128 / 255
+   options.colour.blue = 64 / 255
+   check fx.mtSetLightOptions(1, options)
+   options = struct<LightOptions> { intensity=1.25, range=0, flags=LOF_COLOUR }
+   options.colour.red = 64 / 255
+   options.colour.green = 128 / 255
+   options.colour.blue = 1
+   check fx.mtSetLightOptions(2, options)
+   local diff = imageDifference(doc, draw(plain, 64))
+   assert(diff is 0, f'The light children must render as the API settings (max difference {diff})')
+
+   local single <close> = combinedDocument(MIXED_ATTRIBS)
+   assert(imageDifference(doc, draw(single, 64)) > 0, 'The added lights must change the render')
+
+   -- Without a light child the implicit light is used.
+
+   local implicit <close> = combinedDocument(MIXED_ATTRIBS, '<desc>No lights</desc>')
+   assert(#lightTags(effectXML(implicit)) is 1, 'An element without light children must keep the implicit light')
+end
+
+-- Options at their defaults are not written, and an invalid value is ignored.  A range on a distant light is ignored
+-- with a warning.
+
+@Test function LightAttributeDefaultsAndInvalidValues()
+   local point = '<fePointLight x="20" y="12" z="40"'
+   local reference <close> = combinedDocument(MIXED_ATTRIBS, point .. '/>')
+   local expected <close> = draw(reference, 64)
+
+   for _, attribs in array<str> {
+      'kotuku:shadows="true" kotuku:range="none" kotuku:intensity="1"',
+      'kotuku:colour="bogus" kotuku:intensity="-1" kotuku:range="-5" kotuku:shadows="maybe"',
+      'kotuku:intensity="0.5x" kotuku:range="12px" kotuku:colour=""',
+      'kotuku:intensity="" kotuku:range="" kotuku:shadows=""'
+   } do
+      local svg <close> = combinedDocument(MIXED_ATTRIBS, f'{point} {attribs}/>')
+      local tags = lightTags(effectXML(svg))
+      assert((#tags is 1) and (not tags[0].find('kotuku:')), f'{attribs}: the defaults must be kept ({tags})')
+      local diff = imageDifference(expected, draw(svg, 64))
+      assert(diff is 0, f'{attribs}: the light must render with its defaults (max difference {diff})')
+   end
+
+   local distant <close> = combinedDocument(MIXED_ATTRIBS,
+      '<feDistantLight azimuth="0" elevation="30" kotuku:range="40" kotuku:intensity="0.5"/>')
+   local tags = lightTags(effectXML(distant))
+   assert((not tags[0].find('kotuku:range')) and tags[0].find('kotuku:intensity="0.5"'),
+      f'A range on a distant light must be ignored without discarding the other options ({tags[0]})')
+
+   -- A range of none is the same as an unlimited range.
+
+   local none <close> = combinedDocument(MIXED_ATTRIBS, f'{point} kotuku:range="none" kotuku:intensity="0.5"/>')
+   local unlimited <close> = combinedDocument(MIXED_ATTRIBS, f'{point} kotuku:intensity="0.5"/>')
+   assert(imageDifference(draw(none, 64), draw(unlimited, 64)) is 0, 'A range of none must be unlimited')
+   local ranged <close> = combinedDocument(MIXED_ATTRIBS, f'{point} kotuku:range="30" kotuku:intensity="0.5"/>')
+   assert(imageDifference(draw(ranged, 64), draw(unlimited, 64)) > 0, 'A range must attenuate the light')
+end
+
+@Test function LightRangeSurvivesRotation()
+   local function drawRange(Transform:str, Range:str):obj
+      local svg <close> = document('<kotuku:feLighting in="SourceAlpha" surfaceScale="0" ' ..
+         'specularConstant="1" specularExponent="1" diffuseConstant="0" features="none">' ..
+         f'<fePointLight x="31" y="31" z="20" kotuku:range="{Range}"/></kotuku:feLighting>',
+         f'<rect width="64" height="64" transform="{Transform}" filter="url(#f)"/>', 64, KOTUKU_NS)
+      return draw(svg, 64)
+   end
+
+   for _, transform in array<str> { 'matrix(0 1 -1 0 64 0)', 'matrix(-1 0 0 -1 64 64)' } do
+      local ranged <close> = drawRange(transform, '1')
+      local unlimited <close> = drawRange(transform, 'none')
+      assert(imageDifference(ranged, unlimited) > 0, f'A narrow range must limit the rotated light ({transform})')
+   end
+end
+
+@Test function WideLightRangeRetainsDistanceFalloff()
+   for _, extra_light in array<str> { '', '<feDistantLight elevation="90" kotuku:intensity="0"/>' } do
+      local svg <close> = document('<kotuku:feLighting in="SourceAlpha" surfaceScale="0" ' ..
+         'specularConstant="0" diffuseConstant="1" features="none">' ..
+         '<fePointLight x="32" y="32" z="10" kotuku:range="1000000000"/>' .. extra_light ..
+         '</kotuku:feLighting>', nil, 64, KOTUKU_NS)
+      local bmp <close> = draw(svg, 64)
+      local centre = mGfx.ReadRGBPixel(bmp, 32, 32).red
+      local edge = mGfx.ReadRGBPixel(bmp, 60, 32).red
+      assert((centre > 200) and (edge > 0) and (edge < 50),
+         f'Expected inverse-square falloff with a wide range (centre {centre}, edge {edge})')
+   end
+end
+
+-- The light attributes are read through any prefix bound to a Kotuku namespace, and attributes in a foreign namespace
+-- are ignored.
+
+@Test function LightAttributesFollowTheNamespace()
+   local ns = KOTUKU_NS .. ' xmlns:k="http://www.kotuku.dev/namespaces/kotuku" xmlns:x="urn:foreign"'
+   local function lights(Light:str):obj
+      return document('<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20">' ..
+         f'<feDistantLight azimuth="0" elevation="30"/>{Light}</kotuku:feLighting>', COMBINED_CONTENT, 64, ns)
+   end
+
+   local prefixed <close> = lights('<fePointLight x="20" y="12" z="40" k:intensity="0.5" k:range="30"/>')
+   local tags = lightTags(effectXML(prefixed))
+   assert(tags[1].find('kotuku:intensity="0.5"') and tags[1].find('kotuku:range="30"'),
+      f'Any prefix bound to a Kotuku namespace must be accepted ({tags[1]})')
+
+   local foreign <close> = lights('<fePointLight x="20" y="12" z="40" x:colour="red" x:intensity="2" ' ..
+      'x:range="10" x:shadows="false"/>')
+   tags = lightTags(effectXML(foreign))
+   assert(not tags[1].find('kotuku:'), f'A foreign namespace must not set the light options ({tags[1]})')
+   local plain <close> = lights('<fePointLight x="20" y="12" z="40"/>')
+   assert(imageDifference(draw(foreign, 64), draw(plain, 64)) is 0, 'Foreign attributes must not change the render')
+end
+
+-- feDiffuseLighting and feSpecularLighting take their light from the first child alone, as SVG requires, while still
+-- accepting the options of that light.
+
+@Test function StandardLightingUsesTheFirstChild()
+   for _, case in array<table> {
+      { first='<feDistantLight azimuth="0" elevation="30"/>', second='<fePointLight x="20" y="12" z="40"/>' },
+      { first='<fePointLight x="20" y="12" z="40"/>', second='<feDistantLight azimuth="90" elevation="60"/>' }
+   } do
+      for _, element in array<str> { 'feDiffuseLighting', 'feSpecularLighting' } do
+         local effect = f'<{element} in="SourceAlpha" surfaceScale="20" specularExponent="8">'
+         local both <close> = document(f'{effect}{case.first}{case.second}</{element}>', LIGHTING_CONTENT, 64,
+            KOTUKU_NS)
+         local tags = lightTags(effectXML(both))
+         assert(#tags is 1, f'{element} must keep its first light alone ({tags})')
+         local one <close> = document(f'{effect}{case.first}</{element}>', LIGHTING_CONTENT, 64, KOTUKU_NS)
+         local diff = imageDifference(draw(both, 64), draw(one, 64))
+         assert(diff is 0, f'{element} must ignore its second light (max difference {diff})')
+      end
+   end
+
+   local coloured <close> = lightingDocument(nil,
+      '<feDistantLight azimuth="0" elevation="30" kotuku:colour="#ff0000" kotuku:intensity="0.75"/>')
+   local tags = lightTags(effectXML(coloured))
+   assert(tags[0].find('kotuku:colour="rgb(255 0 0)"') and tags[0].find('kotuku:intensity="0.75"'),
+      f'The options of the first light must be read ({tags[0]})')
+   local bmp <close> = draw(coloured, 64)
+   local p = mGfx.ReadRGBPixel(bmp, 44, 24)
+   assert((p.red > 0) and (p.green is 0) and (p.blue is 0),
+      f'The light colour must replace the lighting colour (got {p.red}, {p.green}, {p.blue})')
+
+   local loaded <close> = document(effectXML(coloured), LIGHTING_CONTENT, 64, KOTUKU_NS)
+   local diff = imageDifference(bmp, draw(loaded, 64))
+   assert(diff is 0, f'The options of a standard light must survive XMLDef (max difference {diff})')
+end
+
+-- Mixed light kinds survive EffectXML and a saved document with both inputs bound.
+
+@Test function MultipleLightsRoundTrip()
+   local svg <close> = combinedDocument(MIXED_ATTRIBS, MIXED_LIGHTS)
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'EffectXML must re-parse to an identical render (max difference {diff}): {xml}')
+   assert(effectXML(loaded) is xml, f'EffectXML must be stable: {effectXML(loaded)}')
+
+   -- A range that has no short decimal form keeps its precision.
+
+   local precise <close> = combinedDocument(MIXED_ATTRIBS,
+      '<fePointLight x="20" y="12" z="40" kotuku:range="33.333333333333336" kotuku:intensity="0.1"/>')
+   xml = effectXML(precise)
+   assert(xml.find('kotuku:range="33.333333333333336"') and xml.find('kotuku:intensity="0.1"'),
+      f'The options must be written in their shortest exact form: {xml}')
+
+   local folder = 'temp:svg_multiple_lights_roundtrip/'
+   defer mSys.DeleteFile(folder) end
+   local err = mSys.CreateFolder(folder, 0)
+   assert((err is ERR_Okay) or (err is ERR_FileExists), 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
+
+   for _, albedo in array<str> { 'SourceGraphic', 'paint' } do
+      io.writeAll(folder .. 'doc.svg', f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} width="64" ' ..
+         'height="64"><filter id="f" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">' ..
+         '<feOffset dx="3" result="paint"/><feOffset dy="5"/>' ..
+         f'<kotuku:feLighting in="SourceAlpha" in2="{albedo}" surfaceScale="20" {MIXED_ATTRIBS}>' ..
+         f'{MIXED_LIGHTS}</kotuku:feLighting></filter>{COMBINED_CONTENT}</svg>')
+      local doc <close> = obj.new('svg', { path=folder .. 'doc.svg' })
+      local first <close> = draw(doc, 64)
+      do
+         local file <close> = obj.new('file', { path=folder .. 'saved.svg', flags=FL_NEW|FL_WRITE })
+         check doc.acSaveToObject(file, 0)
+      end
+
+      local reopened <close> = obj.new('svg', { path=folder .. 'saved.svg' })
+      local saved = effectXML(reopened)
+      assert((saved.count('<feDistantLight') is 1) and (saved.count('<fePointLight') is 1) and
+         (saved.count('<feSpotLight') is 1), f'The saved document must keep every light: {saved}')
+      diff = imageDifference(first, draw(reopened, 64))
+      assert(diff is 0, f'SaveToObject must preserve the lights with the {albedo} albedo (difference {diff})')
+   end
+end
+
 @Test function ExternalFilterImageRoundTrips()
    local folder = 'temp:svg_filter_image_roundtrip/'
    defer mSys.DeleteFile(folder) end

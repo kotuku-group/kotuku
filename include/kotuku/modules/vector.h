@@ -125,6 +125,16 @@ enum class LFX : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(LFX)
 
+// Options for a light of the LightingFX class; refer to LightOptions.
+
+enum class LOF : uint32_t {
+   NIL = 0,
+   COLOUR = 0x00000001,
+   NO_SHADOWS = 0x00000002,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(LOF)
+
 enum class VUNIT : int {
    NIL = 0,
    UNDEFINED = 0,
@@ -2432,6 +2442,13 @@ struct MergeSource {
   MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
 };
 
+struct LightOptions {
+   struct FRGB Colour;    // Colour of the light if Flags includes COLOUR, in the colour space of LightingFX.Colour.  Alpha is ignored.
+   double Intensity;      // Multiplies the colour of the light.  Zero or greater; 1 leaves the light unchanged.
+   double Range;          // Distance at which a point or spot light reaches zero, in the units of its z coordinate, or 0 for an unlimited light.
+   LOF    Flags;          // Optional settings.
+};
+
 // ImageFX class definition
 
 #define VER_IMAGEFX (1.000000)
@@ -3052,6 +3069,10 @@ namespace lt {
 struct SetDistantLight { double Azimuth; double Elevation; static const AC id = AC(-20); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetPointLight { double X; double Y; double Z; static const AC id = AC(-22); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddDistantLight { double Azimuth; double Elevation; static const AC id = AC(-23); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddPointLight { double X; double Y; double Z; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-25); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetLightOptions { int Index; struct LightOptions *Options; static const AC id = AC(-26); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3082,6 +3103,22 @@ class objLightingFX : public objFilterEffect {
    inline ERR setSpotLight(double X, double Y, double Z, double PX, double PY, double PZ, double Exponent, double ConeAngle) noexcept {
       struct lt::SetSpotLight args = { X, Y, Z, PX, PY, PZ, Exponent, ConeAngle };
       return Action(AC(-21), this, &args);
+   }
+   inline ERR addDistantLight(double Azimuth, double Elevation) noexcept {
+      struct lt::AddDistantLight args = { Azimuth, Elevation };
+      return Action(AC(-23), this, &args);
+   }
+   inline ERR addPointLight(double X, double Y, double Z) noexcept {
+      struct lt::AddPointLight args = { X, Y, Z };
+      return Action(AC(-24), this, &args);
+   }
+   inline ERR addSpotLight(double X, double Y, double Z, double PX, double PY, double PZ, double Exponent, double ConeAngle) noexcept {
+      struct lt::AddSpotLight args = { X, Y, Z, PX, PY, PZ, Exponent, ConeAngle };
+      return Action(AC(-25), this, &args);
+   }
+   inline ERR setLightOptions(int Index, struct LightOptions * Options) noexcept {
+      struct lt::SetLightOptions args = { Index, Options };
+      return Action(AC(-26), this, &args);
    }
 
    // Customised field getting

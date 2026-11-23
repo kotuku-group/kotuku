@@ -920,6 +920,11 @@ follow a <code>url()</code> reference.</li>
       <const name="TOUCH">Contact input from a touch device; the Value field carries the contact ID</const>
     </constants>
 
+    <constants lookup="LOF" comment="Options for a light of the LightingFX class; refer to LightOptions.">
+      <const name="COLOUR">The light uses its own Colour in place of the colour of the effect.</const>
+      <const name="NO_SHADOWS">The light casts no shadows.</const>
+    </constants>
+
     <constants lookup="PCO" comment="PathCommand options.">
       <const name="LARGE_ARC">Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path.</const>
       <const name="SWEEP">Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</const>
@@ -991,6 +996,13 @@ follow a <code>url()</code> reference.</li>
     <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
       <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
       <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
+    <struct name="LightOptions" comment="Options for one light of LightingFX, applied by SetLightOptions().">
+      <field name="Colour" type="struct FRGB">Colour of the light if Flags includes COLOUR, in the colour space of LightingFX.Colour.  Alpha is ignored.</field>
+      <field name="Intensity" type="DOUBLE">Multiplies the colour of the light.  Zero or greater; 1 leaves the light unchanged.</field>
+      <field name="Range" type="DOUBLE">Distance at which a point or spot light reaches zero, in the units of its z coordinate, or 0 for an unlimited light.</field>
+      <field name="Flags" type="LOF" lookup="LOF">Optional settings.</field>
     </struct>
 
     <struct name="MergeSource" comment="Input source declaration for MergeFX">

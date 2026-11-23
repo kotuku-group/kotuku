@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/namespaces/kotuku"
+  width="640" height="400" viewBox="0 0 640 400">
+  <title>Moon surface under three lights</title>
+  <desc>A cool distant light grazes the terrain, an amber point light illuminates the left side,
+    and a blue spotlight picks out a patch on the right.</desc>
+
+  <defs>
+    <!-- Terrain adapted from filters/moon-surface.svg, based on the original concept by Bence Szabo. -->
+    <filter id="terrain" filterUnits="userSpaceOnUse" x="0" y="0" width="640" height="400">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="7" seed="8"/>
+      <feComponentTransfer result="height">
+        <feFuncA type="table" tableValues="0 .02 .1 .25 .2 .25 .3 .4 .5 .6 .7 .8"/>
+      </feComponentTransfer>
+
+      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="22" diffuseConstant="1"
+        specularConstant="0.12" specularExponent="16" ambient="#202020" features="none">
+        <!-- The distant light picks out the terrain relief across the whole image. -->
+        <feDistantLight azimuth="235" elevation="16" kotuku:colour="#c6d4ef" kotuku:intensity="0.85"/>
+        <!-- The point light fades with distance on the left. -->
+        <fePointLight x="155" y="240" z="70" kotuku:colour="#ff9a45" kotuku:intensity="1.8" kotuku:range="245"/>
+        <!-- The spotlight adds a blue pool of light on the right. -->
+        <feSpotLight x="550" y="60" z="180" pointsAtX="470" pointsAtY="200" pointsAtZ="0"
+          limitingConeAngle="24" specularExponent="4" kotuku:colour="#527fff" kotuku:intensity="2.2"/>
+      </kotuku:feLighting>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="#9da0a7" filter="url(#terrain)"/>
+</svg>

@@ -52,6 +52,10 @@ struct KeyValue;
     "DEQUANTISE_WIDE: Reconstruct gently sloping terraces in 8-bit heights before DEQUANTISE smooths other samples.",
     { ALL = "DEQUANTISE|SHARPEN|CAVITY|DETAIL|SHADOWS|SPECULAR_AA" })
 
+  flags("LOF", { comment="Options for a light of the LightingFX class; refer to LightOptions." },
+    "COLOUR: The light uses its own Colour in place of the colour of the effect.",
+    "NO_SHADOWS: The light casts no shadows.")
+
   enums("VUNIT", { type="int", start=0 },
     "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
     "BOUNDING_BOX: Coordinates are scaled to the object's bounding box.",
