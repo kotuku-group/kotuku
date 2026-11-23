@@ -38,6 +38,7 @@ class extImageFX : public extFilterEffect {
    objBitmap *Bitmap;    // Bitmap containing source image data.
    objImage *Image;      // Origin image if loading a source file.
    bool BitmapPinned = false;  // True if the client's Bitmap holds a strong pin taken by Init()
+   std::string ImageHref; // Document-relative path supplied by the SVG parser.
 
    extImageFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS;
@@ -141,6 +142,12 @@ static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
    else return ERR::CreateObject;
 }
 
+static ERR IMAGEFX_SET_ImageHref(extImageFX *Self, const std::string_view &Value)
+{
+   Self->ImageHref = Value;
+   return ERR::Okay;
+}
+
 /*********************************************************************************************************************
 
 -FIELD-
@@ -159,6 +166,43 @@ static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string &Value)
    std::stringstream stream;
 
    stream << "feImage";
+   if (not Self->ImageHref.empty()) {
+      write_filter_xml_attribute(stream, "xlink:href", Self->ImageHref);
+
+      stream.precision(std::numeric_limits<double>::max_digits10);
+      auto write_unit = [&](std::string_view Name, const Unit &Length) {
+         if (not Length.defined()) return;
+         stream << ' ' << Name << "=\"";
+         // Invert the percentage conversion in Unit::read() to preserve pixel boundaries on reload.
+         if (Length.scaled()) stream << Length.Value / 0.01 << '%';
+         else stream << Length.Value;
+         stream << '"';
+      };
+      write_unit("x", Self->X);
+      write_unit("y", Self->Y);
+      write_unit("width", Self->Width);
+      write_unit("height", Self->Height);
+
+      const auto ratio = Self->AspectRatio;
+      if (ratio != (ARF::X_MID|ARF::Y_MID|ARF::MEET)) {
+         stream << " preserveAspectRatio=\"";
+         if ((ratio & ARF::NONE) != ARF::NIL or (ratio & (ARF::MEET|ARF::SLICE)) IS ARF::NIL) stream << "none";
+         else {
+            if ((ratio & ARF::X_MIN) != ARF::NIL) stream << "xMin";
+            else if ((ratio & ARF::X_MAX) != ARF::NIL) stream << "xMax";
+            else stream << "xMid";
+
+            if ((ratio & ARF::Y_MIN) != ARF::NIL) stream << "YMin";
+            else if ((ratio & ARF::Y_MAX) != ARF::NIL) stream << "YMax";
+            else stream << "YMid";
+
+            stream << (((ratio & ARF::SLICE) != ARF::NIL) ? " slice" : " meet");
+         }
+         stream << '"';
+      }
+
+      if (Self->ResampleMethod IS VSM::LANCZOS) stream << " image-rendering=\"optimizeQuality\"";
+   }
 
    Value = stream.str();
    return ERR::Okay;
@@ -168,12 +212,16 @@ static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string &Value)
 
 #include "filter_image_def.c"
 
+// Keep the private field after the generated ImageFX accessors' indexed fields in the dictionary.
+static_assert(kt::fieldhash("ImageHref") > kt::fieldhash("AspectRatio"));
+
 static const FieldArray clImageFXFields[] = {
    { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clAspectRatio },
    { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageFXVSM },
    { "Bitmap",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
    { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, IMAGEFX_GET_XMLDef },
+   { "ImageHref",      FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, IMAGEFX_SET_ImageHref },
    END_FIELD
 };
 

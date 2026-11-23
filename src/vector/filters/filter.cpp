@@ -545,6 +545,20 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
 
 //********************************************************************************************************************
 
+static void write_filter_xml_attribute(std::ostream &Stream, std::string_view Name, std::string_view Value)
+{
+   Stream << ' ' << Name << "=\"";
+   for (char c : Value) {
+      if (c IS '&') Stream << "&amp;";
+      else if (c IS '<') Stream << "&lt;";
+      else if (c IS '"') Stream << "&quot;";
+      else Stream << c;
+   }
+   Stream << '"';
+}
+
+//********************************************************************************************************************
+
 #include "filter_effect.cpp"
 #include "filter_blur.cpp"
 #include "filter_colourmatrix.cpp"

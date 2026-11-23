@@ -750,9 +750,6 @@ SaveToObject: Saves the SVG document to a data object.
 static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
-   static const char header[] =
-"<?xml version=\"1.0\" standalone=\"no\"?>\n\
-<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
    std::span<struct ActionEntry> actions;
 
    if (!Self->Viewport) return log.warning(ERR::NoData);
@@ -776,8 +773,9 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
       // an existing anchor tag for InsertXML(), so an empty document cannot be populated incrementally - the initial
       // tree must be supplied via the Statement field at creation time.
 
-      static const std::string root_doc = std::string(header) +
-         "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" "
+      static const std::string root_doc =
+         "<?xml version=\"1.0\" standalone=\"no\"?>\n"
+         "<svg version=\"1.2\" xmlns=\"http://www.w3.org/2000/svg\" "
          "xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>";
 
       auto xml = objXML::create { fl::Flags(XMF::NEW|XMF::READABLE), fl::Statement(root_doc) };

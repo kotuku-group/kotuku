@@ -2598,7 +2598,7 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 //********************************************************************************************************************
 // This code replaces feImage elements where the href refers to a resource name.
 
-ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
+ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_view Reference) noexcept
 {
    kt::Log log(__FUNCTION__);
    objSourceFX *fx;
@@ -2607,7 +2607,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
    SetOwner(fx, Filter);
 
    bool required = false;
-   std::string ref, result_name;
+   std::string result_name;
 
    ERR error = ERR::Okay;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -2620,7 +2620,6 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_width:  fx->setWidth(SVGUnit(val)); break;
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
          case SVF_preserveAspectRatio: fx->setAspectRatio(parse_aspect_ratio(val)); break;
-         case SVF_xlink_href: ref = val; break;
          case SVF_externalResourcesRequired: required = iequals("true", val); break;
          case SVF_result: result_name = val; break;
       }
@@ -2628,21 +2627,21 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
 
    objVector *vector = nullptr;
    OBJECTPTR def = nullptr;
-   if (!ref.empty()) {
-      if (Self->Scene->findDef(ref, &def) IS ERR::Okay) vector = (objVector *)def;
+   if (!Reference.empty()) {
+      if (Self->Scene->findDef(Reference, &def) IS ERR::Okay) vector = (objVector *)def;
       else {
          // The reference is not an existing vector but should be a pre-registered declaration that would allow
          // us to create it.  Note that creation only occurs once.  Subsequent use of the ID will result in the
          // live reference being found.
 
-         if (auto tagref = find_href_tag(Self, ref)) {
+         if (auto tagref = find_href_tag(Self, Reference)) {
             process_tag(*tagref, Tag, Self->Scene, vector);
          }
-         else log.warning("Element id '%s' not found.", ref.c_str());
+         else log.warning("Element id '%.*s' not found.", int(Reference.size()), Reference.data());
       }
 
       if (vector) {
-         fx->setSourceName(ref);
+         fx->setSourceName(Reference);
          if (error = fx->init(); !error) {
             if (!result_name.empty()) parse_result(Self, fx, result_name);
             return ERR::Okay;
@@ -2663,24 +2662,22 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
 
-   // Check if the client has specified an href that refers to a pattern name instead of an image file.  In that
-   // case we need to divert to the SourceFX parser.
-
+   // SVG 2's href takes precedence over xlink:href.  A fragment reference uses SourceFX.
+   std::string_view reference;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
-      if ((iequals("xlink:href", Tag.Attribs[a].Name)) or (iequals("href", Tag.Attribs[a].Name))) {
-         if ((Tag.Attribs[a].Value[0] IS '#')) {
-            return parse_fe_source(Filter, Tag);
-         }
+      if (iequals("href", Tag.Attribs[a].Name)) {
+         reference = Tag.Attribs[a].Value;
          break;
       }
+      if (iequals("xlink:href", Tag.Attribs[a].Name)) reference = Tag.Attribs[a].Value;
    }
+   if (reference.starts_with('#')) return parse_fe_source(Filter, Tag, reference);
 
    objImageFX *fx;
    if (NewObject(CLASSID::IMAGEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
    bool image_required = false;
-   std::string path;
    std::string result_name;
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -2706,10 +2703,6 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
             fx->setAspectRatio(parse_aspect_ratio(val));
             break;
 
-         case SVF_xlink_href:
-            path = val;
-            break;
-
          case SVF_externalResourcesRequired: // If true and the image cannot be loaded, return a fatal error code.
             if (iequals("true", val)) image_required = true;
             break;
@@ -2718,20 +2711,24 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   if (!path.empty()) {
-      if (not safe_filter_path(path)) { // Check for security risks in the path.
+   ERR error = ERR::Okay;
+   if (not reference.empty()) {
+      if (not safe_filter_path(reference)) {
          FreeResource(fx);
          return log.warning(ERR::InvalidValue);
       }
 
-      if (auto fl = folder(Self); not fl.empty()) {
-         std::string comp_path = std::string(fl) + path;
-         fx->setPath(comp_path);
+      std::string path(folder(Self));
+      path += reference;
+      error = fx->setPath(path);
+      if (error IS ERR::Okay) {
+         const auto field = FindField(fx, kt::fieldhash("ImageHref"), nullptr);
+         error = field ? fx->set(field, reference) : ERR::UnsupportedField;
       }
-      else fx->setPath(path);
    }
 
-   if (auto error = fx->init(); error != ERR::Okay) {
+   if (error IS ERR::Okay) error = fx->init();
+   if (error != ERR::Okay) {
       FreeResource(fx);
       if (image_required) return error;
       else return ERR::Okay;
