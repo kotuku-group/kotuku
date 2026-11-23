@@ -166,6 +166,13 @@ warning is logged and the surface is drawn without it.  Sets <class name="Lighti
   &lt;/kotuku:feLighting&gt;
 &lt;/filter&gt;
 </pre>
+<p>The <code>kotuku:feNormalMap</code> element writes the surface normals from the height selected by <code>in</code>.  It accepts <code>surfaceScale</code>, <code>kernelUnitLength</code>, <code>features</code> and <code>detail</code>.  Use <code>kernelUnitX</code> or <code>kernelUnitY</code> to set a kernel unit on one axis and keep the default on the other.  See <class name="LightingFX" field="UnitX">LightingFX.UnitX</class> for how the default is resolved.</p>
+<p>Use the normal map's named result as <code>in2</code> on <code>feDisplacementMap</code> with red for X and green for Y.  For example, these primitives distort the graphic at changes in its alpha.  To refract an image behind a surface, select that image as the displacement primitive's <code>in</code>.</p>
+<pre>&lt;filter id=&quot;refraction&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
+  &lt;kotuku:feNormalMap in=&quot;SourceAlpha&quot; surfaceScale=&quot;8&quot; result=&quot;normals&quot;/&gt;
+  &lt;feDisplacementMap in=&quot;SourceGraphic&quot; in2=&quot;normals&quot; xChannelSelector=&quot;R&quot; yChannelSelector=&quot;G&quot; scale=&quot;12&quot;/&gt;
+&lt;/filter&gt;
+</pre>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>

@@ -27,6 +27,10 @@ from Mix are performed using non-premultiplied colour values.  If the image from
 colour values, those values are automatically converted into non-premultiplied colour values before performing this
 operation.
 
+A normal map supplied directly by @LightingFX with type `NORMAL` uses its stored RGB values in either filter colour
+space.  Select red for X and green for Y.  A component of 128, or a pixel outside the normal map's subregion, gives
+zero displacement along that axis.
+
 -END-
 
 This filter can have arbitrary non-localized effect on the input which might require substantial buffering in the
@@ -82,9 +86,12 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    // colour space.  When the filter colour space is linear, RGB channels from Mix are linearised on sampling; alpha
    // remains unchanged.
 
-   const objBitmap *in_bmp, *mix_bmp;
+   const objBitmap *in_bmp;
    if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
-   if (auto error = get_source_bitmap(Self, &mix_bmp, filter_input_role::MIX); error != ERR::Okay) return error;
+   filter_surface_view map;
+   if (auto error = get_source_view(Self, map, filter_input_role::MIX); error != ERR::Okay) return error;
+   const auto mix_bmp = map.Bitmap;
+   if (not mix_bmp) return ERR::NoSupport;
 
    const uint8_t RGBA[4] = {
       uint8_t(Self->Target->ColourFormat->RedPos>>3),
@@ -112,22 +119,28 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    if ((not std::isfinite(diagonal)) or (not std::isfinite(Self->Scale))) return ERR::InvalidValue;
    if (diagonal <= 0) return ERR::Okay;
    const double scale = Self->Scale / diagonal;
-   const double sx = scale * double(mix_width) * (1.0 / 255.0);
-   const double sy = scale * double(mix_height) * (1.0 / 255.0);
-   if ((not std::isfinite(sx)) or (not std::isfinite(sy))) return ERR::InvalidValue;
-
    const auto x_channel = Self->XChannel;
    const auto y_channel = Self->YChannel;
+   if ((unsigned(x_channel) > unsigned(CMP::ALPHA)) or (unsigned(y_channel) > unsigned(CMP::ALPHA))) {
+      return ERR::InvalidValue;
+   }
+   const bool normal_x = map.NormalMap and (x_channel != CMP::ALPHA);
+   const bool normal_y = map.NormalMap and (y_channel != CMP::ALPHA);
+   const double sx = scale * double(mix_width) * (normal_x ? (0.5 / NORMAL_MAP_RANGE) : (1.0 / 255.0));
+   const double sy = scale * double(mix_height) * (normal_y ? (0.5 / NORMAL_MAP_RANGE) : (1.0 / 255.0));
+   if ((not std::isfinite(sx)) or (not std::isfinite(sy))) return ERR::InvalidValue;
+
    const uint8_t x_type = RGBA[int(x_channel)];
    const uint8_t y_type = RGBA[int(y_channel)];
+   const uint8_t alpha = RGBA[int(CMP::ALPHA)];
    const bool linear_mix = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
 
-   auto sample_mix = [linear_mix](const uint8_t *Pixel, CMP Channel, uint8_t Type) -> uint8_t {
-      if ((linear_mix) and (Channel != CMP::ALPHA)) return glLinearRGB.convert(Pixel[Type]);
-      else return Pixel[Type];
+   auto sample_mix = [linear_mix, alpha](const uint8_t *Pixel, CMP Channel, uint8_t Type, bool Normal) -> double {
+      if (Normal) return Pixel[alpha] ? int(Pixel[Type]) - NORMAL_MAP_CENTRE : 0;
+      const auto value = (linear_mix and (Channel != CMP::ALPHA)) ? glLinearRGB.convert(Pixel[Type]) : Pixel[Type];
+      return double(value) - 127.5;
    };
 
-   constexpr double HALF8BIT = 255.0 * 0.5;
    const bool nearest        = Self->ResampleMethod IS VSM::NEIGHBOUR;
    const int mix_stride      = mix_bmp->LineWidth, dest_stride = Self->Target->LineWidth;
    const int mix_pixel_size  = mix_bmp->BytesPerPixel, dest_pixel_size = Self->Target->BytesPerPixel;
@@ -137,10 +150,8 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
          auto m = mix + std::ptrdiff_t(y) * mix_stride;
          auto d = dest + std::ptrdiff_t(y) * dest_stride;
          for (int x=0; x < draw_width; x++, m += mix_pixel_size, d += dest_pixel_size) {
-            auto dx = sample_mix(m, x_channel, x_type);
-            auto dy = sample_mix(m, y_channel, y_type);
-            const double sample_x = double(x) + (sx * (double(dx) - HALF8BIT));
-            const double sample_y = double(y) + (sy * (double(dy) - HALF8BIT));
+            const double sample_x = double(x) + sx * sample_mix(m, x_channel, x_type, normal_x);
+            const double sample_y = double(y) + sy * sample_mix(m, y_channel, y_type, normal_y);
 
             if (nearest) input.sample<filter_interpolation::NEAREST>(d,
                sample_x + in_bmp->Clip.Left, sample_y + in_bmp->Clip.Top);
@@ -205,7 +216,16 @@ static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string &Value
 {
    std::stringstream stream;
 
-   stream << "feDisplacement";
+   constexpr std::string_view channels = "RGBA";
+   if ((size_t(Self->XChannel) >= channels.size()) or (size_t(Self->YChannel) >= channels.size())) {
+      return ERR::InvalidValue;
+   }
+   stream.precision(std::numeric_limits<double>::max_digits10);
+   stream << "feDisplacementMap scale=\"" << Self->Scale << "\" xChannelSelector=\""
+      << channels[int(Self->XChannel)] << "\" yChannelSelector=\"" << channels[int(Self->YChannel)] << '"';
+   write_filter_xml_subregion(stream, *Self);
+   if (Self->ResampleMethod IS VSM::NEIGHBOUR) stream << " image-rendering=\"optimizeSpeed\"";
+   else if (Self->ResampleMethod IS VSM::LANCZOS) stream << " image-rendering=\"optimizeQuality\"";
 
    Value = stream.str();
    return ERR::Okay;

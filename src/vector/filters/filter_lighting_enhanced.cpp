@@ -808,7 +808,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       slots[s] = { base, base + span, base + span * 2, base + span * 3 };
    }
 
-   const bool toksvig = (Type != LT::DIFFUSE) and ((Features & LFX::SPECULAR_AA) != LFX::NIL);
+   const bool normal_map = Type IS LT::NORMAL;
+   const bool toksvig = (not normal_map) and (Type != LT::DIFFUSE) and ((Features & LFX::SPECULAR_AA) != LFX::NIL);
    const bool ambient = (Type IS LT::DIFFUSE) and has_ambient();
    const int last_row = Surface.height - 1;
    const int first = toksvig ? std::max(StartY - 1, 0) : StartY;
@@ -840,7 +841,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       if (Surface.detail) row_dx(row_of(Surface.detail, first - 1 + i), dx[i + 1]);
    }
 
-   const float cavity = ((Features & LFX::CAVITY) != LFX::NIL) ? float(Cavity * Surface.curvature) : 0.0f;
+   const float cavity = ((not normal_map) and ((Features & LFX::CAVITY) != LFX::NIL)) ?
+      float(Cavity * Surface.curvature) : 0.0f;
 
    // Computes the normals of each row up to and including Y, in sequence.  A row's normals depend only on the
    // heights, so a row that is shared with a neighbouring chunk is identical in both.
@@ -885,16 +887,31 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       }
       else compute_to(y);
 
+      const float *nx = cur.x + 1, *ny = cur.y + 1, *nz = cur.z + 1;
+      auto dptr = dest_base + y * Target->LineWidth;
+      if (normal_map) {
+         auto encode = [](float Component, float Fallback) -> uint8_t {
+            const float value = std::isfinite(Component) ? std::clamp(Component, -1.0f, 1.0f) : Fallback;
+            return uint8_t(NORMAL_MAP_CENTRE + NORMAL_MAP_RANGE * value + 0.5f);
+         };
+         for (int x=0; x < Width; ++x, dptr += bpp) {
+            dptr[R] = encode(nx[x], 0);
+            dptr[G] = encode(ny[x], 0);
+            dptr[B] = encode(nz[x], 1);
+            dptr[A] = 255;
+         }
+         continue;
+      }
+
       // Cavity is the occlusion from curvature alone.  Light is reduced by both cavity and shadow, ambient light by
       // the cavity alone.
 
       const float *h = row_of(Surface.heights, y);
-      const float *nx = cur.x + 1, *ny = cur.y + 1, *nz = cur.z + 1, *cavity = cur.occlusion + 1;
+      const float *cavity = cur.occlusion + 1;
       const float *shadow = Surface.shadow ? Surface.shadow + (y * Width) : nullptr;
       const float *raised = Surface.raised ? Surface.raised + (y * Width) : nullptr;
       const uint8_t *albedo = ((Surface.albedo) and (y < Surface.albedo_height)) ?
          Surface.albedo + (std::ptrdiff_t(y) * Surface.albedo_stride) : nullptr;
-      auto dptr = dest_base + y * Target->LineWidth;
 
       if (not Surface.lights.empty()) { // Several lights; only the COMBINED type accepts them
          for (int x=0; x < Width; ++x, dptr += bpp) {
@@ -950,6 +967,7 @@ bool extLightingFX::boost_detail(double Sigma) const
 
 double extLightingFX::cavity_sigma(double UnitSize) const
 {
+   if (Type IS LT::NORMAL) return 0;
    if (((Features & LFX::CAVITY) IS LFX::NIL) or (Cavity <= 0) or (UnitSize <= 1.0)) return 0;
    const double sigma = std::min(MAX_SIGMA, CAVITY_SIGMA * sqrt((UnitSize * UnitSize) - 1.0));
    return (sigma >= MIN_CAVITY_SIGMA) ? sigma : 0;
@@ -985,6 +1003,7 @@ double extLightingFX::reach() const
    if (boost_detail(sigma)) blur = std::max(blur, sigma);
    const int dequantise_reach = ((Features & LFX::DEQUANTISE_WIDE) != LFX::NIL) ? MAX_TERRACE : 1;
    const double result = 3 + dequantise_reach + std::ceil(blur * 3.0);
+   if (Type IS LT::NORMAL) return result;
 
    double shadow_reach = 0, range_reach = 0;
    const bool shadows = (Features & LFX::SHADOWS) != LFX::NIL;
@@ -1061,7 +1080,8 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       }
    }
 
-   const auto &first = Prepared.front();
+   const lit_light no_light;
+   const auto &first = Prepared.empty() ? no_light : Prepared.front();
    const bool multiple = Prepared.size() > 1;
    Strength = first.strength;
    Material = has_material();

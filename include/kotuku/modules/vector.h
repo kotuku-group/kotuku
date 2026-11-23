@@ -107,6 +107,7 @@ enum class LT : int {
    DIFFUSE = 0,
    SPECULAR = 1,
    COMBINED = 2,
+   NORMAL = 3,
 };
 
 // Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features.

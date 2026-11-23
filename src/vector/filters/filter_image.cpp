@@ -170,18 +170,7 @@ static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string &Value)
       write_filter_xml_attribute(stream, "xlink:href", Self->ImageHref);
 
       stream.precision(std::numeric_limits<double>::max_digits10);
-      auto write_unit = [&](std::string_view Name, const Unit &Length) {
-         if (not Length.defined()) return;
-         stream << ' ' << Name << "=\"";
-         // Invert the percentage conversion in Unit::read() to preserve pixel boundaries on reload.
-         if (Length.scaled()) stream << Length.Value / 0.01 << '%';
-         else stream << Length.Value;
-         stream << '"';
-      };
-      write_unit("x", Self->X);
-      write_unit("y", Self->Y);
-      write_unit("width", Self->Width);
-      write_unit("height", Self->Height);
+      write_filter_xml_subregion(stream, *Self);
 
       const auto ratio = Self->AspectRatio;
       if (ratio != (ARF::X_MID|ARF::Y_MID|ARF::MEET)) {

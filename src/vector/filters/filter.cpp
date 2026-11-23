@@ -157,6 +157,9 @@ struct filter_effect_extension {
 
 enum class filter_alpha { STRAIGHT, PREMULTIPLIED };
 
+constexpr int NORMAL_MAP_CENTRE = 128;
+constexpr int NORMAL_MAP_RANGE = 127;
+
 //********************************************************************************************************************
 // A read-only view of an intermediate result.  Valid is half-open in local coordinates, Origin locates (0,0) in scene
 // device pixels, and Stride is in bytes.  Bitmap, Encoding and Alpha describe RGBA8 only.  Numerical rows hold one
@@ -171,6 +174,7 @@ struct filter_surface_view {
    filter_alpha Alpha = filter_alpha::STRAIGHT; // Alpha representation of RGBA8 data
    TClipRectangle<int> Valid = { 0 };           // Half-open region of initialised pixels in local coordinates
    filter_surface_format Format = filter_surface_format::RGBA8; // Pixel format of Data
+   bool NormalMap = false; // RGBA8 stores signed normal components as data rather than colour
 
    const uint8_t * row(int Y) const { return Data + std::ptrdiff_t(Y) * Stride; }
 };
@@ -556,6 +560,22 @@ static void write_filter_xml_attribute(std::ostream &Stream, std::string_view Na
       else Stream << c;
    }
    Stream << '"';
+}
+
+static void write_filter_xml_subregion(std::ostream &Stream, const objFilterEffect &Effect)
+{
+   auto write_unit = [&](std::string_view Name, const Unit &Length) {
+      if (not Length.defined()) return;
+      Stream << ' ' << Name << "=\"";
+      // Invert the percentage conversion in Unit::read() to preserve pixel boundaries on reload.
+      if (Length.scaled()) Stream << Length.Value / 0.01 << '%';
+      else Stream << Length.Value;
+      Stream << '"';
+   };
+   write_unit("x", Effect.X);
+   write_unit("y", Effect.Y);
+   write_unit("width", Effect.Width);
+   write_unit("height", Effect.Height);
 }
 
 //********************************************************************************************************************
@@ -2177,7 +2197,11 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       }
 
       if ((&step IS plan.Final) or step.Consumers) {
-         if (target) step.Result = filter_view(render, target);
+         if (target) {
+            step.Result = filter_view(render, target);
+            step.Result.NormalMap = (effect->classID() IS CLASSID::LIGHTINGFX) and
+               (((const extLightingFX *)effect)->Type IS LT::NORMAL);
+         }
       }
       else release_result(step);
 
@@ -2403,15 +2427,20 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
    std::stringstream ss;
    filter_positions results;
 
-   // Lighting inputs can reference another primitive.  Assign result names before writing their producers.
+   // Assign result names before serialising the primitives referenced by lighting and displacement.
 
    auto name_reference = [&](VSF Source, objFilterEffect *Producer) {
       if ((Source IS VSF::REFERENCE) and Producer) results.try_emplace(Producer, results.size());
    };
    for (auto effect : Self->Effects) {
-      if (effect->classID() != CLASSID::LIGHTINGFX) continue;
-      name_reference(effect->SourceType, effect->Input);
-      if (((extLightingFX *)effect)->reads_albedo()) name_reference(effect->MixType, effect->Mix);
+      if (effect->classID() IS CLASSID::LIGHTINGFX) {
+         name_reference(effect->SourceType, effect->Input);
+         if (((extLightingFX *)effect)->reads_albedo()) name_reference(effect->MixType, effect->Mix);
+      }
+      else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
+         name_reference(effect->SourceType, effect->Input);
+         name_reference(effect->MixType, effect->Mix);
+      }
    }
 
    auto write_input = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer) {
@@ -2447,6 +2476,10 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
       if (effect->classID() IS CLASSID::LIGHTINGFX) {
          write_input("in", effect->SourceType, effect->Input);
          if (((extLightingFX *)effect)->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
+      }
+      else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
+         write_input("in", effect->SourceType, effect->Input);
+         write_input("in2", effect->MixType, effect->Mix);
       }
       if (auto result = results.find(effect); result != results.end()) {
          ss << " result=\"effect" << result->second << '"';

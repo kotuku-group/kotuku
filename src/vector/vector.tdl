@@ -40,7 +40,8 @@ struct KeyValue;
   enums("LT", { type="int", start=0, comment="Lighting algorithm for the LightingFX class." },
     "DIFFUSE: Select diffuse lighting.",
     "SPECULAR: Select specular lighting.",
-    "COMBINED: Light an albedo with diffuse, specular and ambient light in a single pass, producing a finished surface.")
+    "COMBINED: Light an albedo with diffuse, specular and ambient light in a single pass, producing a finished surface.",
+    "NORMAL: Write the surface normals to RGB for use as a displacement map.")
 
   flags("LFX", { comment="Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features." },
     "DEQUANTISE: Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.",
