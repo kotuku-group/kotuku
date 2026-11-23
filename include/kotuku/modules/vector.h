@@ -3198,7 +3198,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setType(const LT Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3213,7 +3213,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setConstant(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

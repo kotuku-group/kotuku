@@ -2001,6 +2001,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             const std::string_view name = Tag.Attribs[a].Name;
             const bool bare = (combined) and (name.find(':') IS std::string_view::npos);
             const auto local = bare ? name : kotuku_attrib(Self, Tag, name);
+
             if ((name IS "in2") and (combined)) parse_input_mix(Self, fx, val);
             else if (local IS "features") fx->setFeatures(read_lighting_features(val));
             else if (local IS "cavity") set_light_number("cavity", val, &objLightingFX::setCavity);
@@ -2016,9 +2017,10 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
                auto error = resolve_matcap_path(Self, val, path);
                if (error IS ERR::Okay) error = fx->setMatcapPath(path);
                if (error IS ERR::Okay) {
-                  const auto field = FindField(fx, kt::fieldhash("MatcapReference"), nullptr);
+                  const auto field = FindField(fx, kt::fieldhash("MatcapRef"), nullptr);
                   error = field ? fx->set(field, val) : ERR::UnsupportedField;
                }
+
                if (error != ERR::Okay) {
                   log.warning("Failed to load matcap '%s': %s", val.c_str(), GetErrorMsg(error));
                }

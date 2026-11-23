@@ -240,7 +240,7 @@ class extLightingFX : public extFilterEffect {
 
    // The exported fields are declared first so that their concrete offsets line up with the field table.
    // The 8-byte aligned members precede the narrower Type field to avoid padding before a direct-access field.
-   FRGB   Colour = { 1.0, 1.0, 1.0, 1.0 }; // Colour of the light source.
+   FRGB   Colour = { 1.0, 1.0, 1.0, 1.0 };  // Colour of the light source.
    double Constant = 1.0;                   // The ks/kd constant value for the light mode.
    double SpecularExponent = 1.0;           // Exponent value for specular lighting only (Exponent)
    double MapHeight = 1.0;                  // Maximum height of the surface for bump map calculations (Scale)
@@ -249,18 +249,18 @@ class extLightingFX : public extFilterEffect {
 
    FRGB   LinearColour = { 1.0, 1.0, 1.0, 1.0 }; // Colour of the light source in linear sRGB space.
    FRGB   LightColour = { 1.0, 1.0, 1.0, 1.0 };  // Colour of the light source in the filter's colour space.
-   bool   Linear = false;                         // True if lighting is computed in linear RGB.
-   double X, Y, Z;          // Position of light source.
-   LS     LightSource;      // Light source identifier, recorded for SVG output purposes only.
+   bool   Linear = false;                        // True if lighting is computed in linear RGB.
+   double X, Y, Z;                     // Position of light source.
+   LS     LightSource;                 // Light source identifier, recorded for SVG output purposes only.
    bool   UnitXProvided = false, UnitYProvided = false;
-   LFX    Features = LFX::ALL;  // Enhanced lighting features, applied when the scene's Compliance is NONE
+   LFX    Features = LFX::ALL;         // Enhanced lighting features, applied when the scene's Compliance is NONE
    double Cavity   = DEFAULT_CAVITY;   // Strength of the CAVITY feature
    double Detail   = DEFAULT_DETAIL;   // Strength of the DETAIL feature
    double Penumbra = DEFAULT_PENUMBRA; // Width of the shadow edge in degrees, for the SHADOWS feature
    double SpecularConstant = 1.0;      // ks for the COMBINED type; Constant is kd
    double Intensity = 1.0;             // Multiplier of the light's colour
-   FRGB   Ambient = { 0, 0, 0, 0 };    // Ambient light, scaled by its alpha
-   FRGB   AmbientLight = { 0, 0, 0, 0 }; // Ambient light in the filter's colour space, set by draw_enhanced()
+   FRGB   Ambient = { 0,0,0,0 };       // Ambient light, scaled by its alpha
+   FRGB   AmbientLight = { 0,0,0,0 };  // Ambient light in the filter's colour space, set by draw_enhanced()
    double Strength = 1.0;              // Constant x Intensity for the DIFFUSE and SPECULAR types, set per draw
    double Metalness = 0;               // COMBINED: 0 for a dielectric, 1 for a metal
    double Fresnel = 0;                 // COMBINED: reflectance at normal incidence, or 0 to disable
@@ -271,11 +271,11 @@ class extLightingFX : public extFilterEffect {
    bool   WrapShadows = false;         // True if wrapped faces take shadows from the raised light, set per draw
 
    // MATCAP (COMBINED type only)
-   objBitmap *Matcap = nullptr;        // Matcap image, from MatcapImage or the client
-   objImage *MatcapImage = nullptr;    // Owns Matcap if it was loaded from MatcapPath
-   std::string MatcapPath;             // Path used to load the image
-   std::string MatcapReference;        // Document-relative path supplied by the SVG parser
-   bool   MatcapPinned = false;        // True if Matcap is a client bitmap that holds our strong pin
+   objBitmap *Matcap = nullptr;         // Matcap image, from MatcapImage or the client
+   objImage *MatcapImage = nullptr;     // Owns Matcap if it was loaded from MatcapPath
+   std::string MatcapPath;              // Path used to load the image
+   std::string MatcapRef;               // Document-relative path supplied by the SVG parser
+   bool   MatcapPinned = false;         // True if Matcap is a client bitmap that holds our strong pin
    const float *MatcapTexels = nullptr; // Premultiplied RGB0 in the filter's colour space, or nullptr; per draw
    int    MatcapWidth = 0, MatcapHeight = 0; // Dimensions of MatcapTexels, set per draw
 
@@ -285,7 +285,7 @@ class extLightingFX : public extFilterEffect {
 
    // SPOT LIGHT
    double SpotExponent, ConeAngle; // Spot light
-   point3 Spotlight;              // Position of spot light source.
+   point3 Spotlight;               // Position of spot light source.
    double CosInnerConeAngle;
    double CosOuterConeAngle;
    double ConeScale;
@@ -304,13 +304,15 @@ class extLightingFX : public extFilterEffect {
          Matcap->unpin(true);
          MatcapPinned = false;
       }
+
       if (MatcapImage) {
          FreeResource(MatcapImage);
          MatcapImage = nullptr;
       }
+
       Matcap = nullptr;
       MatcapPath.clear();
-      MatcapReference.clear();
+      MatcapRef.clear();
    }
 
    // Shift matrix components to the left, as we advance pixels to the right.
@@ -517,6 +519,8 @@ inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL
    Output[A] = 255;
 }
 
+//********************************************************************************************************************
+
 inline void extLightingFX::specular_light(const point3 &Normal, const point3 &STL, const FRGB &Colour, uint8_t *Output,
    uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
 {
@@ -575,6 +579,7 @@ inline void extLightingFX::encode_light(const FRGB &Colour, double Scale, uint8_
    }
 }
 
+//********************************************************************************************************************
 // Strength is Constant multiplied by Intensity, which is exactly Constant when Intensity is 1.
 
 inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &STL, const FRGB &Colour,
@@ -584,6 +589,7 @@ inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &
    Output[A] = 255;
 }
 
+//********************************************************************************************************************
 // The alpha rule of specular_light() is kept: the maximum of the encoded channels for distant lights, and of the
 // light values otherwise.
 
@@ -605,6 +611,7 @@ inline void extLightingFX::enhanced_specular(const point3 &Normal, const point3 
    }
 }
 
+//********************************************************************************************************************
 // Samples the matcap for a shading normal with bilinear filtering.  The normal's X and Y, from -1 to 1, map to the
 // centres of the first and last pixels of the matcap, so a flat surface takes the colour at its centre.  Normals are
 // in image orientation, so the top of the matcap colours faces that turn towards the top of the image.  The result is
@@ -638,6 +645,7 @@ inline void extLightingFX::sample_matcap(const point3 &Normal, float *Result) co
    }
 }
 
+//********************************************************************************************************************
 // Encodes one channel of light, clamped to 0 - 1, for output.  Round selects rounding in sRGB filters; otherwise the
 // value is truncated as the SVG functions do.  Linear light is always rounded.
 
@@ -648,6 +656,7 @@ inline uint8_t extLightingFX::encode_channel(double Value, bool Round)
    else return uint8_t((value * 255.0f) + (Round ? 0.5f : 0.0f));
 }
 
+//********************************************************************************************************************
 // Diffuse light with ambient light added.  The ambient light is reduced by the cavity term (Cavity), but not by
 // shadows; Occlusion includes both.  The sum is clamped per channel.
 
@@ -661,6 +670,7 @@ inline void extLightingFX::enhanced_ambient(const point3 &Normal, const point3 &
    Output[A] = 255;
 }
 
+//********************************************************************************************************************
 // The combined type.  Normal is the pixel's own normal, used for diffuse light, and Mean is the normal with which the
 // specular light is shaded, at the given Exponent (see row_toksvig()).  Light is not limited to full strength; the
 // result is clamped once, on output.  The albedo is premultiplied for the sum, so the specular light is added as the
@@ -696,6 +706,7 @@ inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 
    Output[A] = uint8_t((alpha * 255.0) + 0.5);
 }
 
+//********************************************************************************************************************
 // The combined type with material terms, selected per draw when any term differs from its default (see
 // has_material()).  The specular light is multiplied by a reflectance per channel, F0 = lerp(base, albedo, Metalness),
 // where base is Fresnel if it is set and 1 otherwise.  The albedo is premultiplied here, so that a metal's
@@ -737,6 +748,7 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
    double fg = base + (Metalness * ((Albedo.g * coverage) - base));
    double fb = base + (Metalness * ((Albedo.b * coverage) - base));
    double grazing = 0;
+
    if (Fresnel > 0) {
       const double q = 1.0 - std::clamp(Mean.z, 0.0, 1.0);
       const double q2 = q * q;
@@ -751,10 +763,12 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
    if ((MatcapTexels) and (coverage > 0)) {
       alignas(16) float matcap[4];
       sample_matcap(Mean, matcap);
+
       const double weight = Cavity * coverage;
       double cr = base + (Metalness * (Albedo.r - base));
       double cg = base + (Metalness * (Albedo.g - base));
       double cb = base + (Metalness * (Albedo.b - base));
+
       cr += (1.0 - cr) * grazing;
       cg += (1.0 - cg) * grazing;
       cb += (1.0 - cb) * grazing;
@@ -1036,16 +1050,51 @@ void extLightingFX::render_point(int StartY, int EndY, const objBitmap *Bitmap, 
    }
 }
 
-/*********************************************************************************************************************
--ACTION-
-Draw: Render the effect to the target bitmap.
--END-
-*********************************************************************************************************************/
+//********************************************************************************************************************
 
-static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
+static void write_lfx_features(std::ostream &Stream, LFX Features)
 {
-   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
-   return Self->draw();
+   static const std::pair<LFX, CSTRING> names[] = {
+      { LFX::DEQUANTISE, "dequantise" }, { LFX::SHARPEN, "sharpen" }, { LFX::CAVITY, "cavity" },
+      { LFX::DETAIL, "detail" }, { LFX::SHADOWS, "shadows" }, { LFX::SPECULAR_AA, "specular-aa" },
+      { LFX::DEQUANTISE_WIDE, "dequantise-wide" }
+   };
+
+   if (Features IS LFX::NIL) {
+      Stream << "none";
+      return;
+   }
+
+   bool first = true;
+   for (auto &[flag, name] : names) {
+      if ((Features & flag) IS LFX::NIL) continue;
+      if (not first) Stream << ' ';
+      Stream << name;
+      first = false;
+   }
+}
+
+//********************************************************************************************************************
+// Writes a colour in CSS rgb() notation.  Channels are written as 8-bit values if they are exactly representable, and
+// as percentages otherwise, so that the colour survives a round trip.
+
+static void write_rgb(std::ostream &Stream, const FRGB &Colour)
+{
+   auto exact = [](float Value) {
+      const float level = Value * 255.0f;
+      return (Value >= 0.0f) and (Value <= 1.0f) and (std::abs(level - std::round(level)) < 1e-3f);
+   };
+
+   Stream << "rgb(";
+   if (exact(Colour.Red) and exact(Colour.Green) and exact(Colour.Blue)) {
+      Stream << std::lround(Colour.Red * 255.0f) << ' ' << std::lround(Colour.Green * 255.0f) << ' '
+         << std::lround(Colour.Blue * 255.0f);
+   }
+   else {
+      Stream << (Colour.Red * 100.0) << "% " << (Colour.Green * 100.0) << "% " << (Colour.Blue * 100.0) << '%';
+   }
+   if (Colour.Alpha != 1.0f) Stream << " / " << Colour.Alpha;
+   Stream << ')';
 }
 
 //*********************************************************************************************************************
@@ -1121,6 +1170,7 @@ ERR extLightingFX::draw()
       width = std::min(width, bmp->Clip.Right - bmp->Clip.Left);
       height = std::min(height, bmp->Clip.Bottom - bmp->Clip.Top);
    }
+
    if ((width < 1) or (height < 1)) return ERR::Okay;
 
    // The surface height is in client units, converted to pixels for locating the surface relative to the light.  The
@@ -1140,14 +1190,17 @@ ERR extLightingFX::draw()
          if (auto error = get_source_view(this, albedo, filter_input_role::MIX); error != ERR::Okay) return error;
          if ((not albedo.Bitmap) or (albedo.Bitmap->BytesPerPixel != 4)) return ERR::InvalidState;
       }
+
       const double unit_size = unit_length(unit);
       return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, lt, spot_height, normal_height, unit_size,
          width, height);
    }
 
    if (not bmp) return ERR::NoSupport;
+
    int num_threads = std::min(int(std::thread::hardware_concurrency()), height);
    if (num_threads < 1) num_threads = 1;
+
    const int min_rows_per_chunk = 4; // Minimum work per thread to avoid overhead
    const int chunk_size = std::max(min_rows_per_chunk, height / num_threads);
    const int num_chunks = (height + chunk_size - 1) / chunk_size;
@@ -1173,6 +1226,18 @@ ERR extLightingFX::draw()
 
    pool.wait();
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-ACTION-
+Draw: Render the effect to the target bitmap.
+-END-
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
+{
+   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
+   return Self->draw();
 }
 
 /*********************************************************************************************************************
@@ -1679,9 +1744,9 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
    return ERR::Okay;
 }
 
-static ERR LIGHTINGFX_SET_MatcapReference(extLightingFX *Self, const std::string_view &Value)
+static ERR LIGHTINGFX_SET_MatcapRef(extLightingFX *Self, const std::string_view &Value)
 {
-   Self->MatcapReference = Value;
+   Self->MatcapRef = Value;
    return ERR::Okay;
 }
 
@@ -1893,56 +1958,11 @@ The `in`, `in2`, `result` and primitive subregion attributes are not included.
 
 *********************************************************************************************************************/
 
-static void write_lfx_features(std::ostream &Stream, LFX Features)
-{
-   static const std::pair<LFX, CSTRING> names[] = {
-      { LFX::DEQUANTISE, "dequantise" }, { LFX::SHARPEN, "sharpen" }, { LFX::CAVITY, "cavity" },
-      { LFX::DETAIL, "detail" }, { LFX::SHADOWS, "shadows" }, { LFX::SPECULAR_AA, "specular-aa" },
-      { LFX::DEQUANTISE_WIDE, "dequantise-wide" }
-   };
-
-   if (Features IS LFX::NIL) {
-      Stream << "none";
-      return;
-   }
-
-   bool first = true;
-   for (auto &[flag, name] : names) {
-      if ((Features & flag) IS LFX::NIL) continue;
-      if (not first) Stream << ' ';
-      Stream << name;
-      first = false;
-   }
-}
-
-// Writes a colour in CSS rgb() notation.  Channels are written as 8-bit values if they are exactly representable, and
-// as percentages otherwise, so that the colour survives a round trip.
-
-static void write_rgb(std::ostream &Stream, const FRGB &Colour)
-{
-   auto exact = [](float Value) {
-      const float level = Value * 255.0f;
-      return (Value >= 0.0f) and (Value <= 1.0f) and (std::abs(level - std::round(level)) < 1e-3f);
-   };
-
-   Stream << "rgb(";
-   if (exact(Colour.Red) and exact(Colour.Green) and exact(Colour.Blue)) {
-      Stream << std::lround(Colour.Red * 255.0f) << ' ' << std::lround(Colour.Green * 255.0f) << ' '
-         << std::lround(Colour.Blue * 255.0f);
-   }
-   else {
-      Stream << (Colour.Red * 100.0) << "% " << (Colour.Green * 100.0) << "% " << (Colour.Blue * 100.0) << '%';
-   }
-   if (Colour.Alpha != 1.0f) Stream << " / " << Colour.Alpha;
-   Stream << ')';
-}
-
 static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 {
    std::stringstream stream;
    const bool combined = Self->Type IS LT::COMBINED;
-   CSTRING element = combined ? "kotuku:feLighting" : (Self->Type IS LT::DIFFUSE) ? "feDiffuseLighting" :
-      "feSpecularLighting";
+   CSTRING element = combined ? "kotuku:feLighting" : (Self->Type IS LT::DIFFUSE) ? "feDiffuseLighting" : "feSpecularLighting";
    CSTRING prefix = combined ? "" : "kotuku:"; // Extension attributes of kotuku:feLighting are unprefixed
 
    stream << '<' << element << " surfaceScale=\"" << Self->MapHeight << '"';
@@ -1952,6 +1972,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
       stream << " diffuseConstant=\"" << Self->Constant << '"';
       stream << " specularConstant=\"" << Self->SpecularConstant << '"';
    }
+
    if (Self->Type != LT::DIFFUSE) stream << " specularExponent=\"" << Self->SpecularExponent << '"';
 
    if (Self->UnitXProvided or Self->UnitYProvided) {
@@ -1985,9 +2006,10 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
       if (Self->Metalness != 0) stream << " metalness=\"" << Self->Metalness << '"';
       if (Self->Fresnel != 0) stream << " fresnel=\"" << Self->Fresnel << '"';
       if (Self->Wrap != 0) stream << " wrap=\"" << Self->Wrap << '"';
-      const auto &reference = Self->MatcapReference.empty() ? Self->MatcapPath : Self->MatcapReference;
+      const auto &reference = Self->MatcapRef.empty() ? Self->MatcapPath : Self->MatcapRef;
       if (not reference.empty()) write_filter_xml_attribute(stream, "matcap", reference);
    }
+
    stream << '>';
 
    switch (Self->LightSource) {
@@ -2006,6 +2028,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
          stream << "<feDistantLight azimuth=\"" << Self->Azimuth << "\" elevation=\"" << Self->Elevation << '"';
          break;
    }
+
    if (Self->Intensity != 1.0) stream << " kotuku:intensity=\"" << Self->Intensity << '"';
    stream << "/>";
 
@@ -2020,29 +2043,27 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 #include "filter_lighting_def.c"
 
 static const FieldArray clLightingFXFields[] = {
-   { "Colour",   FDF_STRUCT|FDF_RW, nullptr, LIGHTINGFX_SET_Colour, "FRGB" },
-   { "Constant", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Constant },
-   { "Exponent", FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Exponent },
-   { "Features", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, LIGHTINGFX_GET_Features, LIGHTINGFX_SET_Features, &clLightingFXLFX },
-   { "Cavity",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Cavity, LIGHTINGFX_SET_Cavity },
-   { "Detail",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Detail, LIGHTINGFX_SET_Detail },
-   { "Penumbra", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Penumbra, LIGHTINGFX_SET_Penumbra },
-   { "Ambient",  FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Ambient, LIGHTINGFX_SET_Ambient, "FRGB" },
+   { "Colour",    FDF_STRUCT|FDF_RW, nullptr, LIGHTINGFX_SET_Colour, "FRGB" },
+   { "Constant",  FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Constant },
+   { "Exponent",  FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Exponent },
+   { "Features",  FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, LIGHTINGFX_GET_Features, LIGHTINGFX_SET_Features, &clLightingFXLFX },
+   { "Cavity",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Cavity, LIGHTINGFX_SET_Cavity },
+   { "Detail",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Detail, LIGHTINGFX_SET_Detail },
+   { "Penumbra",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Penumbra, LIGHTINGFX_SET_Penumbra },
+   { "Ambient",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Ambient, LIGHTINGFX_SET_Ambient, "FRGB" },
    { "Intensity", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Intensity, LIGHTINGFX_SET_Intensity },
-   { "SpecularConstant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_SpecularConstant,
-     LIGHTINGFX_SET_SpecularConstant },
-   { "Metalness", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Metalness, LIGHTINGFX_SET_Metalness },
-   { "Fresnel",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Fresnel, LIGHTINGFX_SET_Fresnel },
-   { "Wrap",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Wrap, LIGHTINGFX_SET_Wrap },
-   { "Matcap",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Matcap, LIGHTINGFX_SET_Matcap,
-     CLASSID::BITMAP },
+   { "SpecularConstant", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_SpecularConstant, LIGHTINGFX_SET_SpecularConstant },
+   { "Metalness",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Metalness, LIGHTINGFX_SET_Metalness },
+   { "Fresnel",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Fresnel, LIGHTINGFX_SET_Fresnel },
+   { "Wrap",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Wrap, LIGHTINGFX_SET_Wrap },
+   { "Matcap",     FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Matcap, LIGHTINGFX_SET_Matcap, CLASSID::BITMAP },
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
-   { "MatcapReference", FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapReference },
-   { "Scale",    FDF_DOUBLE|FDF_RW },
-   { "UnitX",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
-   { "UnitY",    FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
-   { "Type",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clLightingFXLT },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, LIGHTINGFX_GET_XMLDef },
+   { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },
+   { "Scale",      FDF_DOUBLE|FDF_RW },
+   { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
+   { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
+   { "Type",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clLightingFXLT },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };
 

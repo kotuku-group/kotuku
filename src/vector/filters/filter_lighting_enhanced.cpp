@@ -137,6 +137,7 @@ static void dequantise_span(const float *__restrict R0, const float *__restrict 
    }
 }
 
+//********************************************************************************************************************
 // Midpoints between adjacent pixel centres locate the two quantisation thresholds. Interpolate between them
 // only when both steps are one level in the same direction. Each reconstructed sample stays within its bin.
 
@@ -161,6 +162,7 @@ static void reconstruct_terraces(const float *Source, int Length, std::ptrdiff_t
    }
 }
 
+//********************************************************************************************************************
 // Weighted sum of Radius taps either side of each element from Start to End, with taps Step elements apart.
 
 static void blur_span(const float *__restrict Source, float *__restrict Dest, const float *__restrict Weights,
@@ -175,6 +177,7 @@ static void blur_span(const float *__restrict Source, float *__restrict Dest, co
    }
 }
 
+//********************************************************************************************************************
 // Replaces the blurred heights in Detail with the cored difference between Heights and the blur.
 
 static void core_detail(const float *__restrict Heights, float *__restrict Detail, int Count)
@@ -186,6 +189,7 @@ static void core_detail(const float *__restrict Heights, float *__restrict Detai
    }
 }
 
+//********************************************************************************************************************
 // Separable Gaussian blur of Source into Dest, clamping its indices to the buffer.  Work receives the horizontal pass.
 // Finish(Y) is called for each row once its blur is complete.
 
@@ -244,6 +248,7 @@ static void gaussian_blur(const float *Source, float *Dest, float *Work, int Str
    });
 }
 
+//********************************************************************************************************************
 // Detail layer: Source minus its Gaussian blur, cored to ignore quantisation residue.
 
 static void detail_layer(const float *Source, float *Dest, float *Work, int Stride, int Rows, double Sigma,
@@ -254,6 +259,7 @@ static void detail_layer(const float *Source, float *Dest, float *Work, int Stri
    });
 }
 
+//********************************************************************************************************************
 // One step of the shadow sweep for Rows rows.  Prev and Cur hold the volumes for the previous and current step at
 // each elevation, offset so that index -1 and Rows are the slots beside the band.  Heights are the rows' heights at
 // this step, and Light receives the fraction of light reaching each row.  The parameters are restricted so that the
@@ -432,6 +438,7 @@ static ERR cast_shadows(extLightingFX *Effect, const float *Heights, int Stride,
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Slopes and occlusion for one row of Width pixels.  H is the row of heights from which curvature is measured, and
 // the gradient is taken from the 1D differences across rows (X0 to X2, for the rows above, at and below) and along
 // the row (Y, including the pixel either side).  The differences are smoothed across their axis with weights
@@ -458,6 +465,7 @@ static void row_slopes(const float *__restrict H, int Stride, const float *__res
    }
 }
 
+//********************************************************************************************************************
 // Adds the boosted slope of the detail layer to one row.  Only the change that the boost makes to the compressed slope
 // is applied, so the slope is unaltered where there is no detail.  Project the boost onto the unboosted slope and
 // discard opposing components: the detail blur must not invent slopes on flat ground beside a hard edge.  Boost is
@@ -485,6 +493,7 @@ static void row_boost(const float *__restrict X0, const float *__restrict X1, co
    }
 }
 
+//********************************************************************************************************************
 // Converts slopes to unit normals in place.
 
 static void row_normals(float *__restrict NX, float *__restrict NY, float *__restrict NZ, int Width)
@@ -498,6 +507,7 @@ static void row_normals(float *__restrict NX, float *__restrict NY, float *__res
    }
 }
 
+//********************************************************************************************************************
 // Fills a table that converts an 8-bit channel to the filter's colour space, from 0 to 1.  LinearSource is true if the
 // channel is linear, and Linear is true if the filter computes in linear RGB.
 
@@ -511,9 +521,10 @@ static void colour_table(std::array<float, 256> &Table, bool LinearSource, bool 
    }
 }
 
+//********************************************************************************************************************
 // Converts the matcap to premultiplied RGB in the filter's colour space, for sample_matcap(), with four floats per
-// texel.  The bitmap is read in
-// full on each draw, so that changes to a client's bitmap are seen.  A bitmap without an alpha channel is opaque.
+// texel.  The bitmap is read in full on each draw, so that changes to a client's bitmap are seen.  A bitmap without
+// an alpha channel is opaque.
 
 ERR extLightingFX::prepare_matcap()
 {
@@ -565,6 +576,7 @@ ERR extLightingFX::prepare_matcap()
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Reads the albedo at X from a row, or returns transparent black if X is beyond the albedo.  Without an albedo row the
 // albedo is opaque white.
 
@@ -588,6 +600,7 @@ static inline albedo_sample read_albedo(const lit_surface &Surface, const uint8_
    return { lut[r], lut[g], lut[b], float(alpha) * (1.0f / 255.0f) };
 }
 
+//********************************************************************************************************************
 // Toksvig's specular anti-aliasing for one row.  N is the mean of the unit normals over a pixel's 3x3 neighbourhood,
 // weighted [1 2 1] x [1 2 1] / 16.  It is shorter than a unit vector where the normals vary, and Factor receives
 // ft = |N| / (|N| + e (1 - |N|)), which scales the exponent e so that the highlight widens to cover the variation.
@@ -834,7 +847,6 @@ double extLightingFX::reach() const
 }
 
 //********************************************************************************************************************
-
 // Load a row of native heights in alpha-level units, aligned to the lighting output in scene coordinates.
 
 static void load_lighting_height_row(const filter_surface_view &Source, float *Dest, int SceneX, int SceneY, int Width)
@@ -906,6 +918,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
 
    float *raw;
    if (auto error = get_filter_scratch(this, size, raw); error != ERR::Okay) return error;
+
    float *heights = raw;
    if (dequantise) {
       if (auto error = get_filter_scratch(this, size, heights); error != ERR::Okay) return error;
@@ -935,6 +948,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
          const int y = std::clamp(py - LIGHT_PAD, 0, Height - 1);
          float *dest = raw + py * stride;
          float *interior = dest + LIGHT_PAD;
+
          if (scalar) load_lighting_height_row(Source, interior, scene_x, scene_y + y, Width);
          else {
             const int alpha = bitmap->ColourFormat->AlphaPos >> 3;
@@ -942,6 +956,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
             const auto src = Source.row(bitmap->Clip.Top + y) + std::ptrdiff_t(bitmap->Clip.Left) * bpp + alpha;
             for (int x=0; x < Width; ++x) interior[x] = src[x * bpp];
          }
+
          std::fill_n(dest, LIGHT_PAD, interior[0]);
          std::fill_n(interior + Width, LIGHT_PAD, interior[Width - 1]);
       }
@@ -959,6 +974,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
             });
          }
       });
+
       for_rows(stride, [&](int Start, int End) {
          for (int x=Start; x < End; ++x) {
             reconstruct_terraces(raw + x, rows, stride, [&](int Y, float Value, bool Reconstructed) {
@@ -971,6 +987,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
          }
       });
    }
+
    if (legacy) for_rows(rows, [&](int Start, int End) {
       for (int py=Start; py < End; ++py) {
          const float *r0 = raw + std::max(py - 1, 0) * stride;
@@ -984,9 +1001,12 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
                + 4.0f * r1[X]) * (1.0f / 16.0f);
             return (hi - lo <= 1.0f) ? mean : r1[X];
          };
+
          if ((not wide) or (dest[0] < 0.0f)) dest[0] = dequantise_edge(0, 0, 1);
+
          if (wide) dequantise_span<true>(r0, r1, r2, dest, 1, stride - 1);
          else dequantise_span<false>(r0, r1, r2, dest, 1, stride - 1);
+
          if ((not wide) or (dest[stride - 1] < 0.0f)) {
             dest[stride - 1] = dequantise_edge(stride - 1, stride - 2, stride - 1);
          }
@@ -1009,9 +1029,11 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    const bool boost = boost_detail(sigma);
    const double curve_sigma = cavity_sigma(UnitSize);
    float *work = dequantise ? raw : nullptr;
+
    if ((boost or (curve_sigma > 0)) and (not work)) {
       if (auto error = get_filter_scratch(this, size, work); error != ERR::Okay) return error;
    }
+
    if (boost) {
       if (auto error = get_filter_scratch(this, size, detail); error != ERR::Okay) return error;
       detail_layer(heights, detail, work, stride, rows, sigma, for_rows);
@@ -1049,6 +1071,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       const double lifted = elevation + asin(Wrap);
       if (lifted < 89.0 * DEG2RAD) {
          if (auto error = get_filter_scratch(this, size_t(Width) * Height, raised); error != ERR::Okay) return error;
+
          auto error = cast_shadows(this, heights + (LIGHT_PAD * stride) + LIGHT_PAD, stride, Width, Height, raised,
             Direction, lifted, SpotHeight * (1.0 / 255.0), pool);
          if (error != ERR::Okay) return error;
@@ -1075,7 +1098,9 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    const size_t chunk_floats = size_t(Width + 2) * LIGHT_ROW_BUFFERS;
    const size_t chunks = (Height + chunk_size - 1) / chunk_size;
    float *row_buffers;
+
    if (auto error = get_filter_scratch(this, chunks * chunk_floats, row_buffers); error != ERR::Okay) return error;
+
    for_rows(Height, [&](int Start, int End) {
       auto buffer = row_buffers + (Start / chunk_size) * chunk_floats;
       if (LightSource IS LS::DISTANT) {
