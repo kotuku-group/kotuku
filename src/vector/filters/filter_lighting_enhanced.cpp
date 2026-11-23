@@ -6,8 +6,8 @@ replaces the gradient stage only; normals, kernel units and the light models are
 
 1. The alpha channel is converted to a float height buffer, padded with replicated edge values so that no special
    edge kernels are required.
-2. Pixels whose 3x3 neighbourhood spans no more than one alpha level are replaced with a Gaussian-weighted mean,
-   which removes quantisation terraces without softening real edges.
+2. For 8-bit heights, the default dequantiser applies a weighted mean where the 3x3 neighbourhood spans one alpha
+   level or less. The wider opt-in estimates a slope from successive one-level transitions that bound a terrace.
 3. Gradients use a 4th-order central difference with light cross-axis smoothing.  The result is doubled to match the
    slope gain of the SVG interior kernel, so broad shapes are lit identically in both modes.  Where a kernel unit
    covers more than a pixel the stencil blends back to the SVG kernel, because magnified features are already wide
@@ -35,6 +35,7 @@ replaces the gradient stage only; normals, kernel units and the light models are
 *********************************************************************************************************************/
 
 constexpr int LIGHT_PAD = 3; // Padding on each side of the height buffer; the gradient stencil reaches 2 px.
+constexpr int MAX_TERRACE = 16;
 
 // Occlusion is 1 - Cavity * curvature for concave regions, limited to CAVITY_FLOOR.  Curvature is the Laplacian of
 // the height in client units per kernel unit squared.
@@ -116,12 +117,16 @@ struct lit_surface {
 
 // Dequantises elements Start to End of the row R1, where R0 and R2 are the rows above and below.  A neighbourhood
 // spanning one level or less is a terrace step or a flat region, so its centre is replaced with a
-// [1 2 1] x [1 2 1] / 16 mean.
+// [1 2 1] x [1 2 1] / 16 mean.  UnresolvedOnly preserves samples already reconstructed by the wide pass.
 
+template<bool UnresolvedOnly>
 static void dequantise_span(const float *__restrict R0, const float *__restrict R1, const float *__restrict R2,
    float *__restrict Dest, int Start, int End)
 {
    for (int x=Start; x < End; ++x) {
+      if constexpr (UnresolvedOnly) {
+         if (Dest[x] >= 0.0f) continue;
+      }
       const float lo = std::min(std::min(std::min(R0[x - 1], R0[x]), std::min(R0[x + 1], R1[x - 1])),
          std::min(std::min(R1[x], R1[x + 1]), std::min(std::min(R2[x - 1], R2[x]), R2[x + 1])));
       const float hi = std::max(std::max(std::max(R0[x - 1], R0[x]), std::max(R0[x + 1], R1[x - 1])),
@@ -129,6 +134,30 @@ static void dequantise_span(const float *__restrict R0, const float *__restrict 
       const float mean = ((R0[x - 1] + R0[x + 1] + R2[x - 1] + R2[x + 1])
          + 2.0f * (R0[x] + R1[x - 1] + R1[x + 1] + R2[x]) + 4.0f * R1[x]) * (1.0f / 16.0f);
       Dest[x] = (hi - lo <= 1.0f) ? mean : R1[x];
+   }
+}
+
+// Midpoints between adjacent pixel centres locate the two quantisation thresholds. Interpolate between them
+// only when both steps are one level in the same direction. Each reconstructed sample stays within its bin.
+
+static void reconstruct_terraces(const float *Source, int Length, std::ptrdiff_t Step, auto Write)
+{
+   int start = 0;
+   while (start < Length) {
+      const float height = Source[start * Step];
+      int end = start + 1;
+      while ((end < Length) and (Source[end * Step] IS height)) ++end;
+
+      const int length = end - start;
+      float slope = 0.0f;
+      if ((length <= MAX_TERRACE) and (start > 0) and (end < Length)) {
+         const float rise = height - Source[(start - 1) * Step];
+         if ((std::abs(rise) IS 1.0f) and (Source[end * Step] - height IS rise)) slope = rise / float(length);
+      }
+
+      const float centre = 0.5f * float(length - 1);
+      for (int i=0; i < length; ++i) Write(start + i, height + (float(i) - centre) * slope, slope != 0.0f);
+      start = end;
    }
 }
 
@@ -777,7 +806,7 @@ float extLightingFX::sharpen_weight(double UnitSize) const
 
 //********************************************************************************************************************
 // Distance in pixels over which the lighting samples neighbouring pixels.  The SVG kernel is 3x3.  The enhanced
-// gradient reaches 2 px into heights that are dequantised over 1 px, and the specular Toksvig factor averages the
+// gradient reaches 2 px into heights that are usually dequantised over 1 px, and the specular Toksvig factor averages the
 // normals over a further 1 px.  The detail layer and the curvature blur add the larger of their blur radii, and
 // shadows add the length of the longest shadow, limited to MAX_SHADOW_LENGTH.  Each addition applies only if its
 // feature is enabled.
@@ -791,7 +820,8 @@ double extLightingFX::reach() const
    const double sigma = std::min(MAX_SIGMA, DETAIL_SIGMA * unit_size);
    double blur = cavity_sigma(unit_size);
    if (boost_detail(sigma)) blur = std::max(blur, sigma);
-   double result = 4 + std::ceil(blur * 3.0);
+   const int dequantise_reach = ((Features & LFX::DEQUANTISE_WIDE) != LFX::NIL) ? MAX_TERRACE : 1;
+   double result = 3 + dequantise_reach + std::ceil(blur * 3.0);
 
    if ((LightSource IS LS::DISTANT) and ((Features & LFX::SHADOWS) != LFX::NIL)) {
       const double elevation = Elevation * DEG2RAD;
@@ -828,7 +858,9 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    const int rows   = Height + (LIGHT_PAD * 2);
    const size_t size = size_t(stride) * rows;
    const bool scalar = Source.Format IS filter_surface_format::SCALAR_F32;
-   const bool dequantise = (not scalar) and ((Features & LFX::DEQUANTISE) != LFX::NIL);
+   const bool wide = (not scalar) and ((Features & LFX::DEQUANTISE_WIDE) != LFX::NIL);
+   const bool legacy = (not scalar) and ((Features & LFX::DEQUANTISE) != LFX::NIL);
+   const bool dequantise = wide or legacy;
 
    // The diffuse and specular output functions expect each channel of the light in the range 0 - 1, and apply the
    // intensity to the light's strength.  A spot light only scales the colour down, so limiting it here is sufficient.
@@ -915,10 +947,31 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       }
    });
 
-   // Dequantise.  Neighbours are clamped to the buffer, which matches the replicated edges.  Without DEQUANTISE, the
-   // raw heights are used as they are.
+   // Reconstruct terraces across both axes.  When legacy dequantisation is enabled, leave unresolved samples marked
+   // for the local smoothing pass.
 
-   if (dequantise) for_rows(rows, [&](int Start, int End) {
+   if (wide) {
+      for_rows(rows, [&](int Start, int End) {
+         for (int y=Start; y < End; ++y) {
+            float *dest = heights + y * stride;
+            reconstruct_terraces(raw + y * stride, stride, 1, [&](int X, float Value, bool Reconstructed) {
+               dest[X] = Reconstructed ? Value : -1.0f; // A negative value marks an unresolved sample.
+            });
+         }
+      });
+      for_rows(stride, [&](int Start, int End) {
+         for (int x=Start; x < End; ++x) {
+            reconstruct_terraces(raw + x, rows, stride, [&](int Y, float Value, bool Reconstructed) {
+               auto &dest = heights[std::ptrdiff_t(Y) * stride + x];
+               if (dest < 0.0f) {
+                  if (Reconstructed or (not legacy)) dest = Value;
+               }
+               else if (Reconstructed) dest = (dest + Value) * 0.5f;
+            });
+         }
+      });
+   }
+   if (legacy) for_rows(rows, [&](int Start, int End) {
       for (int py=Start; py < End; ++py) {
          const float *r0 = raw + std::max(py - 1, 0) * stride;
          const float *r1 = raw + py * stride;
@@ -931,9 +984,12 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
                + 4.0f * r1[X]) * (1.0f / 16.0f);
             return (hi - lo <= 1.0f) ? mean : r1[X];
          };
-         dest[0] = dequantise_edge(0, 0, 1);
-         dequantise_span(r0, r1, r2, dest, 1, stride - 1);
-         dest[stride - 1] = dequantise_edge(stride - 1, stride - 2, stride - 1);
+         if ((not wide) or (dest[0] < 0.0f)) dest[0] = dequantise_edge(0, 0, 1);
+         if (wide) dequantise_span<true>(r0, r1, r2, dest, 1, stride - 1);
+         else dequantise_span<false>(r0, r1, r2, dest, 1, stride - 1);
+         if ((not wide) or (dest[stride - 1] < 0.0f)) {
+            dest[stride - 1] = dequantise_edge(stride - 1, stride - 2, stride - 1);
+         }
       }
    });
 

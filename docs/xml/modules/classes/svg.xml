@@ -105,8 +105,8 @@ document, not from the element that references them.</li>
 <p>A document that declares a Kōtuku namespace is rendered with a <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of <code>NONE</code> (see #Init), which enables the enhanced lighting of <class name="LightingFX">LightingFX</class>.  The following attributes of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code> configure it, using any prefix that is bound to the Kōtuku namespace:</p>
 <list type="bullet">
 <li><code>kotuku:features</code>: <code>all</code>, <code>none</code>, or a space-separated list of <code>dequantise</code>, <code>sharpen</code>, <code>cavity</code>, <code>detail</code>,
-<code>shadows</code> and <code>specular-aa</code>.  Unknown names are skipped with a warning.  Sets <class name="LightingFX" field="Features">LightingFX.Features</class>; the default is
-<code>all</code>.</li>
+<code>shadows</code>, <code>specular-aa</code> and <code>dequantise-wide</code>.  Sets <class name="LightingFX" field="Features">LightingFX.Features</class>.  The default is <code>all</code>, which excludes the opt-in
+<code>dequantise-wide</code>.</li>
 <li><code>kotuku:cavity</code>: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
 <class name="LightingFX" field="Cavity">LightingFX.Cavity</class>.</li>
 <li><code>kotuku:detail</code>: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets <class name="LightingFX" field="Detail">LightingFX.Detail</class>.</li>

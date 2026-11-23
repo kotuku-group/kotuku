@@ -15,6 +15,7 @@ static const struct FieldDef clLightingFXLFX[] = {
    { "Shadows", 0x00000010 },
    { "SpecularAa", 0x00000020 },
    { "All", 0x0000003f },
+   { "DequantiseWide", 0x00000040 },
    { nullptr, 0 }
 };
 

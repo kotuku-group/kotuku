@@ -144,8 +144,8 @@ enables the enhanced lighting of @LightingFX.  The following attributes of `feDi
 
 <list type="bullet">
 <li>`kotuku:features`: `all`, `none`, or a space-separated list of `dequantise`, `sharpen`, `cavity`, `detail`,
-`shadows` and `specular-aa`.  Unknown names are skipped with a warning.  Sets @LightingFX.Features; the default is
-`all`.</li>
+`shadows`, `specular-aa` and `dequantise-wide`.  Sets @LightingFX.Features.  The default is `all`, which excludes the opt-in 
+`dequantise-wide`.</li>
 <li>`kotuku:cavity`: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
 @LightingFX.Cavity.</li>
 <li>`kotuku:detail`: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets @LightingFX.Detail.</li>
