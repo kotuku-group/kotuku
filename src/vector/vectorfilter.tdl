@@ -48,7 +48,7 @@
     "MINUS|SUBTRACT: The input colour value is subtracted from the mix.",
     "OVERLAY: Combines the multiply and screen blend modes, with the mix determining tonal strength.")
 
-  klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
+  klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF', 'VCS' }, extended=true }, [[
     obj(FilterEffect) Next  # Next filter in the chain.
     obj(FilterEffect) Prev  # Previous filter in the chain.
     obj(Bitmap) Target      # Target bitmap for rendering the effect.
@@ -60,6 +60,7 @@
     unit Height             # Primitive height.
     int(VSF) SourceType     # Desired source input.
     int(VSF) MixType        # Optional input for mixing.
+    ~int(VCS) ColourSpace
   ]])
 
   structdef('MergeSource', { comment='Input source declaration for MergeFX' }, [[
@@ -123,21 +124,23 @@
     ~int(EM) EdgeMode
   ]])
 
-  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM' } }, [[
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM', 'NMC' } }, [[
     ~int(VSM) ResampleMethod
     ~int(CMP) XChannel
     ~int(CMP) YChannel
+    ~int(NMC) NormalConvention
   ]])
 
   klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[
     ~struct(FRGB) Colour
   ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX', 'LOF', 'LightOptions' } }, [[
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX', 'LOF', 'NMC', 'LightOptions' } }, [[
     ~struct(FRGB) Colour
     ~int(LT) Type
     ~int(LFX) Features
     ~struct(FRGB) Ambient
+    ~int(NMC) NormalConvention
   ]])
 
   klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[

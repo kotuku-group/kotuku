@@ -246,6 +246,69 @@ end
       'Preset contrast offsets must keep their existing byte units')
 end
 
+@Test function MatrixTypeDefaultsToMatrix()
+   local p = pixel('<feFlood flood-color="black"/><feColorMatrix values="1 0 0 0 1  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>')
+   assert((p.red is 255) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
+      f'Values without a type must be applied as a matrix, got {p.red},{p.green},{p.blue},{p.alpha}')
+   p = pixel('<feFlood flood-color="#204080"/><feColorMatrix/>')
+   assert((p.red is 0x20) and (p.green is 0x40) and (p.blue is 0x80), 'A matrix without values must be the identity')
+end
+
+-- color-interpolation-filters on a primitive overrides the filter's value for that primitive alone.
+
+@Test function PrimitiveColourSpaceOverridesTheFilter()
+   local matrix = '<feFlood flood-color="#808080"/><feColorMatrix type="matrix" ' ..
+      'values="0.5 0 0 0 0  0 0.5 0 0 0  0 0 0.5 0 0  0 0 0 1 0"'
+   local function grey(Primitive:str, Filter:str):num
+      local svg <close> = document(matrix .. (Primitive ?? '') .. '/>', nil, 64, nil,
+         f'color-interpolation-filters="{Filter}"')
+      local bmp <close> = draw(svg, 64)
+      return mGfx.ReadRGBPixel(bmp, 20, 20).red
+   end
+
+   local srgb, linear = grey(nil, 'sRGB'), grey(nil, 'linearRGB')
+   assert(srgb != linear, f'The test needs a matrix that differs between colour spaces ({srgb})')
+   assert(grey(' color-interpolation-filters="sRGB"', 'linearRGB') is srgb, 'sRGB on the primitive must override')
+   assert(grey(' color-interpolation-filters="linearRGB"', 'sRGB') is linear,
+      'linearRGB on the primitive must override')
+   assert(grey(' color-interpolation-filters="auto"', 'sRGB') is linear, 'auto must select linearRGB')
+   assert(grey(' color-interpolation-filters="inherit"', 'sRGB') is srgb, 'inherit must use the filter value')
+
+   local svg <close> = document(matrix .. ' color-interpolation-filters="sRGB"/>', nil, 64, nil,
+      'color-interpolation-filters="linearRGB"')
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('ColourFX')[0])
+   assert(fx.colourSpace is VCS_SRGB, 'The attribute must set FilterEffect.ColourSpace')
+   local xml = filter.effectXML
+   assert(xml.find('color-interpolation-filters="sRGB"', 0, true), f'EffectXML must write the override: {xml}')
+   assert(xml.find('<feFlood color-interpolation', 0, true) is nil, f'Inherited primitives must not write it: {xml}')
+end
+
+@Test function CompositeAndBlendUsePrimitiveColourSpace()
+   local over = '<feFlood flood-color="black" result="backdrop"/>' ..
+      '<feFlood flood-color="white" flood-opacity=".5" result="source"/>' ..
+      '<feComposite in="source" in2="backdrop" operator="over"'
+   local screen = '<feFlood flood-color="#808080" result="backdrop"/>' ..
+      '<feFlood flood-color="#808080" result="source"/>' ..
+      '<feBlend in="source" in2="backdrop" mode="screen"'
+
+   for case in values(array<table> { { effect=over, srgb=128, linear=188 },
+      { effect=screen, srgb=192, linear=167 } }) do
+      local srgb = pixel(case.effect .. ' color-interpolation-filters="sRGB"/>')
+      local linear = pixel(case.effect .. ' color-interpolation-filters="linearRGB"/>')
+      assert(math.abs(srgb.red - case.srgb) <= 1 and math.abs(linear.red - case.linear) <= 1,
+         f'Expected sRGB {case.srgb} and linearRGB {case.linear}, got {srgb.red} and {linear.red}')
+   end
+end
+
+@Test function SRGBBlendReturnsStraightAlpha()
+   local p = pixel([[<feFlood flood-opacity="0" result="clear"/>
+      <feFlood flood-color="#808080" flood-opacity=".5"/>
+      <feBlend in2="clear" mode="screen" color-interpolation-filters="sRGB"/>]])
+   assert(math.abs(p.red - 128) <= 2 and math.abs(p.alpha - 128) <= 1,
+      f'Blending grey over transparency must preserve straight grey and half alpha, got {p.red},{p.alpha}')
+end
+
 @Test function MatrixValuesRemainNormalisedOnExport()
    local svg <close> = document([[<feFlood flood-color="black"/>
       <feColorMatrix type="matrix" values="1 0 0 0 .5  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>]], nil, 64)
@@ -1271,4 +1334,259 @@ end
    local foreign <close> = document(noise .. ' xmlns:h="urn:foreign" h:outputMode="height"/>', nil, 64)
    local image <close> = draw(foreign, 64)
    assert(mGfx.ReadRGBPixel(image, 16, 32).alpha > 0, 'Foreign namespaces must leave the producer in image mode')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Normal map conventions.  A dome's Y-down normals come from kotuku:feNormalMap.  A colour matrix maps green G to
+-- 256 - G, which negates Y exactly, so the Y-up copy encodes the same directions in the other convention.  The matrix
+-- runs in sRGB so that the copy is exact in either filter colour space.
+
+DOME_CONTENT <const> = '<defs><radialGradient id="dome" r="0.42"><stop offset="0" stop-color="white"/>' ..
+   '<stop offset="1" stop-color="white" stop-opacity="0.1"/></radialGradient></defs>' ..
+   '<rect width="64" height="64" fill="url(#dome)" filter="url(#f)"/>'
+
+-- Effects that publish the dome's Y-down normals as 'down' and the Y-up copy as 'up'.
+
+function domeNormals():str
+   return '<kotuku:feNormalMap in="SourceAlpha" surfaceScale="12" features="none" result="down"/>' ..
+      '<feColorMatrix type="matrix" in="down" color-interpolation-filters="sRGB" result="up" ' ..
+      'values="1 0 0 0 0  0 -1 0 0 ' .. (256 / 255) .. '  0 0 1 0 0  0 0 0 1 0"/>'
+end
+
+-- The fixture's other effects select the last lighting effect; the first is the dome's feNormalMap.
+
+function lastLightingFX(SVG:obj!):obj
+   local _, filter = check SVG.scene.mtFindDef('f')
+   local list = filter.children('LightingFX')
+   return obj.find(list[#list - 1])
+end
+
+-- The dome is lit as a flat surface (surfaceScale 0), so its shading comes from the bound map alone.
+
+function domeLighting(Map:str, Attribs:str):obj
+   return document(domeNormals() .. '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" ' ..
+      f'features="none" normalMap="{Map}" ambient="#202020" specularConstant="0.5" specularExponent="8" ' ..
+      f'{Attribs ?? ""}><feDistantLight azimuth="60" elevation="35"/></kotuku:feLighting>',
+      DOME_CONTENT, 64, KOTUKU_NS)
+end
+
+@Test function YUpCopyNegatesGreenExactly()
+   local linear = 'color-interpolation-filters="linearRGB"'
+   local down <close> = draw(document(domeNormals() .. '<feOffset in="down"/>', DOME_CONTENT, 64, KOTUKU_NS,
+      linear), 64)
+   local up <close> = draw(document(domeNormals() .. '<feOffset in="up"/>', DOME_CONTENT, 64, KOTUKU_NS,
+      linear), 64)
+   local sloped = 0
+   for y in {0 to 64} do
+      for x in {0 to 64} do
+         local p = mGfx.ReadRGBPixel(down, x, y)
+         local r, g, b = p.red, p.green, p.blue
+         local q = mGfx.ReadRGBPixel(up, x, y)
+         assert((q.red is r) and (q.blue is b) and (q.green is 256 - g),
+            f'The Y-up copy at ({x},{y}) must hold green {256 - g}, got {q.green}')
+         if g != 128 then sloped++ end
+      end
+   end
+   assert(sloped > 1000, f'The dome must slope across most of the map, got {sloped} sloped pixels')
+end
+
+@Test function NormalConventionReadsBothEncodingsAlike()
+   local down <close> = draw(domeLighting('down'), 64)
+   local up <close> = draw(domeLighting('up', 'normalConvention="y-up"'), 64)
+   local diff = imageDifference(down, up)
+   assert(diff is 0, f'Y_UP with the Y-up map must match Y_DOWN with the Y-down map (max difference {diff})')
+
+   local wrong <close> = draw(domeLighting('up'), 64)
+   assert(imageDifference(down, wrong) > 20, 'Reading the Y-up map as Y-down must change the shading')
+
+   local explicit <close> = draw(domeLighting('down', 'normalConvention="Y-DOWN"'), 64)
+   assert(imageDifference(down, explicit) is 0, 'An explicit y-down must match the default')
+end
+
+@Test function NormalStrengthScalesTheRelief()
+   local flat <close> = draw(document(domeNormals() .. '<feFlood flood-color="#8080ff" result="flat"/>' ..
+      '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none" normalMap="flat" ' ..
+      'ambient="#202020" specularConstant="0.5" specularExponent="8"><feDistantLight azimuth="60" elevation="35"/>' ..
+      '</kotuku:feLighting>', DOME_CONTENT, 64, KOTUKU_NS), 64)
+   local zero <close> = draw(domeLighting('down', 'normalStrength="0"'), 64)
+   local diff = imageDifference(flat, zero)
+   assert(diff is 0, f'Strength 0 must match a flat map (max difference {diff})')
+
+   local unit <close> = draw(domeLighting('down'), 64)
+   local explicit <close> = draw(domeLighting('down', 'normalStrength="1"'), 64)
+   assert(imageDifference(unit, explicit) is 0, 'Strength 1 must match the default')
+
+   -- The left flank of the dome faces away from a light in the east, so it darkens as the relief is exaggerated.
+
+   local strong <close> = draw(domeLighting('down', 'normalStrength="3"'), 64)
+   local base, more = mGfx.ReadRGBPixel(unit, 12, 32).red, mGfx.ReadRGBPixel(strong, 12, 32).red
+   assert(more < base, f'Strength 3 must exaggerate the slope facing away from the light ({more} vs {base})')
+end
+
+@Test function NormalStrengthZeroFlattensTangentNormals()
+   local function renderMap(Colour:str):obj
+      local svg <close> = document(f'<feFlood flood-color="{Colour}" result="map"/>' ..
+         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="12" features="none" ' ..
+         'normalMap="map" normalStrength="0" ambient="#202020">' ..
+         '<feDistantLight azimuth="60" elevation="35"/></kotuku:feLighting>', DOME_CONTENT, 64, KOTUKU_NS)
+      return draw(svg, 64)
+   end
+
+   local flat <close> = renderMap('#8080ff')
+   local tangent <close> = renderMap('#ff8080')
+   local diff = imageDifference(flat, tangent)
+   assert(diff is 0, f'Strength 0 must flatten tangent normals (max difference {diff})')
+end
+
+@Test function LargeNormalStrengthKeepsNormalsFinite()
+   local svg <close> = domeLighting('down', 'normalStrength="1e12"')
+   local saturated <close> = draw(svg, 64)
+   local fx = lastLightingFX(svg)
+   fx.normalStrength = 1.7e308
+   local huge <close> = draw(svg, 64)
+   local diff = imageDifference(saturated, huge)
+   assert(diff <= 1, f'Large strengths near the same limiting normals must render alike (max difference {diff})')
+end
+
+@Test function NormalOptionsValidateAndRoundTrip()
+   local svg <close> = domeLighting('up', 'normalConvention="y-up" normalStrength="1.5"')
+   local fx = lastLightingFX(svg)
+   assert((fx.normalConvention is NMC_Y_UP) and (fx.normalStrength is 1.5),
+      f'The attributes must set the fields (got {fx.normalConvention}, {fx.normalStrength})')
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   assert(xml.find('normalConvention="y-up"', 0, true) and xml.find('normalStrength="1.5"', 0, true),
+      f'XMLDef must write the normal options: {xml}')
+   local loaded <close> = document(xml, DOME_CONTENT, 64, KOTUKU_NS)
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'The normal options must survive XMLDef (max difference {diff}): {xml}')
+
+   local plain <close> = domeLighting('down')
+   assert(effectXML(plain).find('normalStrength', 0, true) is nil, 'Default normal options must not be written')
+
+   local invalid <close> = domeLighting('down', 'normalConvention="auto" normalStrength="-1"')
+   fx = lastLightingFX(invalid)
+   assert((fx.normalConvention is NMC_Y_DOWN) and (fx.normalStrength is 1),
+      'Invalid normal options must leave the defaults')
+   try
+      fx.normalConvention = NMC_AUTO
+   except
+   end
+   assert(fx.normalConvention is NMC_Y_DOWN, 'LightingFX must reject AUTO')
+
+   local standard <close> = lightingDocument('kotuku:normalConvention="y-up" kotuku:normalStrength="2"')
+   fx = lightingFX(standard)
+   assert((fx.normalConvention is NMC_Y_UP) and (fx.normalStrength is 2),
+      'The standard lighting elements must accept the prefixed attributes')
+   local exported = effectXML(standard)
+   assert(exported.find('kotuku:normalConvention="y-up"', 0, true), f'Standard elements must prefix: {exported}')
+end
+
+-- Refraction of noise through the dome.  feOffset copies the map exactly but drops the flag that marks
+-- kotuku:feNormalMap results, so the copy is read as colour unless normalConvention is set.
+
+function refraction(Map:str, Attribs:str, ColourSpace:str):obj
+   return draw(document(domeNormals() .. '<feOffset in="down" result="copy"/>' ..
+      '<feTurbulence baseFrequency=".15" seed="3" result="image"/>' ..
+      f'<feDisplacementMap in="image" in2="{Map}" scale="10" xChannelSelector="R" yChannelSelector="G" ' ..
+      f'{Attribs ?? ""}/>', DOME_CONTENT, 64, KOTUKU_NS, f'color-interpolation-filters="{ColourSpace ?? "sRGB"}"'),
+      64)
+end
+
+@Test function DisplacementNormalConvention()
+   for space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      local flagged <close> = refraction('down', nil, space)
+      local colour <close> = refraction('copy', nil, space)
+      assert(imageDifference(flagged, colour) > 0, f'An unflagged map must be read as colour by default in {space}')
+      local down <close> = refraction('copy', 'kotuku:normalConvention="y-down"', space)
+      local diff = imageDifference(flagged, down)
+      assert(diff is 0, f'y-down must read any map as feNormalMap normals in {space} (max difference {diff})')
+   end
+
+   for space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      local flagged <close> = refraction('down', nil, space)
+      local up <close> = refraction('up', 'kotuku:normalConvention="y-up"', space)
+      local diff = imageDifference(flagged, up)
+      assert(diff is 0, f'y-up with the Y-up map must match the Y-down refraction in {space} (max difference {diff})')
+      local wrong <close> = refraction('up', 'kotuku:normalConvention="y-down"', space)
+      assert(imageDifference(flagged, wrong) > 0,
+         f'Reading the Y-up map as Y-down must change the refraction in {space}')
+   end
+
+   local svg <close> = document(domeNormals() .. '<feTurbulence baseFrequency=".15" seed="3" result="image"/>' ..
+      '<feDisplacementMap in="image" in2="up" scale="10" xChannelSelector="R" yChannelSelector="G" ' ..
+      'kotuku:normalConvention="y-up"/>', DOME_CONTENT, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('DisplacementFX')[0])
+   assert(fx.normalConvention is NMC_Y_UP, 'The attribute must set NormalConvention')
+   local original <close> = draw(svg, 64)
+   local xml = filter.effectXML
+   assert(xml.find('kotuku:normalConvention="y-up"', 0, true), f'XMLDef must write the convention: {xml}')
+   local loaded <close> = document(xml, DOME_CONTENT, 64, KOTUKU_NS)
+   diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'The convention must survive XMLDef (max difference {diff}): {xml}')
+
+   fx.normalConvention = NMC_AUTO
+   assert(filter.effectXML.find('normalConvention', 0, true) is nil, 'AUTO must not be written')
+end
+
+-- Displacement is Scale * (C - 0.5) in user units, transformed with the client.  A red map moves the image left by
+-- half of the scale.  The image is a bar at user x 12-14; the viewBox doubles user units to pixels.
+
+DISPLACE_EFFECTS <const> = '<feFlood x="12" y="8" width="2" height="16" flood-color="red" result="image"/>' ..
+   '<feFlood flood-color="#ff0000" flood-opacity="1" result="map"/>' ..
+   '<feDisplacementMap in="image" in2="map" scale="8" xChannelSelector="R" yChannelSelector="A"/>'
+
+function displaced(Effects:str, Group:str, FilterAttribs:str):obj
+   local svg <close> = document(Effects, f'<g {Group ?? ""} filter="url(#f)"><rect width="32" height="32"/></g>',
+      64, 'viewBox="0 0 32 32"', FilterAttribs)
+   return draw(svg, 64)
+end
+
+@Test function DisplacementUsesUserUnitsOnGroups()
+   -- Alpha 1 also moves the bar up by 4 units, so it covers user y 4-20.
+   local bmp <close> = displaced(DISPLACE_EFFECTS)
+   local at = (X, Y) => mGfx.ReadRGBPixel(bmp, X, Y).alpha
+   assert(at(17, 20) is 255, 'A red map must move the bar to user x 8-10 (pixels 16-20)')
+   assert(at(25, 20) is 0, 'The bar must leave its original position')
+   assert((at(17, 10) is 255) and (at(17, 42) is 0), 'An opaque alpha map must move the bar up by 4 units')
+end
+
+@Test function DisplacementScalesWithBoundingBoxUnits()
+   local effects = '<feFlood x=".375" y=".25" width=".0625" height=".5" flood-color="red" result="image"/>' ..
+      '<feFlood flood-color="#ff0000" result="map"/>' ..
+      '<feDisplacementMap in="image" in2="map" scale=".25" xChannelSelector="R" yChannelSelector="A"/>'
+   local box <close> = displaced(effects, nil, 'primitiveUnits="objectBoundingBox"')
+   local user <close> = displaced(DISPLACE_EFFECTS)
+   local diff = imageDifference(box, user)
+   assert(diff is 0, f'A scale of 0.25 of a 32 unit box must match a user scale of 8 (max difference {diff})')
+end
+
+@Test function DisplacementUsesFractionalBoundingBoxDimensions()
+   local function render(Units:str, X:str, Y:str, Width:str, Height:str, Scale:str):obj
+      local effects = f'<feFlood x="{X}" y="{Y}" width="{Width}" height="{Height}" ' ..
+         'flood-color="red" result="image"/>' ..
+         '<feFlood flood-color="#ff0000" result="map"/>' ..
+         f'<feDisplacementMap in="image" in2="map" scale="{Scale}" xChannelSelector="R" yChannelSelector="A"/>'
+      local svg <close> = obj.new('svg', { statement='<svg xmlns="http://www.w3.org/2000/svg" ' ..
+         'width="64" height="64" viewBox="0 0 .5 .5">' ..
+         '<filter id="f" x="0" y="0" width=".5" height=".5" filterUnits="userSpaceOnUse" ' ..
+         f'primitiveUnits="{Units}">{effects}</filter><rect width=".25" height=".25" filter="url(#f)"/></svg>' })
+      return draw(svg, 64)
+   end
+
+   local box <close> = render('objectBoundingBox', '.375', '.25', '.0625', '.5', '.25')
+   local user <close> = render('userSpaceOnUse', '.09375', '.0625', '.015625', '.125', '.0625')
+   assert(mGfx.ReadRGBPixel(user, 8, 8).alpha > 0, 'The user-space reference must show the displaced bar')
+   local diff = imageDifference(box, user)
+   assert(diff is 0, f'Fractional bounding-box units must match the equivalent user units (max difference {diff})')
+end
+
+@Test function DisplacementRotatesWithTheClient()
+   -- rotate(90 16 16) maps user (u, v) to (32 - v, u), so the displaced bar at user x 8-10, y 4-20 lies at
+   -- x 12-28, y 8-10, and the vertical shift becomes a shift to the right.
+   local bmp <close> = displaced(DISPLACE_EFFECTS, 'transform="rotate(90 16 16)"')
+   local at = (X, Y) => mGfx.ReadRGBPixel(bmp, X, Y).alpha
+   assert(at(40, 18) is 255, 'The displacement must rotate with the client')
+   assert((at(40, 26) is 0) and (at(20, 18) is 0), 'The rotated bar must not remain at its undisplaced position')
 end

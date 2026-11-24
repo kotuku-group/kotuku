@@ -22,7 +22,7 @@ class extCompositeFX : public extFilterEffect {
 
    extCompositeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
-   template <class CompositeOp>
+   template <class CompositeOp, bool Linear>
    void doMix(const objBitmap *InBitmap, const objBitmap *MixBitmap, uint8_t *Dest, const uint8_t *In,
       const uint8_t *Mix) {
       const uint8_t A = Target->ColourFormat->AlphaPos>>3;
@@ -40,7 +40,7 @@ class extCompositeFX : public extFilterEffect {
          auto sp = In;
          auto mp = Mix;
          for (int x=0; x < width; x++) {
-            CompositeOp::blend(dp, sp, mp, A, R, G, B);
+            CompositeOp::template blend<Linear>(dp, sp, mp, A, R, G, B);
             dp += 4;
             sp += 4;
             mp += 4;
@@ -52,6 +52,22 @@ class extCompositeFX : public extFilterEffect {
    }
 
 };
+
+// The equations use the same 16-bit range for sRGB and linear RGB.  Only linear RGB needs a transfer function.
+
+template <bool Linear>
+static inline uint16_t composite_decode(uint8_t Value)
+{
+   if constexpr (Linear) return glLinearRGB.convert16(Value);
+   else return uint16_t(Value * 257u);
+}
+
+template <bool Linear>
+static inline uint8_t composite_encode(uint16_t Value)
+{
+   if constexpr (Linear) return glLinearRGB.invert16(Value);
+   else return uint8_t((Value + 128u) / 257u);
+}
 
 static inline uint32_t linear_alpha(const uint8_t Alpha)
 {
@@ -80,6 +96,7 @@ static inline uint16_t linear_multiply(const uint32_t A, const uint32_t B)
 // D = Dest; S = Source; M = Mix (equates to Dest as a pixel source)
 
 struct composite_over {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if (!M[A]) ((uint32_t *)D)[0] = ((uint32_t *)S)[0];
@@ -90,18 +107,19 @@ struct composite_over {
          const uint32_t cA = 256 - sA;
          const uint32_t mA = M[A] + (M[A] >> 7); // 0..255 -> 0..256
 
-         D[R] = glLinearRGB.invert16(linear_clamp(((glLinearRGB.convert16(S[R]) * sA +
-            ((glLinearRGB.convert16(M[R]) * mA * cA)>>8))>>8) * 255 / dA));
-         D[G] = glLinearRGB.invert16(linear_clamp(((glLinearRGB.convert16(S[G]) * sA +
-            ((glLinearRGB.convert16(M[G]) * mA * cA)>>8))>>8) * 255 / dA));
-         D[B] = glLinearRGB.invert16(linear_clamp(((glLinearRGB.convert16(S[B]) * sA +
-            ((glLinearRGB.convert16(M[B]) * mA * cA)>>8))>>8) * 255 / dA));
+         D[R] = composite_encode<Linear>(linear_clamp(((composite_decode<Linear>(S[R]) * sA +
+            ((composite_decode<Linear>(M[R]) * mA * cA)>>8))>>8) * 255 / dA));
+         D[G] = composite_encode<Linear>(linear_clamp(((composite_decode<Linear>(S[G]) * sA +
+            ((composite_decode<Linear>(M[G]) * mA * cA)>>8))>>8) * 255 / dA));
+         D[B] = composite_encode<Linear>(linear_clamp(((composite_decode<Linear>(S[B]) * sA +
+            ((composite_decode<Linear>(M[B]) * mA * cA)>>8))>>8) * 255 / dA));
          D[A] = dA;
       }
    }
 };
 
 struct composite_in {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if (M[A] IS 255) ((uint32_t *)D)[0] = ((uint32_t *)S)[0];
@@ -115,6 +133,7 @@ struct composite_in {
 };
 
 struct composite_out {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if (!M[A]) ((uint32_t *)D)[0] = ((uint32_t *)S)[0];
@@ -131,44 +150,46 @@ struct composite_out {
 // output.  S alpha is ignored except for blending with M.
 
 struct composite_atop {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if (auto m_alpha = M[A]) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          const uint8_t sA  = S[A];
          const uint8_t scA = 0xff - sA;
 
-         D[R] = glLinearRGB.invert16(((sR * sA) + (mR * scA) + 0xff)>>8);
-         D[G] = glLinearRGB.invert16(((sG * sA) + (mG * scA) + 0xff)>>8);
-         D[B] = glLinearRGB.invert16(((sB * sA) + (mB * scA) + 0xff)>>8);
+         D[R] = composite_encode<Linear>(((sR * sA) + (mR * scA) + 0xff)>>8);
+         D[G] = composite_encode<Linear>(((sG * sA) + (mG * scA) + 0xff)>>8);
+         D[B] = composite_encode<Linear>(((sB * sA) + (mB * scA) + 0xff)>>8);
          D[A] = m_alpha;
       }
    }
 };
 
 struct composite_xor {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
-      auto sR = glLinearRGB.convert16(S[R]);
-      auto sG = glLinearRGB.convert16(S[G]);
-      auto sB = glLinearRGB.convert16(S[B]);
+      auto sR = composite_decode<Linear>(S[R]);
+      auto sG = composite_decode<Linear>(S[G]);
+      auto sB = composite_decode<Linear>(S[B]);
 
-      auto mR = glLinearRGB.convert16(M[R]);
-      auto mG = glLinearRGB.convert16(M[G]);
-      auto mB = glLinearRGB.convert16(M[B]);
+      auto mR = composite_decode<Linear>(M[R]);
+      auto mG = composite_decode<Linear>(M[G]);
+      auto mB = composite_decode<Linear>(M[B]);
 
       const uint8_t s1a = 0xff - S[A];
       const uint8_t d1a = 0xff - M[A];
-      D[R] = glLinearRGB.invert16(linear_clamp(((mR * s1a) + (sR * d1a) + 0xff) >> 8));
-      D[G] = glLinearRGB.invert16(linear_clamp(((mG * s1a) + (sG * d1a) + 0xff) >> 8));
-      D[B] = glLinearRGB.invert16(linear_clamp(((mB * s1a) + (sB * d1a) + 0xff) >> 8));
+      D[R] = composite_encode<Linear>(linear_clamp(((mR * s1a) + (sR * d1a) + 0xff) >> 8));
+      D[G] = composite_encode<Linear>(linear_clamp(((mG * s1a) + (sG * d1a) + 0xff) >> 8));
+      D[B] = composite_encode<Linear>(linear_clamp(((mB * s1a) + (sB * d1a) + 0xff) >> 8));
       D[A] = (S[A] + M[A] - ((S[A] * M[A] + (0xff>>1)) >> (8 - 1)));
    }
 };
@@ -177,42 +198,44 @@ struct composite_xor {
 // Blending algorithms, refer to https://en.wikipedia.org/wiki/Blend_modes
 
 struct blend_screen {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
-      auto sR = glLinearRGB.convert16(S[R]);
-      auto sG = glLinearRGB.convert16(S[G]);
-      auto sB = glLinearRGB.convert16(S[B]);
+      auto sR = composite_decode<Linear>(S[R]);
+      auto sG = composite_decode<Linear>(S[G]);
+      auto sB = composite_decode<Linear>(S[B]);
 
-      auto mR = glLinearRGB.convert16(M[R]);
-      auto mG = glLinearRGB.convert16(M[G]);
-      auto mB = glLinearRGB.convert16(M[B]);
+      auto mR = composite_decode<Linear>(M[R]);
+      auto mG = composite_decode<Linear>(M[G]);
+      auto mB = composite_decode<Linear>(M[B]);
 
-      D[R] = glLinearRGB.invert16(linear_clamp(sR + mR - linear_multiply(sR, mR)));
-      D[G] = glLinearRGB.invert16(linear_clamp(sG + mG - linear_multiply(sG, mG)));
-      D[B] = glLinearRGB.invert16(linear_clamp(sB + mB - linear_multiply(sB, mB)));
+      D[R] = composite_encode<Linear>(linear_clamp(sR + mR - linear_multiply(sR, mR)));
+      D[G] = composite_encode<Linear>(linear_clamp(sG + mG - linear_multiply(sG, mG)));
+      D[B] = composite_encode<Linear>(linear_clamp(sB + mB - linear_multiply(sB, mB)));
       D[A] = uint8_t(S[A] + M[A] - ((S[A] * M[A] + 0Xff) >> 8));
    }
 };
 
 struct blend_multiply {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          const uint8_t s1a = 0xff - S[A];
          const uint8_t d1a = 0xff - M[A];
-         D[R] = glLinearRGB.invert16(linear_clamp(linear_multiply(sR, mR) +
+         D[R] = composite_encode<Linear>(linear_clamp(linear_multiply(sR, mR) +
             linear_scale_alpha(sR, d1a) + linear_scale_alpha(mR, s1a)));
-         D[G] = glLinearRGB.invert16(linear_clamp(linear_multiply(sG, mG) +
+         D[G] = composite_encode<Linear>(linear_clamp(linear_multiply(sG, mG) +
             linear_scale_alpha(sG, d1a) + linear_scale_alpha(mG, s1a)));
-         D[B] = glLinearRGB.invert16(linear_clamp(linear_multiply(sB, mB) +
+         D[B] = composite_encode<Linear>(linear_clamp(linear_multiply(sB, mB) +
             linear_scale_alpha(sB, d1a) + linear_scale_alpha(mB, s1a)));
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
@@ -220,63 +243,66 @@ struct blend_multiply {
 };
 
 struct blend_darken {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          uint8_t d1a = 0xff - M[A];
          uint8_t s1a = 0xff - S[A];
          uint8_t da  = M[A];
 
-         D[R] = glLinearRGB.invert16((agg::sd_min(sR * da, mR * S[A]) + sR * d1a + mR * s1a + 0xff) >> 8);
-         D[G] = glLinearRGB.invert16((agg::sd_min(sG * da, mG * S[A]) + sG * d1a + mG * s1a + 0xff) >> 8);
-         D[B] = glLinearRGB.invert16((agg::sd_min(sB * da, mB * S[A]) + sB * d1a + mB * s1a + 0xff) >> 8);
+         D[R] = composite_encode<Linear>((agg::sd_min(sR * da, mR * S[A]) + sR * d1a + mR * s1a + 0xff) >> 8);
+         D[G] = composite_encode<Linear>((agg::sd_min(sG * da, mG * S[A]) + sG * d1a + mG * s1a + 0xff) >> 8);
+         D[B] = composite_encode<Linear>((agg::sd_min(sB * da, mB * S[A]) + sB * d1a + mB * s1a + 0xff) >> 8);
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
    }
 };
 
 struct blend_lighten {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          uint8_t d1a = 0xff - M[A];
          uint8_t s1a = 0xff - S[A];
 
-         D[R] = glLinearRGB.invert16((agg::sd_max(sR * M[A], mR * S[A]) + sR * d1a + mR * s1a + 0xff) >> 8);
-         D[G] = glLinearRGB.invert16((agg::sd_max(sG * M[A], mG * S[A]) + sG * d1a + mG * s1a + 0xff) >> 8);
-         D[B] = glLinearRGB.invert16((agg::sd_max(sB * M[A], mB * S[A]) + sB * d1a + mB * s1a + 0xff) >> 8);
+         D[R] = composite_encode<Linear>((agg::sd_max(sR * M[A], mR * S[A]) + sR * d1a + mR * s1a + 0xff) >> 8);
+         D[G] = composite_encode<Linear>((agg::sd_max(sG * M[A], mG * S[A]) + sG * d1a + mG * s1a + 0xff) >> 8);
+         D[B] = composite_encode<Linear>((agg::sd_max(sB * M[A], mB * S[A]) + sB * d1a + mB * s1a + 0xff) >> 8);
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
    }
 };
 
 struct blend_dodge {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          uint32_t d1a  = 0xff - M[A];
          uint32_t s1a  = 0xff - S[A];
@@ -288,17 +314,17 @@ struct blend_dodge {
          uint32_t sbda = sB * M[A];
          uint32_t sada = S[A] * M[A] * 257u;
 
-         D[R] = glLinearRGB.invert16(linear_clamp((srda + drsa >= sada) ?
+         D[R] = composite_encode<Linear>(linear_clamp((srda + drsa >= sada) ?
              (sada + sR * d1a + mR * s1a + 0xff) >> 8 :
              uint64_t(drsa) * 257u / (0xffffu - (sR << 8) / S[A]) +
                 ((sR * d1a + mR * s1a + 0xff) >> 8)));
 
-         D[G] = glLinearRGB.invert16(linear_clamp((sgda + dgsa >= sada) ?
+         D[G] = composite_encode<Linear>(linear_clamp((sgda + dgsa >= sada) ?
              (sada + sG * d1a + mG * s1a + 0xff) >> 8 :
              uint64_t(dgsa) * 257u / (0xffffu - (sG << 8) / S[A]) +
                 ((sG * d1a + mG * s1a + 0xff) >> 8)));
 
-         D[B] = glLinearRGB.invert16(linear_clamp((sbda + dbsa >= sada) ?
+         D[B] = composite_encode<Linear>(linear_clamp((sbda + dbsa >= sada) ?
              (sada + sB * d1a + mB * s1a + 0xff) >> 8 :
              uint64_t(dbsa) * 257u / (0xffffu - (sB << 8) / S[A]) +
                 ((sB * d1a + mB * s1a + 0xff) >> 8)));
@@ -309,15 +335,16 @@ struct blend_dodge {
 };
 
 struct blend_contrast {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
-      auto sR = glLinearRGB.convert16(S[R]);
-      auto sG = glLinearRGB.convert16(S[G]);
-      auto sB = glLinearRGB.convert16(S[B]);
+      auto sR = composite_decode<Linear>(S[R]);
+      auto sG = composite_decode<Linear>(S[G]);
+      auto sB = composite_decode<Linear>(S[B]);
 
-      auto mR = glLinearRGB.convert16(M[R]);
-      auto mG = glLinearRGB.convert16(M[G]);
-      auto mB = glLinearRGB.convert16(M[B]);
+      auto mR = composite_decode<Linear>(M[R]);
+      auto mG = composite_decode<Linear>(M[G]);
+      auto mB = composite_decode<Linear>(M[B]);
 
       int32_t d2a = int32_t(linear_alpha(M[A]) >> 1);
       int32_t s2a = int32_t(linear_alpha(S[A]) >> 1);
@@ -330,39 +357,40 @@ struct blend_contrast {
       g = (g < 0) ? 0 : g;
       b = (b < 0) ? 0 : b;
 
-      D[R] = glLinearRGB.invert16((r > int(linear_alpha(M[A]))) ? linear_alpha(M[A]) : r);
-      D[G] = glLinearRGB.invert16((g > int(linear_alpha(M[A]))) ? linear_alpha(M[A]) : g);
-      D[B] = glLinearRGB.invert16((b > int(linear_alpha(M[A]))) ? linear_alpha(M[A]) : b);
+      D[R] = composite_encode<Linear>((r > int(linear_alpha(M[A]))) ? linear_alpha(M[A]) : r);
+      D[G] = composite_encode<Linear>((g > int(linear_alpha(M[A]))) ? linear_alpha(M[A]) : g);
+      D[B] = composite_encode<Linear>((b > int(linear_alpha(M[A]))) ? linear_alpha(M[A]) : b);
    }
 };
 
 struct blend_overlay {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          uint8_t d1a = 0xff - M[A];
          uint8_t s1a = 0xff - S[A];
          uint32_t sada = S[A] * M[A] * 257u;
 
-         D[R] = glLinearRGB.invert16(((2*mR < linear_alpha(M[A])) ?
+         D[R] = composite_encode<Linear>(((2*mR < linear_alpha(M[A])) ?
              uint64_t(2) * sR*mR / 257u + sR*d1a + mR*s1a :
              sada - uint64_t(2)*(linear_alpha(M[A]) - mR)*(linear_alpha(S[A]) - sR) / 257u +
                 sR*d1a + mR*s1a + 0xff) >> 8);
 
-         D[G] = glLinearRGB.invert16(((2*mG < linear_alpha(M[A])) ?
+         D[G] = composite_encode<Linear>(((2*mG < linear_alpha(M[A])) ?
              uint64_t(2) * sG*mG / 257u + sG*d1a + mG*s1a :
              sada - uint64_t(2)*(linear_alpha(M[A]) - mG)*(linear_alpha(S[A]) - sG) / 257u +
                 sG*d1a + mG*s1a + 0xff) >> 8);
 
-         D[B] = glLinearRGB.invert16(((2*mB < linear_alpha(M[A])) ?
+         D[B] = composite_encode<Linear>(((2*mB < linear_alpha(M[A])) ?
              uint64_t(2) * sB*mB / 257u + sB*d1a + mB*s1a :
              sada - uint64_t(2)*(linear_alpha(M[A]) - mB)*(linear_alpha(S[A]) - sB) / 257u +
                 sB*d1a + mB*s1a + 0xff) >> 8);
@@ -373,16 +401,17 @@ struct blend_overlay {
 };
 
 struct blend_burn {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          const uint8_t d1a = 0xff - M[A];
          const uint8_t s1a = 0xff - S[A];
@@ -394,15 +423,15 @@ struct blend_burn {
          const uint32_t sbda = sB * M[A];
          const uint32_t sada = S[A] * M[A] * 257u;
 
-         D[R] = glLinearRGB.invert16(((srda + drsa <= sada) ?
+         D[R] = composite_encode<Linear>(((srda + drsa <= sada) ?
              sR * d1a + mR * s1a :
              uint64_t(S[A]) * (srda + drsa - sada) / sR + sR * d1a + mR * s1a + 0xff) >> 8);
 
-         D[G] = glLinearRGB.invert16(((sgda + dgsa <= sada) ?
+         D[G] = composite_encode<Linear>(((sgda + dgsa <= sada) ?
              sG * d1a + mG * s1a :
              uint64_t(S[A]) * (sgda + dgsa - sada) / sG + sG * d1a + mG * s1a + 0xff) >> 8);
 
-         D[B] = glLinearRGB.invert16(((sbda + dbsa <= sada) ?
+         D[B] = composite_encode<Linear>(((sbda + dbsa <= sada) ?
              sB * d1a + mB * s1a :
              uint64_t(S[A]) * (sbda + dbsa - sada) / sB + sB * d1a + mB * s1a + 0xff) >> 8);
 
@@ -412,32 +441,33 @@ struct blend_burn {
 };
 
 struct blend_hard_light {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          uint8_t d1a  = 0xff - M[A];
          uint8_t s1a  = 0xff - S[A];
          uint32_t sada = S[A] * M[A] * 257u;
 
-         D[R] = glLinearRGB.invert16(((2*sR < linear_alpha(S[A])) ?
+         D[R] = composite_encode<Linear>(((2*sR < linear_alpha(S[A])) ?
              uint64_t(2) * sR*mR / 257u + sR*d1a + mR*s1a :
              sada - uint64_t(2)*(linear_alpha(M[A]) - mR)*(linear_alpha(S[A]) - sR) / 257u +
                 sR*d1a + mR*s1a + 0xff) >> 8);
 
-         D[G] = glLinearRGB.invert16(((2*sG < linear_alpha(S[A])) ?
+         D[G] = composite_encode<Linear>(((2*sG < linear_alpha(S[A])) ?
              uint64_t(2) * sG*mG / 257u + sG*d1a + mG*s1a :
              sada - uint64_t(2)*(linear_alpha(M[A]) - mG)*(linear_alpha(S[A]) - sG) / 257u +
                 sG*d1a + mG*s1a + 0xff) >> 8);
 
-         D[B] = glLinearRGB.invert16(((2*sB < linear_alpha(S[A])) ?
+         D[B] = composite_encode<Linear>(((2*sB < linear_alpha(S[A])) ?
              uint64_t(2) * sB*mB / 257u + sB*d1a + mB*s1a :
              sada - uint64_t(2)*(linear_alpha(M[A]) - mB)*(linear_alpha(S[A]) - sB) / 257u +
                 sB*d1a + mB*s1a + 0xff) >> 8);
@@ -448,16 +478,17 @@ struct blend_hard_light {
 };
 
 struct blend_soft_light {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         double sR = double(glLinearRGB.convert16(S[R])) / 65535.0;
-         double sG = double(glLinearRGB.convert16(S[G])) / 65535.0;
-         double sB = double(glLinearRGB.convert16(S[B])) / 65535.0;
+         double sR = double(composite_decode<Linear>(S[R])) / 65535.0;
+         double sG = double(composite_decode<Linear>(S[G])) / 65535.0;
+         double sB = double(composite_decode<Linear>(S[B])) / 65535.0;
 
-         double xr = double(glLinearRGB.convert16(M[R])) / 65535.0;
-         double xg = double(glLinearRGB.convert16(M[G])) / 65535.0;
-         double xb = double(glLinearRGB.convert16(M[B])) / 65535.0;
+         double xr = double(composite_decode<Linear>(M[R])) / 65535.0;
+         double xg = double(composite_decode<Linear>(M[G])) / 65535.0;
+         double xb = double(composite_decode<Linear>(M[B])) / 65535.0;
          double da = double(M[A] ? M[A] : 1) / 255.0;
          double sa = double(S[A]) / 255.0;
 
@@ -473,55 +504,57 @@ struct blend_soft_light {
          else if(8*xb <= da) xb = xb*(sa + (1 - xb/da)*(2*sB - sa)*(3 - 8*xb/da)) + sB*(1 - da) + xb*(1 - sa);
          else                xb = (xb*sa + (sqrt(xb/da)*da - xb)*(2*sB - sa)) + sB*(1 - da) + xb*(1 - sa);
 
-         D[R] = glLinearRGB.invert16(agg::uround(std::clamp(xr, 0.0, 1.0) * 65535.0));
-         D[G] = glLinearRGB.invert16(agg::uround(std::clamp(xg, 0.0, 1.0) * 65535.0));
-         D[B] = glLinearRGB.invert16(agg::uround(std::clamp(xb, 0.0, 1.0) * 65535.0));
+         D[R] = composite_encode<Linear>(agg::uround(std::clamp(xr, 0.0, 1.0) * 65535.0));
+         D[G] = composite_encode<Linear>(agg::uround(std::clamp(xg, 0.0, 1.0) * 65535.0));
+         D[B] = composite_encode<Linear>(agg::uround(std::clamp(xb, 0.0, 1.0) * 65535.0));
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
    }
 };
 
 struct blend_difference {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
-         D[R] = glLinearRGB.invert16(sR + mR - ((2 * agg::sd_min(sR*M[A], mR*S[A]) + 0xff) >> 8));
-         D[G] = glLinearRGB.invert16(sG + mG - ((2 * agg::sd_min(sG*M[A], mG*S[A]) + 0xff) >> 8));
-         D[B] = glLinearRGB.invert16(sB + mB - ((2 * agg::sd_min(sB*M[A], mB*S[A]) + 0xff) >> 8));
+         D[R] = composite_encode<Linear>(sR + mR - ((2 * agg::sd_min(sR*M[A], mR*S[A]) + 0xff) >> 8));
+         D[G] = composite_encode<Linear>(sG + mG - ((2 * agg::sd_min(sG*M[A], mG*S[A]) + 0xff) >> 8));
+         D[B] = composite_encode<Linear>(sB + mB - ((2 * agg::sd_min(sB*M[A], mB*S[A]) + 0xff) >> 8));
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
    }
 };
 
 struct blend_exclusion {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto mR = glLinearRGB.convert16(M[R]);
-         auto mG = glLinearRGB.convert16(M[G]);
-         auto mB = glLinearRGB.convert16(M[B]);
+         auto mR = composite_decode<Linear>(M[R]);
+         auto mG = composite_decode<Linear>(M[G]);
+         auto mB = composite_decode<Linear>(M[B]);
 
          const uint8_t d1a = 0xff - M[A];
          const uint8_t s1a = 0xff - S[A];
-         D[R] = glLinearRGB.invert16(linear_clamp(int64_t(linear_scale_alpha(sR, M[A])) +
+         D[R] = composite_encode<Linear>(linear_clamp(int64_t(linear_scale_alpha(sR, M[A])) +
             linear_scale_alpha(mR, S[A]) - 2 * linear_multiply(sR, mR) +
             linear_scale_alpha(sR, d1a) + linear_scale_alpha(mR, s1a)));
-         D[G] = glLinearRGB.invert16(linear_clamp(int64_t(linear_scale_alpha(sG, M[A])) +
+         D[G] = composite_encode<Linear>(linear_clamp(int64_t(linear_scale_alpha(sG, M[A])) +
             linear_scale_alpha(mG, S[A]) - 2 * linear_multiply(sG, mG) +
             linear_scale_alpha(sG, d1a) + linear_scale_alpha(mG, s1a)));
-         D[B] = glLinearRGB.invert16(linear_clamp(int64_t(linear_scale_alpha(sB, M[A])) +
+         D[B] = composite_encode<Linear>(linear_clamp(int64_t(linear_scale_alpha(sB, M[A])) +
             linear_scale_alpha(mB, S[A]) - 2 * linear_multiply(sB, mB) +
             linear_scale_alpha(sB, d1a) + linear_scale_alpha(mB, s1a)));
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
@@ -530,39 +563,41 @@ struct blend_exclusion {
 };
 
 struct blend_plus {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         const int xr = glLinearRGB.convert16(M[R]) + sR;
-         const int xg = glLinearRGB.convert16(M[G]) + sG;
-         const int xb = glLinearRGB.convert16(M[B]) + sB;
+         const int xr = composite_decode<Linear>(M[R]) + sR;
+         const int xg = composite_decode<Linear>(M[G]) + sG;
+         const int xb = composite_decode<Linear>(M[B]) + sB;
          const int xa = M[A] + S[A];
-         D[R] = glLinearRGB.invert16((xr > 0xffff) ? 0xffff : xr);
-         D[G] = glLinearRGB.invert16((xg > 0xffff) ? 0xffff : xg);
-         D[B] = glLinearRGB.invert16((xb > 0xffff) ? 0xffff : xb);
+         D[R] = composite_encode<Linear>((xr > 0xffff) ? 0xffff : xr);
+         D[G] = composite_encode<Linear>((xg > 0xffff) ? 0xffff : xg);
+         D[B] = composite_encode<Linear>((xb > 0xffff) ? 0xffff : xb);
          D[A] = (xa > 0xff) ? 0xff : xa;
       }
    }
 };
 
 struct blend_minus {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         const int xr = glLinearRGB.convert16(M[R]) - sR;
-         const int xg = glLinearRGB.convert16(M[G]) - sG;
-         const int xb = glLinearRGB.convert16(M[B]) - sB;
-         D[R] = glLinearRGB.invert16((xr < 0) ? 0 : xr);
-         D[G] = glLinearRGB.invert16((xg < 0) ? 0 : xg);
-         D[B] = glLinearRGB.invert16((xb < 0) ? 0 : xb);
+         const int xr = composite_decode<Linear>(M[R]) - sR;
+         const int xg = composite_decode<Linear>(M[G]) - sG;
+         const int xb = composite_decode<Linear>(M[B]) - sB;
+         D[R] = composite_encode<Linear>((xr < 0) ? 0 : xr);
+         D[G] = composite_encode<Linear>((xg < 0) ? 0 : xg);
+         D[B] = composite_encode<Linear>((xb < 0) ? 0 : xb);
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
          //D[A] = (UBYTE)(0xff - (((0xff - S[A]) * (0xff - D[A]) + 0xff) >> 8));
       }
@@ -570,44 +605,46 @@ struct blend_minus {
 };
 
 struct blend_invert {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if ((S[A]) or (M[A])) {
-         auto dR = glLinearRGB.convert16(D[R]);
-         auto dG = glLinearRGB.convert16(D[G]);
-         auto dB = glLinearRGB.convert16(D[B]);
+         auto dR = composite_decode<Linear>(D[R]);
+         auto dG = composite_decode<Linear>(D[G]);
+         auto dB = composite_decode<Linear>(D[B]);
 
          const uint16_t xr = linear_scale_alpha(linear_alpha(M[A]) - dR, S[A]);
          const uint16_t xg = linear_scale_alpha(linear_alpha(M[A]) - dG, S[A]);
          const uint16_t xb = linear_scale_alpha(linear_alpha(M[A]) - dB, S[A]);
          const uint8_t s1a = 0xff - S[A];
-         D[R] = glLinearRGB.invert16(xr + ((dR * s1a + 0xff) >> 8));
-         D[G] = glLinearRGB.invert16(xg + ((dG * s1a + 0xff) >> 8));
-         D[B] = glLinearRGB.invert16(xb + ((dB * s1a + 0xff) >> 8));
+         D[R] = composite_encode<Linear>(xr + ((dR * s1a + 0xff) >> 8));
+         D[G] = composite_encode<Linear>(xg + ((dG * s1a + 0xff) >> 8));
+         D[B] = composite_encode<Linear>(xb + ((dB * s1a + 0xff) >> 8));
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
    }
 };
 
 struct blend_invert_rgb {
+   template <bool Linear>
    static inline void blend(uint8_t *D, const uint8_t *S, const uint8_t *M,
       uint8_t A, uint8_t R, uint8_t G, uint8_t B) {
       if (S[A]) {
-         auto sR = glLinearRGB.convert16(S[R]);
-         auto sG = glLinearRGB.convert16(S[G]);
-         auto sB = glLinearRGB.convert16(S[B]);
+         auto sR = composite_decode<Linear>(S[R]);
+         auto sG = composite_decode<Linear>(S[G]);
+         auto sB = composite_decode<Linear>(S[B]);
 
-         auto dR = glLinearRGB.convert16(D[R]);
-         auto dG = glLinearRGB.convert16(D[G]);
-         auto dB = glLinearRGB.convert16(D[B]);
+         auto dR = composite_decode<Linear>(D[R]);
+         auto dG = composite_decode<Linear>(D[G]);
+         auto dB = composite_decode<Linear>(D[B]);
 
          uint16_t xr = linear_multiply(linear_alpha(M[A]) - dR, sR);
          uint16_t xg = linear_multiply(linear_alpha(M[A]) - dG, sG);
          uint16_t xb = linear_multiply(linear_alpha(M[A]) - dB, sB);
          uint8_t s1a = 0xff - S[A];
-         D[R] = glLinearRGB.invert16(xr + ((dR * s1a + 0xff) >> 8));
-         D[G] = glLinearRGB.invert16(xg + ((dG * s1a + 0xff) >> 8));
-         D[B] = glLinearRGB.invert16(xb + ((dB * s1a + 0xff) >> 8));
+         D[R] = composite_encode<Linear>(xr + ((dR * s1a + 0xff) >> 8));
+         D[G] = composite_encode<Linear>(xg + ((dG * s1a + 0xff) >> 8));
+         D[B] = composite_encode<Linear>(xb + ((dB * s1a + 0xff) >> 8));
          D[A] = (uint8_t)(S[A] + M[A] - ((S[A] * M[A] + 0xff) >> 8));
       }
    }
@@ -710,12 +747,18 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
    auto in      = first_pixel(input);
    auto mix     = first_pixel(mixture);
 
+   const bool linear = effect_colour_space(Self) IS VCS::LINEAR_RGB;
+   auto mix_pixels = [&]<class Operation>(Operation) {
+      if (linear) Self->doMix<Operation, true>(in_bmp, mix_bmp, dest, in, mix);
+      else Self->doMix<Operation, false>(in_bmp, mix_bmp, dest, in, mix);
+   };
+
    switch (Self->Operator) {
-      case OP::OVER: Self->doMix<composite_over>(in_bmp, mix_bmp, dest, in, mix); break;
-      case OP::IN:   Self->doMix<composite_in>(in_bmp, mix_bmp, dest, in, mix); break;
-      case OP::OUT:  Self->doMix<composite_out>(in_bmp, mix_bmp, dest, in, mix); break;
-      case OP::ATOP: Self->doMix<composite_atop>(in_bmp, mix_bmp, dest, in, mix); break;
-      case OP::XOR:  Self->doMix<composite_xor>(in_bmp, mix_bmp, dest, in, mix); break;
+      case OP::OVER: mix_pixels(composite_over{}); break;
+      case OP::IN:   mix_pixels(composite_in{}); break;
+      case OP::OUT:  mix_pixels(composite_out{}); break;
+      case OP::ATOP: mix_pixels(composite_atop{}); break;
+      case OP::XOR:  mix_pixels(composite_xor{}); break;
 
       case OP::ARITHMETIC: {
          int height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
@@ -723,8 +766,7 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
          if (in_bmp->Clip.Right - in_bmp->Clip.Left < width) width = in_bmp->Clip.Right - in_bmp->Clip.Left;
          if (in_bmp->Clip.Bottom - in_bmp->Clip.Top < height) height = in_bmp->Clip.Bottom - in_bmp->Clip.Top;
 
-         const auto arithmetic_rows = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ?
-            composite_arithmetic_rows<true> : composite_arithmetic_rows<false>;
+         const auto arithmetic_rows = linear ? composite_arithmetic_rows<true> : composite_arithmetic_rows<false>;
 
          auto render_rows = [&](int StartY, int EndY) {
             auto dp = dest + std::ptrdiff_t(StartY) * Self->Target->LineWidth;
@@ -766,23 +808,29 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
          in      = first_pixel(in_work);
          mix     = first_pixel(mix_work);
          switch (Self->Operator) {
-            case OP::MULTIPLY:    Self->doMix<blend_multiply>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::SCREEN:      Self->doMix<blend_screen>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::DARKEN:      Self->doMix<blend_darken>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::LIGHTEN:     Self->doMix<blend_lighten>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::OVERLAY:     Self->doMix<blend_overlay>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::BURN:        Self->doMix<blend_burn>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::DODGE:       Self->doMix<blend_dodge>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::HARD_LIGHT:  Self->doMix<blend_hard_light>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::SOFT_LIGHT:  Self->doMix<blend_soft_light>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::DIFFERENCE:  Self->doMix<blend_difference>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::EXCLUSION:   Self->doMix<blend_exclusion>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::PLUS:        Self->doMix<blend_plus>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::MINUS:       Self->doMix<blend_minus>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::CONTRAST:    Self->doMix<blend_contrast>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::INVERT:      Self->doMix<blend_invert>(in_bmp, mix_bmp, dest, in, mix); break;
-            case OP::INVERT_RGB:  Self->doMix<blend_invert_rgb>(in_bmp, mix_bmp, dest, in, mix); break;
+            case OP::MULTIPLY:    mix_pixels(blend_multiply{}); break;
+            case OP::SCREEN:      mix_pixels(blend_screen{}); break;
+            case OP::DARKEN:      mix_pixels(blend_darken{}); break;
+            case OP::LIGHTEN:     mix_pixels(blend_lighten{}); break;
+            case OP::OVERLAY:     mix_pixels(blend_overlay{}); break;
+            case OP::BURN:        mix_pixels(blend_burn{}); break;
+            case OP::DODGE:       mix_pixels(blend_dodge{}); break;
+            case OP::HARD_LIGHT:  mix_pixels(blend_hard_light{}); break;
+            case OP::SOFT_LIGHT:  mix_pixels(blend_soft_light{}); break;
+            case OP::DIFFERENCE:  mix_pixels(blend_difference{}); break;
+            case OP::EXCLUSION:   mix_pixels(blend_exclusion{}); break;
+            case OP::PLUS:        mix_pixels(blend_plus{}); break;
+            case OP::MINUS:       mix_pixels(blend_minus{}); break;
+            case OP::CONTRAST:    mix_pixels(blend_contrast{}); break;
+            case OP::INVERT:      mix_pixels(blend_invert{}); break;
+            case OP::INVERT_RGB:  mix_pixels(blend_invert_rgb{}); break;
             default: return ERR::NoSupport;
+         }
+
+         if (not linear) {
+            // The sRGB blend equations produce premultiplied values.  Filter results use straight RGBA.
+            Self->Target->Flags |= BMF::PREMUL;
+            return Self->Target->demultiply();
          }
          break;
       }
@@ -832,9 +880,8 @@ Lookup: OP
 
 Setting the Operator will determine the algorithm that is used for compositing.  The default is `OVER`.
 
-The `ARITHMETIC` operator is computed in the colour space of the parent @VectorFilter, so the #K1 - #K4 values
-operate on sRGB values by default, or on linear RGB values when `LINEAR_RGB` is selected.  The other operators that
-mix colour components always do so in linear RGB, while `IN` and `OUT` only modify the alpha channel.
+Operators that mix colour components use @FilterEffect.ColourSpace.  They inherit the parent @VectorFilter's colour
+space by default.  The `IN` and `OUT` operators only modify the alpha channel.
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the filter.

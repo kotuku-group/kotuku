@@ -83,7 +83,7 @@
       <type lookup="OP">OP</type>
       <description>
 <p>Setting the Operator will determine the algorithm that is used for compositing.  The default is <code>OVER</code>.</p>
-<p>The <code>ARITHMETIC</code> operator is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>, so the <fl>K1</fl> - <fl>K4</fl> values operate on sRGB values by default, or on linear RGB values when <code>LINEAR_RGB</code> is selected.  The other operators that mix colour components always do so in linear RGB, while <code>IN</code> and <code>OUT</code> only modify the alpha channel.</p>
+<p>Operators that mix colour components use <class name="FilterEffect" field="ColourSpace">FilterEffect.ColourSpace</class>.  They inherit the parent <class name="VectorFilter">VectorFilter</class>'s colour space by default.  The <code>IN</code> and <code>OUT</code> operators only modify the alpha channel.</p>
 <types lookup="OP"/>
       </description>
     </field>

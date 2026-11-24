@@ -760,7 +760,8 @@ class extFilterEffect : public objFilterEffect {
    extVectorFilter *Filter = nullptr; // Direct reference to the parent filter
    const filter_effect_extension *FilterExtension = nullptr; // Optional, owned by the derived effect.
    // Preserve the base size and the starting offset of derived fields.
-   alignas(TClipRectangle<double>) uint8_t Reserved[sizeof(TClipRectangle<double>)];
+   alignas(TClipRectangle<double>) VCS ColourSpace = VCS::INHERIT; // INHERIT uses the parent filter's ColourSpace
+   uint8_t Reserved[sizeof(TClipRectangle<double>) - sizeof(VCS)];
 
    extFilterEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.

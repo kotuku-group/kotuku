@@ -377,7 +377,7 @@ static bool text_family(std::string_view Value, std::string &Result)
 static bool expand_text_font(std::string_view Value, std::vector<XMLAttrib> &Result)
 {
    using kt::font_traits::trim;
-   Value = trim(Value);
+   Value = kt::font_traits::trim(Value);
    const char *names[] = { "font-style", "font-variant", "font-weight", "font-stretch", "font-size",
       "line-height", "font-family", "font-kerning", "font-variation-settings", "font-optical-sizing",
       "font-feature-settings" };
@@ -430,7 +430,7 @@ static bool expand_text_font(std::string_view Value, std::vector<XMLAttrib> &Res
    int components = normals;
    for (auto assigned_component : assigned) if (assigned_component) ++components;
    if (components > 4) return false;
-   Value = trim(Value);
+   Value = kt::font_traits::trim(Value);
    if (Value.starts_with('/')) {
       Value.remove_prefix(1);
       values[5] = token();
@@ -1498,6 +1498,21 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
 //********************************************************************************************************************
 
+//********************************************************************************************************************
+// Applies color-interpolation-filters on a filter primitive, which overrides the filter's value for that primitive.
+// The property's initial value, auto, is linearRGB.  An absent or inherited value uses the filter's.
+
+static void apply_primitive_colour_space(objFilterEffect *Effect, const XTag &Tag) noexcept
+{
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      if (not iequals(Tag.Attribs[a].Name, "color-interpolation-filters")) continue;
+      const auto value = kt::font_traits::trim(std::string_view(Tag.Attribs[a].Value));
+      if (iequals(value, "sRGB")) Effect->setColourSpace(VCS::SRGB);
+      else if ((iequals(value, "linearRGB")) or (iequals(value, "auto"))) Effect->setColourSpace(VCS::LINEAR_RGB);
+      else if (iequals(value, "inherit")) Effect->setColourSpace(VCS::INHERIT);
+   }
+}
+
 ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
@@ -1547,6 +1562,7 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
    }
 
    fx->setEdgeMode(mirror_edge ? FEM::MIRROR : edge_mode);
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -1580,6 +1596,7 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -1656,6 +1673,7 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -1686,6 +1704,7 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcep
 
    if (NewObject(CLASSID::COLOURFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
+   fx->setMode(CM::MATRIX); // SVG's default type.  Without values the matrix is the identity.
 
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -1744,6 +1763,7 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcep
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -1846,6 +1866,7 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -1854,6 +1875,18 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
       FreeResource(fx);
       return ERR::Init;
    }
+}
+
+//********************************************************************************************************************
+// Reads a kotuku:normalConvention value.  Auto is accepted only where the effect supports it (DisplacementFX).
+
+static std::optional<NMC> read_normal_convention(std::string_view Value, bool AllowAuto) noexcept
+{
+   Value = kt::font_traits::trim(Value);
+   if (iequals(Value, "y-down")) return NMC::Y_DOWN;
+   else if (iequals(Value, "y-up")) return NMC::Y_UP;
+   else if ((AllowAuto) and (iequals(Value, "auto"))) return NMC::AUTO;
+   return std::nullopt;
 }
 
 //********************************************************************************************************************
@@ -2017,6 +2050,13 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             else if (local IS "cavity") set_light_number("cavity", val, &objLightingFX::setCavity);
             else if (local IS "detail") set_light_number("detail", val, &objLightingFX::setDetail);
             else if (local IS "penumbra") set_light_number("penumbra", val, &objLightingFX::setPenumbra);
+            else if (local IS "normalConvention") {
+               if (auto convention = read_normal_convention(val, false)) fx->setNormalConvention(*convention);
+               else log.warning("Invalid normalConvention '%s' on %s.", val.c_str(), Tag.name());
+            }
+            else if (local IS "normalStrength") {
+               set_light_number("normalStrength", val, &objLightingFX::setNormalStrength);
+            }
             else if ((combined) and (local IS "metalness")) {
                set_light_number("metalness", val, &objLightingFX::setMetalness);
             }
@@ -2191,6 +2231,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       return light_error;
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2255,9 +2296,17 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
          case SVF_in2:    parse_input_mix(Self, fx, val); break;
 
          case SVF_result: result_name = val; break;
+
+         default:
+            if (kotuku_attrib(Self, Tag, Tag.Attribs[a].Name) IS "normalConvention") {
+               if (auto convention = read_normal_convention(val, true)) fx->setNormalConvention(*convention);
+               else log.warning("Invalid normalConvention '%s' on %s.", val.c_str(), Tag.name());
+            }
+            break;
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2298,6 +2347,7 @@ ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
 
@@ -2406,6 +2456,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
       else log.warning("Unrecognised feComponentTransfer child node '%s'", child.name());
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2513,6 +2564,7 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
       else fx->setMixType(VSF::GRAPHIC);
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2564,6 +2616,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2623,6 +2676,7 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2675,6 +2729,7 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2734,6 +2789,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_vi
 
       if (vector) {
          fx->setSourceName(Reference);
+         apply_primitive_colour_space(fx, Tag);
          if (error = fx->init(); !error) {
             if (!result_name.empty()) parse_result(Self, fx, result_name);
             return ERR::Okay;
@@ -2819,6 +2875,7 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   if (error IS ERR::Okay) apply_primitive_colour_space(fx, Tag);
    if (error IS ERR::Okay) error = fx->init();
    if (error != ERR::Okay) {
       FreeResource(fx);

@@ -120,6 +120,33 @@ static ERR FILTEREFFECT_SET_Input(extFilterEffect *Self, extFilterEffect *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+ColourSpace: The colour space in which this effect processes its inputs.
+
+By default the effect inherits @VectorFilter.ColourSpace.  Set `SRGB` or `LINEAR_RGB` to override it for this
+effect alone.  Effects in different colour spaces can be chained freely, because every effect stores its result in
+sRGB and decodes its inputs in its own colour space.  This field is the SVG equivalent of the
+`color-interpolation-filters` property on a filter primitive.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR FILTEREFFECT_GET_ColourSpace(extFilterEffect *Self, VCS &Value)
+{
+   Value = Self->ColourSpace;
+   return ERR::Okay;
+}
+
+static ERR FILTEREFFECT_SET_ColourSpace(extFilterEffect *Self, VCS Value)
+{
+   if ((Value != VCS::INHERIT) and (Value != VCS::SRGB) and (Value != VCS::LINEAR_RGB)) return ERR::OutOfRange;
+   Self->ColourSpace = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Height: Primitive height of the effect area.
 
 The `(Width, Height)` field values define the dimensions of the effect within the target clipping area.
@@ -213,6 +240,8 @@ static const FieldArray clFilterEffectFields[] = {
    { "Height",     FDF_UNIT|FDF_RW },
    { "SourceType", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectSourceType },
    { "MixType",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectMixType },
+   { "ColourSpace", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, FILTEREFFECT_GET_ColourSpace,
+     FILTEREFFECT_SET_ColourSpace, &clFilterEffectVCS },
    { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };

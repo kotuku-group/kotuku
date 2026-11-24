@@ -14,7 +14,10 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The SourceFX class will render a named vector into a given rectangle within the current user coordinate system.</p>
-<p>Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by attributes <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code>.  The placement and scaling of the referenced vector is controlled by the <fl>AspectRatio</fl> field.</p></description>
+<p>Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by the primitive subregion: the <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code> fields of the effect.  The referenced vector is drawn at its own size, with the origin of its user space at the top-left corner of the subregion, and it is clipped to the subregion.  The viewport has no view box, so the <fl>AspectRatio</fl> field does not scale the vector.  This is how web browsers place an element referenced by the SVG <code>feImage</code> primitive.</p>
+<p>If the subregion is not set, it defaults to the filter region.  The vector then moves with the filtered element: with a filter region that starts at (40, 40), a vector point at (0, 0) is drawn at (40, 40).  Maps drawn by other routes, such as a pattern fill, will not line up with it.  To draw the vector in the user space of the filtered element, set <code>X</code> and <code>Y</code> to 0 and set <code>Width</code> and <code>Height</code> so that the subregion covers the filter region.  This applies when the filter's primitive units are user space, which is the default.  In SVG:</p>
+<pre>&lt;feImage href=&quot;#heightMap&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;1000&quot; height=&quot;600&quot;/&gt;
+</pre></description>
     <source>
       <file path="filters/">filter_source.cpp</file>
     </source>

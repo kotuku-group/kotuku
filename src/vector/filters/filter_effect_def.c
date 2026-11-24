@@ -42,6 +42,13 @@ static const struct FieldDef clFilterEffectVSF[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clFilterEffectVCS[] = {
+   { "Inherit", 0x00000000 },
+   { "SRGB", 0x00000001 },
+   { "LinearRGB", 0x00000002 },
+   { nullptr, 0 }
+};
+
 static ERR FILTEREFFECT_New(extFilterEffect *Self) {
    new (Self) extFilterEffect(Self->Class, Self->UID);
    return ERR::Okay;

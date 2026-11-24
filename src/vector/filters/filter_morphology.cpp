@@ -123,7 +123,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
 
    if ((Self->RadiusX <= 0) and (Self->RadiusY <= 0)) {
-      BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
+      BAF copy_flags = (effect_colour_space(Self) IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
       return copy_filter_bitmap(in_bmp, Self->Target, copy_flags, 0, 0, in_bmp->Width, in_bmp->Height, 0, 0);
    }
 

@@ -19,7 +19,7 @@
 <p>where <code>P(x,y)</code> is the Input image, and <code>P'(x,y)</code> is the Target.  <code>XC(x,y)</code> and <code>YC(x,y)</code> are the component values of the channel designated by the <fl>XChannel</fl> and <fl>YChannel</fl>.  For example, to use the red component of Mix to control displacement in <code>X</code> and the green component to control displacement in <code>Y</code>, set <fl>XChannel</fl> to <code>CMP::RED</code> and <fl>YChannel</fl> to <code>CMP::GREEN</code>.</p>
 <p>The displacement map defines the inverse of the mapping performed.</p>
 <p>The Input image is to remain premultiplied for this filter effect.  The calculations using the pixel values from Mix are performed using non-premultiplied colour values.  If the image from Mix consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values before performing this operation.</p>
-<p>A normal map supplied directly by <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code> uses its stored RGB values in either filter colour space.  Select red for X and green for Y.  A component of 128, or a pixel outside the normal map's subregion, gives zero displacement along that axis.</p></description>
+<p>A normal map supplied directly by <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code> uses its stored RGB values in either filter colour space.  Select red for X and green for Y.  A component of 128, or a pixel outside the normal map's subregion, gives zero displacement along that axis.  To read a normal map from any other source, such as an image loaded by <class name="ImageFX">ImageFX</class>, set <fl>NormalConvention</fl> to the map's convention.  Refraction then reads the map in the same way as <class name="LightingFX" field="NormalMap">LightingFX.NormalMap</class>.</p></description>
     <source>
       <file path="filters/">filter_displacement.cpp</file>
     </source>
@@ -43,6 +43,19 @@
 
   <fields>
     <field>
+      <name>NormalConvention</name>
+      <comment>Reads the Mix input as a normal map in the given axis convention.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="NMC">NMC</type>
+      <description>
+<p>The default, <code>AUTO</code>, reads the Mix input as a normal map only if it is the result of <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code>, and as colour otherwise.  <code>Y_DOWN</code> and <code>Y_UP</code> read any Mix input as a normal map: the red, green and blue channels are signed components centred on 128, read as data in either filter colour space, and transparent pixels give zero displacement.  <code>Y_UP</code> negates the green component, for maps whose Y increases upwards, as in OpenGL.  Use the same value as <class name="LightingFX" field="NormalConvention">LightingFX.NormalConvention</class> so that refraction and shading agree.  The alpha channel, if selected, is always read as colour.</p>
+<p>In normal map mode a component of 127 displaces by half of <fl>Scale</fl>, as a colour component of 255 does in colour mode.</p>
+<p>The SVG attribute is <code>kotuku:normalConvention</code>, with the values <code>auto</code>, <code>y-down</code> and <code>y-up</code>.</p>
+<types lookup="NMC"/>
+      </description>
+    </field>
+
+    <field>
       <name>ResampleMethod</name>
       <comment>The resample algorithm to use for transforming the source image.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -59,7 +72,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
-<p>The amount is expressed in the coordinate system established by <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> on the parent <class name="VectorFilter">VectorFilter</class>. When the value of this field is 0, this operation has no effect on the source image.</p>
+<p>The amount is expressed in the coordinate system established by <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> on the parent <class name="VectorFilter">VectorFilter</class>.  In user space units, a map component of 255 displaces by half of Scale in user units, and a component of 0 by half of Scale in the opposite direction.  In bounding box units, Scale is a fraction of the width of the client's bounding box on the X axis and of its height on the Y axis.  The displacement is transformed with the client, so it scales and rotates with it.  When the value of this field is 0, this operation has no effect on the source image.</p>
       </description>
     </field>
 
@@ -99,6 +112,12 @@
       <const name="BLUE">The blue colour channel.</const>
       <const name="GREEN">The green colour channel.</const>
       <const name="RED">The red colour channel.</const>
+    </constants>
+
+    <constants lookup="NMC" comment="Axis conventions for normal maps read by LightingFX and DisplacementFX.">
+      <const name="AUTO">DisplacementFX only.  Read the map as a normal map only if it was written by LightingFX with type NORMAL, otherwise as colour.</const>
+      <const name="Y_DOWN">Green encodes Y in image axes, increasing downwards.  Used by DirectX and by LightingFX's NORMAL type.</const>
+      <const name="Y_UP">Green encodes Y increasing upwards, as in OpenGL.  The green component is negated when read.</const>
     </constants>
 
     <constants lookup="VSM">

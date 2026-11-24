@@ -540,7 +540,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    const bool blur_x = rx >= MIN_BLUR_RADIUS;
    const bool blur_y = ry >= MIN_BLUR_RADIUS;
 
-   const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+   const bool linear = effect_colour_space(Self) IS VCS::LINEAR_RGB;
    if ((not blur_x) and (not blur_y)) {
       const auto flags = linear ? BAF::LINEAR : BAF::NIL;
       return copy_filter_bitmap(source.Bitmap, outBmp, flags, 0, 0, source.Width, source.Height, 0, 0);

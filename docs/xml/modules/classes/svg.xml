@@ -123,6 +123,15 @@ the content does not inherit from the ancestors of the referenced element.</li>
 document, not from the element that references them.</li>
 </list>
 <p>Custom property values are re-serialised by the CSS parser rather than kept as raw token text, so spacing and the spelling of some tokens may differ from the source.  <code>var()</code> and <code>env()</code> are not supported in presentation attributes such as <code>fill=&quot;var(--glaze)&quot;</code>, consistent with web browsers.  <code>@property</code> and pseudo-classes other than <code>:root</code> are not supported.</p>
+<header>Images in Filters</header>
+<p>An <code>feImage</code> primitive that references an element, such as <code>href=&quot;#map&quot;</code>, draws that element at its own size with the origin of its user space at the top-left corner of the primitive subregion.  This matches web browsers.  If the subregion is not set it defaults to the filter region, so the element moves with the filtered element.  It is then offset from content drawn in user space, such as a pattern fill of the same map.</p>
+<p>To draw the referenced element in the user space of the filtered element, give <code>feImage</code> <code>x=&quot;0&quot;</code> and <code>y=&quot;0&quot;</code>, and a <code>width</code> and <code>height</code> that cover the filter region.  This applies when <code>primitiveUnits</code> is <code>userSpaceOnUse</code>, which is the default.  The output is clipped to the filter region as usual.  Use the same attributes on every <code>feImage</code> that supplies a texture map, so that the albedo, height and normal maps of a material align with each other and with the document.</p>
+<pre>&lt;filter id=&quot;material&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;1&quot; height=&quot;1&quot;&gt;
+  &lt;feImage href=&quot;#albedoMap&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;1000&quot; height=&quot;600&quot; result=&quot;albedo&quot;/&gt;
+  &lt;feImage href=&quot;#normalMap&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;1000&quot; height=&quot;600&quot; result=&quot;normals&quot;/&gt;
+  ...
+&lt;/filter&gt;
+</pre>
 <header>Lighting Extensions</header>
 <p>A document that declares a Kōtuku namespace is rendered with a <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of <code>NONE</code> (see #Init), which enables the enhanced lighting of <class name="LightingFX">LightingFX</class>.  The following attributes of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code> configure it, using any prefix that is bound to the Kōtuku namespace:</p>
 <list type="bullet">
@@ -138,6 +147,11 @@ document, not from the element that references them.</li>
 it.  Sets <class name="LightingFX" field="Ambient">LightingFX.Ambient</class>.  It has no effect on <code>feSpecularLighting</code>.</li>
 <li><code>kotuku:normalMap</code> selects the named image result of an earlier primitive for RGB surface directions.
 Sets <class name="LightingFX" field="NormalMap">LightingFX.NormalMap</class>.  The primary input still supplies height.</li>
+<li><code>kotuku:normalConvention</code>: <code>y-down</code> (the default) or <code>y-up</code>, the direction of Y in the green channel of the
+normal map.  Most texture libraries and Blender export <code>y-up</code> (OpenGL) maps; DirectX tools export <code>y-down</code>.  A wrong
+value swaps the shading of slopes that face up and down the image.  Sets <class name="LightingFX" field="NormalConvention">LightingFX.NormalConvention</class>.</li>
+<li><code>kotuku:normalStrength</code>: 0 or greater, default 1.  Multiplies the X and Y components of the normal map, so 0
+flattens it and values above 1 exaggerate it.  Sets <class name="LightingFX" field="NormalStrength">LightingFX.NormalStrength</class>.</li>
 </list>
 <p>The light source elements <code>feDistantLight</code>, <code>fePointLight</code> and <code>feSpotLight</code> accept these attributes, which set the light's options with <class name="LightingFX" method="SetLightOptions">LightingFX.SetLightOptions()</class>:</p>
 <list type="bullet">
@@ -197,6 +211,7 @@ warning is logged and the surface is drawn without it.  Sets <class name="Lighti
   &lt;feDisplacementMap in=&quot;SourceGraphic&quot; in2=&quot;normals&quot; xChannelSelector=&quot;R&quot; yChannelSelector=&quot;G&quot; scale=&quot;12&quot;/&gt;
 &lt;/filter&gt;
 </pre>
+<p>To refract through a normal map loaded by <code>feImage</code>, add <code>kotuku:normalConvention</code> to <code>feDisplacementMap</code> with the map's convention, <code>y-down</code> or <code>y-up</code>.  The map is then read as signed normal components in either colour space, as lighting reads it, rather than as colour.  The default, <code>auto</code>, does this only for the result of <code>kotuku:feNormalMap</code>.  Sets <class name="DisplacementFX" field="NormalConvention">DisplacementFX.NormalConvention</class>.</p>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>

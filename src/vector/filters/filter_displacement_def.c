@@ -26,6 +26,13 @@ static const struct FieldDef clDisplacementFXVSM[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clDisplacementFXNMC[] = {
+   { "Auto", 0x00000000 },
+   { "YDown", 0x00000001 },
+   { "YUp", 0x00000002 },
+   { nullptr, 0 }
+};
+
 static ERR DISPLACEMENTFX_New(extDisplacementFX *Self) {
    new (Self) extDisplacementFX(Self->Class, Self->UID);
    return ERR::Okay;

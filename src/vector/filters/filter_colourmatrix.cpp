@@ -38,7 +38,8 @@ SVG requires that the calculations are performed on non-premultiplied colour val
 of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for
 this operation.
 
-The matrix is applied in the colour space defined by the parent @VectorFilter's ColourSpace field.  If set to
+The matrix is applied in the effect's colour space, which is the parent @VectorFilter's ColourSpace unless
+@FilterEffect.ColourSpace overrides it.  If set to
 `LINEAR_RGB` (the SVG default) then pixel values are converted to linear RGB prior to transformation and back to
 sRGB on output, otherwise the transformation is performed directly on the sRGB values.
 
@@ -368,7 +369,7 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
    // The matrix is applied in the colour space defined by the parent filter; LINEAR_RGB is the SVG default and
    // requires sRGB values to be converted to linear before transformation, then inverted on output.
 
-   const bool linear_rgb = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+   const bool linear_rgb = effect_colour_space(Self) IS VCS::LINEAR_RGB;
 
    const objBitmap *in_bmp;
    if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
