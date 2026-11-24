@@ -104,6 +104,11 @@ void anim_base::set_orig_value(svgState &State)
          break;
    }
 
+   if (not target_vector) {
+      target_attrib_orig = std::move(fallback);
+      return;
+   }
+
    kt::ScopedObjectLock<objVector> vector(target_vector);
    if (vector.granted()) target_attrib_orig = read_orig_value(**vector, fallback);
 }

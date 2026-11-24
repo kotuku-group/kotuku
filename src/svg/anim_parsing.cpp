@@ -57,7 +57,29 @@ static double parse_begin(anim_base &Anim, std::string_view Value)
 }
 
 //********************************************************************************************************************
-// Set common animation properties
+// An explicit target may be declared later in the document or skipped by conditional processing.
+
+static void set_animation_target(anim_base &Anim, const XTag &Tag)
+{
+   const auto attribs = Tag.Attribs | std::views::drop(1) | std::views::reverse;
+   const auto href = std::ranges::find_if(attribs, [](const XMLAttrib &Attrib) {
+      return (Attrib.Name IS "href") or (Attrib.Name IS "xlink:href");
+   });
+   if (href IS attribs.end()) return;
+
+   const auto ref = uri_name(href->Value);
+   OBJECTPTR target;
+   if ((not ref.empty()) and (Anim.svg->Scene->findDef(ref, &target) IS ERR::Okay)) {
+      Anim.target_vector = target->UID;
+   }
+   else {
+      Anim.target_vector = 0;
+      Anim.target_ref = ref;
+   }
+}
+
+//********************************************************************************************************************
+// Set common animation properties.
 
 static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const std::string_view Value)
 {
@@ -65,16 +87,6 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
       case SVF_id:
          Anim.id = Value;
          break;
-
-      case SVF_href:
-      case SVF_xlink_href: {
-         OBJECTPTR ref_vector;
-         auto ref = uri_name(Value);
-         if (!Anim.svg->Scene->findDef(ref, &ref_vector)) {
-            Anim.target_vector = ref_vector->UID;
-         }
-         break;
-      }
 
       case SVF_attributeName: // Name of the target attribute affected by the From and To values.
          Anim.target_attrib = Value;

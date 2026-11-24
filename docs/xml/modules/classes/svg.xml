@@ -83,6 +83,28 @@ active scope so that values can be forwarded, e.g. <code>&lt;param name=&quot;co
 <code>&lt;param&gt;</code> children are ignored for other image formats.</li>
 </list>
 <p>Values set with <action>SetKey</action> after initialisation do not alter the existing scene graph.  They are applied by the next parse, e.g. via <action>DataFeed</action>, and to symbols instantiated with <method>ParseSymbol</method>.</p>
+<header>Conditional processing</header>
+<p>Use <code>kotuku:requiredParams</code> to select whole elements by SVG parameter value.  On an eligible element a failed condition suppresses the element and its descendants, including outside a <code>&lt;switch&gt;</code>.  A <code>&lt;switch&gt;</code> selects its first child whose conditions all pass.  <code>requiredExtensions</code> requires every URI in its list to be supported.  A non-empty <code>systemLanguage</code> passes in any locale.</p>
+<p>The attribute accepts white-space-separated tests, all of which must pass:</p>
+<pre>Test             Passes when
+name             The parameter is defined, including a defined empty value
+!name            The parameter is undefined
+name=value       The parameter is defined and equals the value
+name=a,b         The parameter is defined and equals a or b
+name!=value      The parameter is undefined or differs from the value
+name!=a,b        The parameter is undefined or differs from every listed value
+</pre>
+<p>Names and values are case sensitive.  A leading <code>--</code> is removed from a name.  Use <code>name=</code> to match a defined empty value.  Values are percent-decoded after splitting, so <code>%20</code>, <code>%2C</code> and <code>%3D</code> represent a space, comma and equals sign respectively.  The condition is evaluated as written, without <code>param()</code> substitution.  Empty or malformed conditions fail and generate a warning with the source line number.</p>
+<p>Bind the attribute prefix to <code>http://www.kotuku.dev/xmlns/svg</code> or <code>http://www.kotuku.dev/namespaces/kotuku</code>. Declaring either namespace sets <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> to <code>NONE</code> on scenes owned by the SVG object.</p>
+<p>Tests read the active <code>&lt;use&gt;</code> instance's <code>&lt;param&gt;</code> values, then <action>SetKey</action>, then the query string. CSS custom properties are outside this lookup, including those declared on a <code>&lt;use&gt;</code>.  A referenced graphic is tested in its instance scope.  <method>ParseSymbol</method> uses the current document values and creates fresh nested instances.  For existing content, values set with <action>SetKey</action> take effect at the next parse.</p>
+<p>Definitions such as gradients, symbols, clip paths, masks, filters and patterns are exempt from ordinary gating. An explicit <code>&lt;switch&gt;</code> in a pattern tile uses document parameter values.  Clip paths, masks and filters also use document values.  To select between filter effects, switch the element that uses the filter.</p>
+<pre>&lt;switch&gt;
+  &lt;rect kotuku:requiredParams=&quot;lighting=off&quot; requiredExtensions=&quot;http://www.kotuku.dev/TR/Kotuku/1.0&quot;
+    class=&quot;swatch&quot; filter=&quot;url(#flat)&quot;/&gt;
+  &lt;rect class=&quot;swatch&quot; filter=&quot;url(#lit)&quot;/&gt;
+&lt;/switch&gt;
+</pre>
+<p>Put the default branch last.  Renderers that ignore the Kōtuku attribute may choose a guarded branch whenever it comes first.  Use <code>requiredExtensions=&quot;http://www.kotuku.dev/TR/Kotuku/1.0&quot;</code> to reserve a branch for Kōtuku.</p>
 <header>CSS Custom Properties</header>
 <p>CSS custom properties (<code>--name: value</code>) and <code>var()</code> are supported in <code>&lt;style&gt;</code> sheets and <code>style</code> attributes, with the semantics of CSS Custom Properties Level 1:</p>
 <list type="bullet">
@@ -474,7 +496,7 @@ warning is logged and the surface is drawn without it.  Sets <class name="Lighti
       <access read="G">Get</access>
       <type>kt::vector&lt;std::string&gt;</type>
       <description>
-<p>This field returns the sorted, unique names of every parameter referenced by a <code>param()</code> or <code>env()</code> expression in the document, whether or not a value has been supplied for it.  Names are reported without a leading <code>--</code>, and custom property names are not included.  A reference is only reported if it reaches an element, so an <code>env()</code> binding in a custom property that is never used is omitted.  It can be used to detect a value set with <action>SetKey</action> that the document does not use.  The array is empty if the document references no parameters or has not yet been parsed.</p>
+<p>This field returns the sorted, unique names of parameters referenced by <code>param()</code>, <code>env()</code> or a valid <code>kotuku:requiredParams</code> test, including parameters without supplied values.  Names are reported without a leading <code>--</code>.  An <code>env()</code> binding in a custom property is reported when it reaches an element.  Use this field to check which <action>SetKey</action> values the document references.  The array is empty before parsing or when the document references no parameters.</p>
       </description>
     </field>
 

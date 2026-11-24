@@ -185,9 +185,11 @@ class extSVG : public objSVG {
    SVGStringLookupMap<std::string> Params;      // Client values from SetKey(); highest document-level priority
    SVGStringLookupMap<std::string> QueryParams; // Parsed from the Path query string; rebuilt on each parse
    SVGStringLookupMap<std::string> ParsedParams; // Document values used by the original paint definitions
-   std::list<XTag> SymbolInstances; // Parameterised symbol copies; retained if animations reference them
+   std::list<XTag> TagInstances; // Instance trees retained when animations reference them
+   std::vector<const XTag *> UseReferences; // Source tags on the active <use> expansion chain
    ankerl::unordered_dense::map<int, kt::vector<XMLAttrib>> ParamAttribs; // Raw attribs of param() tags, by XTag.ID
    SVGStringLookupMap<kt::vector<std::string>> ParamDeps; // Parameter names referenced by a definition's subtree
+   std::vector<std::string> ConditionParamNames; // Names read by valid requiredParams attributes
    std::vector<std::string> ParamNames; // Backing store for the ParamNames field
    ankerl::unordered_dense::map<int, std::vector<UseCustomProp>> UseCustomProps; // By the XTag.ID of each <use>
    bool HasCustomProps = false; // True if the document declares a CSS custom property
@@ -242,6 +244,7 @@ struct svgState {
    VLC     m_line_cap;
    VIJ     m_inner_join;
    VPO     m_paint_order = VPO::END; // VPO::END if undefined
+   bool m_processing_definition = false;
    const ParamScope *m_param_scope = nullptr; // Active <use> parameter scope, if any
    std::vector<const XTag *> m_gradient_refs; // Active href chain, used to stop cyclic gradient references
 
@@ -261,7 +264,7 @@ public:
       Self(pSVG), Scene(pSVG->Scene) { }
 
    void process_children(XTag &, OBJECTPTR) noexcept;
-   void proc_svg(XTag &, OBJECTPTR, objVector *&) noexcept;
+   ERR  process_tag(XTag &, XTag &, OBJECTPTR, objVector * &, bool ConditionsChecked = false) noexcept;
    ERR  set_property(objVector *, uint32_t, XTag &, const std::string) noexcept;
 
 private:
@@ -272,7 +275,7 @@ private:
    void applyStateToVector(objVector *) const noexcept;
    const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
    FRGB resolve_stop_colour(const XTag &) noexcept;
-   ERR  process_tag(XTag &, XTag &, OBJECTPTR, objVector * &) noexcept;
+   void proc_svg(XTag &, OBJECTPTR, objVector *&) noexcept;
 
    ERR  proc_defs(XTag &, OBJECTPTR) noexcept;
    ERR  proc_set(XTag &, XTag &, OBJECTPTR) noexcept;
@@ -290,6 +293,7 @@ private:
    void proc_pattern(XTag &) noexcept;
    ERR  proc_shape(CLASSID, XTag &, OBJECTPTR, objVector * &) noexcept;
    bool conditions_pass(const XTag &) const noexcept;
+   bool element_conditions_pass(const XTag &, uint32_t) const noexcept;
    void proc_switch(XTag &, OBJECTPTR, objVector * &) noexcept;
    void proc_use(XTag &, OBJECTPTR) noexcept;
    void proc_clippath(XTag &) noexcept;
