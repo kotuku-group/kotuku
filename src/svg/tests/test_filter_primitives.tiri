@@ -28,6 +28,22 @@ function pixel(Effects:str):table
    return { red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }
 end
 
+-- An feFlood without flood-color or flood-opacity fills with opaque black, the SVG initial value.
+
+@Test function FloodDefaultsToOpaqueBlack()
+   local p = pixel('<feFlood/>')
+   assert((p.red is 0) and (p.green is 0) and (p.blue is 0) and (p.alpha is 255),
+      f'Expected opaque black, got {p.red},{p.green},{p.blue},{p.alpha}')
+   p = pixel('<feFlood flood-opacity="0.5"/>')
+   assert((p.red is 0) and (math.abs(p.alpha - 128) <= 1), f'Expected half-opaque black, got {p.red},{p.alpha}')
+
+   local scene <close> = obj.new('VectorScene', { pageWidth=8, pageHeight=8 })
+   local filter = scene.new('VectorFilter', { })
+   local c = filter.new('FloodFX', { }).colour
+   assert((c.red is 0) and (c.green is 0) and (c.blue is 0) and (c.alpha is 1),
+      f'A new FloodFX must default to opaque black, got {c.red},{c.green},{c.blue},{c.alpha}')
+end
+
 @Test function MatrixAlphaOffsetIsNormalised()
    local p = pixel([[<feFlood flood-color="red" flood-opacity=".2"/>
       <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1"/>]])
@@ -1690,4 +1706,274 @@ end
    local at = (X, Y) => mGfx.ReadRGBPixel(bmp, X, Y).alpha
    assert(at(40, 18) is 255, 'The displacement must rotate with the client')
    assert((at(40, 26) is 0) and (at(20, 18) is 0), 'The rotated bar must not remain at its undisplaced position')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Ambient occlusion maps.  The content is a horizontal ramp from black to white, published as 'ao'.  It is opaque,
+-- so the surface is flat, and the albedo is a flood.  Without direct light the result is albedo x ambient x ao.
+
+AO_RAMP <const> = '<defs><linearGradient id="ramp"><stop offset="0" stop-color="black"/>' ..
+   '<stop offset="1" stop-color="white"/></linearGradient></defs>'
+AO_ALBEDO <const> = { 192, 128, 64 }
+AO_AMBIENT <const> = { 0.8, 0.6, 0.4 }
+
+function aoContent(Filtered:bool):str
+   return AO_RAMP .. '<rect width="64" height="64" fill="url(#ramp)" ' .. (Filtered ? 'filter="url(#f)"' : '') .. '/>'
+end
+
+function occlusionDocument(Attribs:str, ColourSpace:str, Lighting:str):obj
+   return document('<feOffset in="SourceGraphic" result="ao"/><feFlood flood-color="#c08040" result="albedo"/>' ..
+      '<kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" ' ..
+      f'{Lighting ?? "diffuseConstant=\"0\" specularConstant=\"0\""} {Attribs ?? ""}>' ..
+      '<feDistantLight azimuth="0" elevation="45"/></kotuku:feLighting>', aoContent(true), 64, KOTUKU_NS,
+      f'color-interpolation-filters="{ColourSpace ?? "sRGB"}"')
+end
+
+function toLinear(V:num):num
+   return (V <= 0.04045) ? V / 12.92 : ((V + 0.055) / 1.055) ** 2.4
+end
+
+function toSRGB(V:num):num
+   return (V <= 0.0031308) ? V * 12.92 : (1.055 * (V ** (1 / 2.4))) - 0.055
+end
+
+@Test function OcclusionMapScalesAmbientLight()
+   local ramp <close> = draw(document('<feOffset/>', aoContent(false), 64), 64)
+   for space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      local linear = space is 'linearRGB'
+      for strength in values(array<double> { 1, 0.5, 0 }) do
+         local svg <close> = occlusionDocument('ambient="rgb(204 153 102)" occlusionMap="ao" ' ..
+            f'occlusionStrength="{strength}"', space)
+         local bmp <close> = draw(svg, 64)
+         for x in {0 to 64 by 3} do
+            local ao = mGfx.ReadRGBPixel(ramp, x, 32).red / 255
+            local factor = 1 + (strength * (ao - 1))
+            local p = mGfx.ReadRGBPixel(bmp, x, 32)
+            local got = { p.red, p.green, p.blue }
+            for c in {0 to 3} do
+               local albedo, ambient = AO_ALBEDO[c] / 255, AO_AMBIENT[c]
+               local value = linear ? toSRGB(toLinear(albedo) * toLinear(ambient) * factor) :
+                  albedo * ambient * factor
+               local expected = math.floor((value * 255) + 0.5)
+               assert(math.abs(got[c] - expected) <= 1, f'{space}, strength {strength}: channel {c} at x {x} ' ..
+                  f'(ao {ao}) must be {expected}, got {got[c]}')
+            end
+            assert(p.alpha is 255, f'The albedo is opaque, so the result must be (got alpha {p.alpha})')
+         end
+      end
+   end
+end
+
+-- The map occludes indirect light only.  Without ambient light or a matcap it changes nothing, even where it is black.
+
+@Test function OcclusionMapLeavesDirectLightAlone()
+   local direct = 'diffuseConstant="0.8" specularConstant="0.5" specularExponent="12"'
+   local function combined(Attribs:str):obj
+      return draw(document('<feFlood flood-color="black" result="ao"/>' ..
+         f'<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" {direct} {Attribs ?? ""}>' ..
+         '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS), 64)
+   end
+   local function diffuse(Attribs:str):obj
+      return draw(document('<feFlood flood-color="black" result="ao"/>' ..
+         f'<feDiffuseLighting in="SourceAlpha" surfaceScale="20" {Attribs ?? ""}>' ..
+         '<feDistantLight azimuth="0" elevation="30"/></feDiffuseLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS), 64)
+   end
+   local function specular(Attribs:str):obj
+      return draw(document('<feFlood flood-color="black" result="ao"/>' ..
+         f'<feSpecularLighting in="SourceAlpha" surfaceScale="20" {Attribs ?? ""}>' ..
+         '<feDistantLight azimuth="0" elevation="30"/></feSpecularLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS), 64)
+   end
+
+   local diff = imageDifference(combined(), combined('occlusionMap="ao"'))
+   assert(diff is 0, f'Without ambient light the map must not change kotuku:feLighting (max difference {diff})')
+   diff = imageDifference(diffuse(), diffuse('kotuku:occlusionMap="ao"'))
+   assert(diff is 0, f'Without ambient light the map must not change feDiffuseLighting (max difference {diff})')
+   diff = imageDifference(specular('kotuku:ambient="white"'),
+      specular('kotuku:ambient="white" kotuku:occlusionMap="ao"'))
+   assert(diff is 0, f'feSpecularLighting must ignore the map (max difference {diff})')
+
+   -- With ambient light the black map removes the ambient term and leaves the direct light.
+
+   local lit <close> = combined('ambient="#606060"')
+   local occluded <close> = combined('ambient="#606060" occlusionMap="ao"')
+   diff = imageDifference(combined(), occluded)
+   assert(diff is 0, f'A black map must remove exactly the ambient light (max difference {diff})')
+   assert(imageDifference(lit, occluded) > 10, 'The ambient light must brighten the unoccluded surface')
+
+   local ambient <close> = diffuse('kotuku:ambient="#606060"')
+   diff = imageDifference(diffuse(), diffuse('kotuku:ambient="#606060" kotuku:occlusionMap="ao"'))
+   assert(diff is 0, f'A black map must remove the ambient light of feDiffuseLighting (max difference {diff})')
+   assert(imageDifference(ambient, diffuse()) > 10, 'The ambient light must brighten feDiffuseLighting')
+end
+
+@Test function InactiveOcclusionPreservesSVGDiffuseLighting()
+   local function render(Compliance:num, Attribs:str):obj
+      local svg <close> = document('<feFlood flood-color="black" result="ao"/>' ..
+         f'<feDiffuseLighting in="SourceAlpha" surfaceScale="20" {Attribs}>' ..
+         '<feDistantLight azimuth="0" elevation="30"/></feDiffuseLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS)
+      svg.scene.compliance = Compliance
+      return draw(svg, 64)
+   end
+
+   for compliance in values(array<int> { VSC_SVG1, VSC_SVG2 }) do
+      local plain <close> = render(compliance, '')
+      local no_ambient <close> = render(compliance, 'kotuku:occlusionMap="ao"')
+      local diff = imageDifference(plain, no_ambient)
+      assert(diff is 0, f'An occlusion map without ambient light must preserve SVG diffuse lighting, got {diff}')
+
+      local ambient = 'kotuku:ambient="#606060"'
+      local unbound <close> = render(compliance, ambient)
+      local disabled <close> = render(compliance, ambient .. ' kotuku:occlusionMap="ao" kotuku:occlusionStrength="0"')
+      diff = imageDifference(unbound, disabled)
+      assert(diff is 0, f'A disabled map must preserve SVG diffuse lighting, got {diff}')
+   end
+end
+
+-- Each channel selection reads the same occlusion of 96 from a differently packed map.
+
+@Test function OcclusionChannelSelectsPackedMaps()
+   local function render(Flood:str, Channel:str):obj
+      local attribs = 'ambient="white" occlusionMap="map"' .. (Channel ? f' occlusionChannel="{Channel}"' : '')
+      return draw(document(f'<feFlood {Flood} result="map"/><feFlood flood-color="#c08040" result="albedo"/>' ..
+         '<kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" diffuseConstant="0" ' ..
+         f'specularConstant="0" {attribs}><feDistantLight elevation="45"/></kotuku:feLighting>',
+         aoContent(true), 64, KOTUKU_NS), 64)
+   end
+
+   local red <close> = render('flood-color="rgb(96 200 30)"')
+   local reference = mGfx.ReadRGBPixel(red, 32, 32).red
+   assert(math.abs(reference - math.floor((192 * 96 / 255) + 0.5)) <= 1,
+      f'The default red channel must supply the occlusion (got {reference})')
+
+   for _, case in array<table> {
+      { 'flood-color="rgb(96 200 30)"', 'R' }, { 'flood-color="rgb(10 96 200)"', 'G' },
+      { 'flood-color="rgb(0 0 96)"', 'blue' }, { 'flood-color="rgb(255 255 255 / 0.376471)"', 'A' },
+      { 'flood-color="rgb(96 96 96)"', 'luminance' }, { 'flood-color="rgb(96 96 96)"', 'LUMINANCE' }
+   } do
+      local bmp <close> = render(case[0], case[1])
+      local diff = imageDifference(red, bmp)
+      assert(diff is 0, f'Channel {case[1]} must read the packed occlusion (max difference {diff})')
+   end
+end
+
+-- Pixels outside of the map and transparent pixels are not occluded, unless the alpha channel is selected.
+
+@Test function TransparentOcclusionIsUnoccluded()
+   local ambient = 'ambient="rgb(204 153 102)"'
+   local open <close> = draw(occlusionDocument(ambient), 64)
+   local function render(Flood:str, Attribs:str):obj
+      return draw(document(f'<feFlood {Flood} result="map"/><feFlood flood-color="#c08040" result="albedo"/>' ..
+         '<kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" diffuseConstant="0" ' ..
+         f'specularConstant="0" {ambient} occlusionMap="map" {Attribs ?? ""}><feDistantLight elevation="45"/>' ..
+         '</kotuku:feLighting>', aoContent(true), 64, KOTUKU_NS), 64)
+   end
+
+   local clear <close> = render('flood-color="black" flood-opacity="0"')
+   local diff = imageDifference(open, clear)
+   assert(diff is 0, f'A transparent map must not occlude (max difference {diff})')
+
+   local alpha <close> = render('flood-color="white" flood-opacity="0"', 'occlusionChannel="A"')
+   local p = mGfx.ReadRGBPixel(alpha, 32, 32)
+   assert((p.red is 0) and (p.green is 0) and (p.blue is 0), f'Transparent alpha must fully occlude (got {p.red})')
+
+   local half <close> = render('flood-color="black" x="0" y="0" width="32" height="64"')
+   assert(mGfx.ReadRGBPixel(half, 16, 32).red is 0, 'The map must occlude within its subregion')
+   for x in {32 to 64 by 4} do
+      local a = mGfx.ReadRGBPixel(half, x, 32)
+      local red, green, blue, alpha = a.red, a.green, a.blue, a.alpha
+      local b = mGfx.ReadRGBPixel(open, x, 32)
+      assert((red is b.red) and (green is b.green) and (blue is b.blue) and (alpha is b.alpha),
+         f'Pixels outside of the map must remain unoccluded at x {x} ({red} vs {b.red})')
+   end
+end
+
+-- The matcap reflection is indirect light, so a black map removes it.
+
+@Test function OcclusionMapDimsTheMatcap()
+   local function render(Map:str, Matcap:bool):obj
+      local svg <close> = document(f'<feFlood flood-color="{Map}" result="ao"/>' ..
+         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" diffuseConstant="0" ' ..
+         'specularConstant="0" occlusionMap="ao"><feDistantLight elevation="45"/></kotuku:feLighting>',
+         COMBINED_CONTENT, 64, KOTUKU_NS)
+      if Matcap then
+         local matcap = obj.new('bitmap', { width=9, height=9, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL,
+            bkgd='255,255,255,255' })
+         matcap.acClear()
+         lightingFX(svg).matcap = matcap
+      end
+      return draw(svg, 64)
+   end
+
+   local none <close> = render('black', false)
+   local exposed <close> = render('white', true)
+   local occluded <close> = render('black', true)
+   assert(imageDifference(none, exposed) > 50, 'An exposed matcap must add its reflection')
+   local diff = imageDifference(none, occluded)
+   assert(diff is 0, f'A black map must remove the matcap reflection (max difference {diff})')
+end
+
+@Test function FloodOcclusionPreservesFractionalColourOnExport()
+   local svg <close> = document('<feFlood flood-color="rgb(99.99999% 0% 0%)" result="ao"/>' ..
+      '<kotuku:feLighting in="SourceAlpha" ambient="white" occlusionMap="ao" occlusionStrength="255" ' ..
+      'diffuseConstant="0" specularConstant="0"><feDistantLight elevation="45"/></kotuku:feLighting>',
+      nil, 64, KOTUKU_NS)
+   local original <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(original, 32, 32).red is 0,
+      'The flood red channel must remain below full strength and occlude the ambient light')
+
+   local xml = effectXML(svg)
+   local loaded <close> = document(xml, nil, 64, KOTUKU_NS)
+   local reloaded <close> = draw(loaded, 64)
+   local diff = imageDifference(original, reloaded)
+   assert(diff is 0, f'Exporting a fractional flood colour must preserve occlusion (max difference {diff}): {xml}')
+end
+
+@Test function OcclusionOptionsValidateAndRoundTrip()
+   local svg <close> = occlusionDocument(
+      'ambient="rgb(204 153 102)" occlusionMap="ao" occlusionChannel="G" occlusionStrength="0.5"')
+   local fx = lightingFX(svg)
+   assert((fx.occlusionChannel is MCH_GREEN) and (fx.occlusionStrength is 0.5) and fx.occlusionMap,
+      f'The attributes must set the fields (got {fx.occlusionChannel}, {fx.occlusionStrength})')
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   assert(xml.find('kotuku:occlusionMap="effect', 0, true) and xml.find('occlusionChannel="G"', 0, true) and
+      xml.find('occlusionStrength="0.5"', 0, true), f'XMLDef must write the occlusion options: {xml}')
+   local loaded <close> = document(xml, aoContent(true), 64, KOTUKU_NS)
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'The occlusion options must survive XMLDef (max difference {diff}): {xml}')
+
+   local plain <close> = occlusionDocument('ambient="rgb(204 153 102)"')
+   local plain_xml = effectXML(plain)
+   assert(plain_xml.find('occlusion', 0, true) is nil, f'Default occlusion options must not be written: {plain_xml}')
+
+   -- Removing the producer clears the binding and restores the unoccluded render.
+
+   local unbound <close> = draw(plain, 64)
+   fx.occlusionMap.free()
+   assert(fx.occlusionMap is nil, 'Removing the map producer must clear the binding')
+   diff = imageDifference(unbound, draw(svg, 64))
+   assert(diff is 0, f'Removing the map must restore the unoccluded render (max difference {diff})')
+
+   local invalid <close> = occlusionDocument('occlusionMap="missing" occlusionChannel="X" occlusionStrength="-1"')
+   fx = lightingFX(invalid)
+   assert((fx.occlusionMap is nil) and (fx.occlusionChannel is MCH_RED) and (fx.occlusionStrength is 1),
+      'Invalid occlusion options must leave the defaults')
+   for _, value in array<double> { -0.5, math.huge } do
+      try
+         fx.occlusionStrength = value
+      except
+      end
+   end
+   assert(fx.occlusionStrength is 1, 'OcclusionStrength must reject negative and infinite values')
+
+   local standard <close> = document('<feOffset in="SourceGraphic" result="ao"/>' ..
+      '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" kotuku:occlusionMap="ao" ' ..
+      'kotuku:occlusionChannel="luminance" kotuku:occlusionStrength="2"><feDistantLight elevation="45"/>' ..
+      '</feDiffuseLighting>', aoContent(true), 64, KOTUKU_NS)
+   fx = lightingFX(standard)
+   assert(fx.occlusionMap and (fx.occlusionChannel is MCH_LUMINANCE) and (fx.occlusionStrength is 2),
+      'The standard lighting elements must accept the prefixed attributes')
+   local exported = effectXML(standard)
+   assert(exported.find('kotuku:occlusionChannel="luminance"', 0, true) and
+      exported.find('kotuku:occlusionStrength="2"', 0, true), f'Standard elements must prefix: {exported}')
 end

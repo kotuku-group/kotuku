@@ -38,6 +38,9 @@ replaces the gradient stage only; normals, kernel units and the light models are
 10. A point or spot light with a range is attenuated by a smooth window times an inverse-square fall-off that is
    normalised to the sample nearest the light.  The nearest sample is found once per draw within the light's range;
    reach() extends the processing region by twice the range so that clipped draws see the same samples.
+11. An ambient occlusion map multiplies the cavity term for indirect light only: the ambient light and the matcap.
+   Each row is sampled once into a row buffer, and only when the draw has indirect light, so that an unbound map, or
+   a draw without ambient light or a matcap, does the same arithmetic as before.
 
 *********************************************************************************************************************/
 
@@ -102,7 +105,7 @@ constexpr float CORE_HIGH = 1.5f;
 constexpr int SHADOW_LEVELS = 4;
 constexpr double MAX_SHADOW_LENGTH = 128;
 
-constexpr int LIGHT_ROW_BUFFERS = 24;
+constexpr int LIGHT_ROW_BUFFERS = 25;
 
 struct lit_surface {
    const float *heights; // Padded, dequantised heights
@@ -126,6 +129,8 @@ struct lit_surface {
    const filter_surface_view *normal_map; // Optional RGB directions in scene coordinates
    double normal_strength;
    bool flip_normal_y;
+   const filter_map_view *occlusion; // Ambient occlusion in scene coordinates, or nullptr if no indirect light reads it
+   double occlusion_strength;
    int scene_x, scene_y;  // Scene coordinates of the first output pixel
 };
 
@@ -651,15 +656,17 @@ static void row_toksvig(const float *__restrict X0, const float *__restrict X1, 
 // spot cone, attenuation and shadows, and its diffuse and specular light are accumulated in floating point.  The terms
 // of each light are those of enhanced_combined(), or of enhanced_material() if a material term is in use.  The
 // reflectance does not depend on the light, so it is applied to the sum of the specular light.  Ambient light and the
-// matcap are added once, and the result is composed and encoded once, so only the final output is clamped.
+// matcap are added once, and the result is composed and encoded once, so only the final output is clamped.  Cavity
+// occludes the light of each light source, and Indirect, the cavity multiplied by the ambient occlusion map, occludes
+// the ambient light and the matcap.
 
 inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const point3 &Normal, const point3 &Mean,
-   double Exponent, const albedo_sample &Albedo, int X, int Y, float Height, float Cavity, uint8_t *Output,
-   uint8_t R, uint8_t G, uint8_t B, uint8_t A)
+   double Exponent, const albedo_sample &Albedo, int X, int Y, float Height, float Cavity, float Indirect,
+   uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A)
 {
    const std::ptrdiff_t offset = (std::ptrdiff_t(Y) * Surface.width) + X;
    const double surface_z = double(Height) * (1.0 / 255.0) * Surface.spot_height;
-   const double cavity = Cavity;
+   const double indirect = Indirect;
    const double kd = Material ? Constant * (1.0 - Metalness) : Constant;
    double dr = 0, dg = 0, db = 0, sr = 0, sg = 0, sb = 0;
 
@@ -738,7 +745,7 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
          alignas(16) float matcap[4];
          sample_matcap(Mean, matcap);
 
-         const double weight = cavity * coverage;
+         const double weight = indirect * coverage;
          double cr = base + (Metalness * (Albedo.r - base));
          double cg = base + (Metalness * (Albedo.g - base));
          double cb = base + (Metalness * (Albedo.b - base));
@@ -759,9 +766,9 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
    }
 
    const double demul = 1.0 / alpha;
-   Output[R] = encode_channel(((Albedo.r * coverage * ((AmbientLight.Red * cavity) + dr)) + sr) * demul, true);
-   Output[G] = encode_channel(((Albedo.g * coverage * ((AmbientLight.Green * cavity) + dg)) + sg) * demul, true);
-   Output[B] = encode_channel(((Albedo.b * coverage * ((AmbientLight.Blue * cavity) + db)) + sb) * demul, true);
+   Output[R] = encode_channel(((Albedo.r * coverage * ((AmbientLight.Red * indirect) + dr)) + sr) * demul, true);
+   Output[G] = encode_channel(((Albedo.g * coverage * ((AmbientLight.Green * indirect) + dg)) + sg) * demul, true);
+   Output[B] = encode_channel(((Albedo.b * coverage * ((AmbientLight.Blue * indirect) + db)) + sb) * demul, true);
    Output[A] = uint8_t((alpha * 255.0) + 0.5);
 }
 
@@ -811,6 +818,21 @@ static void apply_normal_map_row(const filter_surface_view &Source, int SceneX, 
 }
 
 //********************************************************************************************************************
+// Multiplies a row of cavity terms by the ambient occlusion map, for indirect light.  The map is sampled at the centre
+// of each output pixel, and its value ao is limited to 0 - 1 and applied as 1 + strength * (ao - 1).
+
+static void occlusion_row(const lit_surface &Surface, int Y, const float *Cavity, float *Indirect, int Width)
+{
+   const auto &map = *Surface.occlusion;
+   const double strength = Surface.occlusion_strength;
+   const double scene_y = Surface.scene_y + Y + 0.5;
+   for (int x=0; x < Width; ++x) {
+      const double ao = std::clamp(double(map.sample(Surface.scene_x + x + 0.5, scene_y)[0]), 0.0, 1.0);
+      Indirect[x] = Cavity[x] * float(std::max(0.0, 1.0 + (strength * (ao - 1.0))));
+   }
+}
+
+//********************************************************************************************************************
 // Renders rows StartY to EndY from the padded height buffer.  Delta(x, y, height) returns the surface-to-light unit
 // vector and Tint(stl) returns the colour of the light arriving from that direction.  Falloff(x, y, height) returns
 // the attenuation of a ranged light, or exactly 1.  With several lights, the shading of each pixel is delegated to
@@ -843,6 +865,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
    float *mean_x = Buffer + span * 21; // Normalised mean normal for each pixel of the row
    float *mean_y = Buffer + span * 22;
    float *mean_z = Buffer + span * 23;
+   float *indirect_row = Buffer + span * 24; // Cavity multiplied by ambient occlusion, if a map is read
 
    // Surface normal and occlusion for each pixel, for three rows indexed by row number modulo 3.  Element 0 is the
    // pixel before the row, which replicates the first pixel, and element Width + 1 replicates the last.  Specular light
@@ -954,11 +977,16 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
          continue;
       }
 
-      // Cavity is the occlusion from curvature alone.  Light is reduced by both cavity and shadow, ambient light by
-      // the cavity alone.
+      // Cavity is the occlusion from curvature alone.  Light is reduced by both cavity and shadow.  Indirect light,
+      // which is the ambient light and the matcap, is reduced by the cavity and the ambient occlusion map.
 
       const float *h = row_of(Surface.heights, y);
       const float *cavity = cur.occlusion + 1;
+      const float *indirect = cavity;
+      if (Surface.occlusion) {
+         occlusion_row(Surface, y, cavity, indirect_row, Width);
+         indirect = indirect_row;
+      }
       const float *shadow = Surface.shadow ? Surface.shadow + (y * Width) : nullptr;
       const float *raised = Surface.raised ? Surface.raised + (y * Width) : nullptr;
       const uint8_t *albedo = ((Surface.albedo) and (y < Surface.albedo_height)) ?
@@ -970,7 +998,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
             const auto sample = read_albedo(Surface, albedo, x, R, G, B, A);
             const point3 mean = toksvig ? point3(mean_x[x], mean_y[x], mean_z[x]) : normal;
             const double exponent = toksvig ? SpecularExponent * double(factor[x]) : SpecularExponent;
-            enhanced_lights(Surface, normal, mean, exponent, sample, x, y, h[x], cavity[x], dptr, R, G, B, A);
+            enhanced_lights(Surface, normal, mean, exponent, sample, x, y, h[x], cavity[x], indirect[x], dptr,
+               R, G, B, A);
          }
          continue;
       }
@@ -981,7 +1010,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
          const double occlusion = double(shadow ? cavity[x] * shadow[x] : cavity[x]) * falloff;
          point3 stl = Delta(x, y, h[x]);
          if (Type IS LT::DIFFUSE) {
-            if (ambient) enhanced_ambient(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, cavity[x]);
+            if (ambient) enhanced_ambient(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, indirect[x]);
             else enhanced_diffuse(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion);
          }
          else if (Type IS LT::COMBINED) {
@@ -991,11 +1020,11 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
             if (Material) {
                const double lifted = double(raised ? cavity[x] * raised[x] : cavity[x]) * falloff;
                enhanced_material(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
-                  cavity[x], lifted);
+                  indirect[x], lifted);
             }
             else {
                enhanced_combined(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
-                  cavity[x]);
+                  indirect[x]);
             }
          }
          else if (toksvig) {
@@ -1096,8 +1125,8 @@ static void load_lighting_height_row(const filter_surface_view &Source, float *D
 //********************************************************************************************************************
 
 ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter_surface_view *Albedo,
-   const filter_surface_view *Normals, std::span<lit_light> Prepared, double SpotHeight, const map_height &NormalHeight,
-   double UnitSize, int Width, int Height)
+   const filter_surface_view *Normals, const filter_map_view *Occlusion, std::span<lit_light> Prepared,
+   double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width, int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
@@ -1399,6 +1428,9 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       .lights = multiple ? std::span<const lit_light>(Prepared) : std::span<const lit_light>(),
       .spot_height = SpotHeight, .width = Width, .normal_map = Normals,
       .normal_strength = NormalStrength, .flip_normal_y = NormalConvention IS NMC::Y_UP,
+      // The map is skipped without indirect light to occlude.  With a strength of zero it would change nothing.
+      .occlusion = ((has_ambient() or MatcapTexels) and (OcclusionStrength > 0)) ? Occlusion : nullptr,
+      .occlusion_strength = OcclusionStrength,
       .scene_x = scene_x, .scene_y = scene_y
    };
 
