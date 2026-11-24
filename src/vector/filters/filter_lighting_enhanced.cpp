@@ -41,6 +41,9 @@ replaces the gradient stage only; normals, kernel units and the light models are
 11. An ambient occlusion map multiplies the cavity term for indirect light only: the ambient light and the matcap.
    Each row is sampled once into a row buffer, and only when the draw has indirect light, so that an unbound map, or
    a draw without ambient light or a matcap, does the same arithmetic as before.
+12. A roughness map replaces the constant specular exponent.  Each row is converted once into row buffers of
+   exponents and highlight gains, and the Toksvig factor of SPECULAR_AA is computed with the exponent of each pixel.
+   Without a map the gain is exactly 1 and the exponent is the Exponent field, so the arithmetic is unchanged.
 
 *********************************************************************************************************************/
 
@@ -105,7 +108,7 @@ constexpr float CORE_HIGH = 1.5f;
 constexpr int SHADOW_LEVELS = 4;
 constexpr double MAX_SHADOW_LENGTH = 128;
 
-constexpr int LIGHT_ROW_BUFFERS = 25;
+constexpr int LIGHT_ROW_BUFFERS = 27;
 
 struct lit_surface {
    const float *heights; // Padded, dequantised heights
@@ -131,6 +134,7 @@ struct lit_surface {
    bool flip_normal_y;
    const filter_map_view *occlusion; // Ambient occlusion in scene coordinates, or nullptr if no indirect light reads it
    double occlusion_strength;
+   const filter_map_view *roughness; // Roughness in scene coordinates, or nullptr to use the Exponent field
    int scene_x, scene_y;  // Scene coordinates of the first output pixel
 };
 
@@ -629,13 +633,18 @@ static inline albedo_sample read_albedo(const lit_surface &Surface, const uint8_
 //
 // The rows above, at and below the pixel are given for each component, with one element either side of the row.
 // Where the normals are all equal, as on a flat or evenly sloped surface, N is a unit vector and the factor is 1.
+// Exponents is the exponent of each pixel if VARYING is true, as given by a roughness map, and otherwise a single
+// value for the row.
 
+template <bool VARYING>
 static void row_toksvig(const float *__restrict X0, const float *__restrict X1, const float *__restrict X2,
    const float *__restrict Y0, const float *__restrict Y1, const float *__restrict Y2,
-   const float *__restrict Z0, const float *__restrict Z1, const float *__restrict Z2, float Exponent,
-   float *__restrict MX, float *__restrict MY, float *__restrict MZ, float *__restrict Factor, int Width)
+   const float *__restrict Z0, const float *__restrict Z1, const float *__restrict Z2,
+   const float *__restrict Exponents, float *__restrict MX, float *__restrict MY, float *__restrict MZ,
+   float *__restrict Factor, int Width)
 {
    for (int x=0; x < Width; ++x) {
+      const float exponent = VARYING ? Exponents[x] : Exponents[0];
       const float sx = (X0[x - 1] + 2.0f * X0[x] + X0[x + 1]) + 2.0f * (X1[x - 1] + 2.0f * X1[x] + X1[x + 1])
          + (X2[x - 1] + 2.0f * X2[x] + X2[x + 1]);
       const float sy = (Y0[x - 1] + 2.0f * Y0[x] + Y0[x + 1]) + 2.0f * (Y1[x - 1] + 2.0f * Y1[x] + Y1[x + 1])
@@ -644,7 +653,7 @@ static void row_toksvig(const float *__restrict X0, const float *__restrict X1, 
          + (Z2[x - 1] + 2.0f * Z2[x] + Z2[x + 1]);
       const float sum = std::sqrt((sx * sx) + (sy * sy) + (sz * sz));
       const float length = std::min(sum / 16.0f, 1.0f);
-      Factor[x] = length / (length + (Exponent * (1.0f - length)));
+      Factor[x] = length / (length + (exponent * (1.0f - length)));
       MX[x] = sx / sum;
       MY[x] = sy / sum;
       MZ[x] = sz / sum;
@@ -658,16 +667,17 @@ static void row_toksvig(const float *__restrict X0, const float *__restrict X1, 
 // reflectance does not depend on the light, so it is applied to the sum of the specular light.  Ambient light and the
 // matcap are added once, and the result is composed and encoded once, so only the final output is clamped.  Cavity
 // occludes the light of each light source, and Indirect, the cavity multiplied by the ambient occlusion map, occludes
-// the ambient light and the matcap.
+// the ambient light and the matcap.  Gain scales the specular light of every light for a roughness map.
 
 inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const point3 &Normal, const point3 &Mean,
-   double Exponent, const albedo_sample &Albedo, int X, int Y, float Height, float Cavity, float Indirect,
+   double Exponent, double Gain, const albedo_sample &Albedo, int X, int Y, float Height, float Cavity, float Indirect,
    uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A)
 {
    const std::ptrdiff_t offset = (std::ptrdiff_t(Y) * Surface.width) + X;
    const double surface_z = double(Height) * (1.0 / 255.0) * Surface.spot_height;
    const double indirect = Indirect;
    const double kd = Material ? Constant * (1.0 - Metalness) : Constant;
+   const double ks = SpecularConstant * Gain;
    double dr = 0, dg = 0, db = 0, sr = 0, sg = 0, sb = 0;
 
    for (const auto &light : Surface.lights) {
@@ -710,7 +720,7 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
       }
       else diffuse = kd * std::max(0.0, nl) * occlusion;
 
-      const double specular = SpecularConstant * std::pow(std::max(0.0, Mean.dot(half)), Exponent) * occlusion;
+      const double specular = ks * std::pow(std::max(0.0, Mean.dot(half)), Exponent) * occlusion;
       dr += diffuse * colour.Red;
       dg += diffuse * colour.Green;
       db += diffuse * colour.Blue;
@@ -833,6 +843,34 @@ static void occlusion_row(const lit_surface &Surface, int Y, const float *Cavity
 }
 
 //********************************************************************************************************************
+// Converts a row of the roughness map to specular exponents and gains.  The map is sampled at the centre of each output
+// pixel, and its roughness r is limited to 0 - 1 and converted with roughness_exponent().  Reference is the Exponent
+// field, at which SpecularConstant is calibrated, and the gain (n + 2) / (Reference + 2) makes the highlights of smooth
+// areas brighter as they narrow.  A sample equal to the map's fallback, which is the roughness of the Exponent field,
+// uses that field with a gain of exactly 1, so areas the map does not cover keep the constant highlight.
+
+static void roughness_row(const lit_surface &Surface, int Y, double Reference, float *Exponents, float *Gains,
+   int Width)
+{
+   const auto &map = *Surface.roughness;
+   const float fallback = map.Contract.Fallback[0];
+   const double inverse = 1.0 / (Reference + 2.0);
+   const double scene_y = Surface.scene_y + Y + 0.5;
+   for (int x=0; x < Width; ++x) {
+      const float r = map.sample(Surface.scene_x + x + 0.5, scene_y)[0];
+      if ((r IS fallback) or (not std::isfinite(r))) {
+         Exponents[x] = float(Reference);
+         Gains[x] = 1.0f;
+         continue;
+      }
+
+      const double n = roughness_exponent(std::clamp(double(r), 0.0, 1.0));
+      Exponents[x] = float(n);
+      Gains[x] = float((n + 2.0) * inverse);
+   }
+}
+
+//********************************************************************************************************************
 // Renders rows StartY to EndY from the padded height buffer.  Delta(x, y, height) returns the surface-to-light unit
 // vector and Tint(stl) returns the colour of the light arriving from that direction.  Falloff(x, y, height) returns
 // the attenuation of a ranged light, or exactly 1.  With several lights, the shading of each pixel is delegated to
@@ -866,6 +904,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
    float *mean_y = Buffer + span * 22;
    float *mean_z = Buffer + span * 23;
    float *indirect_row = Buffer + span * 24; // Cavity multiplied by ambient occlusion, if a map is read
+   float *exponent_row = Buffer + span * 25; // Specular exponent for each pixel, if a roughness map is read
+   float *gain_row = Buffer + span * 26;     // Specular gain for each pixel, if a roughness map is read
 
    // Surface normal and occlusion for each pixel, for three rows indexed by row number modulo 3.  Element 0 is the
    // pixel before the row, which replicates the first pixel, and element Width + 1 replicates the last.  Specular light
@@ -949,15 +989,34 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
       }
    };
 
+   // With a roughness map, each pixel has its own exponent and gain.  Otherwise every pixel uses the Exponent field
+   // and a gain of 1.  The result of pixel_exponent() includes the Toksvig factor.  The lambdas capture by value: the
+   // output is written through a byte pointer, which would otherwise force every captured value to be reloaded for
+   // each pixel.
+
+   const bool rough = Surface.roughness and (not normal_map) and (Type != LT::DIFFUSE);
    const float exponent = float(SpecularExponent);
+   auto pixel_exponent = [rough, toksvig, exponent_row, factor, reference = SpecularExponent](int X) {
+      const double base = rough ? double(exponent_row[X]) : reference;
+      return toksvig ? base * double(factor[X]) : base;
+   };
+   auto pixel_gain = [rough, gain_row](int X) { return rough ? double(gain_row[X]) : 1.0; };
+
    for (int y=StartY; y < EndY; ++y) {
       const auto &cur = slots[y % 3];
+      if (rough) roughness_row(Surface, y, SpecularExponent, exponent_row, gain_row, Width);
       if (toksvig) {
          compute_to(std::min(y + 1, last_row));
          const auto &above = slots[std::max(y - 1, 0) % 3];
          const auto &below = slots[std::min(y + 1, last_row) % 3];
-         row_toksvig(above.x + 1, cur.x + 1, below.x + 1, above.y + 1, cur.y + 1, below.y + 1,
-            above.z + 1, cur.z + 1, below.z + 1, exponent, mean_x, mean_y, mean_z, factor, Width);
+         if (rough) {
+            row_toksvig<true>(above.x + 1, cur.x + 1, below.x + 1, above.y + 1, cur.y + 1, below.y + 1,
+               above.z + 1, cur.z + 1, below.z + 1, exponent_row, mean_x, mean_y, mean_z, factor, Width);
+         }
+         else {
+            row_toksvig<false>(above.x + 1, cur.x + 1, below.x + 1, above.y + 1, cur.y + 1, below.y + 1,
+               above.z + 1, cur.z + 1, below.z + 1, &exponent, mean_x, mean_y, mean_z, factor, Width);
+         }
       }
       else compute_to(y);
 
@@ -997,9 +1056,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
             const point3 normal(nx[x], ny[x], nz[x]);
             const auto sample = read_albedo(Surface, albedo, x, R, G, B, A);
             const point3 mean = toksvig ? point3(mean_x[x], mean_y[x], mean_z[x]) : normal;
-            const double exponent = toksvig ? SpecularExponent * double(factor[x]) : SpecularExponent;
-            enhanced_lights(Surface, normal, mean, exponent, sample, x, y, h[x], cavity[x], indirect[x], dptr,
-               R, G, B, A);
+            enhanced_lights(Surface, normal, mean, pixel_exponent(x), pixel_gain(x), sample, x, y, h[x], cavity[x],
+               indirect[x], dptr, R, G, B, A);
          }
          continue;
       }
@@ -1016,22 +1074,23 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
          else if (Type IS LT::COMBINED) {
             const auto sample = read_albedo(Surface, albedo, x, R, G, B, A);
             const point3 mean = toksvig ? point3(mean_x[x], mean_y[x], mean_z[x]) : normal;
-            const double exponent = toksvig ? SpecularExponent * double(factor[x]) : SpecularExponent;
+            const double exponent = pixel_exponent(x), gain = pixel_gain(x);
             if (Material) {
                const double lifted = double(raised ? cavity[x] * raised[x] : cavity[x]) * falloff;
-               enhanced_material(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
+               enhanced_material(normal, mean, exponent, gain, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
                   indirect[x], lifted);
             }
             else {
-               enhanced_combined(normal, mean, exponent, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
+               enhanced_combined(normal, mean, exponent, gain, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
                   indirect[x]);
             }
          }
          else if (toksvig) {
             enhanced_specular(point3(mean_x[x], mean_y[x], mean_z[x]), stl, Tint(stl), dptr, R, G, B, A,
-               occlusion, SpecularExponent * double(factor[x]));
+               occlusion, pixel_exponent(x), pixel_gain(x));
          }
-         else enhanced_specular(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, SpecularExponent);
+         else enhanced_specular(normal, stl, Tint(stl), dptr, R, G, B, A, occlusion, pixel_exponent(x),
+            pixel_gain(x));
       }
    }
 }
@@ -1125,8 +1184,9 @@ static void load_lighting_height_row(const filter_surface_view &Source, float *D
 //********************************************************************************************************************
 
 ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter_surface_view *Albedo,
-   const filter_surface_view *Normals, const filter_map_view *Occlusion, std::span<lit_light> Prepared,
-   double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width, int Height)
+   const filter_surface_view *Normals, const filter_map_view *Occlusion, const filter_map_view *Roughness,
+   std::span<lit_light> Prepared, double SpotHeight, const map_height &NormalHeight, double UnitSize, int Width,
+   int Height)
 {
    const int stride = Width + (LIGHT_PAD * 2);
    const int rows   = Height + (LIGHT_PAD * 2);
@@ -1430,7 +1490,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       .normal_strength = NormalStrength, .flip_normal_y = NormalConvention IS NMC::Y_UP,
       // The map is skipped without indirect light to occlude.  With a strength of zero it would change nothing.
       .occlusion = ((has_ambient() or MatcapTexels) and (OcclusionStrength > 0)) ? Occlusion : nullptr,
-      .occlusion_strength = OcclusionStrength,
+      .occlusion_strength = OcclusionStrength, .roughness = Roughness,
       .scene_x = scene_x, .scene_y = scene_y
    };
 

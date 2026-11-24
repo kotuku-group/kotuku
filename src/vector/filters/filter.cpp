@@ -2570,6 +2570,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          if (lighting->reads_albedo()) name_reference(effect->MixType, effect->Mix);
          name_reference(lighting->NormalMap.Source, lighting->NormalMap.Reference);
          name_reference(lighting->OcclusionMap.Source, lighting->OcclusionMap.Reference);
+         name_reference(lighting->RoughnessMap.Source, lighting->RoughnessMap.Reference);
       }
       else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          name_reference(effect->SourceType, effect->Input);
@@ -2613,6 +2614,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          if (lighting->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
          write_input("kotuku:normalMap", lighting->NormalMap.Source, lighting->NormalMap.Reference);
          write_input("kotuku:occlusionMap", lighting->OcclusionMap.Source, lighting->OcclusionMap.Reference);
+         write_input("kotuku:roughnessMap", lighting->RoughnessMap.Source, lighting->RoughnessMap.Reference);
       }
       else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          write_input("in", effect->SourceType, effect->Input);

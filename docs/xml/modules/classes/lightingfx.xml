@@ -67,7 +67,7 @@ by <fl>Penumbra</fl>.</li>
 do not produce isolated bright pixels.</li>
 </list>
 <p>Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies beside a raised area.  Set the scene's Compliance to <code>SVG1</code> or <code>SVG2</code> for results that match the SVG specification exactly, or set <fl>Features</fl> to zero to use the SVG algorithm for this effect alone.  The enhanced pipeline is still used if <fl>Ambient</fl> or <fl>Intensity</fl> is set.</p>
-<p>An <fl>Ambient</fl> light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by <code>CAVITY</code> and by an ambient occlusion map bound to <fl>OcclusionMap</fl>.  The <fl>Intensity</fl> of the light multiplies its <fl>Colour</fl>.  For the diffuse and specular types the light is limited to full strength before it is coloured, as the SVG algorithm does with <fl>Constant</fl>, so a value above 1 cannot make a coloured light brighter than full strength.  Neither field has an effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>.</p>
+<p>An <fl>Ambient</fl> light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by <code>CAVITY</code> and by an ambient occlusion map bound to <fl>OcclusionMap</fl>.  The <fl>Intensity</fl> of the light multiplies its <fl>Colour</fl>.  For the diffuse and specular types the light is limited to full strength before it is coloured, as the SVG algorithm does with <fl>Constant</fl>, so a value above 1 cannot make a coloured light brighter than full strength.  Both fields require the enhanced pipeline.  A diffuse effect with ambient light and an active <fl>OcclusionMap</fl> uses that pipeline at any Compliance setting.</p>
 <p>The <code>COMBINED</code> type computes a lit surface in a single pass.  The #Mix input is the albedo, the colour of the surface, and the result is</p>
 <pre>albedo * (ambient + kd * N.L * light) + ks * pow(N.H, specularExponent) * light
 </pre>
@@ -79,6 +79,7 @@ do not produce isolated bright pixels.</li>
 </pre>
 <p>where F is the reflectance.  It is <code>F0 = lerp(base, albedo, m)</code>, where base is f0 if it is set and 1 otherwise, and if f0 is set it rises towards 1 as the surface turns away from the viewer: <code>F = F0 + (1 - F0) * pow(1 - N.z, 5)</code>. This is the usual metallic workflow.  A dielectric reflects specular light in the light's colour, weakly when it faces the viewer and strongly at grazing angles, and scatters diffuse light in its albedo's colour.  A metal has no diffuse light and reflects in its albedo's colour.  Wrap lets diffuse light reach past the terminator, as on wax and skin, and changes the brightness of flat surfaces.</p>
 <p>A matcap adds reflections of an environment that the light model cannot produce, such as those of chrome, glass or glazed ceramic.  It is an image of a lit sphere, set with <fl>MatcapPath</fl> or <fl>Matcap</fl>, and each pixel takes the colour of the point on the sphere that faces the same way as the surface.  The reflection is added to the specular light as <code>matcap * F * albedo.alpha</code>, where F is the reflectance above, computed with the albedo's colour.  It is reduced by <code>CAVITY</code> but not by shadows, and it is independent of the light, so it remains if <fl>SpecularConstant</fl> is zero.</p>
+<p>A <fl>RoughnessMap</fl> varies the highlight across the surface for the <code>SPECULAR</code> and <code>COMBINED</code> types.  Each pixel's roughness sets its own specular exponent in place of <fl>Exponent</fl>, and smooth areas receive narrower, brighter highlights than rough ones.  Packed ORM maps can supply the roughness and an <fl>OcclusionMap</fl> from different channels of one image.</p>
 <p>The <code>COMBINED</code> type can be lit by several lights, such as a key light and fill lights.  <method>SetDistantLight</method>, <method>SetPointLight</method> and <method>SetSpotLight</method> configure a single light, replacing any others, and <method>AddDistantLight</method>, <method>AddPointLight</method> and <method>AddSpotLight</method> add further lights in order.  <method>SetLightOptions</method> gives each light its own colour, intensity, range and shadow switch.  The surface is analysed once and the diffuse and specular light of every light is summed before it is applied to the albedo, so the result is the sum of the lights' separate results until it reaches full strength.  Ambient light and the matcap are added once.  Each distant light casts its own shadows, so the cost of the <code>SHADOWS</code> feature rises with the number of distant lights that cast them.</p>
 <p>A point or spot light with a range fades to nothing at that distance.  It is at its full strength at the point of the surface nearest to it, and falls from there with the square of the distance, multiplied by a smooth window that reaches zero at the range.  A light without a range is not attenuated, as in SVG.</p>
 <p>SVG documents can set <fl>Features</fl>, <fl>Cavity</fl>, <fl>Detail</fl>, <fl>Penumbra</fl>, <fl>Ambient</fl> and the options of each light with <code>kotuku:</code> attributes, and the <code>COMBINED</code> type is available as the <code>kotuku:feLighting</code> element, which also accepts the material terms and several light sources; refer to the SVG class for details.</p></description>
@@ -248,7 +249,7 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <description>
 <p>Ambient light reaches every point of the surface equally, from no particular direction, so that areas facing away from the light or lying in shadow are not black.  It is added to the diffuse light, and for the <code>COMBINED</code> type it is multiplied by the albedo.  It is not blocked by shadows, but it is reduced in creases and pits by the <code>CAVITY</code> feature.  The specular type ignores it.</p>
 <p>The light is the RGB value of the colour multiplied by its alpha.  The colour is in the same colour space as <fl>Colour</fl>. The default is transparent black, which adds no light.</p>
-<p>This field has no effect when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>, unless the <fl>Type</fl> is <code>COMBINED</code>.</p>
+<p>This field requires the enhanced pipeline.  The <code>COMBINED</code> type always uses it.  For <code>DIFFUSE</code>, an active <fl>OcclusionMap</fl> enables it even when the scene's Compliance is <code>SVG1</code> or <code>SVG2</code>.</p>
       </description>
     </field>
 
@@ -302,6 +303,7 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <type>DOUBLE</type>
       <description>
 <p>This field defines the exponent value for specular lighting, within a range of 1.0 to 128.0.  The larger the value, shinier the end result.</p>
+<p>If a <fl>RoughnessMap</fl> is bound, the map supplies the exponent of each pixel and this field is the reference exponent at which the specular constant is calibrated.  Pixels that the map does not cover use this exponent.</p>
       </description>
     </field>
 
@@ -435,7 +437,7 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <description>
 <p>Bind an earlier effect in the same filter whose result is an ambient occlusion map, in which 1 (white) is fully exposed and 0 (black) is fully occluded.  The map darkens indirect light only: the <fl>Ambient</fl> light of the <code>DIFFUSE</code> and <code>COMBINED</code> types, and the <fl>Matcap</fl> reflection of the <code>COMBINED</code> type.  It multiplies the cavity term of the <code>CAVITY</code> feature, so ambient light is <code>Ambient * cavity * occlusion</code>.  Light from the light sources is not occluded by the map, because the <code>CAVITY</code> and <code>SHADOWS</code> features already account for the surface's own occlusion of direct light.  Without ambient light or a matcap, the map has no effect.</p>
 <p>The value is read from the channel selected by <fl>OcclusionChannel</fl>, red by default, and adjusted by <fl>OcclusionStrength</fl>.  Channels are read as stored data in either filter colour space, without colour conversion.  A producer with a numerical result, such as a TurbulenceFX in <code>HEIGHT</code> mode, supplies the value directly.  Values are limited to the range 0 - 1.  Pixels outside of the producer's result, and fully transparent pixels unless the <code>ALPHA</code> channel is selected, read as 1 and are not occluded.  The map is aligned with the scene and sampled at each output pixel, as for <fl>NormalMap</fl>.</p>
-<p>Binding a map to the <code>DIFFUSE</code> or <code>COMBINED</code> type enables enhanced lighting.  The <code>SPECULAR</code> and <code>NORMAL</code> types ignore it.  Removing the producer clears this binding.</p>
+<p>A <code>DIFFUSE</code> effect with ambient light, a bound map and a positive <fl>OcclusionStrength</fl> uses enhanced lighting at any Compliance setting.  The <code>COMBINED</code> type always uses enhanced lighting.  The <code>SPECULAR</code> and <code>NORMAL</code> types ignore the map.  Removing the producer clears this binding.</p>
       </description>
     </field>
 
@@ -457,6 +459,30 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <description>
 <p>A point on the surface passes from light into shadow as the elevation at which the surface hides the light rises through the light's own elevation.  The transition is smoothed over this many degrees either side of the light's elevation, so the shadow's edge widens with distance from the area that casts it.  The width is limited to half of the light's elevation.  The default is 2, and a value of 0 produces hard shadows.  The value must be zero or greater.</p>
 <p>This field has no effect unless the enhanced pipeline is in use; refer to <fl>Features</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>RoughnessChannel</name>
+      <comment>Selects the channel of <fl>RoughnessMap</fl> that supplies the roughness.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="MCH">MCH</type>
+      <description>
+<p>The default is <code>RED</code>, which suits greyscale maps.  Packed ORM maps, as used by glTF, store roughness in the green channel, so select <code>GREEN</code> to bind one without extracting a channel.  The channels are those of <fl>OcclusionChannel</fl>. With <code>ALPHA</code>, transparent pixels have zero roughness and the sharpest highlight.  Numerical maps have a single value and ignore this field.</p>
+<types lookup="MCH"/>
+      </description>
+    </field>
+
+    <field>
+      <name>RoughnessMap</name>
+      <comment>An optional filter result supplying surface roughness for specular highlights.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>Bind an earlier effect in the same filter whose result is a roughness map, in which 0 (black) is perfectly smooth and 1 (white) is fully rough.  Each pixel's roughness r replaces the constant <fl>Exponent</fl> with a Blinn-Phong exponent, using the usual approximation <code>n = 2 / r<sup>4</sup> - 2</code>, limited to the range of <fl>Exponent</fl>: 1 to 128.  A roughness of 0.4 gives an exponent of about 76, 0.64 gives about 10, and roughness above 0.9 gives 1.</p>
+<p><fl>Exponent</fl> remains the reference exponent at which the specular constant is calibrated.  Each pixel's highlight is scaled by <code>(n + 2) / (Exponent + 2)</code>, so smooth areas have narrow, bright highlights and rough areas broad, dim ones.  A map whose exponent equals <fl>Exponent</fl> everywhere reproduces the result without a map when both renders use enhanced lighting.  With the <code>SPECULAR_AA</code> feature, surface variation reduces each pixel's exponent in both cases.</p>
+<p>The value is read from the channel selected by <fl>RoughnessChannel</fl>, red by default.  Channels are read as stored data in either filter colour space, without colour conversion.  A producer with a numerical result supplies the value directly.  Values are limited to the range 0 - 1.  Pixels outside of the producer's result, and fully transparent pixels unless the <code>ALPHA</code> channel is selected, use <fl>Exponent</fl>.  The map is aligned with the scene and sampled at each output pixel, as for <fl>NormalMap</fl>.</p>
+<p>The map applies to the <code>SPECULAR</code> and <code>COMBINED</code> types, and binding it selects enhanced lighting at any Compliance setting.  In an <code>SVG1</code> or <code>SVG2</code> scene, this can change the <code>SPECULAR</code> result even when every pixel uses <fl>Exponent</fl>. It does not affect the matcap reflection.  The <code>DIFFUSE</code> and <code>NORMAL</code> types ignore it.  Removing the producer clears this binding.</p>
       </description>
     </field>
 
@@ -533,9 +559,9 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The result is a complete element.  The lighting types use <code>feDiffuseLighting</code>, <code>feSpecularLighting</code> or <code>kotuku:feLighting</code> and include their light sources.  The <code>NORMAL</code> type uses <code>kotuku:feNormalMap</code> and includes the primitive subregion and surface settings.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes when they differ from their defaults.  These include <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, and <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:normalConvention</code> and <code>kotuku:normalStrength</code> for <fl>NormalConvention</fl> and <fl>NormalStrength</fl>, <code>kotuku:occlusionChannel</code> and <code>kotuku:occlusionStrength</code> for <fl>OcclusionChannel</fl> and <fl>OcclusionStrength</fl>, and <code>kotuku:ambient</code> for <fl>Ambient</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder.  For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted.  The attributes of <code>kotuku:feLighting</code> and <code>kotuku:feNormalMap</code> are written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
+<p>The result is a complete element.  The lighting types use <code>feDiffuseLighting</code>, <code>feSpecularLighting</code> or <code>kotuku:feLighting</code> and include their light sources.  The <code>NORMAL</code> type uses <code>kotuku:feNormalMap</code> and includes the primitive subregion and surface settings.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes when they differ from their defaults.  These include <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, and <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:normalConvention</code> and <code>kotuku:normalStrength</code> for <fl>NormalConvention</fl> and <fl>NormalStrength</fl>, <code>kotuku:occlusionChannel</code> and <code>kotuku:occlusionStrength</code> for <fl>OcclusionChannel</fl> and <fl>OcclusionStrength</fl>, <code>kotuku:roughnessChannel</code> for <fl>RoughnessChannel</fl>, and <code>kotuku:ambient</code> for <fl>Ambient</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder.  For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted.  The attributes of <code>kotuku:feLighting</code> and <code>kotuku:feNormalMap</code> are written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
 <p>Each light is written as a child element, in the order in which the lights were added.  The options of <method>SetLightOptions</method> are written on the light's element as <code>kotuku:colour</code>, <code>kotuku:intensity</code>, <code>kotuku:range</code> and <code>kotuku:shadows</code>, when they differ from their defaults.  The intensity of the first light is <fl>Intensity</fl>.</p>
-<p>The parent filter writes the <code>in</code>, <code>in2</code>, <code>result</code>, <code>kotuku:normalMap</code> and <code>kotuku:occlusionMap</code> attributes separately.</p>
+<p>The parent filter writes the <code>in</code>, <code>in2</code>, <code>result</code>, <code>kotuku:normalMap</code>, <code>kotuku:occlusionMap</code> and <code>kotuku:roughnessMap</code> attributes separately.</p>
       </description>
       <tags>caller-owns-result</tags>
     </field>
@@ -565,10 +591,10 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <const name="SPECULAR">Select specular lighting.</const>
     </constants>
 
-    <constants lookup="MCH" comment="Channel selection for scalar maps read by LightingFX, such as an ambient occlusion map.">
+    <constants lookup="MCH" comment="Channel selection for scalar maps read by LightingFX, such as ambient occlusion and roughness maps.">
       <const name="ALPHA">The alpha channel.</const>
       <const name="BLUE">The blue channel.</const>
-      <const name="GREEN">The green channel.</const>
+      <const name="GREEN">The green channel, which is the roughness channel of a packed ORM map.</const>
       <const name="LUMINANCE">The luminance of the stored red, green and blue values, weighted 0.2126, 0.7152 and 0.0722.</const>
       <const name="RED">The red channel.  This is the default, and the occlusion channel of a packed ORM map.</const>
     </constants>

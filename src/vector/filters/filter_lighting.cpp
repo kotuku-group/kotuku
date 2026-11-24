@@ -171,6 +171,10 @@ the point on the sphere that faces the same way as the surface.  The reflection 
 `matcap * F * albedo.alpha`, where F is the reflectance above, computed with the albedo's colour.  It is reduced by
 `CAVITY` but not by shadows, and it is independent of the light, so it remains if #SpecularConstant is zero.
 
+A #RoughnessMap varies the highlight across the surface for the `SPECULAR` and `COMBINED` types.  Each pixel's
+roughness sets its own specular exponent in place of #Exponent, and smooth areas receive narrower, brighter highlights
+than rough ones.  Packed ORM maps can supply the roughness and an #OcclusionMap from different channels of one image.
+
 The `COMBINED` type can be lit by several lights, such as a key light and fill lights.  #SetDistantLight(),
 #SetPointLight() and #SetSpotLight() configure a single light, replacing any others, and #AddDistantLight(),
 #AddPointLight() and #AddSpotLight() add further lights in order.  #SetLightOptions() gives each light its own
@@ -278,6 +282,30 @@ struct map_height {
 constexpr double DEFAULT_CAVITY   = 0.25; // Occlusion per unit of curvature
 constexpr double DEFAULT_DETAIL   = 1.5;  // Slope multiplier for fine detail
 constexpr double DEFAULT_PENUMBRA = 2.0;  // Degrees either side of the light's elevation
+
+// Limits of the Exponent field, which also bound the exponents derived from a roughness map.
+
+constexpr double MIN_SPECULAR_EXPONENT = 1.0;
+constexpr double MAX_SPECULAR_EXPONENT = 128.0;
+
+// Converts a perceptual roughness r, from 0 to 1, to a Blinn-Phong exponent with the usual approximation: alpha = r^2
+// and n = 2 / alpha^2 - 2.  The exponent is limited to the range of the Exponent field, so roughness below 0.35 gives
+// the sharpest highlight and roughness above 0.9 the broadest.
+
+static double roughness_exponent(double Roughness)
+{
+   const double r2 = Roughness * Roughness;
+   const double a2 = r2 * r2;
+   if (not (a2 > 0)) return MAX_SPECULAR_EXPONENT;
+   return std::clamp((2.0 / a2) - 2.0, MIN_SPECULAR_EXPONENT, MAX_SPECULAR_EXPONENT);
+}
+
+// The inverse of roughness_exponent() for exponents within the field's range.
+
+static double exponent_roughness(double Exponent)
+{
+   return std::pow(2.0 / (Exponent + 2.0), 0.25);
+}
 
 // Colour of one albedo pixel in the filter's colour space, with straight alpha.
 
@@ -443,20 +471,26 @@ class extLightingFX : public extFilterEffect {
 
    // Named input slots.  The planner keeps their order, and the members below refer to them by name.
 
-   std::array<filter_named_input, 2> MapInputs = {{
+   std::array<filter_named_input, 3> MapInputs = {{
       { "NormalMap", { .ContributesRegion = false, .Optional = true } },
       { "OcclusionMap", { .Kind = filter_input_kind::SCALAR_MAP, .ContributesRegion = false, .Optional = true,
          .XChannel = filter_map_channel::RED, .Transfer = filter_map_transfer::STORED, .Fallback = { 1.0f, 0.0f },
+         .TransparentFallback = true } },
+      // The fallback is replaced per draw with the roughness of the Exponent field (see exponent_roughness()).
+      { "RoughnessMap", { .Kind = filter_input_kind::SCALAR_MAP, .ContributesRegion = false, .Optional = true,
+         .XChannel = filter_map_channel::RED, .Transfer = filter_map_transfer::STORED, .Fallback = { 0.0f, 0.0f },
          .TransparentFallback = true } }
    }};
    filter_named_input &NormalMap = MapInputs[0];
    filter_named_input &OcclusionMap = MapInputs[1];
+   filter_named_input &RoughnessMap = MapInputs[2];
    filter_effect_extension Extension = { std::span(MapInputs) };
 
    NMC    NormalConvention = NMC::Y_DOWN; // Axis convention of NormalMap's green channel
    double NormalStrength = 1.0;           // Multiplies the X and Y components of NormalMap before normalisation
    MCH    OcclusionChannel = MCH::RED;    // Channel of OcclusionMap that supplies the occlusion
    double OcclusionStrength = 1.0;        // Blends the occlusion from none (0) to as supplied (1)
+   MCH    RoughnessChannel = MCH::RED;    // Channel of RoughnessMap that supplies the roughness
 
    extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       FilterExtension = &Extension;
@@ -580,14 +614,14 @@ class extLightingFX : public extFilterEffect {
    inline void enhanced_diffuse(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double);
    LIGHT_INLINE void enhanced_specular(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t,
-      uint8_t, uint8_t, double, double);
+      uint8_t, uint8_t, double, double, double);
    inline void enhanced_ambient(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double, double);
-   inline void enhanced_combined(const point3 &, const point3 &, double, const point3 &, const FRGB &,
+   inline void enhanced_combined(const point3 &, const point3 &, double, double, const point3 &, const FRGB &,
       const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double);
-   inline void enhanced_material(const point3 &, const point3 &, double, const point3 &, const FRGB &,
+   inline void enhanced_material(const point3 &, const point3 &, double, double, const point3 &, const FRGB &,
       const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double, double);
-   inline void enhanced_lights(const struct lit_surface &, const point3 &, const point3 &, double,
+   inline void enhanced_lights(const struct lit_surface &, const point3 &, const point3 &, double, double,
       const albedo_sample &, int, int, float, float, float, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
    inline void sample_matcap(const point3 &, float *) const;
    inline uint8_t encode_channel(double, bool);
@@ -626,11 +660,12 @@ class extLightingFX : public extFilterEffect {
          ((Ambient.Red > 0) or (Ambient.Green > 0) or (Ambient.Blue > 0));
    }
 
-   // Combined shading, normal maps and active occlusion maps opt in under any compliance.
+   // Combined shading, normal maps, active occlusion maps and roughness maps opt in under any compliance.
    // Native heights opt in for Kōtuku scenes.
 
    bool enhanced(filter_surface_format PrimaryFormat) const {
-      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL) or NormalMap.Reference or reads_occlusion()) return true;
+      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL) or NormalMap.Reference or reads_occlusion() or
+         reads_roughness()) return true;
       if ((not Filter->Scene) or (Filter->Scene->Compliance != VSC::NONE)) return false;
       return (PrimaryFormat IS filter_surface_format::SCALAR_F32) or (Features != LFX::NIL) or
          extended_light() or has_ambient();
@@ -641,6 +676,12 @@ class extLightingFX : public extFilterEffect {
    bool reads_occlusion() const {
       return OcclusionMap.Reference and (OcclusionStrength > 0) and
          (has_ambient() or ((Type IS LT::COMBINED) and Matcap));
+   }
+
+   // A roughness map varies the specular highlight, so only the specular and combined types read it.
+
+   bool reads_roughness() const {
+      return RoughnessMap.Reference and ((Type IS LT::SPECULAR) or (Type IS LT::COMBINED));
    }
 
    // True if the effect reads an albedo from its Mix input.
@@ -662,7 +703,8 @@ class extLightingFX : public extFilterEffect {
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
    ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, const filter_surface_view *,
-      const filter_map_view *, std::span<lit_light>, double, const map_height &, double, int, int);
+      const filter_map_view *, const filter_map_view *, std::span<lit_light>, double, const map_height &, double, int,
+      int);
    ERR prepare_matcap();
    template <class DELTA, class COLOUR, class FALLOFF>
    void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR, FALLOFF);
@@ -851,15 +893,16 @@ inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &
 
 //********************************************************************************************************************
 // The light is premultiplied as in specular_light().  The alpha is truncated in sRGB filters, so that a flat surface
-// keeps the SVG result, and rounded in linear filters.
+// keeps the SVG result, and rounded in linear filters.  Gain scales the highlight for a roughness map, and is exactly
+// 1 without one, which leaves the result unchanged.
 
 LIGHT_INLINE void extLightingFX::enhanced_specular(const point3 &Normal, const point3 &STL, const FRGB &Colour,
-   uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
+   uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent, double Gain)
 {
    const point3 half_dir = point3::half_vector(STL);
 
-   const double scale = std::clamp(Strength * std::pow(std::max(0.0, Normal.dot(half_dir)), Exponent) * Occlusion,
-      0.0, 1.0);
+   const double scale = std::clamp(Strength * Gain * std::pow(std::max(0.0, Normal.dot(half_dir)), Exponent) *
+      Occlusion, 0.0, 1.0);
 
    const double level = std::max(std::max(Colour.Red, Colour.Green), Colour.Blue) * scale * 255.0;
    Output[A] = Linear ? uint8_t(level + 0.5) : uint8_t(level);
@@ -927,19 +970,21 @@ inline void extLightingFX::enhanced_ambient(const point3 &Normal, const point3 &
 
 //********************************************************************************************************************
 // The combined type.  Normal is the pixel's own normal, used for diffuse light, and Mean is the normal with which the
-// specular light is shaded, at the given Exponent (see row_toksvig()).  Light is not limited to full strength; the
-// result is clamped once, on output.  The albedo is premultiplied for the sum, so the specular light is added as the
-// arithmetic composite would add a premultiplied specular map.  The result's alpha is the albedo's alpha raised to the
-// brightest channel of the specular light, and its colour is divided by that alpha for storage.
+// specular light is shaded, at the given Exponent (see row_toksvig()), and Gain scales the specular light for a
+// roughness map.  Light is not limited to full strength; the result is clamped once, on output.  The albedo is
+// premultiplied for the sum, so the specular light is added as the arithmetic composite would add a premultiplied
+// specular map.  The result's alpha is the albedo's alpha raised to the brightest channel of the specular light, and
+// its colour is divided by that alpha for storage.
 
-inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 &Mean, double Exponent,
+inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 &Mean, double Exponent, double Gain,
    const point3 &STL, const FRGB &Light, const albedo_sample &Albedo, uint8_t *Output, uint8_t R, uint8_t G,
    uint8_t B, uint8_t A, double Occlusion, double Cavity)
 {
    const point3 half_dir = point3::half_vector(STL);
 
    const double diffuse = Constant * std::max(0.0, Normal.dot(STL)) * Occlusion;
-   const double specular = SpecularConstant * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) * Occlusion;
+   const double specular = SpecularConstant * Gain * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) *
+      Occlusion;
 
    const double sr = specular * Light.Red, sg = specular * Light.Green, sb = specular * Light.Blue;
    const double alpha = std::max(double(Albedo.a), std::min(1.0, std::max(std::max(sr, sg), sb)));
@@ -976,7 +1021,7 @@ inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 
 // A matcap adds matcap(Mean) x F x Cavity x coverage to the specular light.  Its F uses the straight albedo, because
 // the term is weighted by the albedo's coverage separately.  It is independent of the light and is not shadowed.
 
-inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 &Mean, double Exponent,
+inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 &Mean, double Exponent, double Gain,
    const point3 &STL, const FRGB &Light, const albedo_sample &Albedo, uint8_t *Output, uint8_t R, uint8_t G,
    uint8_t B, uint8_t A, double Occlusion, double Cavity, double Raised)
 {
@@ -991,7 +1036,8 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
 
    const double lit = std::max(0.0, (nl + Wrap) * WrapScale);
    const double diffuse = Constant * (1.0 - Metalness) * lit * diffuse_occlusion;
-   const double specular = SpecularConstant * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) * Occlusion;
+   const double specular = SpecularConstant * Gain * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) *
+      Occlusion;
 
    const double coverage = Albedo.a;
    const double base = (Fresnel > 0) ? Fresnel : 1.0;
@@ -1421,9 +1467,20 @@ ERR extLightingFX::draw()
          occlusion.Contract.XChannel = map_channel(OcclusionChannel);
       }
 
+      // Pixels that the roughness map does not cover read the roughness of the Exponent field, so that they blend
+      // into the constant highlight at the edges of the map.
+
+      filter_map_view roughness;
+      if (reads_roughness()) {
+         if (auto error = get_filter_map(this, RoughnessMap.Name, roughness); error != ERR::Okay) return error;
+         roughness.Contract.XChannel = map_channel(RoughnessChannel);
+         roughness.Contract.Fallback = { float(exponent_roughness(SpecularExponent)), 0.0f };
+      }
+
       const double unit_size = unit_length(unit);
       return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, normals.Bitmap ? &normals : nullptr,
-         occlusion.Source.Data ? &occlusion : nullptr, lights, spot_height, normal_height, unit_size, width, height);
+         occlusion.Source.Data ? &occlusion : nullptr, roughness.Source.Data ? &roughness : nullptr, lights,
+         spot_height, normal_height, unit_size, width, height);
    }
 
    if (not bmp) return ERR::NoSupport;
@@ -1951,11 +2008,14 @@ Exponent: Exponent for specular lighting, larger is more "shiny".  Ranges from 1
 This field defines the exponent value for specular lighting, within a range of 1.0 to 128.0.  The larger the value,
 shinier the end result.
 
+If a #RoughnessMap is bound, the map supplies the exponent of each pixel and this field is the reference exponent at
+which the specular constant is calibrated.  Pixels that the map does not cover use this exponent.
+
 *********************************************************************************************************************/
 
 static ERR LIGHTINGFX_SET_Exponent(extLightingFX *Self, double Value)
 {
-   if ((Value >= 1.0) and (Value <= 128.0)) {
+   if ((Value >= MIN_SPECULAR_EXPONENT) and (Value <= MAX_SPECULAR_EXPONENT)) {
       Self->SpecularExponent = Value;
       return ERR::Okay;
    }
@@ -2439,6 +2499,75 @@ static ERR LIGHTINGFX_SET_Penumbra(extLightingFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
+RoughnessChannel: Selects the channel of #RoughnessMap that supplies the roughness.
+
+The default is `RED`, which suits greyscale maps.  Packed ORM maps, as used by glTF, store roughness in the green
+channel, so select `GREEN` to bind one without extracting a channel.  The channels are those of #OcclusionChannel.
+With `ALPHA`, transparent pixels have zero roughness and the sharpest highlight.  Numerical maps have a single value
+and ignore this field.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_RoughnessChannel(extLightingFX *Self, MCH &Value)
+{
+   Value = Self->RoughnessChannel;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_RoughnessChannel(extLightingFX *Self, MCH Value)
+{
+   if ((Value < MCH::RED) or (Value > MCH::LUMINANCE)) return ERR::OutOfRange;
+   Self->RoughnessChannel = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+RoughnessMap: An optional filter result supplying surface roughness for specular highlights.
+
+Bind an earlier effect in the same filter whose result is a roughness map, in which 0 (black) is perfectly smooth and
+1 (white) is fully rough.  Each pixel's roughness r replaces the constant #Exponent with a Blinn-Phong exponent, using
+the usual approximation <code>n = 2 / r<sup>4</sup> - 2</code>, limited to the range of #Exponent: 1 to 128.  A
+roughness of 0.4 gives an exponent of about 76, 0.64 gives about 10, and roughness above 0.9 gives 1.
+
+#Exponent remains the reference exponent at which the specular constant is calibrated.  Each pixel's highlight is
+scaled by <code>(n + 2) / (Exponent + 2)</code>, so smooth areas have narrow, bright highlights and rough areas broad,
+dim ones.  A map whose exponent equals #Exponent everywhere reproduces the result without a map when both renders
+use enhanced lighting.  With the `SPECULAR_AA` feature, surface variation reduces each pixel's exponent in both
+cases.
+
+The value is read from the channel selected by #RoughnessChannel, red by default.  Channels are read as stored data in
+either filter colour space, without colour conversion.  A producer with a numerical result supplies the value
+directly.  Values are limited to the range 0 - 1.  Pixels outside of the producer's result, and fully transparent
+pixels unless the `ALPHA` channel is selected, use #Exponent.  The map is aligned with the scene and sampled at each
+output pixel, as for #NormalMap.
+
+The map applies to the `SPECULAR` and `COMBINED` types, and binding it selects enhanced lighting at any Compliance
+setting.  In an `SVG1` or `SVG2` scene, this can change the `SPECULAR` result even when every pixel uses #Exponent.
+It does not affect the matcap reflection.  The `DIFFUSE` and `NORMAL` types ignore it.  Removing the producer clears
+this binding.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_RoughnessMap(extLightingFX *Self, objFilterEffect **Value)
+{
+   *Value = Self->RoughnessMap.Reference;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_RoughnessMap(extLightingFX *Self, objFilterEffect *Value)
+{
+   return set_named_filter_input(Self, Self->RoughnessMap.Name, Value ? VSF::REFERENCE : VSF::NONE, Value);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Scale: The maximum height of the input surface (bump map) when the alpha input is 1.0.
 
 The height is measured in kernel units when computing the surface normal, so the steepness of the lit surface is
@@ -2596,7 +2725,8 @@ attributes when they differ from their defaults.  These include `kotuku:features
 `kotuku:cavity`,
 `kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, `kotuku:normalConvention` and
 `kotuku:normalStrength` for #NormalConvention and #NormalStrength, `kotuku:occlusionChannel` and
-`kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, and `kotuku:ambient` for #Ambient.  The
+`kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, `kotuku:roughnessChannel` for
+#RoughnessChannel, and `kotuku:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
 zero, and `matcap` for #MatcapPath when it is set.  An SVG-loaded matcap keeps its original relative reference so the
 image can be reloaded from the same document folder.  For API-loaded images the supplied #MatcapPath is written.  A
@@ -2608,8 +2738,8 @@ Each light is written as a child element, in the order in which the lights were 
 #SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
 `kotuku:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
 
-The parent filter writes the `in`, `in2`, `result`, `kotuku:normalMap` and `kotuku:occlusionMap` attributes
-separately.
+The parent filter writes the `in`, `in2`, `result`, `kotuku:normalMap`, `kotuku:occlusionMap` and
+`kotuku:roughnessMap` attributes separately.
 
 *********************************************************************************************************************/
 
@@ -2619,15 +2749,21 @@ static void write_normal_options(std::ostream &Stream, const extLightingFX &Self
    if (Self.NormalStrength != 1.0) Stream << ' ' << Prefix << "normalStrength=\"" << Self.NormalStrength << '"';
 }
 
-static void write_occlusion_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
+static void write_map_channel(std::ostream &Stream, CSTRING Prefix, CSTRING Name, MCH Channel)
 {
    static constexpr CSTRING channels[] = { "R", "G", "B", "A", "luminance" };
-   if ((Self.OcclusionChannel > MCH::RED) and (Self.OcclusionChannel <= MCH::LUMINANCE)) {
-      Stream << ' ' << Prefix << "occlusionChannel=\"" << channels[int(Self.OcclusionChannel)] << '"';
+   if ((Channel > MCH::RED) and (Channel <= MCH::LUMINANCE)) {
+      Stream << ' ' << Prefix << Name << "=\"" << channels[int(Channel)] << '"';
    }
+}
+
+static void write_map_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
+{
+   write_map_channel(Stream, Prefix, "occlusionChannel", Self.OcclusionChannel);
    if (Self.OcclusionStrength != 1.0) {
       Stream << ' ' << Prefix << "occlusionStrength=\"" << Self.OcclusionStrength << '"';
    }
+   write_map_channel(Stream, Prefix, "roughnessChannel", Self.RoughnessChannel);
 }
 
 static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
@@ -2688,7 +2824,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
    if (Self->Detail != DEFAULT_DETAIL) stream << ' ' << prefix << "detail=\"" << Self->Detail << '"';
    if (Self->Penumbra != DEFAULT_PENUMBRA) stream << ' ' << prefix << "penumbra=\"" << Self->Penumbra << '"';
    write_normal_options(stream, *Self, prefix);
-   write_occlusion_options(stream, *Self, prefix);
+   write_map_options(stream, *Self, prefix);
 
    const auto &a = Self->Ambient;
    if ((a.Red != 0.0f) or (a.Green != 0.0f) or (a.Blue != 0.0f) or (a.Alpha != 0.0f)) {
@@ -2771,6 +2907,8 @@ static const FieldArray clLightingFXFields[] = {
    { "OcclusionChannel", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionChannel, LIGHTINGFX_SET_OcclusionChannel, &clLightingFXMCH },
    { "OcclusionMap", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionMap, LIGHTINGFX_SET_OcclusionMap, CLASSID::FILTEREFFECT },
    { "OcclusionStrength", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionStrength, LIGHTINGFX_SET_OcclusionStrength },
+   { "RoughnessChannel", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_RoughnessChannel, LIGHTINGFX_SET_RoughnessChannel, &clLightingFXMCH },
+   { "RoughnessMap", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_RoughnessMap, LIGHTINGFX_SET_RoughnessMap, CLASSID::FILTEREFFECT },
    { "Scale",      FDF_DOUBLE|FDF_RW },
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },

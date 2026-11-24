@@ -235,6 +235,13 @@ sources.  Sets @LightingFX.OcclusionMap.  It has no effect on `feSpecularLightin
 read.  Packed ORM maps store occlusion in `R`.  Sets @LightingFX.OcclusionChannel.</li>
 <li>`kotuku:occlusionStrength`: 0 or greater, default 1.  The occlusion `ao` is applied as
 `1 + strength * (ao - 1)`, so 0 disables the map.  Sets @LightingFX.OcclusionStrength.</li>
+<li>`kotuku:roughnessMap` selects the named result of an earlier primitive as a roughness map, in which black is
+smooth and white fully rough.  Each pixel's roughness sets its own specular exponent, so smooth areas have narrow,
+bright highlights and rough areas broad, dim ones.  `specularExponent` remains the exponent at which the specular
+constant is calibrated, and pixels that the map does not cover use it.  Sets @LightingFX.RoughnessMap.  It has no
+effect on `feDiffuseLighting`.</li>
+<li>`kotuku:roughnessChannel`: `R` (the default), `G`, `B`, `A` or `luminance`, the channel of the roughness map to
+read.  Packed ORM maps store roughness in `G`.  Sets @LightingFX.RoughnessChannel.</li>
 </list>
 
 The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` accept these attributes, which set the
@@ -269,8 +276,8 @@ The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It light
 ambient light in one primitive.  The `in` attribute selects a floating-point height result or an image whose alpha
 supplies the height.  The `in2` attribute selects the albedo, which defaults to opaque white.  It accepts
 `surfaceScale`, `diffuseConstant`, `specularConstant`, `specularExponent`, `kernelUnitLength` and `lighting-color`.
-Use `normalMap` to supply an RGB normal map from an earlier primitive, such as an image loaded by `feImage`, and
-`occlusionMap` to supply an ambient occlusion map.
+Use `normalMap` to supply an RGB normal map from an earlier primitive, such as an image loaded by `feImage`,
+`occlusionMap` to supply an ambient occlusion map, and `roughnessMap` to supply a roughness map.
 The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace.
 The element also accepts these material attributes:
 

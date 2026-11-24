@@ -1977,3 +1977,250 @@ end
    assert(exported.find('kotuku:occlusionChannel="luminance"', 0, true) and
       exported.find('kotuku:occlusionStrength="2"', 0, true), f'Standard elements must prefix: {exported}')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Roughness maps.  A roughness r gives the exponent n = 2 / r^4 - 2, limited to 1 - 128, and the highlight is scaled
+-- by (n + 2) / (specularExponent + 2).  The flat tests filter the opaque ramp of the occlusion tests, published as
+-- 'rough', so the surface is flat and its roughness rises from 0 on the left to 1 on the right.
+
+function roughnessExponent(R:num):num
+   local a2 = (R * R) ** 2
+   if a2 <= 0 then return 128 end
+   return math.min(128, math.max(1, (2 / a2) - 2))
+end
+
+-- Flood the roughness map as Floods, then light the surface with Lighting, an element that refers to 'map'.
+
+function roughnessRender(Floods:str, Lighting:str, Content:str, ColourSpace:str):obj
+   local svg <close> = document(Floods .. Lighting, Content ?? LIGHTING_CONTENT, 64, KOTUKU_NS,
+      f'color-interpolation-filters="{ColourSpace ?? "sRGB"}"')
+   return draw(svg, 64)
+end
+
+function specularElement(Attribs:str, Light:str):str
+   return '<feSpecularLighting in="SourceAlpha" surfaceScale="20" specularConstant="0.2" specularExponent="20" ' ..
+      f'{Attribs ?? ""}>{Light ?? "<feDistantLight azimuth=\"0\" elevation=\"30\"/>"}</feSpecularLighting>'
+end
+
+-- Overhead light puts every pixel of the flat surface at the specular angle, so the highlight is the gain alone.
+
+@Test function RoughnessMapSetsTheExponentAndGain()
+   local ramp <close> = draw(document('<feOffset/>', aoContent(false), 64), 64)
+   local svg <close> = document('<feOffset in="SourceGraphic" result="rough"/>' ..
+      '<feSpecularLighting in="SourceAlpha" specularConstant="0.15" specularExponent="20" ' ..
+      'kotuku:roughnessMap="rough"><feDistantLight elevation="90"/></feSpecularLighting>', aoContent(true), 64,
+      KOTUKU_NS)
+   local bmp <close> = draw(svg, 64)
+   for x in {0 to 64 by 3} do
+      local r = mGfx.ReadRGBPixel(ramp, x, 32).red / 255
+      local expected = math.floor(255 * math.min(1, 0.15 * (roughnessExponent(r) + 2) / 22))
+      local got = mGfx.ReadRGBPixel(bmp, x, 32).alpha
+      assert(math.abs(got - expected) <= 1, f'Roughness {r} at x {x} must give a highlight of {expected}, got {got}')
+   end
+end
+
+-- Peak and half-maximum width of the highlight along row 32, between columns From and To.
+
+function highlightProfile(Bmp:obj!, From:num, To:num):table
+   local peak, width = 0, 0
+   for x in {From to To} do peak = math.max(peak, mGfx.ReadRGBPixel(Bmp, x, 32).alpha) end
+   for x in {From to To} do
+      if mGfx.ReadRGBPixel(Bmp, x, 32).alpha * 2 >= peak then width += 1 end
+   end
+   return { peak=peak, width=width }
+end
+
+-- A point light over a flat surface sweeps N.H across the page, so the width of the highlight is visible.  Roughness
+-- 0.4 gives n = 76 and 0.64 gives n = 10.  A map with a smooth left half and a rough right half lights each half as
+-- the uniform map of the same roughness does.
+
+@Test function SmoothRegionsHaveNarrowerBrighterHighlights()
+   local flat = '<rect width="64" height="64" filter="url(#f)"/>'
+   local function render(Floods:str, LightX:num):obj
+      return roughnessRender(Floods, specularElement('kotuku:roughnessMap="map"',
+         f'<fePointLight x="{LightX}" y="32" z="24"/>'), flat)
+   end
+   local smooth_flood = '<feFlood flood-color="rgb(102 102 102)" result="map"/>'
+   local rough_flood = '<feFlood flood-color="rgb(163 163 163)" result="map"/>'
+
+   local smooth <close> = render(smooth_flood, 32)
+   local rough <close> = render(rough_flood, 32)
+   local s, r = highlightProfile(smooth, 0, 63), highlightProfile(rough, 0, 63)
+   assert(s.peak > r.peak * 3, f'The smooth highlight must be brighter (peaks {s.peak} and {r.peak})')
+   assert(s.width * 2 < r.width, f'The smooth highlight must be narrower (widths {s.width} and {r.width})')
+
+   local split = '<feFlood flood-color="rgb(102 102 102)" x="0" y="0" width="32" height="64" result="smooth"/>' ..
+      '<feFlood flood-color="rgb(163 163 163)" x="32" y="0" width="32" height="64" result="rough"/>' ..
+      '<feMerge result="map"><feMergeNode in="smooth"/><feMergeNode in="rough"/></feMerge>'
+   for _, light_x in array<int> { 16, 48 } do
+      local mixed <close> = render(split, light_x)
+      local uniform_smooth <close> = render(smooth_flood, light_x)
+      local uniform_rough <close> = render(rough_flood, light_x)
+      for y in {0 to 64 by 4} do
+         for x in {0 to 64} do
+            if (x < 31) or (x > 32) then
+               local expected = (x < 32) ? uniform_smooth : uniform_rough
+               local a, b = mGfx.ReadRGBPixel(mixed, x, y).alpha, mGfx.ReadRGBPixel(expected, x, y).alpha
+               assert(a is b, f'Light at {light_x}: pixel ({x}, {y}) must follow its own region ({a} vs {b})')
+            end
+         end
+      end
+   end
+end
+
+-- Roughness 140/255 gives n = 20.01, which matches specularExponent="20" within rounding.  The curved content and the
+-- default features exercise SPECULAR_AA, cavity and shadows.  Transparent maps and pixels outside of the map use the
+-- constant exponent exactly.
+
+@Test function UniformRoughnessReproducesTheConstantExponent()
+   local matched = '<feFlood flood-color="rgb(140 140 140)" result="map"/>'
+   local clear = '<feFlood flood-color="black" flood-opacity="0" result="map"/>'
+   local half = '<feFlood flood-color="black" x="0" y="0" width="32" height="64" result="map"/>'
+   local combined_lights = '<feDistantLight azimuth="0" elevation="30"/><fePointLight x="12" y="44" z="30"/>'
+   local cases = array<table> {
+      { name='feSpecularLighting', element=(Attribs) => specularElement(Attribs), content=LIGHTING_CONTENT },
+      { name='kotuku:feLighting', content=COMBINED_CONTENT, element=(Attribs) =>
+         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="0.6" ' ..
+         f'specularExponent="20" {Attribs ?? ""}><feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>' },
+      { name='kotuku:feLighting with material', content=COMBINED_CONTENT, element=(Attribs) =>
+         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="2" ' ..
+         f'fresnel="0.5" specularExponent="20" {Attribs ?? ""}><feDistantLight azimuth="0" elevation="30"/>' ..
+         '</kotuku:feLighting>' },
+      { name='kotuku:feLighting with two lights', content=COMBINED_CONTENT, element=(Attribs) =>
+         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="0.6" ' ..
+         f'specularExponent="20" {Attribs ?? ""}>{combined_lights}</kotuku:feLighting>' }
+   }
+
+   for space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      for _, case in cases do
+         local attrib = case.name.startsWith('feSpecular') ? 'kotuku:roughnessMap="map"' : 'roughnessMap="map"'
+         local plain <close> = roughnessRender(matched, case.element(), case.content, space)
+         local uniform <close> = roughnessRender(matched, case.element(attrib), case.content, space)
+         local diff = imageDifference(plain, uniform)
+         assert(diff <= 1, f'{case.name} in {space}: a uniform map at the reference exponent must match ' ..
+            f'(max difference {diff})')
+
+         local transparent <close> = roughnessRender(clear, case.element(attrib), case.content, space)
+         diff = imageDifference(plain, transparent)
+         assert(diff is 0, f'{case.name} in {space}: a transparent map must use the exponent (max difference {diff})')
+
+         local partial <close> = roughnessRender(half, case.element(attrib), case.content, space)
+         assert(imageDifference(plain, partial) > 0, f'{case.name} in {space}: the black half must change the result')
+         for y in {0 to 64 by 2} do
+            for x in {33 to 64} do
+               local a = mGfx.ReadRGBPixel(partial, x, y)
+               local red, green, blue, alpha = a.red, a.green, a.blue, a.alpha
+               local b = mGfx.ReadRGBPixel(plain, x, y)
+               assert((red is b.red) and (green is b.green) and (blue is b.blue) and (alpha is b.alpha),
+                  f'{case.name} in {space}: pixel ({x}, {y}) outside of the map must use the exponent')
+            end
+         end
+      end
+   end
+end
+
+-- feDiffuseLighting and the NORMAL type ignore the map.  The map selects enhanced lighting under SVG compliance.
+
+@Test function RoughnessMapAppliesToSpecularLightOnly()
+   local map = '<feFlood flood-color="black" result="map"/>'
+   local diffuse = '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" {}>' ..
+      '<feDistantLight azimuth="0" elevation="30"/></feDiffuseLighting>'
+   local plain_diffuse = diffuse.replace('{}', '')
+   local bound_diffuse = diffuse.replace('{}', 'kotuku:roughnessMap="map"')
+   local plain <close> = roughnessRender(map, plain_diffuse)
+   local bound <close> = roughnessRender(map, bound_diffuse)
+   local diff = imageDifference(plain, bound)
+   assert(diff is 0, f'feDiffuseLighting must ignore the map (max difference {diff})')
+
+   local normals = '<kotuku:feNormalMap in="SourceAlpha" surfaceScale="20" {}/>'
+   local plain_element = normals.replace('{}', '')
+   local bound_element = normals.replace('{}', 'roughnessMap="map"')
+   local plain_normals <close> = roughnessRender(map, plain_element)
+   local bound_normals <close> = roughnessRender(map, bound_element)
+   diff = imageDifference(plain_normals, bound_normals)
+   assert(diff is 0, f'kotuku:feNormalMap must ignore the map (max difference {diff})')
+
+   for compliance in values(array<int> { VSC_SVG1, VSC_SVG2 }) do
+      local function render(Flood:str):obj
+         local svg <close> = document(Flood .. specularElement('kotuku:roughnessMap="map"',
+            '<fePointLight x="32" y="32" z="24"/>'), '<rect width="64" height="64" filter="url(#f)"/>', 64,
+            KOTUKU_NS)
+         svg.scene.compliance = compliance
+         return draw(svg, 64)
+      end
+      local smooth <close> = render('<feFlood flood-color="rgb(102 102 102)" result="map"/>')
+      local rough <close> = render('<feFlood flood-color="rgb(163 163 163)" result="map"/>')
+      local s, r = highlightProfile(smooth, 0, 63), highlightProfile(rough, 0, 63)
+      assert(s.peak > r.peak * 3, f'Compliance {compliance}: the map must apply (peaks {s.peak} and {r.peak})')
+   end
+end
+
+-- Each channel selection reads the same roughness of 102 from a differently packed map.
+
+@Test function RoughnessChannelSelectsPackedMaps()
+   local function render(Flood:str, Channel:str):obj
+      local attribs = 'kotuku:roughnessMap="map"' .. (Channel ? f' kotuku:roughnessChannel="{Channel}"' : '')
+      return roughnessRender(f'<feFlood {Flood} result="map"/>', specularElement(attribs))
+   end
+
+   local red <close> = render('flood-color="rgb(102 200 30)"')
+   local plain <close> = roughnessRender('', specularElement())
+   assert(imageDifference(red, plain) > 10, 'The default red channel must supply the roughness')
+
+   for _, case in array<table> {
+      { 'flood-color="rgb(102 200 30)"', 'R' }, { 'flood-color="rgb(10 102 200)"', 'G' },
+      { 'flood-color="rgb(0 0 102)"', 'blue' }, { 'flood-color="rgb(255 255 255 / 0.4)"', 'A' },
+      { 'flood-color="rgb(102 102 102)"', 'luminance' }
+   } do
+      local bmp <close> = render(case[0], case[1])
+      local diff = imageDifference(red, bmp)
+      assert(diff is 0, f'Channel {case[1]} must read the packed roughness (max difference {diff})')
+   end
+end
+
+@Test function RoughnessOptionsValidateAndRoundTrip()
+   local floods = '<feFlood flood-color="rgb(10 102 200)" result="map"/>'
+   local svg <close> = document(floods .. '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" ' ..
+      'surfaceScale="20" specularExponent="20" roughnessMap="map" roughnessChannel="G">' ..
+      '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS)
+   local fx = lightingFX(svg)
+   assert((fx.roughnessChannel is MCH_GREEN) and fx.roughnessMap,
+      f'The attributes must set the fields (got {fx.roughnessChannel})')
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   assert(xml.find('kotuku:roughnessMap="effect', 0, true) and xml.find('roughnessChannel="G"', 0, true),
+      f'XMLDef must write the roughness options: {xml}')
+   local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'The roughness options must survive XMLDef (max difference {diff}): {xml}')
+
+   local plain <close> = document('<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" ' ..
+      'specularExponent="20"><feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64,
+      KOTUKU_NS)
+   local plain_xml = effectXML(plain)
+   assert(plain_xml.find('roughness', 0, true) is nil, f'Default roughness options must not be written: {plain_xml}')
+
+   -- Removing the producer clears the binding and restores the constant exponent.
+
+   local unbound <close> = draw(plain, 64)
+   assert(imageDifference(unbound, original) > 0, 'The map must change the highlight')
+   fx.roughnessMap.free()
+   assert(fx.roughnessMap is nil, 'Removing the map producer must clear the binding')
+   diff = imageDifference(unbound, draw(svg, 64))
+   assert(diff is 0, f'Removing the map must restore the constant exponent (max difference {diff})')
+
+   local invalid <close> = document('<kotuku:feLighting in="SourceAlpha" roughnessMap="missing" ' ..
+      'roughnessChannel="X"><feDistantLight elevation="45"/></kotuku:feLighting>', nil, 64, KOTUKU_NS)
+   fx = lightingFX(invalid)
+   assert((fx.roughnessMap is nil) and (fx.roughnessChannel is MCH_RED),
+      'Invalid roughness options must leave the defaults')
+
+   local standard <close> = document(floods .. specularElement('kotuku:roughnessMap="map" ' ..
+      'kotuku:roughnessChannel="luminance"'), LIGHTING_CONTENT, 64, KOTUKU_NS)
+   fx = lightingFX(standard)
+   assert(fx.roughnessMap and (fx.roughnessChannel is MCH_LUMINANCE),
+      'The standard lighting elements must accept the prefixed attributes')
+   local exported = effectXML(standard)
+   assert(exported.find('kotuku:roughnessMap="effect', 0, true) and
+      exported.find('kotuku:roughnessChannel="luminance"', 0, true), f'Standard elements must prefix: {exported}')
+end
