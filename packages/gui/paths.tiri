@@ -1,4 +1,8 @@
 -- VectorPath generators for widgets.  Each returns a table with the sequence string in its path field.
+-- All functions follow the same function signature of (Viewport, Options):table.
+-- Options:
+--   fix [string]: Fix dynamic size calculations to 'width', 'height' or 'diagonal'.  `nil` is proportional
+--
 
    include 'vector'
 
@@ -8,11 +12,21 @@
 
 gui.paths ?= {}
 
-local function cornerRadius(Size:num!):num
+@NoDiscard
+function cornerRadius(Size:num!):num
    return math.clamp(math.min(gui.maxCornerSize(), gui.sizing.widget.cornerSize * Size), 0, Size * 0.5)
 end
 
-gui.paths.ellipse = function(Viewport:obj!):table
+@Doc(text=[[
+@desc Returns the simplest, undecorated rectangular path
+]])
+@NoDiscard
+gui.paths.plain = function():table
+   return { path='M0 0 H~0 V~0 H0 Z' }
+end
+
+@NoDiscard
+gui.paths.ellipse = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    cx = w * .5
@@ -32,7 +46,8 @@ gui.paths.ellipse = function(Viewport:obj!):table
    }
 end
 
-gui.paths.rectangle = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.rectangle = function(Viewport:obj!, Options:table):table
    r = cornerRadius(math.min(Viewport.width, Viewport.height))
 
    if r is 0 then return { path='M 0 0 H ~0 V ~0 H 0 Z' } end
@@ -43,7 +58,8 @@ gui.paths.rectangle = function(Viewport:obj!):table
    }
 end
 
-gui.paths.boombox = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.boombox = function(Viewport:obj!, Options:table):table
    if Viewport.width <= 40 then
       return gui.paths.rectangle(Viewport)
    end
@@ -55,7 +71,8 @@ gui.paths.boombox = function(Viewport:obj!):table
    }
 end
 
-gui.paths.slant = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.slant = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end
@@ -76,7 +93,8 @@ gui.paths.slant = function(Viewport:obj!):table
    }
 end
 
-gui.paths.taper = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.taper = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end
@@ -102,7 +120,8 @@ gui.paths.taper = function(Viewport:obj!):table
    }
 end
 
-gui.paths.bevel = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.bevel = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end
@@ -116,7 +135,8 @@ gui.paths.bevel = function(Viewport:obj!):table
    }
 end
 
-gui.paths.softSlant = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.softSlant = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end
@@ -146,7 +166,8 @@ gui.paths.softSlant = function(Viewport:obj!):table
    }
 end
 
-gui.paths.butt = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.butt = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end
@@ -162,7 +183,8 @@ gui.paths.butt = function(Viewport:obj!):table
    return { path=f'M {w - inset} 0 H {inset} {cap} {inset} {h} H {w - inset} {cap} {w - inset} 0 Z' }
 end
 
-gui.paths.divArrowhead = function(Viewport:obj!):table
+@NoDiscard
+gui.paths.divArrowhead = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end

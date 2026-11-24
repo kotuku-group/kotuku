@@ -165,6 +165,29 @@ end
    end
 end
 
+@Test function ResizingRegeneratesTrackAndClipPaths()
+   local surface <close>, slider = newSlider({ width=10, thickness=20, style='slide',
+      theme={ trackPath=function(Bar:obj!):table
+         return { path=f'M {Bar.width * 0.25} 0 H ~0 V ~0 H 0 Z' }
+      end }
+   })
+   local scene = slider.viewport.scene
+
+   function checkPaths(ExpectedX:num!)
+      for path in values(array<obj> { slider.prvBarBkgd, slider.prvClipPath }) do
+         local _, command = check path.mtGetCommand(0)
+         assert(command.x is ExpectedX, 'The track and clip must use the path generated for the current width')
+      end
+   end
+
+   checkPaths(2.5)
+   slider.viewport.width = 120
+   scene.bitmap = surface.buffer
+   check scene.acDraw()
+   processing.sleep(0)
+   checkPaths(30)
+end
+
 function pointAtSlider(Surface:obj!, Slider:table!, Thumb:bool)
    local x, y = Slider.viewport.x + Slider.trackVP.x, Slider.viewport.y + Slider.trackVP.y
    if Thumb then
@@ -1848,8 +1871,22 @@ end
          else
             assert(thumb.x is 0, 'A horizontal anchored thumb must keep its left edge at the minimum')
          end
-         assert(thumb_bkgd.x * 2 + thumb_bkgd.width is thumb.width and thumb_bkgd.y * 2 + thumb_bkgd.height is thumb.height,
-            'The foreground must fill the anchored thumb within its insets')
+
+         -- The fill is a rectangle in the bar, clipped by the track path, that ends where the anchored thumb ends.
+
+         local bar = slider.prvBarBkgd
+         if vertical then
+            local gap = thumb_bkgd.x - bar.x
+            assert(thumb_bkgd.y - gap is thumb.y and thumb_bkgd.y + thumb_bkgd.height + gap is bar.y + bar.height,
+               'A vertical fill must run from the top of the thumb to the bottom of the bar within its insets')
+            assert(gap * 2 + thumb_bkgd.width is slider.thickness, 'A vertical fill must span the bar breadth')
+         else
+            local gap = thumb_bkgd.y - bar.y
+            assert(thumb_bkgd.x is bar.x + gap and thumb_bkgd.x + thumb_bkgd.width + gap is thumb.width,
+               'A horizontal fill must run from the start of the bar to the end of the thumb within its insets')
+            assert(gap * 2 + thumb_bkgd.height is slider.thickness, 'A horizontal fill must span the bar breadth')
+         end
+         assert(thumb_bkgd.mask?.id is slider.prvClip.id, 'The fill must be clipped by the track path')
       end
 
       check_extent(0)

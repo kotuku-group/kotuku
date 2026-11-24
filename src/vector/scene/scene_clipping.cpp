@@ -231,6 +231,50 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
 }
 
 //********************************************************************************************************************
+// Include the same stroked outline that draw_clips() rasterises.  The half-width padding in calc_full_boundary()
+// can underestimate miter joins, square caps and strokes under non-uniform transforms.
+
+static void expand_clip_stroke_bounds(extVector *Shape, const agg::trans_affine &Transform,
+   TClipRectangle<double> &Bounds)
+{
+   for (auto node = Shape; node; node = (extVector *)node->Next) {
+      if ((node->Class->BaseClassID IS CLASSID::VECTOR) and (node->Visibility IS VIS::VISIBLE) and
+          node->StrokeRaster and (not node->BasePath.empty())) {
+         auto transform = node->Transform * Transform;
+         node->BasePath.approximation_scale(transform.scale());
+
+         agg::conv_stroke<agg::path_storage> stroke(node->BasePath);
+         configure_stroke(*node, stroke);
+         stroke.approximation_scale(transform.max_scale());
+         agg::conv_transform<agg::conv_stroke<agg::path_storage>, agg::trans_affine> outline(stroke, transform);
+
+         const auto bounds = get_bounds(outline);
+         if (bounds.valid()) Bounds.expanding(bounds);
+      }
+
+      if (node->Child) expand_clip_stroke_bounds((extVector *)node->Child, Transform, Bounds);
+   }
+}
+
+static TClipRectangle<double> get_clip_mask_bounds(extVectorClip &Clip, const agg::trans_affine &Transform)
+{
+   auto bounds = TCR_EXPANDING;
+   calc_full_boundary((extVector *)Clip.Viewport, bounds, false, true, true);
+   if (bounds.left > bounds.right) return bounds;
+
+   auto bounds_path = bounds.as_path(Transform);
+   bounds = get_bounds(bounds_path);
+
+   if ((Clip.Flags & VCLF::APPLY_STROKES) != VCLF::NIL) {
+      expand_clip_stroke_bounds((extVector *)Clip.Viewport->Child, Transform, bounds);
+   }
+   return bounds;
+}
+
+//********************************************************************************************************************
+// The mask covers (OriginX, OriginY) to (Width, Height) in render space.  Bounding the origin to the clip's top-left
+// keeps the mask proportional to the clip rather than to its position in the scene.  scene_alpha_mask offsets reads
+// by the origin and treats pixels outside the buffer as fully clipped.
 
 void SceneRenderer::ClipBuffer::resize_bitmap(int Width, int Height, int OriginX, int OriginY)
 {
@@ -263,7 +307,7 @@ void SceneRenderer::ClipBuffer::draw_viewport(SceneRenderer &Render)
    if (use_cached_mask(vp->Transform, 0, 0)) return;
 
    resize_bitmap(int(vp->vpBounds.right) + 2, int(vp->vpBounds.bottom) + 2,
-      std::min(0, int(std::floor(vp->vpBounds.left))), std::min(0, int(std::floor(vp->vpBounds.top))));
+      int(std::floor(vp->vpBounds.left)), int(std::floor(vp->vpBounds.top)));
 
    m_renderer.attach(m_bitmap.data(), m_width-1, m_height-1, m_width);
    agg::pixfmt_gray8 pixf(m_renderer);
@@ -333,16 +377,13 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
    set_viewport_fixed_size(m_clip->Viewport, parent_width, parent_height);
    clip_viewport->vpClipConfiguring = false;
 
-   m_clip->Bounds = TCR_EXPANDING;
-   calc_full_boundary((extVector *)m_clip->Viewport, m_clip->Bounds, false, true, true);
+   const auto bounds = get_clip_mask_bounds(*m_clip, agg::trans_affine());
+   m_clip->Bounds = bounds;
 
-   if (m_clip->Bounds.left > m_clip->Bounds.right) return; // Return if no paths were defined.
+   if (bounds.left > bounds.right) return; // Return if no paths were defined.
 
-   agg::path_storage clip_bound_path = m_clip->Bounds.as_path();
-   auto clip_bound_final = get_bounds(clip_bound_path);
-
-   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2,
-      std::min(0, int(std::floor(clip_bound_final.left))), std::min(0, int(std::floor(clip_bound_final.top))));
+   resize_bitmap(int(bounds.right) + 2, int(bounds.bottom) + 2,
+      int(std::floor(bounds.left)), int(std::floor(bounds.top)));
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 
@@ -380,16 +421,13 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    }
    clip_viewport->vpClipConfiguring = false;
 
-   m_clip->Bounds = TCR_EXPANDING;
-   calc_full_boundary((extVector *)m_clip->Viewport, m_clip->Bounds, false, true, true);
+   const auto bounds = get_clip_mask_bounds(*m_clip, transform);
+   m_clip->Bounds = bounds;
 
-   if (m_clip->Bounds.left > m_clip->Bounds.right) return; // Return if no paths were defined.
+   if (bounds.left > bounds.right) return; // Return if no paths were defined.
 
-   auto clip_bound_path = m_clip->Bounds.as_path(m_shape->Transform);
-   auto clip_bound_final = get_bounds(clip_bound_path);
-
-   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2,
-      std::min(0, int(std::floor(clip_bound_final.left))), std::min(0, int(std::floor(clip_bound_final.top))));
+   resize_bitmap(int(bounds.right) + 2, int(bounds.bottom) + 2,
+      int(std::floor(bounds.left)), int(std::floor(bounds.top)));
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 
