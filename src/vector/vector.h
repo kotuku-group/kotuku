@@ -1764,6 +1764,52 @@ private:
    uint8_t *m_pix_ptr;
 };
 
+//********************************************************************************************************************
+// Reads the source with its edge pixels extended indefinitely, so that filter taps beyond the image repeat the
+// nearest edge pixel instead of mixing in transparent black.  The extent of the image must be defined by the caller's
+// geometry.
+
+template<class Source> class span_clamp
+{
+private:
+   span_clamp() {}
+public:
+   typedef typename agg::rgba8::value_type value_type;
+   typedef agg::rgba8 color_type;
+
+   span_clamp(Source &Src) : m_src(&Src) { }
+
+   void prepare() {}
+
+   int8u * span(int X, int Y, unsigned Len) {
+      m_x = m_x0 = X;
+      m_y = Y;
+      return pixel();
+   }
+
+   int8u * next_x() {
+      ++m_x;
+      return pixel();
+   }
+
+   int8u * next_y() {
+      ++m_y;
+      m_x = m_x0;
+      return pixel();
+   }
+
+   Source *m_src;
+
+private:
+   int m_x, m_x0, m_y;
+
+   int8u * pixel() const {
+      const int x = std::clamp(m_x, 0, int(m_src->mWidth) - 1);
+      const int y = std::clamp(m_y, 0, int(m_src->mHeight) - 1);
+      return m_src->row_ptr(y) + (x * m_src->mBytesPerPixel);
+   }
+};
+
 } // namespace
 
 class SimpleVector {

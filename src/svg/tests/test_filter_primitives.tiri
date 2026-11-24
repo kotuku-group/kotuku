@@ -1080,6 +1080,27 @@ function writeRedPNG(Path:str!)
    check pic.acSaveImage(file)
 end
 
+@Test function BilinearImageClipsBeforeRoundingBounds()
+   local image_path = 'temp:svg_bilinear_bounds.png'
+   local document_path = 'temp:svg_bilinear_bounds.svg'
+   defer
+      mSys.DeleteFile(document_path)
+      mSys.DeleteFile(image_path)
+   end
+   writeRedPNG(image_path)
+   io.writeAll(document_path, [[<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+      <filter id="f" filterUnits="userSpaceOnUse" x="16" y="16" width="32" height="32">
+         <feImage href="svg_bilinear_bounds.png" x="0" y="0" width="3000000000" height="3000000000"
+            preserveAspectRatio="none" image-rendering="optimizeSpeed"/>
+      </filter>
+      <rect width="64" height="64" filter="url(#f)"/>
+   </svg>]])
+   local svg <close> = obj.new('svg', { path=document_path })
+   local bmp <close> = draw(svg, 64)
+   local inside = struct.toTable(mGfx.ReadRGBPixel(bmp, 32, 32))
+   assertRGBA(inside, 255, 0, 0, 255, 'The visible part of the oversized image must render')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Multiple lights.  kotuku:feLighting renders every light child in document order, and the Kotuku attributes of a
 -- light child set its colour, intensity, range and shadows.
