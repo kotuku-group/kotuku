@@ -420,28 +420,70 @@ static ERR copy_filter_bitmap(const objBitmap *Source, objBitmap *Dest, BAF Flag
 }
 
 //********************************************************************************************************************
-// Resamples Bitmap into the clip region of Target with a pure scale transform, splitting rows across worker threads
-// when the region is large enough to benefit.
+// Scales the alpha of straight-alpha colours by 8-bit coverage values.  The colour components are left unchanged, so
+// partially covered pixels at the edge of an image keep the image's true colour.
+
+static void apply_filter_coverage(agg::rgba8 *Colours, const agg::int8u *Covers, int Length)
+{
+   for (int i=0; i < Length; i++) {
+      if (Covers[i] < 255) Colours[i].a = agg::int8u((int(Colours[i].a) * Covers[i] + 127) / 255);
+   }
+}
+
+//********************************************************************************************************************
+// Resamples Bitmap into Target with a pure scale transform, splitting rows across worker threads when the region is
+// large enough to benefit.  Dest is the image's rectangle in Target pixels.  The source is read with clamped edges and
+// pixels that Dest covers in part receive that coverage in their alpha, as an anti-aliased rectangle would.
 
 static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const agg::trans_affine &Transform,
-   const agg::image_filter_lut &Filter)
+   const agg::image_filter_lut &Filter, const TClipRectangle<double> &Dest)
 {
-   const int left = Target.Clip.Left, top = Target.Clip.Top, bottom = Target.Clip.Bottom;
-   const int width = Target.Clip.Right - left, height = bottom - top;
+   // The image can extend beyond the integer range even when its visible region is small.
+   const auto &clip = Target.Clip;
+   auto visible = Dest;
+   visible.shrinking({ double(clip.Left), double(clip.Top), double(clip.Right), double(clip.Bottom) });
+   if (not visible.valid()) return;
 
-   // The destination rectangle covers every pixel in the clip.  Generate one full span per row, as the
-   // rasteriser does, so the sampler keeps the same interpolation endpoints and edge behaviour.
+   const int left   = int(std::floor(visible.left));
+   const int top    = int(std::floor(visible.top));
+   const int right  = int(std::ceil(visible.right));
+   const int bottom = int(std::ceil(visible.bottom));
+   const int width = right - left, height = bottom - top;
+
+   // Coverage of pixel Index by the span [Start, End), as an 8-bit value.
+   auto coverage = [](int Index, double Start, double End) {
+      const double cover = std::min(double(Index + 1), End) - std::max(double(Index), Start);
+      return agg::int8u(std::lround(std::clamp(cover, 0.0, 1.0) * 255.0));
+   };
+
+   std::vector<agg::int8u> column_covers(width, 255);
+   column_covers.front() = coverage(left, Dest.left, Dest.right);
+   column_covers.back()  = std::min(column_covers.back(), coverage(right - 1, Dest.left, Dest.right));
+   const bool edge_columns = (column_covers.front() < 255) or (column_covers.back() < 255);
+
+   // The destination rectangle covers every pixel in the span.  Generate one full span per row, as the rasteriser
+   // does, so the sampler keeps the same interpolation endpoints and edge behaviour.
    auto render_rows = [&](int StartY, int EndY) {
       agg::pixfmt_psl pix_source(Bitmap), pix_dest(Target);
       agg::span_interpolator_linear<> interpolator(Transform);
-      agg::span_once<agg::pixfmt_psl> source(pix_source, 0, 0);
+      agg::span_clamp<agg::pixfmt_psl> source(pix_source);
       agg::span_image_filter_rgba<decltype(source), decltype(interpolator)>
          sampler(source, interpolator, Filter, false);
       agg::span_allocator<agg::rgba8> span_alloc;
+      std::vector<agg::int8u> row_covers;
       auto colours = span_alloc.allocate(width);
 
       for (int y=StartY; y < EndY; y++) {
          sampler.generate(colours, left, y, width);
+
+         const auto row_cover = coverage(y, Dest.top, Dest.bottom);
+         if (row_cover < 255) {
+            row_covers.resize(width);
+            for (int x=0; x < width; x++) row_covers[x] = agg::int8u((int(column_covers[x]) * row_cover + 127) / 255);
+            apply_filter_coverage(colours, row_covers.data(), width);
+         }
+         else if (edge_columns) apply_filter_coverage(colours, column_covers.data(), width);
+
          pix_dest.copy_color_hspan(left, y, width, colours);
       }
    };
@@ -463,6 +505,11 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
 //
 // No blending is performed because this is intended for use when there is no former input.  Copying is done with
 // only the transforms applied (if any).  Linear RGB interpolation will wait until post processing.
+//
+// The extent of the image is defined geometrically: the image's rectangle is rasterised with anti-aliasing and its
+// coverage is applied to the alpha channel only.  Sampling clamps to the edges of the source, so filter taps that
+// fall beyond the image do not mix transparent black into the colour of edge pixels.  This matters to consumers that
+// read the colour of a straight-alpha result as data, such as the map of @DisplacementFX.
 
 static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
 {
@@ -489,6 +536,7 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
    img_transform.scale(x_scale, y_scale);
    img_transform.translate(p_x, p_y);
    img_transform *= Self->Filter->Render->Transform;
+   const agg::trans_affine forward = img_transform; // Source pixels to Target pixels
    if (not invert_filter_transform(img_transform)) return ERR::InvalidValue;
    const auto &clip = Self->Target->Clip;
    TClipRectangle<double> samples { filter_pixel_centre(clip.Left), filter_pixel_centre(clip.Top),
@@ -503,36 +551,68 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
           (img_transform.shx IS 0.0) and (img_transform.shy IS 0.0) and
           (img_transform.sx > 0.0) and (img_transform.sx <= 1.0) and
           (img_transform.sy > 0.0) and (img_transform.sy <= 1.0)) {
-         render_bilinear_upscale(*Bitmap, *Self->Target, img_transform, get_filter(SampleMethod, img_transform));
+         TClipRectangle<double> dest { 0, 0, double(Bitmap->Width), double(Bitmap->Height) };
+         forward.transform(&dest.left, &dest.top);
+         forward.transform(&dest.right, &dest.bottom);
+         render_bilinear_upscale(*Bitmap, *Self->Target, img_transform, get_filter(SampleMethod, img_transform), dest);
          return ERR::Okay;
       }
 
+      // Coordinates are clipped in double precision, so an image that extends far beyond the target is safe.
+
       agg::rasterizer_scanline_aa<> raster;
+      raster.clip_box(clip.Left, clip.Top, clip.Right, clip.Bottom);
+
+      const double corners[4][2] = {
+         { 0, 0 }, { double(Bitmap->Width), 0 },
+         { double(Bitmap->Width), double(Bitmap->Height) }, { 0, double(Bitmap->Height) }
+      };
+      for (int i=0; i < 4; i++) {
+         double x = corners[i][0], y = corners[i][1];
+         forward.transform(&x, &y);
+         if (i IS 0) raster.move_to(x, y);
+         else raster.line_to(x, y);
+      }
+      raster.close_polygon();
+
       agg::renderer_base<agg::pixfmt_psl> render_base;
       agg::pixfmt_psl pix_dest(*Self->Target);
       agg::pixfmt_psl pix_source(*Bitmap);
-
       render_base.attach(pix_dest);
-      render_base.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right - 1,
-         Self->Target->Clip.Bottom - 1);
+      render_base.clip_box(clip.Left, clip.Top, clip.Right - 1, clip.Bottom - 1);
 
       agg::span_interpolator_linear<> interpolator(img_transform);
-      agg::span_once<agg::pixfmt_psl> source(pix_source, 0, 0);
+      agg::span_clamp<agg::pixfmt_psl> source(pix_source);
 
-      set_raster_rect_path(raster, Self->Target->Clip.Left, Self->Target->Clip.Top,
-         Self->Target->Clip.Right - Self->Target->Clip.Left,
-         Self->Target->Clip.Bottom - Self->Target->Clip.Top);
+      auto render = [&](auto &SpanGen) {
+         agg::scanline_u8 scanline;
+         agg::span_allocator<agg::rgba8> span_alloc;
+         if (not raster.rewind_scanlines()) return;
+         scanline.reset(raster.min_x(), raster.max_x());
+         SpanGen.prepare();
+         while (raster.sweep_scanline(scanline)) {
+            const int y = scanline.y();
+            auto span = scanline.begin();
+            for (auto n = scanline.num_spans(); n > 0; n--, ++span) {
+               const int length = std::abs(span->len);
+               auto colours = span_alloc.allocate(length);
+               SpanGen.generate(colours, span->x, y, length);
+               apply_filter_coverage(colours, span->covers, length);
+               render_base.copy_color_hspan(span->x, y, length, colours);
+            }
+         }
+      };
 
       if (SampleMethod IS VSM::NEIGHBOUR) {
-         agg::span_image_filter_rgba_nn<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+         agg::span_image_filter_rgba_nn<decltype(source), agg::span_interpolator_linear<>>
             spangen(source, interpolator);
-         renderSolidBitmap(render_base, raster, spangen); // Solid render without blending.
+         render(spangen);
       }
       else {
          const agg::image_filter_lut &ifilter = get_filter(SampleMethod, img_transform);
-         agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+         agg::span_image_filter_rgba<decltype(source), agg::span_interpolator_linear<>>
             spangen(source, interpolator, ifilter, false);
-         renderSolidBitmap(render_base, raster, spangen); // Solid render without blending.
+         render(spangen);
       }
    }
    else return gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height,

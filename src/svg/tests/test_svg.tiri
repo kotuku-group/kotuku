@@ -358,7 +358,7 @@ end
 @Test global function W3Struct09() hashTestSVG('struct/w3-struct-group-02-b.svg', 0x38b67cdb) end
 
 @Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0xd7a6edb1) end
-@Test global function Composite()          hashTestSVG('filters/composite.svg', 0xf3433f42) end
+@Test global function Composite()          hashTestSVG('filters/composite.svg', 0x3f7457eb) end
 @Test global function CompositeClamp()     hashTestSVG('filters/composite_linear_clamp.svg', 0x137886b9) end
 @Test global function Convolve()           pHashTestSVG('filters/convolve.svg', array<byte> { 28,28,240,225,65,158,207,99 }, 6, true) end
 @Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x580ae3ba) end
@@ -374,7 +374,7 @@ end
 -- renders the bias=1 rect as opaque white, as Chrome does.
 @Test global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x0f81001d) end
 @Test global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0x817f535d) end
-@Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x85d7cfd9) end
+@Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x799f9c48) end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0x24049bde) end
 @Test global function W3Transfer2()        pHashTestSVG('filters/w3-filters-color-02-b.svg', array<byte> { 121,185,134,7,233,135,134,84 }, 6, true) end
 @Test global function W3Filters()          hashTestSVG('filters/w3-filters.svg', 0xe95708f3) end
@@ -382,7 +382,7 @@ end
 @Test global function W3Gauss1()           hashTestSVG('filters/w3-filters-gauss-01-b.svg', 0x4c7b5e50) end
 @Test global function W3Gauss2()           hashTestSVG('filters/w3-filters-gauss-02-f.svg', 0x6cfe6032) end
 @Test global function W3Gauss3()           hashTestSVG('filters/w3-filters-gauss-03-f.svg', 0xd4cc8f68) end
-@Test global function W3Image()            hashTestSVG('filters/w3-image.svg', 0xcf61b9ed) end
+@Test global function W3Image()            hashTestSVG('filters/w3-image.svg', 0xfd5579d0) end
 @Test global function W3Morphology()       hashTestSVG('filters/w3-morphology.svg', 0xef0020f0) end
 @Test global function W3Offset()           hashTestSVG('filters/w3-offset.svg', 0x2a25b1d5) end
 @Test global function W3Lighting1()        hashTestSVG('filters/w3-filters-light-01-f.svg', 0x8db6f5d7) end
