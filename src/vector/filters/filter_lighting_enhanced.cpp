@@ -684,9 +684,7 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
          }
          else stl.normalise();
 
-         half = stl;
-         half.z += 1.0; // Eye position is always (0, 0, 1)
-         half.normalise();
+         half = point3::half_vector(stl);
          colour = (light.kind IS LS::SPOT) ? light.spot_colour(stl) : light.colour;
       }
 
