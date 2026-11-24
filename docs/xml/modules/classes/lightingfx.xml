@@ -43,6 +43,7 @@ Lr,Lg,Lb = RGB components of light
 <pre>H = (L + E) / Norm(L + E)
 </pre>
 <p>where <code>L</code> is the light unit vector.</p>
+<p>The specular result is a premultiplied colour, in keeping with web browsers: it is stored with an alpha of <code>Sa</code> and an unpremultiplied colour of <code>(Sr, Sg, Sb) / Sa</code>, which is the hue of the light.  A white light gives a white result whose alpha is the strength of the highlight, so the result brightens the content that it is composited over.</p>
 <p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p>
 <p>The SVG algorithm measures the slope of the bump map with a 3x3 kernel.  This softens fine detail and shows 8-bit steps on gentle slopes.  When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code> (the default), the enhanced pipeline applies the features selected by the <fl>Features</fl> field.  The default is <code>ALL</code>.</p>
 <list type="bullet">

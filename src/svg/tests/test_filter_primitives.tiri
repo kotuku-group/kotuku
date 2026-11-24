@@ -73,6 +73,25 @@ end
    end
 end
 
+-- A reused result name refers to the nearest preceding primitive that declared it.  The colour matrix redeclares the
+-- name that it reads, so it must read the red flood and not itself; its green output is the latest 'x'.
+
+@Test function ReusedResultNameRefersToTheNearestPrecedingResult()
+   local red = '<feFlood flood-color="#f00" result="x"/>'
+   local green = '<feFlood flood-color="#0f0" result="x"/>'
+   local recolour = '<feColorMatrix in="x" type="matrix" ' ..
+      'values="0 0 0 0 0  1 0 0 0 0  0 0 0 0 0  0 0 0 0 1" result="x"/>'
+   for _, case in { { name='in', effects=red .. green .. '<feOffset in="x"/>' },
+      { name='in2', effects=red .. green ..
+         '<feComposite in="SourceGraphic" in2="x" operator="arithmetic" k3="1"/>' },
+      { name='feMergeNode', effects=red .. green .. '<feMerge><feMergeNode in="x"/></feMerge>' },
+      { name='redeclared input', effects=red .. recolour .. '<feOffset in="x"/>' } } do
+      local p = pixel(case.effects)
+      assert((p.red is 0) and (p.green is 255) and (p.alpha is 255),
+         f'{case.name}: the reused name must resolve to the latest green result, got {p.red},{p.green},{p.alpha}')
+   end
+end
+
 @Test function TurbulenceUsesTheFilterColourSpace()
    local svg <close> = document('<feTurbulence type="fractalNoise" baseFrequency="0"/>', nil, 64)
    local _, filter = check svg.scene.mtFindDef('f')
@@ -669,6 +688,67 @@ function lightingDocument(Attribs:str, Light:str, Declarations:str):obj
    return document('<feDiffuseLighting in="SourceAlpha" surfaceScale="20" diffuseConstant="1" ' ..
       f'{Attribs ?? ""}>{Light ?? "<feDistantLight azimuth=\"0\" elevation=\"30\"/>"}</feDiffuseLighting>',
       LIGHTING_CONTENT, 64, Declarations ?? KOTUKU_NS)
+end
+
+@Test function TransparentSpecularLightingIsBlackInDisplacementMaps()
+   local content = '<g filter="url(#f)"><rect width="32" height="64" fill="red"/>' ..
+      '<rect x="32" width="32" height="64" fill="blue"/></g>'
+   local displacement = '<feDisplacementMap in="SourceGraphic" in2="map" scale="16" ' ..
+      'xChannelSelector="R" yChannelSelector="A"/>'
+   -- The spotlight is nearly dark at (32, 32), where its falloff produces a positive subnormal colour.
+   local lights = {
+      { constant=0, source='<feDistantLight elevation="90"/>' },
+      { constant=1, source='<feSpotLight x="67" y="32" z="21" pointsAtX="67" pointsAtY="32" specularExponent="128"/>' }
+   }
+
+   for colour_space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      for features in values(array<int> { 0, LFX_SPECULAR_AA }) do
+         for _, light in lights do
+            local specular = '<feSpecularLighting in="SourceAlpha" result="map" ' ..
+               f'color-interpolation-filters="{colour_space}" specularConstant="{light.constant}">' ..
+               light.source .. '</feSpecularLighting>'
+            local svg <close> = document(specular .. displacement, content, 64, KOTUKU_NS)
+            lightingFX(svg).features = features
+            local bmp <close> = draw(svg, 64)
+            local p = mGfx.ReadRGBPixel(bmp, 32, 32)
+            assert((p.red is 255) and (p.blue is 0) and (p.alpha is 255),
+               f'Expected black displacement in {colour_space} with features {features}, light {light.source}')
+         end
+      end
+   end
+end
+
+-- A light directly behind the surface, opposite the eye, has no halfway vector and reflects no specular light, as in
+-- web browsers.  The halfway vector was normalised from rounding error, which lit slopes facing -X.  A light one degree
+-- away still lights those slopes, so the test cannot pass with an unlit result.
+
+function peakSpecularAlpha(Elevation:num, ColourSpace:str, Features:num):num
+   local specular = '<feSpecularLighting in="SourceAlpha" surfaceScale="20" ' ..
+      f'color-interpolation-filters="{ColourSpace}"><feDistantLight azimuth="0" elevation="{Elevation}"/></feSpecularLighting>'
+   local svg <close> = document(specular, LIGHTING_CONTENT, 64, KOTUKU_NS)
+   lightingFX(svg).features = Features
+   local bmp <close> = draw(svg, 64)
+   local peak = 0
+   for y in {0 to 64} do
+      for x in {0 to 64} do
+         peak = math.max(peak, mGfx.ReadRGBPixel(bmp, x, y).alpha)
+      end
+   end
+   return peak
+end
+
+@Test function LightBehindTheSurfaceHasNoSpecularHighlight()
+   for colour_space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      for features in values(array<int> { 0, LFX_ALL }) do
+         for elevation in values(array<int> { 270, -90 }) do
+            local peak = peakSpecularAlpha(elevation, colour_space, features)
+            assert(peak is 0, f'Elevation {elevation} in {colour_space} with features {features} must be unlit, ' ..
+               f'got alpha {peak}')
+         end
+         local near = peakSpecularAlpha(269, colour_space, features)
+         assert(near > 0, f'Elevation 269 in {colour_space} with features {features} must light the slopes')
+      end
+   end
 end
 
 @Test function LightingFeaturesAttributeSelectsFeatures()

@@ -126,12 +126,12 @@ bool svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 }
 
 //********************************************************************************************************************
+// A result name that is reused refers to the most recent primitive that declared it, so a reference resolves to the
+// nearest preceding result as SVG requires.  Primitives resolve their inputs before they declare their result.
 
 static void parse_result(extSVG *Self, objFilterEffect *Effect, std::string Value)
 {
-   if (not Self->Effects.contains(Value)) {
-      Self->Effects.emplace(Value, Effect);
-   }
+   Self->Effects.insert_or_assign(std::move(Value), Effect);
 }
 
 //********************************************************************************************************************

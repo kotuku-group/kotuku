@@ -80,6 +80,10 @@ H = (L + E) / Norm(L + E)
 
 where `L` is the light unit vector.
 
+The specular result is a premultiplied colour, in keeping with web browsers: it is stored with an alpha of `Sa` and an
+unpremultiplied colour of `(Sr, Sg, Sb) / Sa`, which is the hue of the light.  A white light gives a white result
+whose alpha is the strength of the highlight, so the result brightens the content that it is composited over.
+
 The light is computed in the colour space of the parent @VectorFilter.  In `SRGB` the light #Colour and the result
 are sRGB values.  In `LINEAR_RGB` the light #Colour is converted to linear RGB and the result is encoded to sRGB for
 storage, so a result of 0.5 is stored as approximately 0.735.
@@ -228,6 +232,18 @@ class point3 {
       x = x * scale;
       y = y * scale;
       z = z * scale;
+   }
+
+   // Returns the unit vector halfway between the light, unit vector STL, and the eye at (0, 0, 1).  It is undefined
+   // for a light directly behind the surface, opposite the eye.  A zero vector is returned in that case so that no
+   // specular light is reflected, as in web browsers.  The limit catches only rounding error: a light a tenth of a
+   // degree away has a squared length of about 3e-6 and is lit normally.
+
+   static point3 half_vector(const point3 &STL) {
+      point3 half(STL.x, STL.y, STL.z + 1.0);
+      if (half.dot(half) < 1e-12) return { 0, 0, 0 };
+      half.normalise();
+      return half;
    }
 
    friend point3 operator-(const point3 &a, const point3 &b) {
@@ -546,6 +562,7 @@ class extLightingFX : public extFilterEffect {
    inline void specular_light(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double Occlusion = 1.0, double Exponent = 0);
    inline void encode_light(const FRGB &, double, uint8_t *, uint8_t, uint8_t, uint8_t);
+   inline void encode_hue(const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
    inline void enhanced_diffuse(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t, uint8_t,
       uint8_t, double);
    LIGHT_INLINE void enhanced_specular(const point3 &, const point3 &, const FRGB &, uint8_t *, uint8_t, uint8_t,
@@ -641,9 +658,7 @@ void extLightingFX::prepare_light(const light_record &Record, lit_light &Light, 
 
    if (Record.Kind IS LS::DISTANT) {
       Light.direction = Record.Direction;
-      Light.half = Record.Direction;
-      Light.half.z += 1.0; // Eye position is always (0, 0, 1)
-      Light.half.normalise();
+      Light.half = point3::half_vector(Record.Direction);
       Light.elevation = Record.Elevation * DEG2RAD;
       return;
    }
@@ -743,34 +758,20 @@ inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL
 inline void extLightingFX::specular_light(const point3 &Normal, const point3 &STL, const FRGB &Colour, uint8_t *Output,
    uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
 {
-   point3 halfDir(STL);
-   halfDir.z += 1.0; // Eye position is always (0, 0, 1)
-   halfDir.normalise();
+   const point3 halfDir = point3::half_vector(STL);
 
    const double exponent = (Exponent > 0) ? Exponent : SpecularExponent;
    double scale = std::clamp((Constant * std::pow(std::max(0.0, Normal.dot(halfDir)), exponent)) * 255.0
       * Occlusion, 0.0, 255.0);
 
+   // The light (S, max(S)) is premultiplied, as browsers interpret it, and is stored unpremultiplied.  The alpha is
+   // the brightest channel of the light in the filter's colour space and the colour is the light's hue.
+
    const uint8_t r = int(Colour.Red * scale);
    const uint8_t g = int(Colour.Green * scale);
    const uint8_t b = int(Colour.Blue * scale);
-
-   if (Linear) {
-      Output[R] = glLinearRGB.invert(r);
-      Output[G] = glLinearRGB.invert(g);
-      Output[B] = glLinearRGB.invert(b);
-   }
-   else {
-      Output[R] = r;
-      Output[G] = g;
-      Output[B] = b;
-   }
-
-   if (LightSource IS LS::DISTANT) {
-      // Alpha is chosen from the max of the linear R,G,B light value
-      Output[A] = Output[R] > Output[G] ? (Output[R] > Output[B] ? Output[R] : Output[B]) : (Output[G] > Output[B] ? Output[G] : Output[B]);
-   }
-   else Output[A] = r > g ? (r > b ? r : b) : (g > b ? g : b);
+   Output[A] = std::max(std::max(r, g), b);
+   encode_hue(Colour, Output, R, G, B, A);
 }
 
 //********************************************************************************************************************
@@ -799,6 +800,24 @@ inline void extLightingFX::encode_light(const FRGB &Colour, double Scale, uint8_
 }
 
 //********************************************************************************************************************
+// Writes the straight colour of specular light.  At zero stored alpha, clear RGB so a later filter cannot read a hue
+// from an unlit pixel.
+
+inline void extLightingFX::encode_hue(const FRGB &Colour, uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A)
+{
+   const double peak = std::max(std::max(Colour.Red, Colour.Green), Colour.Blue);
+   if ((not Output[A]) or (peak <= 0)) {
+      Output[R] = Output[G] = Output[B] = 0;
+      return;
+   }
+
+   const double inverse_peak = 1.0 / peak;
+   Output[R] = encode_channel(Colour.Red * inverse_peak, true);
+   Output[G] = encode_channel(Colour.Green * inverse_peak, true);
+   Output[B] = encode_channel(Colour.Blue * inverse_peak, true);
+}
+
+//********************************************************************************************************************
 // Strength is Constant multiplied by Intensity, which is exactly Constant when Intensity is 1.
 
 inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &STL, const FRGB &Colour,
@@ -809,25 +828,20 @@ inline void extLightingFX::enhanced_diffuse(const point3 &Normal, const point3 &
 }
 
 //********************************************************************************************************************
-// The alpha rule of specular_light() is kept: the maximum of the encoded channels for distant lights, and of the
-// light values otherwise.
+// The light is premultiplied as in specular_light().  The alpha is truncated in sRGB filters, so that a flat surface
+// keeps the SVG result, and rounded in linear filters.
 
 LIGHT_INLINE void extLightingFX::enhanced_specular(const point3 &Normal, const point3 &STL, const FRGB &Colour,
    uint8_t *Output, uint8_t R, uint8_t G, uint8_t B, uint8_t A, double Occlusion, double Exponent)
 {
-   point3 half_dir(STL);
-   half_dir.z += 1.0; // Eye position is always (0, 0, 1)
-   half_dir.normalise();
+   const point3 half_dir = point3::half_vector(STL);
 
    const double scale = std::clamp(Strength * std::pow(std::max(0.0, Normal.dot(half_dir)), Exponent) * Occlusion,
       0.0, 1.0);
-   encode_light(Colour, scale, Output, R, G, B);
 
-   if ((LightSource IS LS::DISTANT) or (not Linear)) Output[A] = std::max(std::max(Output[R], Output[G]), Output[B]);
-   else {
-      const float peak = std::max(std::max(Colour.Red, Colour.Green), Colour.Blue);
-      Output[A] = uint8_t((peak * float(scale * 255.0)) + 0.5f);
-   }
+   const double level = std::max(std::max(Colour.Red, Colour.Green), Colour.Blue) * scale * 255.0;
+   Output[A] = Linear ? uint8_t(level + 0.5) : uint8_t(level);
+   encode_hue(Colour, Output, R, G, B, A);
 }
 
 //********************************************************************************************************************
@@ -900,9 +914,7 @@ inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 
    const point3 &STL, const FRGB &Light, const albedo_sample &Albedo, uint8_t *Output, uint8_t R, uint8_t G,
    uint8_t B, uint8_t A, double Occlusion, double Cavity)
 {
-   point3 half_dir(STL);
-   half_dir.z += 1.0; // Eye position is always (0, 0, 1)
-   half_dir.normalise();
+   const point3 half_dir = point3::half_vector(STL);
 
    const double diffuse = Constant * std::max(0.0, Normal.dot(STL)) * Occlusion;
    const double specular = SpecularConstant * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) * Occlusion;
@@ -946,9 +958,7 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
    const point3 &STL, const FRGB &Light, const albedo_sample &Albedo, uint8_t *Output, uint8_t R, uint8_t G,
    uint8_t B, uint8_t A, double Occlusion, double Cavity, double Raised)
 {
-   point3 half_dir(STL);
-   half_dir.z += 1.0; // Eye position is always (0, 0, 1)
-   half_dir.normalise();
+   const point3 half_dir = point3::half_vector(STL);
 
    const double nl = Normal.dot(STL);
    double diffuse_occlusion = Occlusion;
