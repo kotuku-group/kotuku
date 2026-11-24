@@ -119,7 +119,7 @@ enum class NMC : int {
    Y_UP = 2,
 };
 
-// Channel selection for scalar maps read by LightingFX, such as an ambient occlusion map.
+// Channel selection for scalar maps read by LightingFX, such as ambient occlusion and roughness maps.
 
 enum class MCH : int {
    NIL = 0,
@@ -3183,7 +3183,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getAmbient(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
+      auto field = &this->Class->Dictionary[43];
       return field->GetValue(this, &Value);
    }
 
@@ -3194,6 +3194,11 @@ class objLightingFX : public objFilterEffect {
 
    inline ERR getOcclusionChannel(MCH &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRoughnessChannel(MCH &Value) noexcept {
+      auto field = &this->Class->Dictionary[40];
       return field->GetValue(this, &Value);
    }
 
@@ -3208,7 +3213,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getCavity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
+      auto field = &this->Class->Dictionary[41];
       return field->GetValue(this, &Value);
    }
 
@@ -3253,7 +3258,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getMatcapPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[41];
+      auto field = &this->Class->Dictionary[42];
       return field->GetValue(this, &Value);
    }
 
@@ -3274,6 +3279,11 @@ class objLightingFX : public objFilterEffect {
 
    inline ERR getOcclusionStrength(double &Value) noexcept {
       auto field = &this->Class->Dictionary[33];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRoughnessMap(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[44];
       return field->GetValue(this, &Value);
    }
 
@@ -3316,7 +3326,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setAmbient(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
+      auto field = &this->Class->Dictionary[43];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
@@ -3330,18 +3340,23 @@ class objLightingFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setRoughnessChannel(const MCH Value) noexcept {
+      auto field = &this->Class->Dictionary[40];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setConstant(const double Value) noexcept {
       auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setExponent(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[43];
+      auto field = &this->Class->Dictionary[45];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setCavity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
+      auto field = &this->Class->Dictionary[41];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3386,7 +3401,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setMatcapPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[41];
+      auto field = &this->Class->Dictionary[42];
       return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
@@ -3408,6 +3423,11 @@ class objLightingFX : public objFilterEffect {
    inline ERR setOcclusionStrength(const double Value) noexcept {
       auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setRoughnessMap(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[44];
+      return field->WriteValue(this, field, 0x08100309, Value);
    }
 
    inline ERR setScale(const double Value) noexcept {

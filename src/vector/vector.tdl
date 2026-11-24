@@ -48,9 +48,9 @@ struct KeyValue;
     "Y_DOWN: Green encodes Y in image axes, increasing downwards.  Used by DirectX and by LightingFX's NORMAL type.",
     "Y_UP: Green encodes Y increasing upwards, as in OpenGL.  The green component is negated when read.")
 
-  enums("MCH", { type="int", start=0, comment="Channel selection for scalar maps read by LightingFX, such as an ambient occlusion map." },
+  enums("MCH", { type="int", start=0, comment="Channel selection for scalar maps read by LightingFX, such as ambient occlusion and roughness maps." },
     "RED: The red channel.  This is the default, and the occlusion channel of a packed ORM map.",
-    "GREEN: The green channel.",
+    "GREEN: The green channel, which is the roughness channel of a packed ORM map.",
     "BLUE: The blue channel.",
     "ALPHA: The alpha channel.",
     "LUMINANCE: The luminance of the stored red, green and blue values, weighted 0.2126, 0.7152 and 0.0722.")

@@ -1890,7 +1890,8 @@ static std::optional<NMC> read_normal_convention(std::string_view Value, bool Al
 }
 
 //********************************************************************************************************************
-// Reads a kotuku:occlusionChannel value: R, G, B, A or luminance, or the full channel names.
+// Reads a kotuku:occlusionChannel or kotuku:roughnessChannel value: R, G, B, A or luminance, or the full channel
+// names.
 
 static std::optional<MCH> read_map_channel(std::string_view Value) noexcept
 {
@@ -2066,6 +2067,16 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             }
             else if (local IS "occlusionStrength") {
                set_light_number("occlusionStrength", val, &objLightingFX::setOcclusionStrength);
+            }
+            else if (local IS "roughnessMap") {
+               const auto input = Self->Effects.find(val);
+               if ((input IS Self->Effects.end()) or (fx->setRoughnessMap(input->second) != ERR::Okay)) {
+                  log.warning("Invalid roughness map result '%s' on %s.", val.c_str(), Tag.name());
+               }
+            }
+            else if (local IS "roughnessChannel") {
+               if (auto channel = read_map_channel(val)) fx->setRoughnessChannel(*channel);
+               else log.warning("Invalid roughnessChannel '%s' on %s.", val.c_str(), Tag.name());
             }
             else if (normal_map and (local IS "kernelUnitX")) {
                set_light_number("kernelUnitX", val, &objLightingFX::setUnitX);

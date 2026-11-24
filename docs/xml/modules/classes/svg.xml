@@ -159,6 +159,13 @@ sources.  Sets <class name="LightingFX" field="OcclusionMap">LightingFX.Occlusio
 read.  Packed ORM maps store occlusion in <code>R</code>.  Sets <class name="LightingFX" field="OcclusionChannel">LightingFX.OcclusionChannel</class>.</li>
 <li><code>kotuku:occlusionStrength</code>: 0 or greater, default 1.  The occlusion <code>ao</code> is applied as
 <code>1 + strength * (ao - 1)</code>, so 0 disables the map.  Sets <class name="LightingFX" field="OcclusionStrength">LightingFX.OcclusionStrength</class>.</li>
+<li><code>kotuku:roughnessMap</code> selects the named result of an earlier primitive as a roughness map, in which black is
+smooth and white fully rough.  Each pixel's roughness sets its own specular exponent, so smooth areas have narrow,
+bright highlights and rough areas broad, dim ones.  <code>specularExponent</code> remains the exponent at which the specular
+constant is calibrated, and pixels that the map does not cover use it.  Sets <class name="LightingFX" field="RoughnessMap">LightingFX.RoughnessMap</class>.  It has no
+effect on <code>feDiffuseLighting</code>.</li>
+<li><code>kotuku:roughnessChannel</code>: <code>R</code> (the default), <code>G</code>, <code>B</code>, <code>A</code> or <code>luminance</code>, the channel of the roughness map to
+read.  Packed ORM maps store roughness in <code>G</code>.  Sets <class name="LightingFX" field="RoughnessChannel">LightingFX.RoughnessChannel</class>.</li>
 </list>
 <p>The light source elements <code>feDistantLight</code>, <code>fePointLight</code> and <code>feSpotLight</code> accept these attributes, which set the light's options with <class name="LightingFX" method="SetLightOptions">LightingFX.SetLightOptions()</class>:</p>
 <list type="bullet">
@@ -181,7 +188,7 @@ have a range; the attribute is reported and ignored.</li>
   &lt;/filter&gt;
 &lt;/svg&gt;
 </pre>
-<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive.  The <code>in</code> attribute selects a floating-point height result or an image whose alpha supplies the height.  The <code>in2</code> attribute selects the albedo, which defaults to opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>. Use <code>normalMap</code> to supply an RGB normal map from an earlier primitive, such as an image loaded by <code>feImage</code>, and <code>occlusionMap</code> to supply an ambient occlusion map. The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace. The element also accepts these material attributes:</p>
+<p>The <code>kotuku:feLighting</code> element is the <code>COMBINED</code> type of <class name="LightingFX">LightingFX</class>.  It lights an albedo with diffuse, specular and ambient light in one primitive.  The <code>in</code> attribute selects a floating-point height result or an image whose alpha supplies the height.  The <code>in2</code> attribute selects the albedo, which defaults to opaque white.  It accepts <code>surfaceScale</code>, <code>diffuseConstant</code>, <code>specularConstant</code>, <code>specularExponent</code>, <code>kernelUnitLength</code> and <code>lighting-color</code>. Use <code>normalMap</code> to supply an RGB normal map from an earlier primitive, such as an image loaded by <code>feImage</code>, <code>occlusionMap</code> to supply an ambient occlusion map, and <code>roughnessMap</code> to supply a roughness map. The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace. The element also accepts these material attributes:</p>
 <list type="bullet">
 <li><code>metalness</code>: 0 for a dielectric surface (the default) to 1 for a metal, whose highlights take the albedo's colour
 and which has no diffuse light.  Sets <class name="LightingFX" field="Metalness">LightingFX.Metalness</class>.</li>
