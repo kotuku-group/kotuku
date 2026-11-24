@@ -33,6 +33,15 @@ static const struct FieldDef clLightingFXNMC[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clLightingFXMCH[] = {
+   { "Red", 0x00000000 },
+   { "Green", 0x00000001 },
+   { "Blue", 0x00000002 },
+   { "Alpha", 0x00000003 },
+   { "Luminance", 0x00000004 },
+   { nullptr, 0 }
+};
+
 FDEF maSetDistantLight[] = { { "Azimuth", FD_DOUBLE }, { "Elevation", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetPointLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "PX", FD_DOUBLE }, { "PY", FD_DOUBLE }, { "PZ", FD_DOUBLE }, { "Exponent", FD_DOUBLE }, { "ConeAngle", FD_DOUBLE }, { 0, 0 } };

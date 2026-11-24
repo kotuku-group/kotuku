@@ -20,9 +20,9 @@ class extFloodFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "FloodFX";
    using create = kt::Create<extFloodFX>;
 
-   FRGB   Colour;
+   FRGB   Colour = { 0, 0, 0, 1 };    // Opaque black, the SVG initial value of flood-color
    double Opacity = 1.0;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
+   RGB8   ColourRGB = { 0, 0, 0, 255 }; // A cached conversion of the FRGB value
 
    extFloodFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
@@ -72,6 +72,7 @@ static ERR FLOODFX_Draw(extFloodFX *Self, struct acDraw *Args)
 Colour: The colour of the fill in RGB float format.
 
 This field defines the colour of the flood fill in floating-point RGBA format, in a range of 0 - 1.0 per component.
+The default is opaque black, matching the initial value of the SVG `flood-color` property.
 
 The colour is complemented by the #Opacity field.
 
@@ -118,8 +119,17 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string &Value)
 {
    std::stringstream stream;
+   stream.precision(std::numeric_limits<double>::max_digits10);
 
-   stream << "feFlood opacity=\"" << Self->Opacity << "\"";
+   stream << "feFlood flood-color=\"";
+   write_rgb(stream, Self->Colour);
+   stream << '"';
+   if (Self->Opacity != 1.0) {
+      char buffer[32];
+      auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Self->Opacity);
+      if (error IS std::errc()) stream << " flood-opacity=\"" << std::string_view(buffer, end - buffer) << '"';
+   }
+   write_filter_xml_subregion(stream, *Self);
 
    Value = stream.str();
    return ERR::Okay;

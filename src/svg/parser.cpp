@@ -1890,6 +1890,20 @@ static std::optional<NMC> read_normal_convention(std::string_view Value, bool Al
 }
 
 //********************************************************************************************************************
+// Reads a kotuku:occlusionChannel value: R, G, B, A or luminance, or the full channel names.
+
+static std::optional<MCH> read_map_channel(std::string_view Value) noexcept
+{
+   Value = kt::font_traits::trim(Value);
+   if (iequals(Value, "R") or iequals(Value, "red")) return MCH::RED;
+   else if (iequals(Value, "G") or iequals(Value, "green")) return MCH::GREEN;
+   else if (iequals(Value, "B") or iequals(Value, "blue")) return MCH::BLUE;
+   else if (iequals(Value, "A") or iequals(Value, "alpha")) return MCH::ALPHA;
+   else if (iequals(Value, "luminance")) return MCH::LUMINANCE;
+   return std::nullopt;
+}
+
+//********************************************************************************************************************
 // Reads the space-separated feature names of a kotuku:features attribute.  Unknown names are skipped with a warning.
 
 static LFX read_lighting_features(std::string_view Value) noexcept
@@ -2039,6 +2053,19 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
                if ((input IS Self->Effects.end()) or (fx->setNormalMap(input->second) != ERR::Okay)) {
                   log.warning("Invalid normal map result '%s' on %s.", val.c_str(), Tag.name());
                }
+            }
+            else if (local IS "occlusionMap") {
+               const auto input = Self->Effects.find(val);
+               if ((input IS Self->Effects.end()) or (fx->setOcclusionMap(input->second) != ERR::Okay)) {
+                  log.warning("Invalid occlusion map result '%s' on %s.", val.c_str(), Tag.name());
+               }
+            }
+            else if (local IS "occlusionChannel") {
+               if (auto channel = read_map_channel(val)) fx->setOcclusionChannel(*channel);
+               else log.warning("Invalid occlusionChannel '%s' on %s.", val.c_str(), Tag.name());
+            }
+            else if (local IS "occlusionStrength") {
+               set_light_number("occlusionStrength", val, &objLightingFX::setOcclusionStrength);
             }
             else if (normal_map and (local IS "kernelUnitX")) {
                set_light_number("kernelUnitX", val, &objLightingFX::setUnitX);

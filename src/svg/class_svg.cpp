@@ -228,6 +228,13 @@ normal map.  Most texture libraries and Blender export `y-up` (OpenGL) maps; Dir
 value swaps the shading of slopes that face up and down the image.  Sets @LightingFX.NormalConvention.</li>
 <li>`kotuku:normalStrength`: 0 or greater, default 1.  Multiplies the X and Y components of the normal map, so 0
 flattens it and values above 1 exaggerate it.  Sets @LightingFX.NormalStrength.</li>
+<li>`kotuku:occlusionMap` selects the named result of an earlier primitive as an ambient occlusion map, in which white
+is fully exposed and black fully occluded.  It darkens the ambient light and the matcap, but not the light of the light
+sources.  Sets @LightingFX.OcclusionMap.  It has no effect on `feSpecularLighting`.</li>
+<li>`kotuku:occlusionChannel`: `R` (the default), `G`, `B`, `A` or `luminance`, the channel of the occlusion map to
+read.  Packed ORM maps store occlusion in `R`.  Sets @LightingFX.OcclusionChannel.</li>
+<li>`kotuku:occlusionStrength`: 0 or greater, default 1.  The occlusion `ao` is applied as
+`1 + strength * (ao - 1)`, so 0 disables the map.  Sets @LightingFX.OcclusionStrength.</li>
 </list>
 
 The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` accept these attributes, which set the
@@ -262,7 +269,8 @@ The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It light
 ambient light in one primitive.  The `in` attribute selects a floating-point height result or an image whose alpha
 supplies the height.  The `in2` attribute selects the albedo, which defaults to opaque white.  It accepts
 `surfaceScale`, `diffuseConstant`, `specularConstant`, `specularExponent`, `kernelUnitLength` and `lighting-color`.
-Use `normalMap` to supply an RGB normal map from an earlier primitive, such as an image loaded by `feImage`.
+Use `normalMap` to supply an RGB normal map from an earlier primitive, such as an image loaded by `feImage`, and
+`occlusionMap` to supply an ambient occlusion map.
 The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace.
 The element also accepts these material attributes:
 

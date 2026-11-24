@@ -134,6 +134,7 @@ struct filter_input_contract {
    FEM Edge = FEM::TRANSPARENT; // Edge mode for map samples outside of the producer's valid region
    filter_sampling Sampling = {}; // Reach of the input, added to the pipeline's processing margin
    filter_bitmap_conversion BitmapConversion = filter_bitmap_conversion::NONE; // Numerical-to-RGBA8 adapter for images
+   bool TransparentFallback = false; // Colour channels of RGBA8 map pixels with zero alpha read as the Fallback
 };
 
 //********************************************************************************************************************
@@ -304,6 +305,109 @@ struct filter_render_context {
 using filter_positions = std::unordered_map<objFilterEffect *, size_t>;
 
 //********************************************************************************************************************
+// Returns the number of floats per pixel for a numerical surface format.
+
+static int filter_components(filter_surface_format Format)
+{
+   return (Format IS filter_surface_format::VECTOR_F32) ? 2 : 1;
+}
+
+//********************************************************************************************************************
+// Reads one pixel from a numerical surface.  Returns false if any component is not finite.
+
+static bool read_numeric_sample(const filter_surface_view &Source, int X, int Y, filter_map_value &Value)
+{
+   const auto components = filter_components(Source.Format);
+   const auto pixel = (const float *)Source.row(Y) + std::ptrdiff_t(X) * components;
+   Value = { pixel[0], (components IS 2) ? pixel[1] : 0.0f };
+   return std::isfinite(Value[0]) and std::isfinite(Value[1]);
+}
+
+//********************************************************************************************************************
+// Samples a scalar or vector map from a named input, applying the input contract's channel selection, transfer
+// curve, interpolation, edge mode and fallback.
+
+struct filter_map_view {
+   filter_surface_view Source;
+   filter_input_contract Contract;
+
+   // Scene coordinates use pixel centres at Origin + local index + 0.5.
+
+   filter_map_value sample(double X, double Y) const {
+      if (not Source.Data) return Contract.Fallback;
+      const double x = X - Source.OriginX - 0.5, y = Y - Source.OriginY - 0.5;
+      constexpr double limit = 0x1p52;
+      if (not ((x > -limit) and (x < limit) and (y > -limit) and (y < limit))) return Contract.Fallback;
+
+      if (Contract.Interpolation IS filter_interpolation::NEAREST) {
+         return tap(int64_t(std::nearbyint(x)), int64_t(std::nearbyint(y)));
+      }
+
+      const int64_t x0 = int64_t(std::floor(x)), y0 = int64_t(std::floor(y));
+      const double tx = x - double(x0), ty = y - double(y0);
+      const auto p00 = tap(x0, y0), p10 = tap(x0 + 1, y0), p01 = tap(x0, y0 + 1), p11 = tap(x0 + 1, y0 + 1);
+      filter_map_value value;
+      for (size_t i = 0; i < value.size(); i++) {
+         const auto top = std::lerp(double(p00[i]), double(p10[i]), tx);
+         const auto bottom = std::lerp(double(p01[i]), double(p11[i]), tx);
+         value[i] = float(std::lerp(top, bottom, ty));
+      }
+      return value;
+   }
+
+   private:
+   filter_map_value tap(int64_t X, int64_t Y) const {
+      const int x = filter_edge_index(X, Source.Valid.left, Source.Valid.right, Contract.Edge);
+      const int y = filter_edge_index(Y, Source.Valid.top, Source.Valid.bottom, Contract.Edge);
+      if ((x < 0) or (y < 0)) return Contract.Fallback;
+
+      if (Source.Format != filter_surface_format::RGBA8) {
+         filter_map_value value;
+         return read_numeric_sample(Source, x, y, value) ? value : Contract.Fallback;
+      }
+
+      const auto pixel = Source.row(y) + std::ptrdiff_t(x) * 4;
+      const auto &format = *Source.Bitmap->ColourFormat;
+      const double alpha = double(pixel[format.AlphaPos >> 3]) / 255.0;
+      const bool empty = Contract.TransparentFallback and (not pixel[format.AlphaPos >> 3]);
+
+      auto colour = [&](int Shift) {
+         double value = double(pixel[Shift >> 3]) / 255.0;
+         if (Source.Alpha IS filter_alpha::PREMULTIPLIED) {
+            value = alpha > 0.0 ? std::min(1.0, value / alpha) : 0.0;
+         }
+
+         if ((Contract.Transfer IS filter_map_transfer::LINEAR) and (Source.Encoding IS CS::SRGB)) {
+            value = value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+         }
+         return value;
+      };
+
+      auto channel = [&](filter_map_channel Channel) -> float {
+         using enum filter_map_channel;
+         switch (Channel) {
+            case RED: return float(colour(format.RedPos));
+            case GREEN: return float(colour(format.GreenPos));
+            case BLUE: return float(colour(format.BluePos));
+            case ALPHA: return float(alpha);
+            case LUMINANCE:
+               return float(0.2126 * colour(format.RedPos) + 0.7152 * colour(format.GreenPos) +
+                  0.0722 * colour(format.BluePos));
+         }
+         return 0.0f;
+      };
+
+      auto component = [&](filter_map_channel Channel, size_t Index) -> float {
+         if (empty and (Channel != filter_map_channel::ALPHA)) return Contract.Fallback[Index];
+         return channel(Channel);
+      };
+
+      return { component(Contract.XChannel, 0),
+         (Contract.Kind IS filter_input_kind::VECTOR_MAP) ? component(Contract.YChannel, 1) : 0.0f };
+   }
+};
+
+//********************************************************************************************************************
 // Forward declarations.
 
 static bool transform_filter_region(TClipRectangle<double> &, const agg::trans_affine &);
@@ -324,6 +428,7 @@ static void update_filter_links(extVectorFilter *);
 static ERR check_filter_reference(extFilterEffect *, objFilterEffect *, filter_input_role, size_t = 0,
    const filter_positions * = nullptr);
 static ERR set_named_filter_input(extFilterEffect *, std::string_view, VSF, objFilterEffect * = nullptr);
+static ERR get_filter_map(extFilterEffect *, std::string_view, filter_map_view &);
 
 //********************************************************************************************************************
 // Returns true if every component of the transform is finite.
@@ -643,6 +748,23 @@ static void write_filter_xml_attribute(std::ostream &Stream, std::string_view Na
       else Stream << c;
    }
    Stream << '"';
+}
+
+// Writes a colour in CSS rgb() notation.  An integer channel is used when reading it back recovers the original float.
+
+static void write_rgb(std::ostream &Stream, const FRGB &Colour)
+{
+   auto channel = [](float Value) {
+      const double level = Value * 255.0;
+      const double integer = std::round(level);
+      return (float(integer * (1.0 / 255.0)) IS Value) ? integer : level;
+   };
+
+   const auto precision = Stream.precision(std::numeric_limits<double>::max_digits10);
+   Stream << "rgb(" << channel(Colour.Red) << ' ' << channel(Colour.Green) << ' ' << channel(Colour.Blue);
+   if (Colour.Alpha != 1.0f) Stream << " / " << Colour.Alpha;
+   Stream << ')';
+   Stream.precision(precision);
 }
 
 static void write_filter_xml_subregion(std::ostream &Stream, const objFilterEffect &Effect)
@@ -1400,14 +1522,6 @@ static ERR get_filter_bitmap(extVectorFilter *Self, filter_surface *&List, objBi
 }
 
 //********************************************************************************************************************
-// Returns the number of floats per pixel for a numerical surface format.
-
-static int filter_components(filter_surface_format Format)
-{
-   return (Format IS filter_surface_format::VECTOR_F32) ? 2 : 1;
-}
-
-//********************************************************************************************************************
 // Computes the stride and total size of a Width x Height surface, rejecting sizes that exceed the surface limit.
 
 static ERR filter_surface_size(int Width, int Height, size_t PixelBytes, size_t &Bytes, int &Stride)
@@ -1642,99 +1756,10 @@ static const filter_input * planned_named_input(const extFilterEffect *Effect, s
 }
 
 //********************************************************************************************************************
-// Reads one pixel from a numerical surface.  Returns false if any component is not finite.
-
-static bool read_numeric_sample(const filter_surface_view &Source, int X, int Y, filter_map_value &Value)
-{
-   const auto components = filter_components(Source.Format);
-   const auto pixel = (const float *)Source.row(Y) + std::ptrdiff_t(X) * components;
-   Value = { pixel[0], (components IS 2) ? pixel[1] : 0.0f };
-   return std::isfinite(Value[0]) and std::isfinite(Value[1]);
-}
-
-//********************************************************************************************************************
-// Samples a scalar or vector map from a named input, applying the input contract's channel selection, transfer
-// curve, interpolation, edge mode and fallback.
-
-struct filter_map_view {
-   filter_surface_view Source;
-   filter_input_contract Contract;
-
-   // Scene coordinates use pixel centres at Origin + local index + 0.5.
-
-   filter_map_value sample(double X, double Y) const {
-      if (not Source.Data) return Contract.Fallback;
-      const double x = X - Source.OriginX - 0.5, y = Y - Source.OriginY - 0.5;
-      constexpr double limit = 0x1p52;
-      if (not ((x > -limit) and (x < limit) and (y > -limit) and (y < limit))) return Contract.Fallback;
-
-      if (Contract.Interpolation IS filter_interpolation::NEAREST) {
-         return tap(int64_t(std::nearbyint(x)), int64_t(std::nearbyint(y)));
-      }
-
-      const int64_t x0 = int64_t(std::floor(x)), y0 = int64_t(std::floor(y));
-      const double tx = x - double(x0), ty = y - double(y0);
-      const auto p00 = tap(x0, y0), p10 = tap(x0 + 1, y0), p01 = tap(x0, y0 + 1), p11 = tap(x0 + 1, y0 + 1);
-      filter_map_value value;
-      for (size_t i = 0; i < value.size(); i++) {
-         const auto top = std::lerp(double(p00[i]), double(p10[i]), tx);
-         const auto bottom = std::lerp(double(p01[i]), double(p11[i]), tx);
-         value[i] = float(std::lerp(top, bottom, ty));
-      }
-      return value;
-   }
-
-   private:
-   filter_map_value tap(int64_t X, int64_t Y) const {
-      const int x = filter_edge_index(X, Source.Valid.left, Source.Valid.right, Contract.Edge);
-      const int y = filter_edge_index(Y, Source.Valid.top, Source.Valid.bottom, Contract.Edge);
-      if ((x < 0) or (y < 0)) return Contract.Fallback;
-
-      if (Source.Format != filter_surface_format::RGBA8) {
-         filter_map_value value;
-         return read_numeric_sample(Source, x, y, value) ? value : Contract.Fallback;
-      }
-
-      const auto pixel = Source.row(y) + std::ptrdiff_t(x) * 4;
-      const auto &format = *Source.Bitmap->ColourFormat;
-      const double alpha = double(pixel[format.AlphaPos >> 3]) / 255.0;
-
-      auto colour = [&](int Shift) {
-         double value = double(pixel[Shift >> 3]) / 255.0;
-         if (Source.Alpha IS filter_alpha::PREMULTIPLIED) {
-            value = alpha > 0.0 ? std::min(1.0, value / alpha) : 0.0;
-         }
-
-         if ((Contract.Transfer IS filter_map_transfer::LINEAR) and (Source.Encoding IS CS::SRGB)) {
-            value = value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
-         }
-         return value;
-      };
-
-      auto channel = [&](filter_map_channel Channel) -> float {
-         using enum filter_map_channel;
-         switch (Channel) {
-            case RED: return float(colour(format.RedPos));
-            case GREEN: return float(colour(format.GreenPos));
-            case BLUE: return float(colour(format.BluePos));
-            case ALPHA: return float(alpha);
-            case LUMINANCE:
-               return float(0.2126 * colour(format.RedPos) + 0.7152 * colour(format.GreenPos) +
-                  0.0722 * colour(format.BluePos));
-         }
-         return 0.0f;
-      };
-
-      return { channel(Contract.XChannel),
-         (Contract.Kind IS filter_input_kind::VECTOR_MAP) ? channel(Contract.YChannel) : 0.0f };
-   }
-};
-
-//********************************************************************************************************************
 // Prepares a map view for a named map input of the active effect.  An unset input yields a view that returns the
 // contract's fallback value.
 
-[[maybe_unused]] static ERR get_filter_map(extFilterEffect *Effect, std::string_view Name, filter_map_view &Output)
+static ERR get_filter_map(extFilterEffect *Effect, std::string_view Name, filter_map_view &Output)
 {
    Output = {};
    const auto input = planned_named_input(Effect, Name);
@@ -2544,6 +2569,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          name_reference(effect->SourceType, effect->Input);
          if (lighting->reads_albedo()) name_reference(effect->MixType, effect->Mix);
          name_reference(lighting->NormalMap.Source, lighting->NormalMap.Reference);
+         name_reference(lighting->OcclusionMap.Source, lighting->OcclusionMap.Reference);
       }
       else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          name_reference(effect->SourceType, effect->Input);
@@ -2586,6 +2612,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          write_input("in", effect->SourceType, effect->Input);
          if (lighting->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
          write_input("kotuku:normalMap", lighting->NormalMap.Source, lighting->NormalMap.Reference);
+         write_input("kotuku:occlusionMap", lighting->OcclusionMap.Source, lighting->OcclusionMap.Reference);
       }
       else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          write_input("in", effect->SourceType, effect->Input);

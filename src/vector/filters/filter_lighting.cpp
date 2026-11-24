@@ -118,10 +118,12 @@ beside a raised area.  Set the scene's Compliance to `SVG1` or `SVG2` for result
 exactly, or set #Features to zero to use the SVG algorithm for this effect alone.  The enhanced pipeline is still used
 if #Ambient or #Intensity is set.
 
-An #Ambient light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by `CAVITY`.
-The #Intensity of the light multiplies its #Colour.  For the diffuse and specular types the light is limited to full
-strength before it is coloured, as the SVG algorithm does with #Constant, so a value above 1 cannot make a coloured
-light brighter than full strength.  Neither field has an effect when the scene's Compliance is `SVG1` or `SVG2`.
+An #Ambient light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by `CAVITY`
+and by an ambient occlusion map bound to #OcclusionMap.  The #Intensity of the light multiplies its #Colour.  For the
+diffuse and specular types the light is limited to full strength before it is coloured, as the SVG algorithm does with
+#Constant, so a value above 1 cannot make a coloured light brighter than full strength.  Both fields require the
+enhanced pipeline.  A diffuse effect with ambient light and an active #OcclusionMap uses that pipeline at any
+Compliance setting.
 
 The `COMBINED` type computes a lit surface in a single pass.  The #Mix input is the albedo, the colour of the surface,
 and the result is
@@ -439,10 +441,22 @@ class extLightingFX : public extFilterEffect {
    const float *MatcapTexels = nullptr; // Premultiplied RGB0 in the filter's colour space, or nullptr; per draw
    int    MatcapWidth = 0, MatcapHeight = 0; // Dimensions of MatcapTexels, set per draw
 
-   filter_named_input NormalMap = { "NormalMap", { .ContributesRegion = false, .Optional = true } };
+   // Named input slots.  The planner keeps their order, and the members below refer to them by name.
+
+   std::array<filter_named_input, 2> MapInputs = {{
+      { "NormalMap", { .ContributesRegion = false, .Optional = true } },
+      { "OcclusionMap", { .Kind = filter_input_kind::SCALAR_MAP, .ContributesRegion = false, .Optional = true,
+         .XChannel = filter_map_channel::RED, .Transfer = filter_map_transfer::STORED, .Fallback = { 1.0f, 0.0f },
+         .TransparentFallback = true } }
+   }};
+   filter_named_input &NormalMap = MapInputs[0];
+   filter_named_input &OcclusionMap = MapInputs[1];
+   filter_effect_extension Extension = { std::span(MapInputs) };
+
    NMC    NormalConvention = NMC::Y_DOWN; // Axis convention of NormalMap's green channel
    double NormalStrength = 1.0;           // Multiplies the X and Y components of NormalMap before normalisation
-   filter_effect_extension Extension = { std::span(&NormalMap, 1) };
+   MCH    OcclusionChannel = MCH::RED;    // Channel of OcclusionMap that supplies the occlusion
+   double OcclusionStrength = 1.0;        // Blends the occlusion from none (0) to as supplied (1)
 
    extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       FilterExtension = &Extension;
@@ -574,7 +588,7 @@ class extLightingFX : public extFilterEffect {
    inline void enhanced_material(const point3 &, const point3 &, double, const point3 &, const FRGB &,
       const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double, double);
    inline void enhanced_lights(const struct lit_surface &, const point3 &, const point3 &, double,
-      const albedo_sample &, int, int, float, float, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
+      const albedo_sample &, int, int, float, float, float, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
    inline void sample_matcap(const point3 &, float *) const;
    inline uint8_t encode_channel(double, bool);
    void render_distant(int, int, const objBitmap *, const lit_light &, double, const map_height &, int, int);
@@ -612,13 +626,21 @@ class extLightingFX : public extFilterEffect {
          ((Ambient.Red > 0) or (Ambient.Green > 0) or (Ambient.Blue > 0));
    }
 
-   // Combined shading and normal maps opt in under any compliance.  Native heights opt in for Kōtuku scenes.
+   // Combined shading, normal maps and active occlusion maps opt in under any compliance.
+   // Native heights opt in for Kōtuku scenes.
 
    bool enhanced(filter_surface_format PrimaryFormat) const {
-      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL) or NormalMap.Reference) return true;
+      if ((Type IS LT::COMBINED) or (Type IS LT::NORMAL) or NormalMap.Reference or reads_occlusion()) return true;
       if ((not Filter->Scene) or (Filter->Scene->Compliance != VSC::NONE)) return false;
       return (PrimaryFormat IS filter_surface_format::SCALAR_F32) or (Features != LFX::NIL) or
          extended_light() or has_ambient();
+   }
+
+   // An active map requires positive strength and indirect light from the ambient colour or the combined matcap.
+
+   bool reads_occlusion() const {
+      return OcclusionMap.Reference and (OcclusionStrength > 0) and
+         (has_ambient() or ((Type IS LT::COMBINED) and Matcap));
    }
 
    // True if the effect reads an albedo from its Mix input.
@@ -640,7 +662,7 @@ class extLightingFX : public extFilterEffect {
    double cavity_sigma(double UnitSize) const;
    float sharpen_weight(double UnitSize) const;
    ERR draw_enhanced(const filter_surface_view &, const filter_surface_view *, const filter_surface_view *,
-      std::span<lit_light>, double, const map_height &, double, int, int);
+      const filter_map_view *, std::span<lit_light>, double, const map_height &, double, int, int);
    ERR prepare_matcap();
    template <class DELTA, class COLOUR, class FALLOFF>
    void render_enhanced(int, int, const struct lit_surface &, int, float *, DELTA, COLOUR, FALLOFF);
@@ -1306,29 +1328,6 @@ static void write_lfx_features(std::ostream &Stream, LFX Features)
 }
 
 //********************************************************************************************************************
-// Writes a colour in CSS rgb() notation.  Channels are written as 8-bit values if they are exactly representable, and
-// as percentages otherwise, so that the colour survives a round trip.
-
-static void write_rgb(std::ostream &Stream, const FRGB &Colour)
-{
-   auto exact = [](float Value) {
-      const float level = Value * 255.0f;
-      return (Value >= 0.0f) and (Value <= 1.0f) and (std::abs(level - std::round(level)) < 1e-3f);
-   };
-
-   Stream << "rgb(";
-   if (exact(Colour.Red) and exact(Colour.Green) and exact(Colour.Blue)) {
-      Stream << std::lround(Colour.Red * 255.0f) << ' ' << std::lround(Colour.Green * 255.0f) << ' '
-         << std::lround(Colour.Blue * 255.0f);
-   }
-   else {
-      Stream << (Colour.Red * 100.0) << "% " << (Colour.Green * 100.0) << "% " << (Colour.Blue * 100.0) << '%';
-   }
-   if (Colour.Alpha != 1.0f) Stream << " / " << Colour.Alpha;
-   Stream << ')';
-}
-
-//********************************************************************************************************************
 // Writes a light setting as a kotuku: attribute, in the shortest form that reads back as the same value.
 
 static void write_light_number(std::ostream &Stream, CSTRING Name, double Value)
@@ -1337,6 +1336,20 @@ static void write_light_number(std::ostream &Stream, CSTRING Name, double Value)
    auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value);
    Stream << " kotuku:" << Name << "=\"" << std::string_view(buffer, (error IS std::errc()) ? end - buffer : 0)
       << '"';
+}
+
+//********************************************************************************************************************
+// Converts a public channel selection to the channel of a map input contract.
+
+static filter_map_channel map_channel(MCH Channel)
+{
+   switch (Channel) {
+      case MCH::GREEN:     return filter_map_channel::GREEN;
+      case MCH::BLUE:      return filter_map_channel::BLUE;
+      case MCH::ALPHA:     return filter_map_channel::ALPHA;
+      case MCH::LUMINANCE: return filter_map_channel::LUMINANCE;
+      default:             return filter_map_channel::RED;
+   }
 }
 
 //*********************************************************************************************************************
@@ -1402,9 +1415,15 @@ ERR extLightingFX::draw()
              error != ERR::Okay) return error;
       }
 
+      filter_map_view occlusion;
+      if (reads_occlusion()) {
+         if (auto error = get_filter_map(this, OcclusionMap.Name, occlusion); error != ERR::Okay) return error;
+         occlusion.Contract.XChannel = map_channel(OcclusionChannel);
+      }
+
       const double unit_size = unit_length(unit);
       return draw_enhanced(primary, reads_albedo() ? &albedo : nullptr, normals.Bitmap ? &normals : nullptr,
-         lights, spot_height, normal_height, unit_size, width, height);
+         occlusion.Source.Data ? &occlusion : nullptr, lights, spot_height, normal_height, unit_size, width, height);
    }
 
    if (not bmp) return ERR::NoSupport;
@@ -1808,7 +1827,8 @@ feature.  The specular type ignores it.
 The light is the RGB value of the colour multiplied by its alpha.  The colour is in the same colour space as #Colour.
 The default is transparent black, which adds no light.
 
-This field has no effect when the scene's Compliance is `SVG1` or `SVG2`, unless the #Type is `COMBINED`.
+This field requires the enhanced pipeline.  The `COMBINED` type always uses it.  For `DIFFUSE`, an active
+#OcclusionMap enables it even when the scene's Compliance is `SVG1` or `SVG2`.
 
 *********************************************************************************************************************/
 
@@ -2301,6 +2321,97 @@ static ERR LIGHTINGFX_SET_NormalStrength(extLightingFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
+OcclusionChannel: Selects the channel of #OcclusionMap that supplies the occlusion.
+
+The default is `RED`.  Packed maps that store occlusion, roughness and metalness in the red, green and blue channels
+(ORM maps, as used by glTF) can be bound without extracting a channel, because their occlusion is in red.
+`LUMINANCE` combines the stored red, green and blue values and suits greyscale maps that carry a slight tint.  With
+`ALPHA`, transparent pixels are fully occluded.  Numerical maps have a single value and ignore this field.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_OcclusionChannel(extLightingFX *Self, MCH &Value)
+{
+   Value = Self->OcclusionChannel;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_OcclusionChannel(extLightingFX *Self, MCH Value)
+{
+   if ((Value < MCH::RED) or (Value > MCH::LUMINANCE)) return ERR::OutOfRange;
+   Self->OcclusionChannel = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+OcclusionMap: An optional filter result supplying ambient occlusion.
+
+Bind an earlier effect in the same filter whose result is an ambient occlusion map, in which 1 (white) is fully
+exposed and 0 (black) is fully occluded.  The map darkens indirect light only: the #Ambient light of the `DIFFUSE` and
+`COMBINED` types, and the #Matcap reflection of the `COMBINED` type.  It multiplies the cavity term of the `CAVITY`
+feature, so ambient light is `Ambient * cavity * occlusion`.  Light from the light sources is not occluded by the map,
+because the `CAVITY` and `SHADOWS` features already account for the surface's own occlusion of direct light.  Without
+ambient light or a matcap, the map has no effect.
+
+The value is read from the channel selected by #OcclusionChannel, red by default, and adjusted by
+#OcclusionStrength.  Channels are read as stored data in either filter colour space, without colour conversion.  A
+producer with a numerical result, such as a TurbulenceFX in `HEIGHT` mode, supplies the value directly.  Values are
+limited to the range 0 - 1.  Pixels outside of the producer's result, and fully transparent pixels unless the `ALPHA`
+channel is selected, read as 1 and are not occluded.  The map is aligned with the scene and sampled at each output
+pixel, as for #NormalMap.
+
+A `DIFFUSE` effect with ambient light, a bound map and a positive #OcclusionStrength uses enhanced lighting
+at any Compliance setting.  The `COMBINED` type always uses enhanced lighting.  The `SPECULAR` and `NORMAL` types
+ignore the map.  Removing the producer clears this binding.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_OcclusionMap(extLightingFX *Self, objFilterEffect **Value)
+{
+   *Value = Self->OcclusionMap.Reference;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_OcclusionMap(extLightingFX *Self, objFilterEffect *Value)
+{
+   return set_named_filter_input(Self, Self->OcclusionMap.Name, Value ? VSF::REFERENCE : VSF::NONE, Value);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+OcclusionStrength: Scales the effect of #OcclusionMap.
+
+The occlusion `ao` read from the map is applied as `1 + OcclusionStrength * (ao - 1)`.  The default of 1 uses the map
+as supplied, 0 disables it, and values in between reduce its effect.  Values above 1 deepen the occlusion, and the
+result is limited to zero.  The value must be zero or greater.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_OcclusionStrength(extLightingFX *Self, double &Value)
+{
+   Value = Self->OcclusionStrength;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_OcclusionStrength(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
+   Self->OcclusionStrength = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Penumbra: Width of the soft edge of shadows cast by the `SHADOWS` feature, in degrees.
 
 A point on the surface passes from light into shadow as the elevation at which the surface hides the light rises
@@ -2484,7 +2595,8 @@ the primitive subregion and surface settings.  Settings that SVG cannot express 
 attributes when they differ from their defaults.  These include `kotuku:features` if #Features is not `ALL`, and
 `kotuku:cavity`,
 `kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, `kotuku:normalConvention` and
-`kotuku:normalStrength` for #NormalConvention and #NormalStrength, and `kotuku:ambient` for #Ambient.  The
+`kotuku:normalStrength` for #NormalConvention and #NormalStrength, `kotuku:occlusionChannel` and
+`kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, and `kotuku:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
 zero, and `matcap` for #MatcapPath when it is set.  An SVG-loaded matcap keeps its original relative reference so the
 image can be reloaded from the same document folder.  For API-loaded images the supplied #MatcapPath is written.  A
@@ -2496,7 +2608,8 @@ Each light is written as a child element, in the order in which the lights were 
 #SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
 `kotuku:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
 
-The parent filter writes the `in`, `in2` and `result` attributes separately.
+The parent filter writes the `in`, `in2`, `result`, `kotuku:normalMap` and `kotuku:occlusionMap` attributes
+separately.
 
 *********************************************************************************************************************/
 
@@ -2504,6 +2617,17 @@ static void write_normal_options(std::ostream &Stream, const extLightingFX &Self
 {
    if (Self.NormalConvention IS NMC::Y_UP) Stream << ' ' << Prefix << "normalConvention=\"y-up\"";
    if (Self.NormalStrength != 1.0) Stream << ' ' << Prefix << "normalStrength=\"" << Self.NormalStrength << '"';
+}
+
+static void write_occlusion_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
+{
+   static constexpr CSTRING channels[] = { "R", "G", "B", "A", "luminance" };
+   if ((Self.OcclusionChannel > MCH::RED) and (Self.OcclusionChannel <= MCH::LUMINANCE)) {
+      Stream << ' ' << Prefix << "occlusionChannel=\"" << channels[int(Self.OcclusionChannel)] << '"';
+   }
+   if (Self.OcclusionStrength != 1.0) {
+      Stream << ' ' << Prefix << "occlusionStrength=\"" << Self.OcclusionStrength << '"';
+   }
 }
 
 static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
@@ -2564,6 +2688,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
    if (Self->Detail != DEFAULT_DETAIL) stream << ' ' << prefix << "detail=\"" << Self->Detail << '"';
    if (Self->Penumbra != DEFAULT_PENUMBRA) stream << ' ' << prefix << "penumbra=\"" << Self->Penumbra << '"';
    write_normal_options(stream, *Self, prefix);
+   write_occlusion_options(stream, *Self, prefix);
 
    const auto &a = Self->Ambient;
    if ((a.Red != 0.0f) or (a.Green != 0.0f) or (a.Blue != 0.0f) or (a.Alpha != 0.0f)) {
@@ -2643,6 +2768,9 @@ static const FieldArray clLightingFXFields[] = {
    { "NormalMap",  FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalMap, LIGHTINGFX_SET_NormalMap, CLASSID::FILTEREFFECT },
    { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalConvention, LIGHTINGFX_SET_NormalConvention, &clLightingFXNMC },
    { "NormalStrength", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalStrength, LIGHTINGFX_SET_NormalStrength },
+   { "OcclusionChannel", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionChannel, LIGHTINGFX_SET_OcclusionChannel, &clLightingFXMCH },
+   { "OcclusionMap", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionMap, LIGHTINGFX_SET_OcclusionMap, CLASSID::FILTEREFFECT },
+   { "OcclusionStrength", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionStrength, LIGHTINGFX_SET_OcclusionStrength },
    { "Scale",      FDF_DOUBLE|FDF_RW },
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
