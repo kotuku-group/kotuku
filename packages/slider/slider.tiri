@@ -146,8 +146,25 @@ gui.slider = function(Options:table!)
          return ((&style is 'slide') ? &prvTheme.slideFill : &prvTheme.thumbFill) ?? { }
       end,
 
+      -- The theme's path generators shape the track and a track-style thumb.  A slide fill is a plain rectangle that
+      -- is clipped by the track's path, so the clip shares its sequence.  The bar and clip paths are boxed by their
+      -- x, y, width and height, so their '~' coordinates follow the bar's edges.  The generators only read the box
+      -- size, so the bar path stands in for a viewport.
+
+      prvApplyTrackPath = function()
+         track_path = &prvTheme.trackPath(&prvBarBkgd).path
+         &prvBarBkgd.sequence = track_path
+         &prvClipPath?.sequence = track_path
+      end,
+
+      prvApplyPaths = function()
+         &prvApplyTrackPath()
+         if &style != 'slide' then &thumbBkgd.sequence = &prvTheme.thumbPath(&thumbVP).path end
+      end,
+
       prvApplyStyle = function()
          theme = &prvTheme
+         &prvApplyPaths()
          gui.applyStyle(&prvBarBkgd, table.merge({ opacity = 1 }, theme.bkgd))
          gui.applyStyle(&thumbBkgd, table.merge({ opacity = 1 }, &prvFill())) -- Undo any highlight opacity
 
@@ -155,25 +172,11 @@ gui.slider = function(Options:table!)
             gui.applyStyle(&prvBarBkgd, theme.disabled)
          else
             if &prvHover then gui.applyStyle(&thumbBkgd, theme.foreHighlight) end
-            if &hasFocus then gui.applyStyle(&thumbBkgd, theme.foreFocus) end
+            if &hasFocus then gui.applyStyle(&prvBarBkgd, theme.foreFocus) end -- The bar's outline is never clipped
          end
-
-         &prvRoundCorners()
 
          for _, path in &prvTickPaths do
             &prvStyleTicks(path)
-         end
-      end,
-
-      -- The corner radii are relative to the thickness of the track, so that they are the same at any length.  A
-      -- percentage radius in the theme is applied to sqrt(t * t), and a number is a fixed radius.
-
-      prvRoundCorners = function()
-         for pair in values(array<table> { { &prvBarBkgd, &prvTheme.bkgd }, { &thumbBkgd, &prvFill() } }) do
-            vector, style = pair[0], pair[1]
-            r = gui.sizing.widget.cornerSize * &thickness
-            vector.cornerX = r
-            vector.cornerY = r
          end
       end,
 
@@ -228,7 +231,7 @@ gui.slider = function(Options:table!)
       prvTickLayout = function(Travel:num!):<array<double>, array<double>>
          majors = array<double>
          minors = array<double>
-         spec = &ticks
+         spec   = &ticks
          if (not spec) or (Travel <= 0) then return majors, minors end
 
          span = &max - &min
@@ -265,15 +268,15 @@ gui.slider = function(Options:table!)
          if minor and (stride is 1) and ((minor * scale) >= (TICK_MIN_SPACING - 1e-9)) then
             j = 1
             major_index = 0
-            origin = (&orientation is 'V') ? &trackVP.y : &trackVP.x
-            previous = nil
-            value = &min + minor
+            origin      = (&orientation is 'V') ? &trackVP.y : &trackVP.x
+            previous    = nil
+            value       = &min + minor
             while value < (&max - tolerance) do
                while (major_index < #majors - 2) and (majors[major_index + 1] <= value) do major_index++ end
 
                position = &prvTickPosition(value, Travel, origin)
-               before = math.abs(position - &prvTickPosition(majors[major_index], Travel, origin))
-               after = math.abs(&prvTickPosition(majors[major_index + 1], Travel, origin) - position)
+               before   = math.abs(position - &prvTickPosition(majors[major_index], Travel, origin))
+               after    = math.abs(&prvTickPosition(majors[major_index + 1], Travel, origin) - position)
                if (before >= TICK_MIN_SPACING) and (after >= TICK_MIN_SPACING)
                   and ((previous is nil) or (math.abs(position - previous) >= TICK_MIN_SPACING)) then
                   minors.push(value)
@@ -321,6 +324,7 @@ gui.slider = function(Options:table!)
             if not path then
                path = &viewport.new('VectorPath', { name = 'Ticks' })
                path.acDisable() -- Ticks must not intercept track clicks, thumb dragging or wheel input.
+               path.acMoveToBack()
                &prvStyleTicks(path)
                &prvTickPaths[side] = path
             end
@@ -749,32 +753,46 @@ gui.slider = function(Options:table!)
          width    = (Width != nil) ? Width : &trackVP.width
          height   = (Height != nil) ? Height : &trackVP.height
          fraction = (&value - &min) / (&max - &min)
-         inset    = &prvTrackInset()
+         inset    = &prvTrackInset() -- Zero without overhang
+         fill     = &style is 'slide' and &thumbBkgd
+         local bar:table
 
          if &orientation is 'V' then
             track = math.max(0, height - &prvThumbLength)
             &thumbVP.y = track - (fraction * track)
             if &style is 'slide' then &thumbVP.height = &prvThumbLength + (fraction * track) end
             &thumbVP.x = math.floor((width - &prvThumbSize) * 0.5)
-            &prvBarBkgd.x = math.floor((width - &thickness) * 0.5)
-
-            if &prvTheme.overhang then
-               &prvBarBkgd.y = inset
-               &prvBarBkgd.height = math.max(0, height - (inset * 2))
-            end
+            bar = { x = math.floor((width - &thickness) * 0.5), y = inset,
+               width = &thickness, height = math.max(0, height - (inset * 2)) }
          else
             travel = fraction * math.max(0, width - &prvThumbLength)
             if &style is 'slide' then &thumbVP.width = &prvThumbLength + travel else &thumbVP.x = travel end
             &thumbVP.y = math.floor((height - &prvThumbSize) * 0.5)
-            &prvBarBkgd.y = math.floor((height - &thickness) * 0.5)
-
-            if &prvTheme.overhang then
-               &prvBarBkgd.{ x = inset, width = math.max(0, width - (inset * 2)) }
-            end
+            bar = { x = inset, y = math.floor((height - &thickness) * 0.5),
+               width = math.max(0, width - (inset * 2)), height = &thickness }
          end
 
-         if &style is 'slide' and &thumbBkgd then
-            &thumbBkgd.{ width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2) }
+         track_resized = &thumbBkgd and ((bar.width != &prvBarBkgd.width) or (bar.height != &prvBarBkgd.height))
+         &prvBarBkgd.{ x = bar.x, y = bar.y, width = bar.width, height = bar.height }
+         &prvClipPath?.{ x = bar.x, y = bar.y, width = bar.width, height = bar.height }
+         if track_resized then &prvApplyTrackPath() end
+
+         -- The fill runs from the minimum end of the bar to the far end of the anchored thumb, within the insets
+
+         if fill then
+            if &orientation is 'V' then
+               fill_y = math.max(bar.y + &prvGapY, &thumbVP.y + &prvGapY)
+               &thumbBkgd.{
+                  x = bar.x + &prvGapX, y = fill_y, width = math.max(0, bar.width - (&prvGapX * 2)),
+                  height = math.max(0, bar.y + bar.height - &prvGapY - fill_y)
+               }
+            else
+               &thumbBkgd.{
+                  x = bar.x + &prvGapX, y = bar.y + &prvGapY,
+                  width = math.max(0, &thumbVP.width - bar.x - (&prvGapX * 2)),
+                  height = math.max(0, bar.height - (&prvGapY * 2))
+               }
+            end
          end
 
          -- Inside value text places the inside label with it
@@ -814,9 +832,9 @@ gui.slider = function(Options:table!)
       -- Breadth of the track
       if Options.thickness then
          &thickness = Options.thickness
-      elseif &style is 'slide' then
+      elseif &style is 'slide' then -- Slide style; the track position is determined by filling the slider shape
          &thickness = DEFAULT_THICKNESS
-      else -- Track style, track is smaller than the thumb.
+      else -- Track style; the track position is determined by a thumb.
          &thickness = DEFAULT_THICKNESS * .5
       end
 
@@ -912,6 +930,9 @@ gui.slider = function(Options:table!)
       &viewport      = target.new('VectorViewport', vps)
 
       &viewport.subscribe('free', function[&&]()
+         &prvClip?.free() -- Owned by the scene rather than the viewport
+         &prvClip     = nil
+         &prvClipPath = nil
          &viewport = nil
          &disabled = true
          &hasFocus = false
@@ -1020,13 +1041,10 @@ gui.slider = function(Options:table!)
 
       if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end -- Centre on the track
 
-      &prvBarBkgd = &trackVP.new('VectorRectangle', table.merge({
-         flags  = VF_STICK_TO_BACK,
-         x      = 0,
-         y      = 0,
-         width  = (&orientation is 'V') ? &thickness : '100%',
-         height = (&orientation is 'V') ? '100%' : &thickness
-      }, &prvTheme.bkgd))
+      -- The bar is placed and boxed by prvPlaceSlider().  Its '~' coordinates are measured from the box, so the corner
+      -- radii stay fixed as the bar's length changes.
+
+      &prvBarBkgd = &trackVP.new('VectorPath', table.merge({ flags = VF_STICK_TO_BACK }, &prvTheme.bkgd))
 
       &thumbVP = &trackVP.new('VectorViewport', {
          width  = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength,
@@ -1089,14 +1107,25 @@ gui.slider = function(Options:table!)
       &prvGapX     = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
       &prvGapY     = math.min(GAP, math.max(0, (thumb_height - 1) * 0.5))
 
-      &thumbBkgd = &thumbVP.new('VectorRectangle', table.merge({
-         x      = &prvGapX,
-         y      = &prvGapY,
-         width  = &thumbVP.width - (&prvGapX * 2),
-         height = &thumbVP.height - (&prvGapY * 2)
-      }, &prvFill()))
+      if &style is 'slide' then
+         -- The fill is a plain rectangle over the bar, anchored to its minimum end and clipped by the track's path.
+         -- The thumb viewport remains the hit area for dragging.
 
-      &prvRoundCorners()
+         &prvClip     = &viewport.scene.new('VectorClip', { units='UserSpace' })
+         &prvClipPath = &prvClip.viewport.new('VectorPath', { })
+         &thumbBkgd   = &trackVP.new('VectorRectangle', table.merge({ x=0, y=0, width=0, height=0 }, &prvFill()))
+         &thumbBkgd.mask = &prvClip
+         &prvPlaceSlider()
+      else
+         &thumbBkgd = &thumbVP.new('VectorPath', table.merge({
+            x      = &prvGapX,
+            y      = &prvGapY,
+            width  = &thumbVP.width - (&prvGapX * 2),
+            height = &thumbVP.height - (&prvGapY * 2)
+         }, &prvFill()))
+      end
+
+      &prvApplyPaths()
 
       if &prvLabelEnd then &labelText.acMoveToFront() end -- Placed by prvPlaceSlider()
 

@@ -83,6 +83,28 @@ end
    assert(changed_hash != first_hash, 'Changing shared bounding-box clip content should invalidate every consumer cache')
 end
 
+@Test function StrokeMaskIncludesMiterTip()
+   for units in values(array<int> { VUNIT_USERSPACE, VUNIT_BOUNDING_BOX }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+      local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+      local clip = scene.new('VectorClip', { flags=VCLF_APPLY_STROKES, units=units })
+      if units is VUNIT_BOUNDING_BOX then
+         clip.viewport.viewWidth = 100
+         clip.viewport.viewHeight = 100
+      end
+      clip.viewport.new('VectorPath', {
+         sequence='M42 70 L50 45 L58 70', fill='none', stroke='white', strokeWidth=10, lineJoin='Miter', miterLimit=4
+      })
+      viewport.new('VectorRectangle', { width=100, height=100, fill='white', mask=clip })
+
+      local bmp <close> = newBitmap(100, 100)
+      drawScene(scene, bmp)
+      assert(mGfx.ReadRGBPixel(bmp, 50, 41).red > 245, 'The stroke mask must reveal the target at the join')
+      assert(mGfx.ReadRGBPixel(bmp, 50, 34).red > 245, 'The stroke mask must include the miter beyond the join')
+      assert(mGfx.ReadRGBPixel(bmp, 50, 26).red < 10, 'The target must stay hidden beyond the miter tip')
+   end
+end
+
 function patternClipPixel(Units, ParentOpacity, ShapeOpacity, FillOpacity, PatternOpacity)
    scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
    viewport = scene.new('VectorViewport', { width='100%', height='100%' })

@@ -8,6 +8,9 @@ VectorPath provides support for parsing SVG styled path strings.
 The generated path can be placed with the #X, #Y, #XOffset and #YOffset fields and sized with the #Width and #Height
 fields.  These are applied as a post-transform, so the authored path commands are never modified.
 
+A path whose #Sequence uses `~` coordinates on an axis treats a defined box on that axis as its frame.  The box is
+defined by #Width, or by #X and #XOffset together.  Refer to #Sequence for details.
+
 -END-
 
 *********************************************************************************************************************/
@@ -103,9 +106,76 @@ static TClipRectangle<double> get_authored_path_bounds(const agg::path_storage &
 }
 
 //********************************************************************************************************************
+
+inline double path_fixed_width(extVectorPath *Vector, const Unit &Value) {
+   return Value.scaled() ? double(Value) * get_parent_width(Vector) : double(Value);
+}
+
+inline double path_fixed_height(extVectorPath *Vector, const Unit &Value) {
+   return Value.scaled() ? double(Value) * get_parent_height(Vector) : double(Value);
+}
+
+// True if an axis of the path has '~' coordinates.  CoordinateDependencies must be current, which holds after
+// refresh_unplaced_path().
+
+inline bool path_uses_tilde(extVectorPath *Vector, bool Horizontal) {
+   const auto mask = Horizontal ? (PCO::X_OFFSET | PCO::X2_OFFSET | PCO::X3_OFFSET) :
+      (PCO::Y_OFFSET | PCO::Y2_OFFSET | PCO::Y3_OFFSET);
+   return (Vector->CoordinateDependencies & mask) != PCO::NIL;
+}
+
+// The box of one axis, following the VectorRectangle conventions.  An axis has a box if it is sized by Width, or
+// stretched between X and XOffset.  On an axis with '~' coordinates the box is the reference frame of the path: '~'
+// is measured from the box size, the path is not scaled, and its coordinates are relative to the box start.  A
+// negative size is treated as zero because the frame cannot be flipped.
+
+struct PathBox {
+   bool defined;
+   double start, size;
+};
+
+static PathBox resolve_path_box(extVectorPath *Vector, bool Horizontal)
+{
+   const Unit &pos    = Horizontal ? Vector->pX : Vector->pY;
+   const Unit &offset = Horizontal ? Vector->pXOffset : Vector->pYOffset;
+   const Unit &size   = Horizontal ? Vector->pWidth : Vector->pHeight;
+
+   auto fixed = [Vector, Horizontal](const Unit &Value) {
+      return Horizontal ? path_fixed_width(Vector, Value) : path_fixed_height(Vector, Value);
+   };
+
+   auto parent_size = [Vector, Horizontal]() {
+      return Horizontal ? get_parent_width(Vector) : get_parent_height(Vector);
+   };
+
+   if (size.defined()) {
+      const double box_size = std::max(0.0, fixed(size));
+      double start = 0;
+      if (pos.defined()) start = fixed(pos);
+      else if (offset.defined()) start = parent_size() - box_size - fixed(offset);
+      return { true, start, box_size };
+   }
+   else if (pos.defined() and offset.defined()) {
+      const double start = fixed(pos);
+      return { true, start, std::max(0.0, parent_size() - fixed(offset) - start) };
+   }
+   else return { false, 0, 0 };
+}
+
+// The size that '~' coordinates are measured from on one axis: the box if the axis has one, otherwise the parent.
+
+static double path_reference_size(extVectorPath *Vector, bool Horizontal)
+{
+   const auto box = resolve_path_box(Vector, Horizontal);
+   if (box.defined) return box.size;
+   return Horizontal ? get_parent_width(Vector) : get_parent_height(Vector);
+}
+
+//********************************************************************************************************************
 // Refreshes the cached AGG conversion of the command list if it has been invalidated.  Placement-only changes
 // (e.g. the X/Y/XOffset/YOffset/Width/Height fields, Move and Resize actions) leave the cache intact because
-// generate_path() applies sizing and placement as a post-transform.
+// generate_path() applies sizing and placement as a post-transform.  The exception is an axis with '~' coordinates,
+// which are resolved against the size of the box when there is one.
 
 static void refresh_unplaced_path(extVectorPath *Vector)
 {
@@ -122,8 +192,8 @@ static void refresh_unplaced_path(extVectorPath *Vector)
 
    if ((uses_width or uses_height) and Vector->ParentView) gen_vector_tree(Vector->ParentView);
 
-   const double width = uses_width ? get_parent_width(Vector) : 0;
-   const double height = uses_height ? get_parent_height(Vector) : 0;
+   const double width = uses_width ? path_reference_size(Vector, true) : 0;
+   const double height = uses_height ? path_reference_size(Vector, false) : 0;
    if ((not Vector->CommandsChanged) and (width IS Vector->ReferenceWidth) and
        (height IS Vector->ReferenceHeight)) return;
 
@@ -143,19 +213,13 @@ static void refresh_unplaced_path(extVectorPath *Vector)
 
 static constexpr double MIN_SCALABLE_EXTENT = 1.0e-6;
 
-inline double path_fixed_width(extVectorPath *Vector, const Unit &Value) {
-   return Value.scaled() ? double(Value) * get_parent_width(Vector) : double(Value);
-}
-
-inline double path_fixed_height(extVectorPath *Vector, const Unit &Value) {
-   return Value.scaled() ? double(Value) * get_parent_height(Vector) : double(Value);
-}
-
 // Resolved placement of one axis: the path is scaled by Scale about its natural near edge, which is then placed at
-// Position.  Size is the resulting (signed) extent of the path on that axis.
+// Position.  Size is the resulting (signed) extent of the path on that axis.  If Boxed is set, Position and Size
+// describe the box and the path's coordinates are translated by Position without scaling.
 
 struct PathAxis {
    double scale, position, size;
+   bool boxed;
 };
 
 // Resolves one axis following the VectorRectangle conventions for X/Width/XOffset.  The natural extent of the path
@@ -173,6 +237,11 @@ static PathAxis resolve_path_axis(extVectorPath *Vector, double Near, double Far
       return Horizontal ? get_parent_width(Vector) : get_parent_height(Vector);
    };
 
+   if (path_uses_tilde(Vector, Horizontal)) {
+      const auto box = resolve_path_box(Vector, Horizontal);
+      if (box.defined) return { 1.0, box.start, box.size, true };
+   }
+
    const double extent = Far - Near;
    double target = extent;
    if (Size.defined()) target = fixed(Size);
@@ -186,7 +255,7 @@ static PathAxis resolve_path_axis(extVectorPath *Vector, double Near, double Far
    else if (Offset.defined()) position = parent_size() - std::max(0.0, size) - fixed(Offset);
    else position = Near;
 
-   return { scale, position, size };
+   return { scale, position, size, false };
 }
 
 static PathAxis resolve_path_x(extVectorPath *Vector, const TClipRectangle<double> &Bounds)
@@ -218,17 +287,16 @@ static void generate_path(extVectorPath *Vector, agg::path_storage &Path)
    Vector->Bounds = bounds;
 
    // Width and Height scale the path about its left/top bound, then X and Y place that bound.  Both are combined
-   // into a single transform: x' = (x - left) * sx + dest_left
+   // into a single transform: x' = (x - left) * sx + dest_left.  A boxed axis is translated to the box start.
 
    const auto axis_x = resolve_path_x(Vector, bounds);
    const auto axis_y = resolve_path_y(Vector, bounds);
    const double sx = axis_x.scale, sy = axis_y.scale;
-   const double dest_left = axis_x.position, dest_top = axis_y.position;
+   const double tx = axis_x.boxed ? axis_x.position : axis_x.position - (bounds.left * sx);
+   const double ty = axis_y.boxed ? axis_y.position : axis_y.position - (bounds.top * sy);
 
-   if ((sx IS 1.0) and (sy IS 1.0) and (dest_left IS bounds.left) and (dest_top IS bounds.top)) return;
+   if ((sx IS 1.0) and (sy IS 1.0) and (tx IS 0.0) and (ty IS 0.0)) return;
 
-   const double tx = dest_left - (bounds.left * sx);
-   const double ty = dest_top - (bounds.top * sy);
    Path.transform(agg::trans_affine(sx, 0, 0, sy, tx, ty));
 
    // A negative scale flips the path, so the transformed bounds are normalised.
@@ -523,13 +591,17 @@ static ERR VECTORPATH_Move(extVectorPath *Self, struct acMove *Args)
    auto bounds = get_unplaced_path_bounds(Self);
 
    // Each defined placement edge is shifted, so that right/bottom anchored and stretched paths keep their size.
-   // Placement is fixed by the X/Y bounds if neither edge is defined.
+   // Placement is fixed by the resolved position (the X/Y bounds, or the box start) if neither edge is defined.
 
-   if ((not Self->pX.defined()) and (not Self->pXOffset.defined())) Self->pX = bounds.left;
+   if ((not Self->pX.defined()) and (not Self->pXOffset.defined())) {
+      Self->pX = resolve_path_x(Self, bounds).position;
+   }
    if (Self->pX.defined()) Self->pX = Unit(path_fixed_width(Self, Self->pX) + Args->DeltaX);
    if (Self->pXOffset.defined()) Self->pXOffset = Unit(path_fixed_width(Self, Self->pXOffset) - Args->DeltaX);
 
-   if ((not Self->pY.defined()) and (not Self->pYOffset.defined())) Self->pY = bounds.top;
+   if ((not Self->pY.defined()) and (not Self->pYOffset.defined())) {
+      Self->pY = resolve_path_y(Self, bounds).position;
+   }
    if (Self->pY.defined()) Self->pY = Unit(path_fixed_height(Self, Self->pY) + Args->DeltaY);
    if (Self->pYOffset.defined()) Self->pYOffset = Unit(path_fixed_height(Self, Self->pYOffset) - Args->DeltaY);
 
@@ -855,6 +927,9 @@ commands remain unchanged.
 
 If the path is sized by #Width, X places the left edge of the sized path.  A negative #Width extends the path to the
 left of X.
+
+If the path has a horizontal box and `~` coordinates on that axis, X is the left edge of the box and the path's
+coordinates are relative to it, as described in #Sequence.
 -END-
 *********************************************************************************************************************/
 
@@ -923,7 +998,8 @@ XOffset follows the @VectorRectangle conventions and is combined with #X and #Wi
 </list>
 
 When XOffset is set, reading it returns the stored value.  Otherwise it returns the distance between the right edge of
-the placed path and the right edge of the parent viewport.  To remove the offset, set an undefined value (NaN).
+the placed path, or of its box (see #Sequence), and the right edge of the parent viewport.  To remove the offset, set 
+an undefined value (NaN).
 -END-
 *********************************************************************************************************************/
 
@@ -1004,6 +1080,10 @@ flip the path on the horizontal axis, so that it spans from `X + Width` to #X.
 If the natural width of the path is close to zero (for example, a vertical line) then the path cannot be scaled
 horizontally and Width has no effect.
 
+If the #Sequence has `~` coordinates on the horizontal axis, Width does not scale the path.  It instead sets the size
+of the box that the `~` coordinates are measured from, so that fixed insets and corner radii are preserved.  A
+negative Width is treated as zero in this case.
+
 Only the path geometry is scaled.  The stroke width, dash pattern and markers keep their sizes, and the fit is
 applied to the geometric bounds rather than the stroked bounds.  Transforms applied to the vector take effect after
 the Width is applied.
@@ -1011,7 +1091,8 @@ the Width is applied.
 The path commands remain unchanged, so reading #Commands or calling #GetCommand() returns the authored path.  The
 #Sequence field returns the scaled geometry.
 
-When Width is not set, reading it returns the resolved width of the path.  To return the path to its natural width,
+When Width is not set, reading it returns the resolved width of the path, or of its box if it is stretched between
+#X and #XOffset with `~` coordinates.  To return the path to its natural width,
 set an undefined value (NaN).
 -END-
 *********************************************************************************************************************/
@@ -1097,10 +1178,18 @@ not.  For example, `M 10 0 H ~10 L ~0 ~0 Z` follows the parent size.  Signed fin
 accepted, including `~0`, `~-10` and `~1e2`; whitespace between the marker and number is invalid.  Percentages,
 expressions and offsets in lowercase commands are not supported.  Values are not clamped.
 
-Reference dimensions follow @VectorRectangle conventions: the parent viewport's view-box dimensions when defined,
-otherwise its dimensions, with scene page dimensions as fallback.  View-box origins are not added.  Resolution occurs
-before bounds, placement and sizing.  Leave #Width and #Height unset to preserve fixed corner radii; explicit sizing
-scales the entire resolved shape.  Parent resizing resolves the authored values again without modifying #Commands.
+`~` coordinates on an axis are measured from the path's box on that axis if it has one, otherwise from the parent.
+The box follows @VectorRectangle conventions: it is defined by #Width (or #Height), placed by #X or #XOffset, or
+stretched between #X and #XOffset when no size is given.  An axis with a box and `~` coordinates is not scaled; its
+coordinates are relative to the start of the box, as if the path were hosted by a viewport of that size.  For
+example, `M 4 0 H ~4 A 4 4 0 0 1 ~0 4 V ~4 ...` with an #X of 10 and a #Width of 200 draws a shape that spans
+x = 10 to 210 with 4 unit corners at any width.  Axes without `~` coordinates, or without a box, are placed and
+scaled as described in #X and #Width.
+
+The parent's reference dimensions follow @VectorRectangle conventions: the parent viewport's view-box dimensions when
+defined, otherwise its dimensions, with scene page dimensions as fallback.  View-box origins are not added.  Resolution
+occurs before bounds, placement and sizing.  Resizing the parent or the box resolves the authored values again without
+modifying #Commands.
 
 Reading Sequence returns resolved, post-sizing numeric geometry.  Assigning that result creates a fixed snapshot
 without parent dependencies.  SVG export likewise uses standard numeric coordinates.  Authored sequences containing

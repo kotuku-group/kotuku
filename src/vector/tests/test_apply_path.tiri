@@ -403,6 +403,67 @@ end
    assertBoundary(path, 335, 220, 30, 30, 'Move resolves scaled offsets against the resized viewport')
 end
 
+-- An axis with '~' coordinates and a box treats the box as its frame: '~' is measured from the box size, the path is
+-- not scaled, and its coordinates are relative to the box start.
+
+@Test function PathTildeUsesWidthAsBox()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 4 0 H ~4 V ~0 H 4 Z'
+   path.{ x=10, y=5, width=100, height=20 }
+
+   assertBoundary(path, 14, 5, 92, 20, 'Insets must be measured from the box rather than scaled')
+   assertNear(path.x, 10, 'X reads back the box start')
+   assertNear(path.width, 100, 'Width reads back the box size')
+   assertCommand(path, 1, PE_HLine, 4, 0, 'the authored ~ command is unchanged')
+
+   path.width = 50
+   assertBoundary(path, 14, 5, 42, 20, 'Resizing the box must keep the insets')
+
+   path.width = '50%'
+   assertBoundary(path, 14, nil, 92, nil, 'A scaled Width must size the box relative to the parent')
+end
+
+@Test function PathTildeStretchedBetweenEdges()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 0 0 H ~0 V 10 H 0 Z'
+   path.{ x=10, xOffset=30 }
+
+   assertBoundary(path, 10, 0, 160, 10, 'X and XOffset must define the box')
+   assertNear(path.width, 160, 'Width reads the box size')
+   assertNear(path.xOffset, 30, 'XOffset reads back the stored value')
+
+   viewport.width = 300
+   assertBoundary(path, 10, nil, 260, nil, 'The box must follow the parent')
+
+   path.{ x=0/0, width=50 }
+   assertBoundary(path, 220, nil, 50, nil, 'Width and XOffset must anchor the box to the right edge')
+end
+
+@Test function PathTildeAxesAreIndependent()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 0 10 H ~0 V 30 H 0 Z'
+   path.{ width=100, height=40 }
+   assertBoundary(path, 0, 10, 100, 40, 'An axis without ~ must keep scaling to Height')
+
+   scene, viewport, path = newSizedPath(200)
+   path.sequence = 'M 0 0 H ~0 V 10 H 0 Z'
+   assertBoundary(path, 0, 0, 200, 10, 'Without a box, ~ must be measured from the parent')
+
+   path.width = -50
+   assertBoundary(path, 0, nil, 0, nil, 'A negative box size must be treated as zero')
+end
+
+@Test function PathTildeMoveWithWidth()
+   local scene:obj, viewport:obj, path:obj = newSizedPath(200)
+   path.sequence = 'M 4 0 H ~4 V 10 H 4 Z'
+   path.width = 100
+   assertBoundary(path, 4, nil, 92, nil, 'A box without X must start at zero')
+
+   check path.acMove(5, 0, 0)
+   assertNear(path.x, 5, 'Move must shift the box start')
+   assertBoundary(path, 9, nil, 92, nil, 'Move must shift the path with its box')
+end
+
 @Test function PathWidthCurveFit()
    scene, viewport, path = newTargetPath()
    path.sequence = 'M 0 0 C 0 -100 100 -100 100 0'

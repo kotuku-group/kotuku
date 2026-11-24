@@ -256,8 +256,9 @@ they line up with the thumb's travel.
 colourpicker_theme.channelSlider = function(Name:str!, ThumbSize:num!, Fill:str):table
    t = gui.themes[Name].colourpicker
    return {
+      thumbPath = gui.paths.plain,
+      trackPath = gui.paths.rectangle,
       bkgd = { -- Slider track
-         cornerX = 2, cornerY = 2,
          fill = Fill ?? t.border,
          stroke = t.border,
          strokeWidth = 1,
@@ -266,7 +267,6 @@ colourpicker_theme.channelSlider = function(Name:str!, ThumbSize:num!, Fill:str)
       thumbFill = { -- Inner thumb
          x = (ThumbSize - THUMB_WIDTH) * 0.5, y = (ThumbSize - THUMB_HEIGHT) * 0.5,
          width = THUMB_WIDTH, height = THUMB_HEIGHT,
-         cornerX = 1, cornerY = 1,
          fill = &theme.scheme is 'light' ? 'black' : 'white',
          stroke = 'none', strokeWidth = 0,
          opacity = 1

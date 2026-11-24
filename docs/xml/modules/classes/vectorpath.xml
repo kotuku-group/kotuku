@@ -14,7 +14,8 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>VectorPath provides support for parsing SVG styled path strings.</p>
-<p>The generated path can be placed with the <fl>X</fl>, <fl>Y</fl>, <fl>XOffset</fl> and <fl>YOffset</fl> fields and sized with the <fl>Width</fl> and <fl>Height</fl> fields.  These are applied as a post-transform, so the authored path commands are never modified.</p></description>
+<p>The generated path can be placed with the <fl>X</fl>, <fl>Y</fl>, <fl>XOffset</fl> and <fl>YOffset</fl> fields and sized with the <fl>Width</fl> and <fl>Height</fl> fields.  These are applied as a post-transform, so the authored path commands are never modified.</p>
+<p>A path whose <fl>Sequence</fl> uses <code>~</code> coordinates on an axis treats a defined box on that axis as its frame.  The box is defined by <fl>Width</fl>, or by <fl>X</fl> and <fl>XOffset</fl> together.  Refer to <fl>Sequence</fl> for details.</p></description>
     <source>
       <file path="vectors/">path.cpp</file>
     </source>
@@ -233,7 +234,8 @@ Z: Close Path
 <p>The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate of the previous command).</p>
 <p>To terminate a path without joining it to the first coordinate, omit the <code>Z</code> from the end of the sequence.</p>
 <p>In uppercase M, L, H, V, Q, T, C and S commands, prefix any explicit coordinate with <code>~</code> to measure inward from its parent's right edge (X) or bottom edge (Y).  Arc A endpoints also support this syntax; radii, angle and flags do not.  For example, <code>M 10 0 H ~10 L ~0 ~0 Z</code> follows the parent size.  Signed finite decimal and exponent values are accepted, including <code>~0</code>, <code>~-10</code> and <code>~1e2</code>; whitespace between the marker and number is invalid.  Percentages, expressions and offsets in lowercase commands are not supported.  Values are not clamped.</p>
-<p>Reference dimensions follow <class name="VectorRectangle">VectorRectangle</class> conventions: the parent viewport's view-box dimensions when defined, otherwise its dimensions, with scene page dimensions as fallback.  View-box origins are not added.  Resolution occurs before bounds, placement and sizing.  Leave <fl>Width</fl> and <fl>Height</fl> unset to preserve fixed corner radii; explicit sizing scales the entire resolved shape.  Parent resizing resolves the authored values again without modifying <fl>Commands</fl>.</p>
+<p><code>~</code> coordinates on an axis are measured from the path's box on that axis if it has one, otherwise from the parent. The box follows <class name="VectorRectangle">VectorRectangle</class> conventions: it is defined by <fl>Width</fl> (or <fl>Height</fl>), placed by <fl>X</fl> or <fl>XOffset</fl>, or stretched between <fl>X</fl> and <fl>XOffset</fl> when no size is given.  An axis with a box and <code>~</code> coordinates is not scaled; its coordinates are relative to the start of the box, as if the path were hosted by a viewport of that size.  For example, <code>M 4 0 H ~4 A 4 4 0 0 1 ~0 4 V ~4 ...</code> with an <fl>X</fl> of 10 and a <fl>Width</fl> of 200 draws a shape that spans x = 10 to 210 with 4 unit corners at any width.  Axes without <code>~</code> coordinates, or without a box, are placed and scaled as described in <fl>X</fl> and <fl>Width</fl>.</p>
+<p>The parent's reference dimensions follow <class name="VectorRectangle">VectorRectangle</class> conventions: the parent viewport's view-box dimensions when defined, otherwise its dimensions, with scene page dimensions as fallback.  View-box origins are not added.  Resolution occurs before bounds, placement and sizing.  Resizing the parent or the box resolves the authored values again without modifying <fl>Commands</fl>.</p>
 <p>Reading Sequence returns resolved, post-sizing numeric geometry.  Assigning that result creates a fixed snapshot without parent dependencies.  SVG export likewise uses standard numeric coordinates.  Authored sequences containing <code>~</code> are a Kōtuku extension and cannot be passed directly to standard SVG readers.</p>
       </description>
       <tags>caller-owns-result</tags>
@@ -258,9 +260,10 @@ Z: Close Path
 <p>Setting Width scales the computed path on the horizontal axis so that its bounding box matches the supplied width. Scaled values are relative to the width of the parent viewport.  The path is scaled about its left edge, after which <fl>X</fl> placement is applied.  If Width is not set, the path keeps its natural width unless it is stretched between <fl>X</fl> and <fl>XOffset</fl>.</p>
 <p>Width and <fl>Height</fl> are independent: if only one is set, the other axis keeps its natural size and the aspect ratio is not preserved.  A width of zero collapses the path to a vertical line.  Negative values are permitted and will flip the path on the horizontal axis, so that it spans from <code>X + Width</code> to <fl>X</fl>.</p>
 <p>If the natural width of the path is close to zero (for example, a vertical line) then the path cannot be scaled horizontally and Width has no effect.</p>
+<p>If the <fl>Sequence</fl> has <code>~</code> coordinates on the horizontal axis, Width does not scale the path.  It instead sets the size of the box that the <code>~</code> coordinates are measured from, so that fixed insets and corner radii are preserved.  A negative Width is treated as zero in this case.</p>
 <p>Only the path geometry is scaled.  The stroke width, dash pattern and markers keep their sizes, and the fit is applied to the geometric bounds rather than the stroked bounds.  Transforms applied to the vector take effect after the Width is applied.</p>
 <p>The path commands remain unchanged, so reading <fl>Commands</fl> or calling <method>GetCommand</method> returns the authored path.  The <fl>Sequence</fl> field returns the scaled geometry.</p>
-<p>When Width is not set, reading it returns the resolved width of the path.  To return the path to its natural width, set an undefined value (NaN).</p>
+<p>When Width is not set, reading it returns the resolved width of the path, or of its box if it is stretched between <fl>X</fl> and <fl>XOffset</fl> with <code>~</code> coordinates.  To return the path to its natural width, set an undefined value (NaN).</p>
       </description>
     </field>
 
@@ -272,6 +275,7 @@ Z: Close Path
       <description>
 <p>Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
 <p>If the path is sized by <fl>Width</fl>, X places the left edge of the sized path.  A negative <fl>Width</fl> extends the path to the left of X.</p>
+<p>If the path has a horizontal box and <code>~</code> coordinates on that axis, X is the left edge of the box and the path's coordinates are relative to it, as described in <fl>Sequence</fl>.</p>
       </description>
     </field>
 
@@ -289,7 +293,7 @@ Z: Close Path
 <li>If <fl>X</fl> and XOffset are defined, the path is stretched to fill the space between them.</li>
 <li>If <fl>X</fl> and <fl>Width</fl> are both defined, XOffset is ignored.</li>
 </list>
-<p>When XOffset is set, reading it returns the stored value.  Otherwise it returns the distance between the right edge of the placed path and the right edge of the parent viewport.  To remove the offset, set an undefined value (NaN).</p>
+<p>When XOffset is set, reading it returns the stored value.  Otherwise it returns the distance between the right edge of the placed path, or of its box (see <fl>Sequence</fl>), and the right edge of the parent viewport.  To remove the offset, set an undefined value (NaN).</p>
       </description>
     </field>
 

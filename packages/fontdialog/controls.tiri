@@ -91,7 +91,7 @@ fdc.inlineEdit = function(Picker:table!, Target:obj!, Options:table!):table
       cursor = 'text'
    })
    ed.clip.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, cornerX = 3, cornerY = 3,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5,
       fill = t.sunk, stroke = Picker.theme.palette.prime, strokeWidth = 1
    })
 
@@ -597,7 +597,7 @@ fdc.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
    vp = cb.button.viewport
    sw = height - 10
    cb.swatch = vp.new('VectorRectangle', {
-      x = 5.5, y = 5.5, width = sw - 1, height = sw - 1, cornerX = 3, cornerY = 3,
+      x = 5.5, y = 5.5, width = sw - 1, height = sw - 1,
       stroke = t.swatchBorder, strokeWidth = 1
    })
 
