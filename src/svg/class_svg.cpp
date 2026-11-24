@@ -110,6 +110,53 @@ active scope so that values can be forwarded, e.g. `&lt;param name="colour" valu
 Values set with #SetKey() after initialisation do not alter the existing scene graph.  They are applied by the next
 parse, e.g. via #DataFeed(), and to symbols instantiated with #ParseSymbol().
 
+<header>Conditional processing</header>
+
+Use `kotuku:requiredParams` to select whole elements by SVG parameter value.  On an eligible element a failed
+condition suppresses the element and its descendants, including outside a `&lt;switch&gt;`.  A `&lt;switch&gt;`
+selects its first child whose conditions all pass.  `requiredExtensions` requires every URI in its list to be
+supported.  A non-empty `systemLanguage` passes in any locale.
+
+The attribute accepts white-space-separated tests, all of which must pass:
+
+<pre>
+Test             Passes when
+name             The parameter is defined, including a defined empty value
+!name            The parameter is undefined
+name=value       The parameter is defined and equals the value
+name=a,b         The parameter is defined and equals a or b
+name!=value      The parameter is undefined or differs from the value
+name!=a,b        The parameter is undefined or differs from every listed value
+</pre>
+
+Names and values are case sensitive.  A leading `--` is removed from a name.  Use `name=` to match a defined
+empty value.  Values are percent-decoded after splitting, so `%20`, `%2C` and `%3D` represent a space, comma
+and equals sign respectively.  The condition is evaluated as written, without `param()` substitution.  Empty
+or malformed conditions fail and generate a warning with the source line number.
+
+Bind the attribute prefix to `http://www.kotuku.dev/xmlns/svg` or `http://www.kotuku.dev/namespaces/kotuku`.
+Declaring either namespace sets @VectorScene.Compliance to `NONE` on scenes owned by the SVG object.
+
+Tests read the active `&lt;use&gt;` instance's `&lt;param&gt;` values, then #SetKey(), then the query string.
+CSS custom properties are outside this lookup, including those declared on a `&lt;use&gt;`.  A referenced graphic
+is tested in its instance scope.  #ParseSymbol() uses the current document values and creates fresh nested
+instances.  For existing content, values set with #SetKey() take effect at the next parse.
+
+Definitions such as gradients, symbols, clip paths, masks, filters and patterns are exempt from ordinary gating.
+An explicit `&lt;switch&gt;` in a pattern tile uses document parameter values.  Clip paths, masks and filters also
+use document values.  To select between filter effects, switch the element that uses the filter.
+
+<pre>
+&lt;switch&gt;
+  &lt;rect kotuku:requiredParams="lighting=off" requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"
+    class="swatch" filter="url(#flat)"/&gt;
+  &lt;rect class="swatch" filter="url(#lit)"/&gt;
+&lt;/switch&gt;
+</pre>
+
+Put the default branch last.  Renderers that ignore the Kōtuku attribute may choose a guarded branch whenever
+it comes first.  Use `requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"` to reserve a branch for Kōtuku.
+
 <header>CSS Custom Properties</header>
 
 CSS custom properties (`--name: value`) and `var()` are supported in `&lt;style&gt;` sheets and `style` attributes,
@@ -153,6 +200,8 @@ enables the enhanced lighting of @LightingFX.  The following attributes of `feDi
 @LightingFX.Penumbra.</li>
 <li>`kotuku:ambient`: a colour, or `none` (the default).  Ambient light added to the diffuse light; its alpha scales
 it.  Sets @LightingFX.Ambient.  It has no effect on `feSpecularLighting`.</li>
+<li>`kotuku:normalMap` selects the named image result of an earlier primitive for RGB surface directions.
+Sets @LightingFX.NormalMap.  The primary input still supplies height.</li>
 </list>
 
 The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` accept these attributes, which set the
@@ -187,6 +236,7 @@ The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It light
 ambient light in one primitive.  The `in` attribute selects a floating-point height result or an image whose alpha
 supplies the height.  The `in2` attribute selects the albedo, which defaults to opaque white.  It accepts
 `surfaceScale`, `diffuseConstant`, `specularConstant`, `specularExponent`, `kernelUnitLength` and `lighting-color`.
+Use `normalMap` to supply an RGB normal map from an earlier primitive, such as an image loaded by `feImage`.
 The extension attributes above can omit their prefix because the element is already in the Kōtuku namespace.
 The element also accepts these material attributes:
 
@@ -233,9 +283,10 @@ and an image's alpha.  Supply the albedo through a separate image input.
 &lt;/filter&gt;
 </pre>
 
-The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in`.  It accepts
-`surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX` or `kernelUnitY` to set a kernel unit
-on one axis and keep the default on the other.  See @LightingFX.UnitX for how the default is resolved.
+The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in` or from the map
+selected by `normalMap`.  It accepts `surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX`
+or `kernelUnitY` to set a kernel unit on one axis and keep the default on the other.  See @LightingFX.UnitX for how
+the default is resolved.
 
 Use the normal map's named result as `in2` on `feDisplacementMap` with red for X and green for Y.  For example,
 these primitives distort the graphic at changes in its alpha.  To refract an image behind a surface, select that
@@ -527,7 +578,7 @@ static ERR SVG_ParseSymbol(extSVG *Self, struct svg::ParseSymbol *Args)
    if ((!Args) or (Args->ID.empty()) or (!Args->Viewport)) return log.warning(ERR::NullArgs);
 
    if (auto tagref = find_href_tag(Self, Args->ID)) {
-      SymbolInstance symbol(Self, *tagref, nullptr);
+      TagInstance symbol(Self, *tagref, nullptr);
       ParamScope scope;
       svgState state(Self);
       state.m_param_scope = &scope;
@@ -1082,22 +1133,22 @@ static ERR SET_FrameRate(extSVG *Self, int Value)
 -FIELD-
 ParamNames: Lists the names of the parameters that the document references.
 
-This field returns the sorted, unique names of every parameter referenced by a `param()` or `env()` expression in the
-document, whether or not a value has been supplied for it.  Names are reported without a leading `--`, and custom
-property names are not included.  A reference is only reported if it reaches an element, so an `env()` binding in a
-custom property that is never used is omitted.  It can be used to detect a value set with #SetKey() that the document
-does not use.  The array is empty if the document references no parameters or has not yet been parsed.
+This field returns the sorted, unique names of parameters referenced by `param()`, `env()` or a valid
+`kotuku:requiredParams` test, including parameters without supplied values.  Names are reported without a leading
+`--`.  An `env()` binding in a custom property is reported when it reaches an element.  Use this field to check
+which #SetKey() values the document references.  The array is empty before parsing or when the document references
+no parameters.
 -END-
 
 *********************************************************************************************************************/
 
 static ERR GET_ParamNames(extSVG *Self, std::span<std::string> &Value)
 {
-   Self->ParamNames.clear();
+   Self->ParamNames = Self->ConditionParamNames;
 
    for (auto &[id, attribs] : Self->ParamAttribs) {
       for (int a=1; a < std::ssize(attribs); a++) {
-         if (attribs[a].Name IS "id") continue;
+         if (not can_substitute_param(attribs[a].Name)) continue;
          for_each_param_name(attribs[a].Value, [&](std::string_view Name) { Self->ParamNames.emplace_back(Name); });
       }
    }

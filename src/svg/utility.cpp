@@ -480,6 +480,51 @@ static std::string_view trim_ws(std::string_view Value) noexcept
    return Value;
 }
 
+static std::string_view next_xml_word(std::string_view &Value) noexcept
+{
+   Value = trim_ws(Value);
+   const auto word = Value.substr(0, Value.find_first_of(" \t\r\n"));
+   Value.remove_prefix(word.size());
+   return word;
+}
+
+//********************************************************************************************************************
+
+// Returns the local name of an attribute in a Kōtuku namespace, or an empty view if the attribute is not in one.
+
+static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string_view Name) noexcept
+{
+   const auto colon = Name.find(':');
+   if ((colon IS std::string_view::npos) or (colon IS 0)) return { };
+
+   uint32_t uri;
+   if (Self->XML->resolvePrefix(Name.substr(0, colon), Tag.ID, &uri) != ERR::Okay) return { };
+   if ((uri != glKotukuSVGNamespace) and (uri != glKotukuNamespace)) return { };
+   return Name.substr(colon + 1);
+}
+
+static bool is_required_params_attrib(std::string_view Name) noexcept
+{
+   return Name.ends_with(":requiredParams") and (Name.size() > std::string_view(":requiredParams").size());
+}
+
+static bool is_svg_condition_attrib(uint32_t Hash) noexcept
+{
+   return (Hash IS SVF_requiredFeatures) or (Hash IS SVF_requiredExtensions) or (Hash IS SVF_systemLanguage);
+}
+
+static bool is_conditional_attrib(std::string_view Name) noexcept
+{
+   return is_required_params_attrib(Name) or is_svg_condition_attrib(strhash(Name));
+}
+
+static bool can_substitute_param(std::string_view Name) noexcept
+{
+   return (Name != "id") and (not is_required_params_attrib(Name));
+}
+
+//********************************************************************************************************************
+
 static bool is_param_value(std::string_view Value) noexcept
 {
    if (Value.find_first_of(std::string_view("\x01\x04", 2)) != std::string_view::npos) return true;
@@ -622,6 +667,86 @@ static const std::string * find_param(extSVG *Self, const ParamScope *Scope, std
    return nullptr;
 }
 
+// Values are split before decoding, so percent escapes can represent separators or white-space.
+
+enum class ParamTestOp { DEFINED, UNDEFINED, EQUAL, UNEQUAL };
+
+struct ParamTest {
+   ParamTestOp op;
+   std::string_view name;
+   std::vector<std::string> values;
+};
+
+static std::string percent_decode(std::string_view Value);
+
+static bool parse_required_params(std::string_view Value, std::vector<ParamTest> &Tests)
+{
+   for (auto word = next_xml_word(Value); not word.empty(); word = next_xml_word(Value)) {
+      const auto equals = word.find('=');
+      auto name = word.substr(0, equals);
+      auto op = ParamTestOp::DEFINED;
+
+      if (equals IS std::string_view::npos) {
+         if (name.starts_with('!')) {
+            name.remove_prefix(1);
+            op = ParamTestOp::UNDEFINED;
+         }
+      }
+      else if (name.ends_with('!')) {
+         name.remove_suffix(1);
+         op = ParamTestOp::UNEQUAL;
+      }
+      else op = ParamTestOp::EQUAL;
+
+      name = param_key(name);
+      if (name.empty() or std::ranges::any_of(name, [](char Ch) {
+         return (unsigned(Ch) <= 0x20) or (Ch IS '(') or (Ch IS ')') or (Ch IS '!') or (Ch IS ',');
+      })) return false;
+
+      auto &test = Tests.emplace_back(ParamTest{ op, name, {} });
+      if (equals != std::string_view::npos) {
+         auto values = word.substr(equals + 1);
+         if (values.find('=') != std::string_view::npos) return false;
+         for (;;) {
+            auto comma = values.find(',');
+            test.values.push_back(percent_decode(values.substr(0, comma)));
+            if (comma IS std::string_view::npos) break;
+            values.remove_prefix(comma + 1);
+         }
+      }
+   }
+
+   return not Tests.empty();
+}
+
+static bool required_params_pass(extSVG *Self, const ParamScope *Scope, std::string_view Value)
+{
+   std::vector<ParamTest> tests;
+   if (not parse_required_params(Value, tests)) return false;
+
+   for (auto &test : tests) {
+      auto actual = find_param(Self, Scope, test.name);
+      switch (test.op) {
+         case ParamTestOp::DEFINED:
+            if (not actual) return false;
+            break;
+         case ParamTestOp::UNDEFINED:
+            if (actual) return false;
+            break;
+         case ParamTestOp::EQUAL:
+            if ((not actual) or (std::ranges::find(test.values, *actual) IS test.values.end())) return false;
+            break;
+         case ParamTestOp::UNEQUAL:
+            if ((actual) and (std::ranges::find(test.values, *actual) != test.values.end())) return false;
+            break;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 // Substitutes every deferred reference in Value, appending the result to Output.  Returns false if a reference has
 // no value and no fallback, in which case the attribute must be erased.
 
@@ -756,7 +881,7 @@ static void resolve_tag_params(extSVG *Self, XTag &Tag, const kt::vector<XMLAttr
 
    for (int a=1; a < std::ssize(Raw); a++) {
       auto &attrib = Raw[a];
-      if ((attrib.Name != "id") and (is_param_value(attrib.Value))) {
+      if (can_substitute_param(attrib.Name) and is_param_value(attrib.Value)) {
          if (auto value = resolve_param_value(Self, attrib.Value, Scope)) {
             Tag.Attribs.emplace_back(attrib.Name, *value);
          }
@@ -914,8 +1039,26 @@ static void apply_document_params(extSVG *Self, objXML::TAGS &Tags)
    for (auto &tag : Tags) {
       if (not tag.isTag()) continue;
 
+      bool warned = false;
       for (int a=1; a < std::ssize(tag.Attribs); a++) {
          auto &attrib = tag.Attribs[a];
+         if (is_required_params_attrib(attrib.Name)) {
+            if (kotuku_attrib(Self, tag, attrib.Name) IS "requiredParams") {
+               std::vector<ParamTest> tests;
+               if (parse_required_params(attrib.Value, tests)) {
+                  for (auto &test : tests) Self->ConditionParamNames.emplace_back(test.name);
+               }
+               else if (not warned) {
+                  kt::Log(__FUNCTION__).warning("Malformed requiredParams @ line %d: %.60s", tag.LineNo,
+                     attrib.Value.c_str());
+                  warned = true;
+               }
+            }
+            else kt::Log(__FUNCTION__).trace("Ignoring '%s' outside a Kotuku namespace @ line %d.",
+               attrib.Name.c_str(), tag.LineNo);
+            continue;
+         }
+
          if (supports_inline_params(attrib.Name) and (not apply_inline_params(attrib.Value))) {
             kt::Log(__FUNCTION__).warning("Malformed param() in '%s' @ line %d: %.60s", attrib.Name.c_str(),
                tag.LineNo, attrib.Value.c_str());
@@ -925,7 +1068,7 @@ static void apply_document_params(extSVG *Self, objXML::TAGS &Tags)
       }
 
       for (int a=1; a < std::ssize(tag.Attribs); a++) {
-         if ((tag.Attribs[a].Name != "id") and (is_param_value(tag.Attribs[a].Value))) {
+         if (can_substitute_param(tag.Attribs[a].Name) and is_param_value(tag.Attribs[a].Value)) {
             auto &raw = Self->ParamAttribs[tag.ID];
             raw = tag.Attribs;
             resolve_tag_params(Self, tag, raw, nullptr);
@@ -941,10 +1084,19 @@ static void apply_document_params(extSVG *Self, objXML::TAGS &Tags)
 // Re-resolves the param() attributes of a tag and its descendants against a scope.  A tag renamed since the document
 // pass (a <use> expanded to a <g>) keeps its current attributes.
 
+// Rebind a copied tree and discard vector IDs from the source instance before processing it.
+
 static void rescope_params(extSVG *Self, XTag &Tag, const ParamScope *Scope)
 {
    if (auto it = Self->ParamAttribs.find(Tag.ID); it != Self->ParamAttribs.end()) {
       if (Tag.Attribs[0].Name IS it->second[0].Name) resolve_tag_params(Self, Tag, it->second, Scope);
+   }
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      if (Tag.Attribs[a].Name IS "_id") {
+         Tag.Attribs.erase(Tag.Attribs.begin() + a);
+         break;
+      }
    }
 
    for (auto &child : Tag.Children) {
@@ -996,11 +1148,10 @@ public:
 };
 
 //********************************************************************************************************************
-// Selects the tree to process for one instance of a <symbol>.  Expanding nested <use> elements mutates the tree, so
-// a document with parameters processes a private copy that is resolved against the instance scope.  The copy is
-// released on destruction unless an animation was created from it, because animations retain their tag pointers.
+// Expanding <use> elements mutates the tree. Keep the source available when later instances can use a different
+// scope. Retain the private tree only when an animation can hold a pointer into it.
 
-class SymbolInstance {
+class TagInstance {
    extSVG *m_svg;
    std::list<XTag>::iterator m_copy;
    size_t m_animations = 0;
@@ -1009,21 +1160,25 @@ class SymbolInstance {
 public:
    XTag *tag;
 
-   SymbolInstance(extSVG *Self, XTag &Symbol, const ParamScope *Scope) : m_svg(Self), tag(&Symbol) {
-      if (Self->ParamAttribs.empty()) return;
-      m_copy = Self->SymbolInstances.emplace(Self->SymbolInstances.end(), Symbol);
-      rescope_params(Self, *m_copy, Scope);
+   TagInstance(extSVG *Self, XTag &Tag, bool Copy) : m_svg(Self), tag(&Tag) {
+      if (not Copy) return;
+      m_copy = Self->TagInstances.emplace(Self->TagInstances.end(), Tag);
       tag = &*m_copy;
       m_animations = Self->Animations.size();
       m_copied = true;
    }
 
-   ~SymbolInstance() {
-      if ((m_copied) and (m_svg->Animations.size() IS m_animations)) m_svg->SymbolInstances.erase(m_copy);
+   TagInstance(extSVG *Self, XTag &Tag, const ParamScope *Scope, bool Copy = false) :
+      TagInstance(Self, Tag, Copy or (not Self->ParamAttribs.empty()) or (not Self->ConditionParamNames.empty())) {
+      if (m_copied) rescope_params(Self, *tag, Scope);
    }
 
-   SymbolInstance(const SymbolInstance &) = delete;
-   SymbolInstance & operator=(const SymbolInstance &) = delete;
+   ~TagInstance() {
+      if ((m_copied) and (m_svg->Animations.size() IS m_animations)) m_svg->TagInstances.erase(m_copy);
+   }
+
+   TagInstance(const TagInstance &) = delete;
+   TagInstance & operator=(const TagInstance &) = delete;
 };
 
 //********************************************************************************************************************
@@ -1079,6 +1234,7 @@ static void collect_param_names(extSVG *Self, const XTag &Tag, kt::vector<std::s
 {
    if (auto it = Self->ParamAttribs.find(Tag.ID); it != Self->ParamAttribs.end()) {
       for (int a=1; a < std::ssize(it->second); a++) {
+         if (not can_substitute_param(it->second[a].Name)) continue;
          for_each_param_name(it->second[a].Value, [&](std::string_view Name) { Names.emplace_back(Name); });
       }
    }
@@ -1287,13 +1443,14 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
    Self->ValueAnimations.clear();
    Self->Animations.clear();
    Self->Animatrix.clear();
-   Self->SymbolInstances.clear();
+   Self->TagInstances.clear();
    Self->AnimEpoch = Self->LastAnimTime = Self->PausedTime = 0;
    if (Self->PauseStart) Self->PauseStart = double(PreciseTime()) / 1000000.0;
    Self->AnimTimingDirty = true;
    Self->IDs.clear();
    Self->QueryParams.clear();
    Self->ParamAttribs.clear();
+   Self->ConditionParamNames.clear();
    Self->ParamDeps.clear();
    Self->UseCustomProps.clear();
    Self->HasCustomProps = false;
@@ -1355,6 +1512,9 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
          prepare_styles(Self, xml->Tags);
          apply_document_params(Self, xml->Tags);
+         auto &condition_names = Self->ConditionParamNames;
+         std::ranges::sort(condition_names);
+         condition_names.erase(std::unique(condition_names.begin(), condition_names.end()), condition_names.end());
 
          objVector *sibling = nullptr;
          for (auto &scan : xml->Tags) {
@@ -1366,8 +1526,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
                parse_ids(Self, scan);
 
-               if (Self->Target) state.proc_svg(scan, Self->Target, sibling);
-               else state.proc_svg(scan, Self->Scene, sibling);
+               state.process_tag(scan, scan, Self->Target ? Self->Target : Self->Scene, sibling);
             }
          }
 

@@ -25,11 +25,23 @@ static void resolve_animations(extSVG *SVG)
 }
 
 //********************************************************************************************************************
-// Bind value animations to their actual targets after all children have been parsed.  Each attribute has one base
-// value and an ordered list of effects, including group effects on children without client-defined attributes.
+// Finalise animation targets after parsing. Each animated attribute has one base value and an ordered list of
+// effects, including group effects on children without client-defined attributes.
 
 static void prepare_value_animations(extSVG *SVG)
 {
+   // Resolve forward references now that all renderable targets have been instantiated.
+   SVG->Animations.remove_if([SVG](auto &Record) {
+      return std::visit([SVG](auto &Anim) {
+         if (Anim.target_vector) return false;
+         OBJECTPTR target;
+         if (Anim.target_ref.empty() or (SVG->Scene->findDef(Anim.target_ref, &target) != ERR::Okay)) return true;
+         Anim.target_vector = target->UID;
+         Anim.target_ref.clear();
+         return false;
+      }, Record);
+   });
+
    auto previous = std::move(SVG->ValueAnimations);
    SVG->ValueAnimations.clear();
    using key_type = std::pair<OBJECTID, uint32_t>;

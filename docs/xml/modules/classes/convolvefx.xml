@@ -23,6 +23,7 @@
      }
    ) / Divisor + Bias * ALPHA(x,y)
 </pre>
+<p>Colour values are premultiplied by alpha.  <code>ALPHA(x,y)</code> is the result alpha of the pixel.  When <fl>PreserveAlpha</fl> is FALSE, the alpha channel is computed with the same formula, adding Bias in place of <code>Bias * ALPHA(x,y)</code>.  When <fl>PreserveAlpha</fl> is TRUE, the result alpha is the source alpha, and the kernel is applied to unpremultiplied colour values that are premultiplied again afterwards.</p>
 <p>Note in the above formula that the values in the kernel matrix are applied such that the kernel matrix is rotated 180 degrees relative to the source and destination images in order to match convolution theory as described in many computer graphics textbooks.</p>
 <p>Convolution uses the device-pixel grid by default.  Set <fl>UnitX</fl> and <fl>UnitY</fl> to specify the kernel spacing in primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution and then resamples the result back to device pixels.</p></description>
     <source>
@@ -54,6 +55,7 @@
       <type>DOUBLE</type>
       <description>
 <p>After applying the <fl>Matrix</fl> to the input image to yield a number and applying the <fl>Divisor</fl>, the Bias value is added to each component.  One application of Bias is when it is desirable to have .5 grey value be the zero response of the filter.  The Bias value shifts the range of the filter.  This allows representation of values that would otherwise be clamped to 0 or 1.  The default is 0.</p>
+<p>Bias is added to the alpha channel unless <fl>PreserveAlpha</fl> is TRUE.  The colour channels receive Bias multiplied by the result alpha, which is equivalent to adding Bias to the straight colour values.  For example, a Bias of 1 with <fl>PreserveAlpha</fl> disabled produces opaque white wherever the convolved alpha is not negative.</p>
       </description>
     </field>
 
@@ -113,6 +115,9 @@
       <comment>If TRUE, the alpha channel is protected from the effects of the convolve algorithm.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
+      <description>
+<p>When PreserveAlpha is TRUE, the kernel is applied only to the colour channels.  The colour values are unpremultiplied before the kernel is applied, so translucent pixels contribute their full colour, and Bias is added to the unpremultiplied colour.  The result alpha is the source alpha.  When FALSE, the default, all four channels are convolved as premultiplied values.</p>
+      </description>
     </field>
 
     <field>

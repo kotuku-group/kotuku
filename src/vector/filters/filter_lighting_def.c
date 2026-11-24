@@ -35,13 +35,13 @@ FDEF maAddSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUB
 FDEF maSetLightOptions[] = { { "Index", FD_INT }, { "LightOptions:Options", FD_PTR|FD_STRUCT }, { 0, 0 } };
 
 static const struct MethodEntry clLightingFXMethods[] = {
-   { AC(-20), (APTR)LIGHTINGFX_SetDistantLight, "SetDistantLight", maSetDistantLight, sizeof(struct lt::SetDistantLight) },
-   { AC(-22), (APTR)LIGHTINGFX_SetPointLight, "SetPointLight", maSetPointLight, sizeof(struct lt::SetPointLight) },
-   { AC(-21), (APTR)LIGHTINGFX_SetSpotLight, "SetSpotLight", maSetSpotLight, sizeof(struct lt::SetSpotLight) },
-   { AC(-23), (APTR)LIGHTINGFX_AddDistantLight, "AddDistantLight", maAddDistantLight, sizeof(struct lt::AddDistantLight) },
-   { AC(-24), (APTR)LIGHTINGFX_AddPointLight, "AddPointLight", maAddPointLight, sizeof(struct lt::AddPointLight) },
-   { AC(-25), (APTR)LIGHTINGFX_AddSpotLight, "AddSpotLight", maAddSpotLight, sizeof(struct lt::AddSpotLight) },
-   { AC(-26), (APTR)LIGHTINGFX_SetLightOptions, "SetLightOptions", maSetLightOptions, sizeof(struct lt::SetLightOptions) },
+   { AC(-10), (APTR)LIGHTINGFX_SetDistantLight, "SetDistantLight", maSetDistantLight, sizeof(struct lt::SetDistantLight) },
+   { AC(-12), (APTR)LIGHTINGFX_SetPointLight, "SetPointLight", maSetPointLight, sizeof(struct lt::SetPointLight) },
+   { AC(-11), (APTR)LIGHTINGFX_SetSpotLight, "SetSpotLight", maSetSpotLight, sizeof(struct lt::SetSpotLight) },
+   { AC(-13), (APTR)LIGHTINGFX_AddDistantLight, "AddDistantLight", maAddDistantLight, sizeof(struct lt::AddDistantLight) },
+   { AC(-14), (APTR)LIGHTINGFX_AddPointLight, "AddPointLight", maAddPointLight, sizeof(struct lt::AddPointLight) },
+   { AC(-15), (APTR)LIGHTINGFX_AddSpotLight, "AddSpotLight", maAddSpotLight, sizeof(struct lt::AddSpotLight) },
+   { AC(-16), (APTR)LIGHTINGFX_SetLightOptions, "SetLightOptions", maSetLightOptions, sizeof(struct lt::SetLightOptions) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

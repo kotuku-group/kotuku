@@ -1309,3 +1309,436 @@ end
    ]], { p='param(z) translate(7, 7)', z='translate(50, 50)' })
    assertBounds('t', 7, 7, 5, 5, 'A supplied value after an empty fallback must not be expanded again')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Conditional processing
+
+@Test function RequiredParamsOperators()
+   local tests = array<table> {
+      { expr='mode',          passes=array<any> { false, true,  true,  true,  true  } },
+      { expr='!mode',         passes=array<any> { true,  false, false, false, false } },
+      { expr='mode=off',      passes=array<any> { false, false, true,  false, false } },
+      { expr='mode=off,low',  passes=array<any> { false, false, true,  true,  false } },
+      { expr='mode!=off',     passes=array<any> { true,  true,  false, true,  true  } },
+      { expr='mode!=off,low', passes=array<any> { true,  true,  false, false, true  } },
+      { expr='mode=',         passes=array<any> { false, true,  false, false, false } },
+      { expr='mode!=',        passes=array<any> { true,  false, true,  true,  true  } }
+   }
+   local inputs = array<table> { {}, { mode='' }, { mode='off' }, { mode='low' }, { mode='on' } }
+   for i, keys in inputs do
+      local body = '<g xmlns:k="http://www.kotuku.dev/xmlns/svg">'
+      for j, test in tests do
+         body ..= f'<switch><rect id="op_{i}_{j}" width="1" height="1" k:requiredParams="{test.expr}"/>'
+         body ..= f'<rect id="fallback_{i}_{j}" width="1" height="1"/></switch>'
+      end
+      local scene, svg <close> = loadParams(body .. '</g>', keys)
+      for j, test in tests do
+         local expected = test.passes[i]
+         assert((obj.find(f'op_{i}_{j}') != nil) is expected, f'{test.expr} with input {i}')
+         assert((obj.find(f'fallback_{i}_{j}') != nil) is (not expected), f'Fallback for {test.expr} with input {i}')
+      end
+   end
+end
+
+@Test function RequiredParamsSwitchOrder()
+   local scene, svg <close> = loadParams([[
+      <switch xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <rect id="condition_and_fail" width="1" height="1" k:requiredParams="lighting=off quality=low"/>
+         <rect id="condition_and_pass" width="1" height="1" k:requiredParams="lighting=off quality=high !freeze"/>
+         <rect id="condition_second_pass" width="1" height="1" k:requiredParams="quality=high"/>
+         <rect id="condition_default" width="1" height="1"/>
+      </switch>
+   ]], { lighting='off', quality='high' })
+   assert(obj.find('condition_and_pass') != nil, 'The first branch whose tests all pass must be selected')
+   for id in values(array<str> { 'condition_and_fail', 'condition_second_pass', 'condition_default' }) do
+      assert(obj.find(id) is nil, f'{id} must not be instantiated')
+   end
+end
+
+@Test function RequiredParamsNamesAndValues()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <switch>
+            <rect id="condition_name_case" width="1" height="1" k:requiredParams="Lighting"/>
+            <rect id="condition_value_case" width="1" height="1" k:requiredParams="lighting=Off"/>
+            <rect id="condition_decoded" width="1" height="1"
+               k:requiredParams="--lighting=off label=a%20b,a%2Cb eq=a%3Db literal=param(x)" fill="param(colour) red"/>
+         </switch>
+         <switch><rect width="1" height="1" k:requiredParams="lighting"/></switch>
+      </g>
+   ]], { lighting='off', label='a,b', eq='a=b', literal='param(x)' })
+   assert(obj.find('condition_decoded') != nil, 'Names and percent-decoded values must be compared exactly')
+   assert(obj.find('condition_name_case') is nil and obj.find('condition_value_case') is nil, 'Case is significant')
+
+   local scene_space, svg_space <close> = loadParams([[
+      <switch xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <rect id="condition_space" width="1" height="1" k:requiredParams="label=a%20b"/>
+      </switch>
+   ]], { label='a b' })
+   assert(obj.find('condition_space') != nil, 'Escaped white-space is part of the value')
+end
+
+@Test function RequiredParamsMalformed()
+   local conditions = array<str> { '', '   ', '=x', 'mode==off', 'bad(name)', '!mode=off', '--', 'param(replace)' }
+   local body = '<g xmlns:k="http://www.kotuku.dev/xmlns/svg">'
+   for i, condition in conditions do
+      body ..= f'<switch><rect id="invalid_{i}" width="1" height="1" k:requiredParams="{condition}"'
+      body ..= ' fill="param(colour) red"/><rect width="1" height="1"/></switch>'
+   end
+   local scene, svg <close> = loadParams(body .. '</g>', { replace='mode', mode='off' })
+   for i, condition in conditions do
+      assert(obj.find(f'invalid_{i}') is nil, f'Malformed condition "{condition}" must fail')
+   end
+end
+
+@Test function RequiredParamsNamespacesAndExtensions()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:alt="http://www.kotuku.dev/namespaces/kotuku" xmlns:foreign="urn:foreign">
+         <switch>
+            <rect id="condition_unknown_extension" width="1" height="1"
+               alt:requiredParams="mode" requiredExtensions="urn:unsupported"/>
+            <rect id="condition_wrong_param" width="1" height="1"
+               alt:requiredParams="missing" requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"/>
+            <rect id="condition_both_extensions" width="1" height="1"
+               alt:requiredParams="mode" requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"/>
+         </switch>
+         <switch><rect id="condition_foreign" width="1" height="1" foreign:requiredParams="missing"/></switch>
+         <switch><rect id="condition_unbound" width="1" height="1" unbound:requiredParams="missing"/></switch>
+         <switch><rect id="condition_bare" width="1" height="1" requiredParams="missing"/></switch>
+      </g>
+   ]], { mode='on' })
+   assert(obj.find('condition_unknown_extension') is nil, 'A true parameter test cannot override a false extension')
+   assert(obj.find('condition_wrong_param') is nil, 'A true extension cannot override a false parameter test')
+   for id in values(array<str> {
+      'condition_both_extensions', 'condition_foreign', 'condition_unbound', 'condition_bare'
+   }) do
+      assert(obj.find(id) != nil, f'{id} should render')
+   end
+end
+
+@Test function RequiredParamsQueryPrecedence()
+   writeFile('temp:svg_required_params_query.svg', [[
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <switch>
+            <rect id="condition_query" width="1" height="1" k:requiredParams="mode=query label=a%20b"/>
+            <rect id="condition_key" width="1" height="1" k:requiredParams="mode=key label=a%20b"/>
+         </switch>
+      </svg>
+   ]])
+   local query = 'temp:svg_required_params_query.svg?mode=query&label=a%20b'
+   local query_svg <close> = obj.new('svg', { path=query })
+   assert(obj.find('condition_query') != nil, 'The query string supplies parameter values')
+   assert(obj.find('condition_key') is nil)
+   local key_svg <close> = obj.new('svg')
+   key_svg.path = query
+   check key_svg.acSetKey('mode', 'key')
+   check key_svg.init()
+   assert(obj.find('condition_key') != nil, 'SetKey takes precedence while other query values remain visible')
+end
+
+@Test function RequiredParamsInstanceScopes()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <defs>
+            <symbol id="condition_symbol">
+               <switch>
+                  <rect width="1" height="1" fill="red" k:requiredParams="lighting=off"/>
+                  <rect width="1" height="1" fill="blue"/>
+               </switch>
+            </symbol>
+            <symbol id="condition_outer"><use href="#condition_symbol"/></symbol>
+         </defs>
+         <g id="condition_off"><use href="#condition_outer"><param name="lighting" value="off"/></use></g>
+         <g id="condition_on"><use href="#condition_outer"/></g>
+         <g id="condition_css"><use href="#condition_outer" style="--lighting: off"/></g>
+      </g>
+   ]])
+   for name, expected in { condition_off='red', condition_on='blue', condition_css='blue' } do
+      local vector:obj = obj.find(name)
+      while vector.child do vector = vector.child end
+      assert(vector.fill is expected, f'{name}: expected {expected}, got {vector.fill}')
+   end
+
+   for value, expected in { off='red', on='blue' } do
+      local vector:obj = scene.new('VectorViewport', {})
+      check svg.acSetKey('lighting', value)
+      check svg.mtParseSymbol('condition_outer', vector)
+      while vector.child do vector = vector.child end
+      assert(vector.fill is expected, f'ParseSymbol with lighting={value}: expected {expected}, got {vector.fill}')
+   end
+end
+
+@Test function ParamNamesIncludesConditions()
+   local scene, svg <close> = loadParams([[
+      <switch xmlns:k="http://www.kotuku.dev/xmlns/svg" xmlns:f="urn:foreign">
+         <rect width="1" height="1" k:requiredParams="--lighting=off !quality" fill="param(colour) red"/>
+         <rect width="1" height="1" k:requiredParams="lighting" f:requiredParams="foreign"/>
+         <rect width="1" height="1" k:requiredParams="invalid =x"/>
+      </switch>
+   ]])
+   local names = svg.paramNames
+   assert(#names is 3 and names[0] is 'colour' and names[1] is 'lighting' and names[2] is 'quality',
+      'ParamNames must merge valid condition names with substitution names')
+   check svg.acDataFeed(nil, DATA_XML, '<svg xmlns="http://www.w3.org/2000/svg"/>')
+   assert(#svg.paramNames is 0, 'Reparsing must clear condition names from the preceding document')
+end
+
+@Test function ConditionsGateRenderedElements()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <defs><rect id="condition_use_target" width="1" height="1"/></defs>
+         <g id="condition_hidden_group" k:requiredParams="lighting=off">
+            <rect id="condition_hidden_descendant" width="1" height="1"/>
+         </g>
+         <rect id="condition_hidden_shape" width="1" height="1" requiredExtensions="urn:unsupported"/>
+         <text id="condition_hidden_text" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Script">Hidden</text>
+         <use id="condition_hidden_use" href="#condition_use_target" k:requiredParams="lighting=off"/>
+         <switch id="condition_hidden_switch" k:requiredParams="lighting=off">
+            <rect id="condition_hidden_branch" width="1" height="1"/>
+         </switch>
+         <svg id="condition_hidden_view" systemLanguage=" ">
+            <rect id="condition_hidden_view_child" width="1" height="1"/>
+         </svg>
+         <k:wave id="condition_hidden_wave" k:requiredParams="lighting=off"/>
+         <text id="condition_text">A<tspan k:requiredParams="lighting=off">X<tspan>Y</tspan></tspan><a
+            k:requiredParams="lighting=off">Z</a><textPath requiredExtensions="">W</textPath><tspan>B</tspan></text>
+      </g>
+   ]], { lighting='on' })
+   for id in values(array<str> {
+      'condition_hidden_group', 'condition_hidden_descendant', 'condition_hidden_shape', 'condition_hidden_text',
+      'condition_hidden_use', 'condition_hidden_switch', 'condition_hidden_branch', 'condition_hidden_view',
+      'condition_hidden_view_child', 'condition_hidden_wave'
+   }) do
+      assert(obj.find(id) is nil, f'{id} must not be instantiated')
+   end
+   assert(obj.find('condition_text').string is 'AB', 'Failed conditions must remove entire inline text subtrees')
+
+   local root <close> = obj.new('svg', { statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:k="http://www.kotuku.dev/xmlns/svg" k:requiredParams="absent">
+         <rect id="condition_hidden_root_child" width="1" height="1"/>
+      </svg>
+   ]] })
+   assert(obj.find('condition_hidden_root_child') is nil, 'A condition on the document root must gate its subtree')
+end
+
+@Test function RequiredExtensionsListsAndEmptyConditions()
+   local scene, svg <close> = loadParams([[
+      <rect id="condition_single_uri" width="1" height="1" requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"/>
+      <rect id="condition_uri_list" width="1" height="1"
+         requiredExtensions=" http://www.kotuku.dev/TR/Kotuku/1.0&#x9;http://www.kotuku.dev/TR/Kotuku/1.0 "/>
+      <rect id="condition_bad_uri" width="1" height="1"
+         requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0 urn:unsupported"/>
+      <rect id="condition_empty_uri" width="1" height="1" requiredExtensions=""/>
+      <rect id="condition_empty_language" width="1" height="1" systemLanguage=""/>
+      <rect id="condition_any_language" width="1" height="1" systemLanguage="en"/>
+   ]])
+   for id in values(array<str> { 'condition_single_uri', 'condition_uri_list', 'condition_any_language' }) do
+      assert(obj.find(id) != nil, f'{id} must be instantiated')
+   end
+   for id in values(array<str> { 'condition_bad_uri', 'condition_empty_uri', 'condition_empty_language' }) do
+      assert(obj.find(id) is nil, f'{id} must not be instantiated')
+   end
+end
+
+@Test function SwitchChecksUnsupportedExtensionChildren()
+   local scene, svg <close> = loadParams([[
+      <switch xmlns:ext="urn:unsupported">
+         <ext:widget requiredExtensions="urn:unsupported"/>
+         <rect id="condition_extension_fallback" width="1" height="1"/>
+      </switch>
+   ]])
+   assert(obj.find('condition_extension_fallback') != nil, 'A failed extension test must select the fallback')
+end
+
+@Test function ConditionsGateAnimations()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <rect id="condition_animation" x="10" y="20" width="1" height="1">
+            <animate attributeName="x" from="10" to="90" dur="10s" k:requiredParams="animate-x"/>
+            <animate attributeName="y" from="20" to="60" dur="10s" k:requiredParams="animate-y"/>
+         </rect>
+         <set href="#condition_animation" attributeName="width" to="100" requiredExtensions="urn:unsupported"/>
+      </g>
+   ]], { ['animate-y']='' })
+   check svg.acSeek(5, SEEK_START)
+   local rect = obj.find('condition_animation')
+   assert(rect.x is 10 and rect.width is 1, 'Failed conditions must disable both inline and referenced animation')
+   assert(rect.y is 40, 'An animation whose condition passes must run')
+end
+
+@Test function ReferencedAnimationsKeepTheirTargets()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <rect id="condition_unrelated_sibling" width="1" height="1"/>
+         <rect id="condition_skipped_target" width="1" height="1" k:requiredParams="show"/>
+         <animate href="#condition_skipped_target" attributeName="x" from="0" to="80" dur="10s"/>
+         <set href="" attributeName="y" to="50" dur="10s"/>
+         <animate xlink:href="#condition_forward_target" attributeName="x" from="0" to="40" dur="10s"/>
+         <rect id="condition_forward_target" width="1" height="1"/>
+      </g>
+   ]])
+   check svg.acSeek(5, SEEK_START)
+   assert(obj.find('condition_skipped_target') is nil, 'The condition must suppress the original target')
+   local sibling = obj.find('condition_unrelated_sibling')
+   assert(sibling.x is 0 and sibling.y is 0, 'An unresolved explicit target must leave other elements unchanged')
+   assert(obj.find('condition_forward_target').x is 20, 'A forward reference must animate its declared target')
+end
+
+@Test function ConditionsRespectUseReferences()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <g k:requiredParams="missing">
+            <rect id="condition_reachable_descendant" width="1" height="1" fill="lime"/>
+         </g>
+         <defs>
+            <rect id="condition_scoped_shape" width="1" height="1" fill="red" k:requiredParams="lighting=off"/>
+            <svg id="condition_scoped_view" width="1" height="1" k:requiredParams="lighting=off">
+               <rect width="1" height="1" fill="purple"/>
+            </svg>
+         </defs>
+         <g id="condition_direct_ref"><use href="#condition_reachable_descendant"/></g>
+         <g id="condition_off_ref"><use href="#condition_scoped_shape"><param name="lighting" value="off"/></use></g>
+         <g id="condition_on_ref"><use href="#condition_scoped_shape"/></g>
+         <g id="condition_off_view_ref">
+            <use href="#condition_scoped_view"><param name="lighting" value="off"/></use>
+         </g>
+         <g id="condition_on_view_ref"><use href="#condition_scoped_view"/></g>
+      </g>
+   ]])
+   assert(obj.find('condition_direct_ref').child.child.fill is 'lime', 'A hidden ancestor cannot block a reference')
+   assert(obj.find('condition_off_ref').child.child.fill is 'red', 'A clone must use its own parameter scope')
+   assert(obj.find('condition_on_ref').child.child is nil, 'A false condition suppresses the cloned shape')
+   local view:obj = obj.find('condition_off_view_ref')
+   while view.child do view = view.child end
+   assert(view.fill is 'purple', 'A referenced SVG must also use the instance parameter scope')
+   assert(obj.find('condition_on_view_ref').child is nil, 'A false condition suppresses the cloned SVG')
+end
+
+@Test function ConditionsOnDefinitions()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <defs k:requiredParams="missing">
+            <linearGradient id="condition_gradient" requiredExtensions="">
+               <stop offset="0" stop-color="red"/>
+               <stop offset="1" stop-color="blue"/>
+            </linearGradient>
+            <pattern id="condition_pattern" k:requiredParams="missing" width="1" height="1">
+               <rect width="1" height="1" fill="lime" requiredExtensions=""/>
+               <switch>
+                  <rect width="1" height="1" fill="orange" k:requiredParams="lighting=off"/>
+                  <rect width="1" height="1" fill="red"/>
+               </switch>
+            </pattern>
+            <clipPath id="condition_clip" k:requiredParams="missing">
+               <rect width="1" height="1" requiredExtensions=""/>
+            </clipPath>
+            <mask id="condition_mask" requiredExtensions="">
+               <rect width="1" height="1" fill="white" k:requiredParams="missing"/>
+            </mask>
+            <filter id="condition_filter" k:requiredParams="missing"><feFlood flood-color="lime"/></filter>
+            <marker id="condition_marker" k:requiredParams="missing">
+               <rect width="1" height="1"/>
+            </marker>
+            <symbol id="condition_defined_symbol" requiredExtensions="">
+               <rect width="1" height="1" fill="url(#condition_pattern)"/>
+            </symbol>
+         </defs>
+         <rect id="condition_painted" width="1" height="1" fill="url(#condition_gradient)"/>
+         <g id="condition_symbol_ref"><use href="#condition_defined_symbol">
+            <param name="lighting" value="off"/>
+         </use></g>
+      </g>
+   ]], { lighting='on' })
+   for id in values(array<str> { 'condition_gradient', 'condition_pattern', 'condition_clip', 'condition_mask',
+      'condition_filter' }) do
+      local err, definition = scene.mtFindDef(id)
+      assert(err is ERR_Okay and definition != nil, f'{id} must remain available as a definition')
+   end
+   local _, clip = check scene.mtFindDef('condition_clip')
+   local _, mask = check scene.mtFindDef('condition_mask')
+   assert(clip.viewport.child != nil and mask.viewport.child != nil, 'Definition geometry is processed as usual')
+   local _, pattern = check scene.mtFindDef('condition_pattern')
+   assert(pattern.viewport.child.fill is 'lime', 'A condition on definition geometry is ignored')
+   assert(pattern.viewport.child.next.fill is 'red', 'An explicit switch in a pattern uses document values')
+   local vector:obj = obj.find('condition_symbol_ref')
+   while vector.child do vector = vector.child end
+   assert(vector.fill is 'url(#condition_pattern)', 'A symbol condition cannot block instances')
+end
+
+@Test function DefinitionUsePreservesSymbolConditions()
+   local scene, svg <close> = loadParams([[
+      <defs>
+         <rect id="condition_tile_shape" width="1" height="1" fill="red"/>
+         <symbol id="condition_tile_symbol">
+            <use href="#condition_tile_shape" requiredExtensions="urn:unsupported"/>
+         </symbol>
+         <pattern id="condition_tile" width="1" height="1">
+            <use href="#condition_tile_symbol"/>
+         </pattern>
+      </defs>
+      <g id="condition_tile_instance"><use href="#condition_tile_symbol"/></g>
+   ]])
+   local _, pattern = check scene.mtFindDef('condition_tile')
+   local tile:obj = pattern.viewport
+   while tile.child do tile = tile.child end
+   assert(tile.fill is 'red', 'The pattern must instantiate exempt definition geometry')
+   local viewport = obj.find('condition_tile_instance').child.child
+   assert(viewport.child is nil, 'Rendering the pattern must preserve the symbol condition for ordinary instances')
+end
+
+@Test function ConditionsReevaluateNestedUse()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <defs>
+            <g id="nested_condition_target">
+               <switch>
+                  <rect width="1" height="1" fill="red" k:requiredParams="lighting=off"/>
+                  <rect width="1" height="1" fill="blue"/>
+               </switch>
+            </g>
+         </defs>
+         <g id="nested_condition_source">
+            <use href="#nested_condition_target" k:requiredParams="lighting">
+               <param name="lighting" value="off"/>
+            </use>
+         </g>
+         <g id="nested_condition_instance">
+            <use href="#nested_condition_source"><param name="lighting" value="on"/></use>
+         </g>
+         <g id="nested_condition_animated">
+            <use href="#nested_condition_target" k:requiredParams="lighting=on">
+               <param name="lighting" value="off"/>
+               <animate attributeName="opacity" from="1" to="0" dur="10s"/>
+            </use>
+         </g>
+      </g>
+   ]], { lighting='on' })
+   for name, expected in {
+      nested_condition_source='red', nested_condition_instance='red', nested_condition_animated='red'
+   } do
+      local vector:obj = obj.find(name)
+      while vector.child do vector = vector.child end
+      assert(vector.fill is expected, f'{name}: expected {expected}, got {vector.fill}')
+   end
+end
+
+@Test function HiddenClonesDoNotBindSourceAnimations()
+   local scene, svg <close> = loadParams([[
+      <g xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <g id="animated_condition_template">
+            <rect id="animated_condition_source" width="1" height="1" k:requiredParams="mode=on"/>
+            <animate attributeName="x" from="0" to="80" dur="10s" k:requiredParams="animate"/>
+         </g>
+         <g id="animated_condition_hidden"><use href="#animated_condition_template">
+            <param name="mode" value="off"/><param name="animate" value="yes"/>
+         </use></g>
+         <g id="animated_condition_visible"><use href="#animated_condition_template">
+            <param name="animate" value="yes"/>
+         </use></g>
+      </g>
+   ]], { mode='on' })
+   check svg.acSeek(5, SEEK_START)
+   assert(obj.find('animated_condition_source').x is 0, 'A hidden clone must not animate the original shape')
+   assert(obj.find('animated_condition_hidden').child.child.child is nil, 'The failing clone must have no shape')
+   assert(useChild('animated_condition_visible').x is 40, 'The passing clone must animate its own shape')
+end

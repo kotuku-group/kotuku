@@ -3067,13 +3067,13 @@ class objFloodFX : public objFilterEffect {
 // LightingFX methods
 
 namespace lt {
-struct SetDistantLight { double Azimuth; double Elevation; static const AC id = AC(-20); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetPointLight { double X; double Y; double Z; static const AC id = AC(-22); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddDistantLight { double Azimuth; double Elevation; static const AC id = AC(-23); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddPointLight { double X; double Y; double Z; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-25); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetLightOptions { int Index; struct LightOptions *Options; static const AC id = AC(-26); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetDistantLight { double Azimuth; double Elevation; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetPointLight { double X; double Y; double Z; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddDistantLight { double Azimuth; double Elevation; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddPointLight { double X; double Y; double Z; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-15); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetLightOptions { int Index; struct LightOptions *Options; static const AC id = AC(-16); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3095,31 +3095,31 @@ class objLightingFX : public objFilterEffect {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR setDistantLight(double Azimuth, double Elevation) noexcept {
       struct lt::SetDistantLight args = { Azimuth, Elevation };
-      return Action(AC(-20), this, &args);
+      return Action(AC(-10), this, &args);
    }
    inline ERR setPointLight(double X, double Y, double Z) noexcept {
       struct lt::SetPointLight args = { X, Y, Z };
-      return Action(AC(-22), this, &args);
+      return Action(AC(-12), this, &args);
    }
    inline ERR setSpotLight(double X, double Y, double Z, double PX, double PY, double PZ, double Exponent, double ConeAngle) noexcept {
       struct lt::SetSpotLight args = { X, Y, Z, PX, PY, PZ, Exponent, ConeAngle };
-      return Action(AC(-21), this, &args);
+      return Action(AC(-11), this, &args);
    }
    inline ERR addDistantLight(double Azimuth, double Elevation) noexcept {
       struct lt::AddDistantLight args = { Azimuth, Elevation };
-      return Action(AC(-23), this, &args);
+      return Action(AC(-13), this, &args);
    }
    inline ERR addPointLight(double X, double Y, double Z) noexcept {
       struct lt::AddPointLight args = { X, Y, Z };
-      return Action(AC(-24), this, &args);
+      return Action(AC(-14), this, &args);
    }
    inline ERR addSpotLight(double X, double Y, double Z, double PX, double PY, double PZ, double Exponent, double ConeAngle) noexcept {
       struct lt::AddSpotLight args = { X, Y, Z, PX, PY, PZ, Exponent, ConeAngle };
-      return Action(AC(-25), this, &args);
+      return Action(AC(-15), this, &args);
    }
    inline ERR setLightOptions(int Index, struct LightOptions * Options) noexcept {
       struct lt::SetLightOptions args = { Index, Options };
-      return Action(AC(-26), this, &args);
+      return Action(AC(-16), this, &args);
    }
 
    // Customised field getting
@@ -3143,7 +3143,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getAmbient(struct FRGB * &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[36];
       return field->GetValue(this, &Value);
    }
 
@@ -3158,7 +3158,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getCavity(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->GetValue(this, &Value);
    }
 
@@ -3203,7 +3203,12 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getMatcapPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getNormalMap(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[32];
       return field->GetValue(this, &Value);
    }
 
@@ -3246,7 +3251,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setAmbient(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[36];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
@@ -3256,12 +3261,12 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setExponent(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setCavity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3306,8 +3311,13 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setMatcapPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, 0x00904308, &Value);
+   }
+
+   inline ERR setNormalMap(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[32];
+      return field->WriteValue(this, field, 0x08100309, Value);
    }
 
    inline ERR setScale(const double Value) noexcept {
@@ -3316,7 +3326,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setUnitX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3493,13 +3503,13 @@ class objOffsetFX : public objFilterEffect {
 // RemapFX methods
 
 namespace rf {
-struct SelectGamma { CMP Component; double Amplitude; double Offset; double Exponent; static const AC id = AC(-20); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectTable { CMP Component; kt::vector<double> *Values; static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectLinear { CMP Component; double Slope; double Intercept; static const AC id = AC(-22); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectIdentity { CMP Component; static const AC id = AC(-23); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectDiscrete { CMP Component; kt::vector<double> *Values; static const AC id = AC(-24); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectInvert { CMP Component; static const AC id = AC(-25); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectMask { CMP Component; int Mask; static const AC id = AC(-26); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectGamma { CMP Component; double Amplitude; double Offset; double Exponent; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectTable { CMP Component; kt::vector<double> *Values; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectLinear { CMP Component; double Slope; double Intercept; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectIdentity { CMP Component; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectDiscrete { CMP Component; kt::vector<double> *Values; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectInvert { CMP Component; static const AC id = AC(-15); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectMask { CMP Component; int Mask; static const AC id = AC(-16); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3521,33 +3531,33 @@ class objRemapFX : public objFilterEffect {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR selectGamma(CMP Component, double Amplitude, double Offset, double Exponent) noexcept {
       struct rf::SelectGamma args = { Component, Amplitude, Offset, Exponent };
-      return Action(AC(-20), this, &args);
+      return Action(AC(-10), this, &args);
    }
    inline ERR selectTable(CMP Component, kt::vector<double> &Values) noexcept {
       struct rf::SelectTable args = { Component, &Values };
-      ERR error = Action(AC(-21), this, &args);
+      ERR error = Action(AC(-11), this, &args);
       return error;
    }
    inline ERR selectLinear(CMP Component, double Slope, double Intercept) noexcept {
       struct rf::SelectLinear args = { Component, Slope, Intercept };
-      return Action(AC(-22), this, &args);
+      return Action(AC(-12), this, &args);
    }
    inline ERR selectIdentity(CMP Component) noexcept {
       struct rf::SelectIdentity args = { Component };
-      return Action(AC(-23), this, &args);
+      return Action(AC(-13), this, &args);
    }
    inline ERR selectDiscrete(CMP Component, kt::vector<double> &Values) noexcept {
       struct rf::SelectDiscrete args = { Component, &Values };
-      ERR error = Action(AC(-24), this, &args);
+      ERR error = Action(AC(-14), this, &args);
       return error;
    }
    inline ERR selectInvert(CMP Component) noexcept {
       struct rf::SelectInvert args = { Component };
-      return Action(AC(-25), this, &args);
+      return Action(AC(-15), this, &args);
    }
    inline ERR selectMask(CMP Component, int Mask) noexcept {
       struct rf::SelectMask args = { Component, Mask };
-      return Action(AC(-26), this, &args);
+      return Action(AC(-16), this, &args);
    }
 
    // Customised field getting

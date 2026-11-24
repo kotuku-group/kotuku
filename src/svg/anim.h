@@ -108,6 +108,7 @@ public:
    std::string to, by;              // Note that 'to' and 'by' are mutually exclusive, with 'to' as the preference.
    std::string target_attrib;       // Name of the target attribute affected by the From and To values.
    std::string target_attrib_orig;  // Original value of the target attribute, retained for restoration
+   std::string target_ref;         // Explicit target to look up after the scene is built
    std::vector< std::pair<kt::POINT<double>, kt::POINT<double> > > splines; // Key splines
    std::vector<spline_path> spline_paths;
    double total_dist = 0;      // Total distance between all value nodes

@@ -928,6 +928,7 @@ ERR svgState::collect_text(XTag &Tag, objVectorText *Text) noexcept
          else {
             const auto hash = svg_tag_hash(child);
             if ((hash != SVF_textPath) and (hash != SVF_tspan) and (hash != SVF_a)) continue;
+            if (not State.element_conditions_pass(child, hash)) continue;
 
             auto state = State;
             state.applyTag(child);
@@ -944,7 +945,8 @@ ERR svgState::collect_text(XTag &Tag, objVectorText *Text) noexcept
             for (size_t a = 1; a < child.Attribs.size(); ++a) {
                auto name = std::string_view(child.Attribs[a].Name);
                if ((name IS "id") or (name IS "class") or (name IS "xml:space") or
-                   (name IS "white-space") or (name IS "content-value")) continue;
+                   (name IS "white-space") or (name IS "content-value") or
+                   is_conditional_attrib(name)) continue;
                if ((hash IS SVF_textPath) and ((name IS "href") or (name IS "xlink:href") or
                    (name IS "method") or (name IS "spacing") or (name IS "startOffset") or
                    (name IS "transition") or (name IS "align") or (name IS "path"))) continue;
@@ -1275,7 +1277,10 @@ void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
    for (auto &child : Tag.Children) {
       if (!child.isTag()) continue;
 
-      switch(svg_tag_hash(child)) {
+      const auto hash = svg_tag_hash(child);
+      if (not element_conditions_pass(child, hash)) continue;
+
+      switch(hash) {
          case SVF_animate:          proc_animate(child, Tag, Vector); break;
          case SVF_animateColour:
          case SVF_animateColor:     proc_animate_colour(child, Tag, Vector); break;
@@ -1355,6 +1360,8 @@ void svgState::proc_clippath(XTag &Tag) noexcept
       auto &value = Tag.Attribs[a].Value;
       if (value.empty()) continue;
 
+      if (is_conditional_attrib(Tag.Attribs[a].Name)) continue;
+
       switch(strhash(Tag.Attribs[a].Name)) {
          case SVF_id:            id        = value; break;
          case SVF_transform:     transform = value; break;
@@ -1391,6 +1398,7 @@ void svgState::proc_clippath(XTag &Tag) noexcept
 
          if (!InitObject(clip)) {
             svgState state(Self);
+            state.m_processing_definition = true;
 
             // Valid child elements for clip-path are:
             // Shapes:   circle, ellipse, line, path, polygon, polyline, rect, text, ...
@@ -1426,6 +1434,8 @@ void svgState::proc_mask(XTag &Tag) noexcept
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;
       if (value.empty()) continue;
+
+      if (is_conditional_attrib(Tag.Attribs[a].Name)) continue;
 
       switch(strhash(Tag.Attribs[a].Name)) {
          case SVF_id:        id = value; break;
@@ -1474,6 +1484,7 @@ void svgState::proc_mask(XTag &Tag) noexcept
 
       if (!InitObject(clip)) {
          svgState state(Self);
+         state.m_processing_definition = true;
          objVectorViewport *vp;
          clip->getViewport(vp);
          state.process_children(Tag, vp);
@@ -1486,19 +1497,6 @@ void svgState::proc_mask(XTag &Tag) noexcept
 }
 
 //********************************************************************************************************************
-
-// Returns the local name of an attribute in a Kōtuku namespace, or an empty view if the attribute is not in one.
-
-static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string_view Name) noexcept
-{
-   const auto colon = Name.find(':');
-   if ((colon IS std::string_view::npos) or (colon IS 0)) return { };
-
-   uint32_t uri;
-   if (Self->XML->resolvePrefix(Name.substr(0, colon), Tag.ID, &uri) != ERR::Okay) return { };
-   if ((uri != glKotukuSVGNamespace) and (uri != glKotukuNamespace)) return { };
-   return Name.substr(colon + 1);
-}
 
 ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 {
@@ -2003,6 +2001,12 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             const auto local = bare ? name : kotuku_attrib(Self, Tag, name);
 
             if ((name IS "in2") and (combined)) parse_input_mix(Self, fx, val);
+            else if (local IS "normalMap") {
+               const auto input = Self->Effects.find(val);
+               if ((input IS Self->Effects.end()) or (fx->setNormalMap(input->second) != ERR::Okay)) {
+                  log.warning("Invalid normal map result '%s' on %s.", val.c_str(), Tag.name());
+               }
+            }
             else if (normal_map and (local IS "kernelUnitX")) {
                set_light_number("kernelUnitX", val, &objLightingFX::setUnitX);
             }
@@ -2721,7 +2725,9 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_vi
          // live reference being found.
 
          if (auto tagref = find_href_tag(Self, Reference)) {
-            process_tag(*tagref, Tag, Self->Scene, vector);
+            auto state = *this;
+            state.m_processing_definition = true;
+            state.process_tag(*tagref, Tag, Self->Scene, vector);
          }
          else log.warning("Element id '%.*s' not found.", int(Reference.size()), Reference.data());
       }
@@ -2998,6 +3004,8 @@ void svgState::proc_pattern(XTag &Tag) noexcept
          auto &val = tag->Attribs[a].Value;
          if (val.empty()) continue;
 
+         if (is_conditional_attrib(name)) continue;
+
          switch(strhash(name)) {
             case SVF_patternContentUnits:
                if (content_units) break;
@@ -3102,6 +3110,7 @@ void svgState::proc_pattern(XTag &Tag) noexcept
       // Child vectors for the pattern need to be instantiated and belong to the pattern's Viewport.
       if (content) {
          svgState state(Self);
+         state.m_processing_definition = true;
          state.process_children(*content, viewport);
       }
 
@@ -3176,13 +3185,16 @@ ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVecto
 //********************************************************************************************************************
 // See also process_children()
 
-ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVector * &Vector) noexcept
+ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVector * &Vector,
+   bool ConditionsChecked) noexcept
 {
-   kt::Log log(__FUNCTION__);
+   const auto hash = svg_tag_hash(Tag);
+   if ((not ConditionsChecked) and (not element_conditions_pass(Tag, hash))) return ERR::Okay;
 
+   kt::Log log(__FUNCTION__);
    log.traceBranch("%s", Tag.name());
 
-   switch(svg_tag_hash(Tag)) {
+   switch(hash) {
       case SVF_use:              proc_use(Tag, Parent); break;
       case SVF_a:                proc_link(Tag, Parent, Vector); break;
       case SVF_switch:           proc_switch(Tag, Parent, Vector); break;
@@ -3441,6 +3453,8 @@ void svgState::proc_def_image(XTag &Tag) noexcept
       for (int a=1; a < std::ssize(Tag.Attribs); a++) {
          auto &val = Tag.Attribs[a].Value;
          if (val.empty()) continue;
+
+         if (is_conditional_attrib(Tag.Attribs[a].Name)) continue;
 
          switch(strhash(Tag.Attribs[a].Name)) {
             case SVF_units:
@@ -3802,13 +3816,20 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       return;
    }
 
+   if (std::ranges::find(Self->UseReferences, tagref) != Self->UseReferences.end()) {
+      log.warning("Ignoring a circular <use> reference to '%s' @ line %d.", ref.c_str(), Tag.LineNo);
+      return;
+   }
+
    // Increment the Cloning variable to indicate that we are in a region that is being cloned.
    // This is important for some elements like clip-path, whereby the path only needs to be created
    // once and can then be referenced multiple times.
 
+   Self->UseReferences.push_back(tagref);
    Self->Cloning++;
    auto dc = deferred_call([this] {
       Self->Cloning--;
+      Self->UseReferences.pop_back();
    });
 
    // SVG Parameters: <param> children define values for this instance only.  They inherit the enclosing scope and
@@ -3864,11 +3885,11 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
 
       objVectorViewport *viewport = nullptr;
 
-      // Parameterised documents process a private copy so that every instance applies its own nested parameter
-      // declarations.
+      // Preserve nested <use> elements so render instances can apply their own conditions and parameters.
 
-      SymbolInstance symbol(Self, *tagref, m_param_scope);
+      TagInstance symbol(Self, *tagref, m_param_scope, m_processing_definition);
       tagref = symbol.tag;
+      if (not element_conditions_pass(*tagref, svg_tag_hash(*tagref))) return;
 
       auto state = *this;
       state.applyTag(Tag); // Apply all attribute values to the current state.
@@ -3911,6 +3932,7 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
 
             // All other attributes are applied to the 'g' element
             default:
+               if (is_required_params_attrib(Tag.Attribs[a].Name)) break;
                if (group) state.set_property(group, hash, Tag, val);
                else state.set_property(viewport, hash, Tag, val);
                break;
@@ -3938,7 +3960,11 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
                break;
             }
             case SVF_id: break; // Ignore (already processed).
-            default: log.warning("Not processing attribute '%s'", tagref->Attribs[a].Name.c_str()); break;
+            default:
+               if (not is_conditional_attrib(tagref->Attribs[a].Name)) {
+                  log.warning("Not processing attribute '%s'", tagref->Attribs[a].Name.c_str());
+               }
+               break;
          }
       }
 
@@ -3956,77 +3982,51 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       // attribute on the generated 'g', where x and y represent the values of the 'x' and 'y' attributes on the
       // 'use' element. The referenced object and its contents are deep-cloned into the generated tree.
 
-      auto use_attribs = Tag.Attribs;
-      Tag.Attribs[0].Name = "g";
-      if (Tag.Attribs.size() > 1) Tag.Attribs.erase(Tag.Attribs.begin()+1, Tag.Attribs.end());
+      TagInstance instance(Self, Tag, m_processing_definition or (not Self->ConditionParamNames.empty()));
+      auto &expanded = *instance.tag;
+      auto use_attribs = expanded.Attribs;
+      expanded.Attribs[0].Name = "g";
+      expanded.Attribs.resize(1);
 
-      if (not has_content) {
-         Tag.Children = { *tagref }; // Deep-clone
-         if (not Self->ParamAttribs.empty()) rescope_params(Self, Tag.Children[0], m_param_scope);
+      auto *group = &expanded;
+      if (not has_content) group->Children = { *tagref };
+      else {
+         // Inline animation children stay on the outer group, with the cloned content in a subgroup.
+         group = &expanded.Children.emplace_back(XTag(0));
+         group->Attribs.emplace_back("g");
+         group->Children.push_back(*tagref);
+      }
+      if ((not Self->ParamAttribs.empty()) or (not Self->ConditionParamNames.empty())) {
+         rescope_params(Self, group->Children[0], m_param_scope);
+      }
 
-         // Apply 'use' attributes, making a special case for 'x' and 'y'.
+      // Apply the use attributes to the generated group. Conditions have already been evaluated in the enclosing scope.
+      Unit tx, ty;
+      for (int t=1; t < std::ssize(use_attribs); t++) {
+         auto &attrib = use_attribs[t];
+         if (is_conditional_attrib(attrib.Name)) continue;
 
-         Unit tx, ty;
-         for (int t=1; t < std::ssize(use_attribs); t++) {
-            switch (strhash(use_attribs[t].Name)) {
-               case SVF_x: tx = SVGUnit(use_attribs[t].Value); break;
-               case SVF_y: ty = SVGUnit(use_attribs[t].Value); break;
-               // SVG states that the following are not to be applied to the group...
-               case SVF_width:
-               case SVF_height:
-               case SVF_xlink_href:
-               case SVF_href:
-                  break;
-
-               default:
-                  Tag.Attribs.push_back(use_attribs[t]);
-            }
-         }
-
-         const double tx_value = tx.defined() ? double(tx) : 0.0;
-         const double ty_value = ty.defined() ? double(ty) : 0.0;
-         if (tx_value or ty_value) {
-            auto transform = "translate(" + std::to_string(tx_value) + " " + std::to_string(ty_value) + ")";
-            Tag.Attribs.push_back({ "transform", transform });
+         switch (strhash(attrib.Name)) {
+            case SVF_x: tx = SVGUnit(attrib.Value); break;
+            case SVF_y: ty = SVGUnit(attrib.Value); break;
+            case SVF_width:
+            case SVF_height:
+            case SVF_xlink_href:
+            case SVF_href: break;
+            default: group->Attribs.push_back(attrib); break;
          }
       }
-      else {
-         // The SVG documentation appears to be silent on the matter of children in the <use> element.  So far we've
-         // encountered animate instructions in the <use> area, and this expands into a complicated dual-group configuration
-         // (at least that appears to be the only way we can get our animations to match expected behaviour patterns in W3C
-         // tests).
 
-         auto &subgroup = Tag.Children.emplace_back(XTag(0));
-         subgroup.Attribs.push_back(XMLAttrib("g"));
-         subgroup.Children.push_back(*tagref);
-         if (not Self->ParamAttribs.empty()) rescope_params(Self, subgroup.Children[0], m_param_scope);
-
-         Unit tx, ty;
-         for (int t=1; t < std::ssize(use_attribs); t++) {
-            switch (strhash(use_attribs[t].Name)) {
-               case SVF_x: tx = SVGUnit(use_attribs[t].Value); break;
-               case SVF_y: ty = SVGUnit(use_attribs[t].Value); break;
-               case SVF_width:
-               case SVF_height:
-               case SVF_xlink_href:
-               case SVF_href:
-                  break;
-
-               default:
-                  subgroup.Attribs.push_back(use_attribs[t]);
-            }
-         }
-
-         const double tx_value = tx.defined() ? double(tx) : 0.0;
-         const double ty_value = ty.defined() ? double(ty) : 0.0;
-         if (tx_value or ty_value) {
-            auto transform = "translate(" + std::to_string(tx_value) + " " + std::to_string(ty_value) + ")";
-            subgroup.Attribs.push_back({ "transform", transform });
-         }
+      const double tx_value = tx.defined() ? double(tx) : 0.0;
+      const double ty_value = ty.defined() ? double(ty) : 0.0;
+      if (tx_value or ty_value) {
+         auto transform = "translate(" + std::to_string(tx_value) + " " + std::to_string(ty_value) + ")";
+         group->Attribs.push_back({ "transform", transform });
       }
 
       objVector *new_group = nullptr;
-      proc_group(Tag, Parent, new_group);
+      proc_group(expanded, Parent, new_group);
+      if ((&expanded != &Tag) and (new_group)) set_vector_id(Tag, new_group->UID);
    }
 }
 
@@ -4116,39 +4116,78 @@ void svgState::proc_link(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexc
 }
 
 //********************************************************************************************************************
-// For each immediate child, evaluate any requiredFeatures, requiredExtensions and systemLanguage attributes.
-// The first child where these attributes evaluate to true is rendered, the rest are ignored.
+static bool supports_conditions(uint32_t Hash) noexcept
+{
+   switch (Hash) {
+      case SVF_a: case SVF_g: case SVF_image: case SVF_svg: case SVF_switch: case SVF_use:
+      case strhash("foreignObject"):
+      case SVF_rect: case SVF_ellipse: case SVF_circle: case SVF_path: case SVF_polygon: case SVF_line:
+      case SVF_polyline: case SVF_kotuku_spiral: case SVF_kotuku_wave: case SVF_kotuku_shape:
+      case SVF_text: case SVF_tspan: case SVF_textPath:
+      case SVF_animate: case SVF_animateColour: case SVF_animateColor: case SVF_animateTransform:
+      case SVF_animateMotion: case SVF_set:
+         return true;
+      default:
+         return false;
+   }
+}
+
+bool svgState::element_conditions_pass(const XTag &Tag, uint32_t Hash) const noexcept
+{
+   return m_processing_definition or (not supports_conditions(Hash)) or conditions_pass(Tag);
+}
+
+//********************************************************************************************************************
+
+bool svgState::conditions_pass(const XTag &Tag) const noexcept
+{
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &attrib = Tag.Attribs[a];
+      auto &val = attrib.Value;
+      if (is_required_params_attrib(attrib.Name) and (kotuku_attrib(Self, Tag, attrib.Name) IS "requiredParams")) {
+         const auto scope = m_processing_definition ? nullptr : m_param_scope;
+         if (not required_params_pass(Self, scope, val)) return false;
+         continue;
+      }
+
+      switch(strhash(attrib.Name)) {
+         case SVF_requiredFeatures:
+            // requiredFeatures is deprecated as of SVG2, but the following features are explicitly not supported
+            // by our SVG implementation:
+            if (val IS "http://www.w3.org/TR/SVG11/feature#SVG-dynamic") return false;
+            else if (val IS "http://www.w3.org/TR/SVG11/feature#DocumentEventsAttribute") return false;
+            else if (val IS "http://www.w3.org/TR/SVG11/feature#GraphicalEventsAttribute") return false;
+            else if (val IS "http://www.w3.org/TR/SVG11/feature#Script") return false;
+            break;
+
+         case SVF_requiredExtensions: {
+            std::string_view extensions = val;
+            auto uri = next_xml_word(extensions);
+            if (uri.empty()) return false;
+            do {
+               if (uri != "http://www.kotuku.dev/TR/Kotuku/1.0") return false;
+               uri = next_xml_word(extensions);
+            } while (not uri.empty());
+            break;
+         }
+
+         case SVF_systemLanguage: // Locale matching is not implemented.
+            if (trim_ws(val).empty()) return false;
+            break;
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
+// Explicit switch selection also applies when building definition graphics such as a pattern tile.
 
 void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    for (auto &child : Tag.Children) {
-      bool render = true;
-      for (int a=1; a < std::ssize(child.Attribs); a++) {
-         auto &val = child.Attribs[a].Value;
-         if (val.empty()) continue;
-
-         switch(strhash(child.Attribs[a].Name)) {
-            case SVF_requiredFeatures:
-               // requiredFeatures is deprecated as of SVG2, but the following features are explicitly not supported
-               // by our SVG implementation:
-               if (val IS "http://www.w3.org/TR/SVG11/feature#SVG-dynamic") render = false;
-               else if (val IS "http://www.w3.org/TR/SVG11/feature#DocumentEventsAttribute") render = false;
-               else if (val IS "http://www.w3.org/TR/SVG11/feature#GraphicalEventsAttribute") render = false;
-               else if (val IS "http://www.w3.org/TR/SVG11/feature#Script") render = false;
-               break;
-
-            case SVF_requiredExtensions: // Allows the client to check if a given customised extension is supported.
-               if (val IS "http://www.kotuku.dev/TR/Kotuku/1.0");
-               else render = false;
-               break;
-
-            case SVF_systemLanguage: // CSV list of language codes from BCP47
-               // GetLocaleInfoEx() LOCALE_SISO639LANGNAME
-               break;
-         }
-      }
-
-      if (render) {
+      if (not child.isTag()) continue;
+      if (conditions_pass(child)) {
          if (Tag.Attribs.size() > 1) { // The <switch> element is treated as a container type
             kt::Log log(__FUNCTION__);
             log.traceBranch("Tag: %d", Tag.ID);
@@ -4166,11 +4205,11 @@ void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noe
                Vector = group;
                set_vector_id(Tag, group->UID);
 
-               state.process_tag(child, Tag, group, Vector);
+               state.process_tag(child, Tag, group, Vector, true);
             }
             else FreeResource(group);
          }
-         else process_tag(child, Tag, Parent, Vector);
+         else process_tag(child, Tag, Parent, Vector, true);
 
          return;
       }
@@ -4251,9 +4290,11 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
    for (a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
-      if (text_property_initial(strhash(Tag.Attribs[a].Name))) continue;
+      const auto &name = Tag.Attribs[a].Name;
+      const auto hash = strhash(name);
+      if (text_property_initial(hash) or is_conditional_attrib(name)) continue;
 
-      switch(strhash(Tag.Attribs[a].Name)) {
+      switch(hash) {
          // The viewbox determines what area of the vector definition is to be displayed (in a sense, zooming into the document).
          // The individual x, y, width and height values determine the position and clipping of the displayed SVG content.
 
@@ -4402,6 +4443,7 @@ ERR svgState::proc_animate_transform(XTag &Tag, OBJECTPTR Parent) noexcept
 
    auto &new_anim = Self->Animations.emplace_back(anim_transform { Self, Parent->UID });
    auto &anim = std::get<anim_transform>(new_anim);
+   set_animation_target(anim, Tag);
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;
@@ -4440,6 +4482,7 @@ ERR svgState::proc_animate(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcep
 
    auto &new_anim = Self->Animations.emplace_back(anim_value { Self, Parent->UID, &ParentTag });
    auto &anim = std::get<anim_value>(new_anim);
+   set_animation_target(anim, Tag);
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;
@@ -4471,6 +4514,7 @@ ERR svgState::proc_set(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
 {
    auto &new_anim = Self->Animations.emplace_back(anim_value { Self, Parent->UID, &ParentTag });
    auto &anim = std::get<anim_value>(new_anim);
+   set_animation_target(anim, Tag);
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;
@@ -4505,6 +4549,7 @@ ERR svgState::proc_animate_colour(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) 
 {
    auto &new_anim = Self->Animations.emplace_back(anim_value { Self, Parent->UID, &ParentTag });
    auto &anim = std::get<anim_value>(new_anim);
+   set_animation_target(anim, Tag);
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;
@@ -4536,6 +4581,7 @@ ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    auto &new_anim = Self->Animations.emplace_back(anim_motion { Self, Parent->UID });
    auto &anim = std::get<anim_motion>(new_anim);
+   set_animation_target(anim, Tag);
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &value = Tag.Attribs[a].Value;
@@ -5318,8 +5364,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
 {
    kt::Log log(__FUNCTION__);
 
-   // Ignore stylesheet attributes, and content-value which is applied by process_tag()
-   if ((Hash IS SVF_class) or (Hash IS SVF_content_value)) return ERR::Okay;
+   // Ignore attributes handled during styling, text collection or conditional processing.
+   if ((Hash IS SVF_class) or (Hash IS SVF_content_value) or is_svg_condition_attrib(Hash)) return ERR::Okay;
 
    switch(Vector->classID()) {
       case CLASSID::VECTORVIEWPORT: {
