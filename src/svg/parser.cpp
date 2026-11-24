@@ -5708,7 +5708,11 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
       case SVF_id:
          if (!Self->Cloning) {
             Vector->setSID(StrValue);
-            Self->Scene->addDef(StrValue, Vector);
+            if ((Self->Scene->addDef(StrValue, Vector) IS ERR::Okay) and
+                (m_processing_definition) and (Vector->Owner IS Self->Scene)) {
+               // Lazy feImage sources live outside the SVG viewport and need explicit tracking.
+               track_object(Self, Vector);
+            }
             SetName(Vector, StrValue);
          }
          break;
