@@ -417,7 +417,7 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    const auto input_alpha = (Self->PreserveAlpha and (not resampled)) ? filter_alpha::STRAIGHT :
       filter_alpha::PREMULTIPLIED;
    filter_surface_view input;
-   const auto encoding = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? CS::LINEAR_RGB : CS::SRGB;
+   const auto encoding = (effect_colour_space(Self) IS VCS::LINEAR_RGB) ? CS::LINEAR_RGB : CS::SRGB;
    if (auto error = working_input(Self, source, encoding, input_alpha, input); error != ERR::Okay) return error;
    auto in_bmp = input.Bitmap;
    auto output = Self->Target->Data + (Self->Target->Clip.Top * Self->Target->LineWidth) +

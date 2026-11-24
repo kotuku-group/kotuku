@@ -124,6 +124,8 @@ struct lit_surface {
    double spot_height;   // Converts a height in alpha levels to pixels
    int width;            // Width of the surface in pixels
    const filter_surface_view *normal_map; // Optional RGB directions in scene coordinates
+   double normal_strength;
+   bool flip_normal_y;
    int scene_x, scene_y;  // Scene coordinates of the first output pixel
 };
 
@@ -769,7 +771,7 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
 // Overwrites the height-derived normal where the map supplies a valid direction.
 
 static void apply_normal_map_row(const filter_surface_view &Source, int SceneX, int SceneY, int Width,
-   float *NX, float *NY, float *NZ)
+   double Strength, bool FlipY, float *NX, float *NY, float *NZ)
 {
    const int y = SceneY - Source.OriginY;
    if ((y < Source.Valid.top) or (y >= Source.Valid.bottom)) return;
@@ -781,19 +783,32 @@ static void apply_normal_map_row(const filter_surface_view &Source, int SceneX, 
    const auto format = Source.Bitmap->ColourFormat;
    const int r = format->RedPos >> 3, g = format->GreenPos >> 3, b = format->BluePos >> 3;
    const int a = format->AlphaPos >> 3;
+   // For strengths above 1, divide the whole vector by Strength before normalising it.
+   const float scale_xy = float(std::min(Strength, 1.0));
+   const float scale_z = float(1.0 / std::max(Strength, 1.0));
    for (int i = first; i < end; ++i) {
       const auto pixel = row + std::ptrdiff_t(x + i) * 4;
       if (not pixel[a]) continue;
-      const float nx = int(pixel[r]) - NORMAL_MAP_CENTRE;
-      const float ny = int(pixel[g]) - NORMAL_MAP_CENTRE;
-      const float nz = int(pixel[b]) - NORMAL_MAP_CENTRE;
-      const float length_sq = (nx * nx) + (ny * ny) + (nz * nz);
-      if (length_sq > 0) {
-         const float inv_length = 1.0f / std::sqrt(length_sq);
-         NX[i] = nx * inv_length;
-         NY[i] = ny * inv_length;
-         NZ[i] = nz * inv_length;
+      const int raw_x = int(pixel[r]) - NORMAL_MAP_CENTRE;
+      const int green = int(pixel[g]) - NORMAL_MAP_CENTRE;
+      const int raw_y = FlipY ? -green : green;
+      const int raw_z = int(pixel[b]) - NORMAL_MAP_CENTRE;
+      if (not (raw_x or raw_y or raw_z)) continue;
+      if ((Strength IS 0.0) or (not (raw_x or raw_y))) {
+         NX[i] = NY[i] = 0.0f;
+         NZ[i] = ((Strength > 0.0) and (raw_z < 0)) ? -1.0f : 1.0f;
+         continue;
       }
+
+      // A tangent normal keeps its direction at any positive strength, even if the strength rounds to zero.
+      const float horizontal_scale = raw_z ? scale_xy : 1.0f;
+      const float nx = float(raw_x) * horizontal_scale;
+      const float ny = float(raw_y) * horizontal_scale;
+      const float nz = float(raw_z) * scale_z;
+      const float inv_length = 1.0f / std::sqrt((nx * nx) + (ny * ny) + (nz * nz));
+      NX[i] = nx * inv_length;
+      NY[i] = ny * inv_length;
+      NZ[i] = nz * inv_length;
    }
 }
 
@@ -902,7 +917,8 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
             Width);
          row_normals(nx, ny, nz, Width);
          if (Surface.normal_map) {
-            apply_normal_map_row(*Surface.normal_map, Surface.scene_x, Surface.scene_y + ry, Width, nx, ny, nz);
+            apply_normal_map_row(*Surface.normal_map, Surface.scene_x, Surface.scene_y + ry, Width,
+               Surface.normal_strength, Surface.flip_normal_y, nx, ny, nz);
          }
 
          for (float *n : { slot.x, slot.y, slot.z }) {
@@ -1383,7 +1399,9 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
       .albedo_premul = false, .stride = stride, .height = Height, .normal = NormalHeight,
       .curvature = MapHeight * (1.0 / 255.0) * UnitSize * UnitSize, .sharpen = sharpen_weight(UnitSize),
       .lights = multiple ? std::span<const lit_light>(Prepared) : std::span<const lit_light>(),
-      .spot_height = SpotHeight, .width = Width, .normal_map = Normals, .scene_x = scene_x, .scene_y = scene_y
+      .spot_height = SpotHeight, .width = Width, .normal_map = Normals,
+      .normal_strength = NormalStrength, .flip_normal_y = NormalConvention IS NMC::Y_UP,
+      .scene_x = scene_x, .scene_y = scene_y
    };
 
    if (Albedo) { // The albedo is aligned with the height input, as for the other dual-input effects

@@ -424,6 +424,8 @@ class extLightingFX : public extFilterEffect {
    int    MatcapWidth = 0, MatcapHeight = 0; // Dimensions of MatcapTexels, set per draw
 
    filter_named_input NormalMap = { "NormalMap", { .ContributesRegion = false, .Optional = true } };
+   NMC    NormalConvention = NMC::Y_DOWN; // Axis convention of NormalMap's green channel
+   double NormalStrength = 1.0;           // Multiplies the X and Y components of NormalMap before normalisation
    filter_effect_extension Extension = { std::span(&NormalMap, 1) };
 
    extLightingFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
@@ -1338,7 +1340,7 @@ ERR extLightingFX::draw()
    // Light is computed in the filter's colour space.  Bitmaps are always sRGB encoded, so linear results are encoded
    // on output.
 
-   Linear = Filter->ColourSpace IS VCS::LINEAR_RGB;
+   Linear = effect_colour_space(this) IS VCS::LINEAR_RGB;
    LightColour = Linear ? LinearColour : Colour;
    LightSource = Lights.front().Kind;
 
@@ -2192,14 +2194,28 @@ static ERR LIGHTINGFX_SET_Metalness(extLightingFX *Self, double Value)
 -FIELD-
 NormalMap: An optional filter result supplying RGB surface directions.
 
-Bind an earlier image-producing effect in the same filter.  Red, green and blue encode X, Y and Z in image axes.
-The channels are read as data in either filter colour space.  The vector is centred on `rgb(128,128,128)` and
-normalised before shading, so `rgb(128,128,255)` faces the viewer.  Transparent pixels, zero vectors and pixels
-outside the map use the height-derived normal.
+Bind an earlier image-producing effect in the same filter.  Red, green and blue encode X, Y and Z.  By default Y is
+in image axes, increasing downwards, as in DirectX normal maps.  Maps exported for OpenGL, including those of Blender
+and many texture libraries, increase upwards; set #NormalConvention to `Y_UP` for them.  The channels are read as data
+in either filter colour space.  The vector is centred on `rgb(128,128,128)`, its X and Y components are multiplied by
+#NormalStrength, and it is normalised before shading, so `rgb(128,128,255)` faces the viewer.  Transparent pixels,
+zero vectors and pixels outside the map use the height-derived normal.
 
-The primary @FilterEffect.Input still supplies height for shadows, cavity occlusion and the surface position
-relative to point and spot lights.  Set #Scale to zero to use a flat height field.  Removing the producer clears
-this binding.  Binding a map enables enhanced lighting.
+The map replaces the slopes that #Scale would derive from the height.  As in SVG, a height that rises along X by
+`g` alpha levels per pixel has a slope of `2 * Scale * g / 255`, because the Sobel kernel doubles the gradient, and so
+a normal of `(-2 * Scale * g / 255, 0, 1)` before normalisation.  This assumes a 1:1 display scale and the default
+kernel unit; refer to #UnitX.
+
+Shadows, cavity occlusion and the position of the surface relative to point and spot lights still come from the
+height, so #Scale must match the normal map for them to line up with its shading.  When a height map and a normal
+map are supplied together, the matching Scale is the least-squares fit of the slopes encoded by the normals to the
+gradients of the height.  With `gx` the central difference of the height in alpha levels per pixel and
+`sx = -nx / nz` from the normal map, `Scale = 255 * sum(gx * sx) / (2 * sum(gx * gx))`, and likewise for Y.  If the
+fits for X and Y disagree, the map does not match the height or is read in the wrong convention.  A fit that is
+negative for Y alone indicates a `Y_UP` map read as `Y_DOWN`.
+
+The primary @FilterEffect.Input supplies that height.  Set #Scale to zero to use a flat height field.  Removing the
+producer clears this binding.  Binding a map enables enhanced lighting.
 
 -END-
 
@@ -2214,6 +2230,62 @@ static ERR LIGHTINGFX_GET_NormalMap(extLightingFX *Self, objFilterEffect **Value
 static ERR LIGHTINGFX_SET_NormalMap(extLightingFX *Self, objFilterEffect *Value)
 {
    return set_named_filter_input(Self, Self->NormalMap.Name, Value ? VSF::REFERENCE : VSF::NONE, Value);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+NormalConvention: The axis convention of the green channel of #NormalMap.
+
+Normal maps disagree on the direction of Y.  `Y_DOWN`, the default, reads green as Y in image axes, increasing
+downwards, as written by DirectX tools and by the `NORMAL` type of this class.  `Y_UP` reads green as Y increasing
+upwards, as written by OpenGL tools such as Blender, and negates it.  `AUTO` is not valid for this class.
+
+A map read in the wrong convention gives plausible but wrong lighting: slopes facing up and down the image swap their
+shading, while slopes facing left and right are unaffected.  To check a map, light a raised feature from above.  Its
+upper edge should be bright.  The field has no effect unless #NormalMap is set.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_NormalConvention(extLightingFX *Self, NMC &Value)
+{
+   Value = Self->NormalConvention;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_NormalConvention(extLightingFX *Self, NMC Value)
+{
+   if ((Value != NMC::Y_DOWN) and (Value != NMC::Y_UP)) return ERR::OutOfRange;
+   Self->NormalConvention = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+NormalStrength: Scales the relief of #NormalMap.
+
+The X and Y components of each normal are multiplied by this value before the normal is normalised.  The default of 1
+uses the map as supplied, 0 flattens it so that every mapped pixel faces the viewer, and values above 1 exaggerate it.
+The value must be zero or greater.  The field has no effect unless #NormalMap is set.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_NormalStrength(extLightingFX *Self, double &Value)
+{
+   Value = Self->NormalStrength;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_NormalStrength(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
+   Self->NormalStrength = Value;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2401,7 +2473,8 @@ The result is a complete element.  The lighting types use `feDiffuseLighting`, `
 the primitive subregion and surface settings.  Settings that SVG cannot express are written as `kotuku:`
 attributes when they differ from their defaults.  These include `kotuku:features` if #Features is not `ALL`, and
 `kotuku:cavity`,
-`kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, and `kotuku:ambient` for #Ambient.  The
+`kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, `kotuku:normalConvention` and
+`kotuku:normalStrength` for #NormalConvention and #NormalStrength, and `kotuku:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
 zero, and `matcap` for #MatcapPath when it is set.  An SVG-loaded matcap keeps its original relative reference so the
 image can be reloaded from the same document folder.  For API-loaded images the supplied #MatcapPath is written.  A
@@ -2416,6 +2489,12 @@ Each light is written as a child element, in the order in which the lights were 
 The parent filter writes the `in`, `in2` and `result` attributes separately.
 
 *********************************************************************************************************************/
+
+static void write_normal_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
+{
+   if (Self.NormalConvention IS NMC::Y_UP) Stream << ' ' << Prefix << "normalConvention=\"y-up\"";
+   if (Self.NormalStrength != 1.0) Stream << ' ' << Prefix << "normalStrength=\"" << Self.NormalStrength << '"';
+}
 
 static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 {
@@ -2435,6 +2514,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
          stream << '"';
       }
       if (Self->Detail != DEFAULT_DETAIL) stream << " detail=\"" << Self->Detail << '"';
+      write_normal_options(stream, *Self, "");
       stream << "/>";
       Value = stream.str();
       return ERR::Okay;
@@ -2473,6 +2553,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
    if (Self->Cavity != DEFAULT_CAVITY) stream << ' ' << prefix << "cavity=\"" << Self->Cavity << '"';
    if (Self->Detail != DEFAULT_DETAIL) stream << ' ' << prefix << "detail=\"" << Self->Detail << '"';
    if (Self->Penumbra != DEFAULT_PENUMBRA) stream << ' ' << prefix << "penumbra=\"" << Self->Penumbra << '"';
+   write_normal_options(stream, *Self, prefix);
 
    const auto &a = Self->Ambient;
    if ((a.Red != 0.0f) or (a.Green != 0.0f) or (a.Blue != 0.0f) or (a.Alpha != 0.0f)) {
@@ -2550,6 +2631,8 @@ static const FieldArray clLightingFXFields[] = {
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
    { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },
    { "NormalMap",  FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalMap, LIGHTINGFX_SET_NormalMap, CLASSID::FILTEREFFECT },
+   { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalConvention, LIGHTINGFX_SET_NormalConvention, &clLightingFXNMC },
+   { "NormalStrength", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalStrength, LIGHTINGFX_SET_NormalStrength },
    { "Scale",      FDF_DOUBLE|FDF_RW },
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },

@@ -223,6 +223,11 @@ enables the enhanced lighting of @LightingFX.  The following attributes of `feDi
 it.  Sets @LightingFX.Ambient.  It has no effect on `feSpecularLighting`.</li>
 <li>`kotuku:normalMap` selects the named image result of an earlier primitive for RGB surface directions.
 Sets @LightingFX.NormalMap.  The primary input still supplies height.</li>
+<li>`kotuku:normalConvention`: `y-down` (the default) or `y-up`, the direction of Y in the green channel of the
+normal map.  Most texture libraries and Blender export `y-up` (OpenGL) maps; DirectX tools export `y-down`.  A wrong
+value swaps the shading of slopes that face up and down the image.  Sets @LightingFX.NormalConvention.</li>
+<li>`kotuku:normalStrength`: 0 or greater, default 1.  Multiplies the X and Y components of the normal map, so 0
+flattens it and values above 1 exaggerate it.  Sets @LightingFX.NormalStrength.</li>
 </list>
 
 The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` accept these attributes, which set the
@@ -319,6 +324,11 @@ image as the displacement primitive's `in`.
   &lt;feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" yChannelSelector="G" scale="12"/&gt;
 &lt;/filter&gt;
 </pre>
+
+To refract through a normal map loaded by `feImage`, add `kotuku:normalConvention` to `feDisplacementMap` with the
+map's convention, `y-down` or `y-up`.  The map is then read as signed normal components in either colour space, as
+lighting reads it, rather than as colour.  The default, `auto`, does this only for the result of
+`kotuku:feNormalMap`.  Sets @DisplacementFX.NormalConvention.
 
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing

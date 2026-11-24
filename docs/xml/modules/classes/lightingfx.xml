@@ -381,13 +381,37 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
     </field>
 
     <field>
+      <name>NormalConvention</name>
+      <comment>The axis convention of the green channel of <fl>NormalMap</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="NMC">NMC</type>
+      <description>
+<p>Normal maps disagree on the direction of Y.  <code>Y_DOWN</code>, the default, reads green as Y in image axes, increasing downwards, as written by DirectX tools and by the <code>NORMAL</code> type of this class.  <code>Y_UP</code> reads green as Y increasing upwards, as written by OpenGL tools such as Blender, and negates it.  <code>AUTO</code> is not valid for this class.</p>
+<p>A map read in the wrong convention gives plausible but wrong lighting: slopes facing up and down the image swap their shading, while slopes facing left and right are unaffected.  To check a map, light a raised feature from above.  Its upper edge should be bright.  The field has no effect unless <fl>NormalMap</fl> is set.</p>
+<types lookup="NMC"/>
+      </description>
+    </field>
+
+    <field>
       <name>NormalMap</name>
       <comment>An optional filter result supplying RGB surface directions.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
-<p>Bind an earlier image-producing effect in the same filter.  Red, green and blue encode X, Y and Z in image axes. The channels are read as data in either filter colour space.  The vector is centred on RGB (128, 128, 128) and normalised before shading, so RGB (128, 128, 255) faces the viewer.  Transparent pixels, zero vectors and pixels outside the map use the height-derived normal.</p>
-<p>The primary <class name="FilterEffect" field="Input">FilterEffect.Input</class> still supplies height for shadows, cavity occlusion and the surface position relative to point and spot lights.  Set <fl>Scale</fl> to zero to use a flat height field.  Removing the producer clears this binding.  Binding a map enables enhanced lighting.</p>
+<p>Bind an earlier image-producing effect in the same filter.  Red, green and blue encode X, Y and Z.  By default Y is in image axes, increasing downwards, as in DirectX normal maps.  Maps exported for OpenGL, including those of Blender and many texture libraries, increase upwards; set <fl>NormalConvention</fl> to <code>Y_UP</code> for them.  The channels are read as data in either filter colour space.  The vector is centred on <code>rgb(128,128,128)</code>, its X and Y components are multiplied by <fl>NormalStrength</fl>, and it is normalised before shading, so <code>rgb(128,128,255)</code> faces the viewer.  Transparent pixels, zero vectors and pixels outside the map use the height-derived normal.</p>
+<p>The map replaces the slopes that <fl>Scale</fl> would derive from the height.  As in SVG, a height that rises along X by <code>g</code> alpha levels per pixel has a slope of <code>2 * Scale * g / 255</code>, because the Sobel kernel doubles the gradient, and so a normal of <code>(-2 * Scale * g / 255, 0, 1)</code> before normalisation.  This assumes a 1:1 display scale and the default kernel unit; refer to <fl>UnitX</fl>.</p>
+<p>Shadows, cavity occlusion and the position of the surface relative to point and spot lights still come from the height, so <fl>Scale</fl> must match the normal map for them to line up with its shading.  When a height map and a normal map are supplied together, the matching Scale is the least-squares fit of the slopes encoded by the normals to the gradients of the height.  With <code>gx</code> the central difference of the height in alpha levels per pixel and <code>sx = -nx / nz</code> from the normal map, <code>Scale = 255 * sum(gx * sx) / (2 * sum(gx * gx))</code>, and likewise for Y.  If the fits for X and Y disagree, the map does not match the height or is read in the wrong convention.  A fit that is negative for Y alone indicates a <code>Y_UP</code> map read as <code>Y_DOWN</code>.</p>
+<p>The primary <class name="FilterEffect" field="Input">FilterEffect.Input</class> supplies that height.  Set <fl>Scale</fl> to zero to use a flat height field.  Removing the producer clears this binding.  Binding a map enables enhanced lighting.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>NormalStrength</name>
+      <comment>Scales the relief of <fl>NormalMap</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The X and Y components of each normal are multiplied by this value before the normal is normalised.  The default of 1 uses the map as supplied, 0 flattens it so that every mapped pixel faces the viewer, and values above 1 exaggerate it. The value must be zero or greater.  The field has no effect unless <fl>NormalMap</fl> is set.</p>
       </description>
     </field>
 
@@ -475,7 +499,7 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The result is a complete element.  The lighting types use <code>feDiffuseLighting</code>, <code>feSpecularLighting</code> or <code>kotuku:feLighting</code> and include their light sources.  The <code>NORMAL</code> type uses <code>kotuku:feNormalMap</code> and includes the primitive subregion and surface settings.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes when they differ from their defaults.  These include <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, and <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, and <code>kotuku:ambient</code> for <fl>Ambient</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder.  For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted.  The attributes of <code>kotuku:feLighting</code> and <code>kotuku:feNormalMap</code> are written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
+<p>The result is a complete element.  The lighting types use <code>feDiffuseLighting</code>, <code>feSpecularLighting</code> or <code>kotuku:feLighting</code> and include their light sources.  The <code>NORMAL</code> type uses <code>kotuku:feNormalMap</code> and includes the primitive subregion and surface settings.  Settings that SVG cannot express are written as <code>kotuku:</code> attributes when they differ from their defaults.  These include <code>kotuku:features</code> if <fl>Features</fl> is not <code>ALL</code>, and <code>kotuku:cavity</code>, <code>kotuku:detail</code> and <code>kotuku:penumbra</code> for <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl>, <code>kotuku:normalConvention</code> and <code>kotuku:normalStrength</code> for <fl>NormalConvention</fl> and <fl>NormalStrength</fl>, and <code>kotuku:ambient</code> for <fl>Ambient</fl>.  The <code>COMBINED</code> type also writes <code>metalness</code>, <code>fresnel</code> and <code>wrap</code> for <fl>Metalness</fl>, <fl>Fresnel</fl> and <fl>Wrap</fl> when they are not zero, and <code>matcap</code> for <fl>MatcapPath</fl> when it is set.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same document folder.  For API-loaded images the supplied <fl>MatcapPath</fl> is written.  A matcap supplied as a <fl>Matcap</fl> bitmap is omitted.  The attributes of <code>kotuku:feLighting</code> and <code>kotuku:feNormalMap</code> are written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the prefix, for example <code>xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;</code>.</p>
 <p>Each light is written as a child element, in the order in which the lights were added.  The options of <method>SetLightOptions</method> are written on the light's element as <code>kotuku:colour</code>, <code>kotuku:intensity</code>, <code>kotuku:range</code> and <code>kotuku:shadows</code>, when they differ from their defaults.  The intensity of the first light is <fl>Intensity</fl>.</p>
 <p>The parent filter writes the <code>in</code>, <code>in2</code> and <code>result</code> attributes separately.</p>
       </description>
@@ -505,6 +529,12 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <const name="DIFFUSE">Select diffuse lighting.</const>
       <const name="NORMAL">Write the surface normals to RGB for use as a displacement map.</const>
       <const name="SPECULAR">Select specular lighting.</const>
+    </constants>
+
+    <constants lookup="NMC" comment="Axis conventions for normal maps read by LightingFX and DisplacementFX.">
+      <const name="AUTO">DisplacementFX only.  Read the map as a normal map only if it was written by LightingFX with type NORMAL, otherwise as colour.</const>
+      <const name="Y_DOWN">Green encodes Y in image axes, increasing downwards.  Used by DirectX and by LightingFX's NORMAL type.</const>
+      <const name="Y_UP">Green encodes Y increasing upwards, as in OpenGL.  The green component is negated when read.</const>
     </constants>
 
   </types>

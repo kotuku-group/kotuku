@@ -171,7 +171,7 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
    const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
 
-   const bool linear_rgb = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+   const bool linear_rgb = effect_colour_space(Self) IS VCS::LINEAR_RGB;
 
    // The transfer functions apply to every pixel, including transparent ones, so that functions such as an inverted
    // alpha can raise empty areas to full opacity.  The colour of a transparent pixel is undefined, so it is treated

@@ -105,7 +105,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
    if (auto error = scene->Viewport->setAspectRatio(Self->AspectRatio); error != ERR::Okay) return error;
    if (not active_filter_step(Self)) return ERR::InvalidState;
 
-   auto saved_colour = std::exchange(viewport->ColourSpace, filter->ColourSpace);
+   auto saved_colour = std::exchange(viewport->ColourSpace, effect_colour_space(Self));
    auto saved_matrices = std::move(viewport->Matrices);
    auto saved_parent_view = source->ParentView;
    auto saved_parent = std::exchange(source->Parent, (objVector *)viewport);

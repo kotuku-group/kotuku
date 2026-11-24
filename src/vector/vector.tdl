@@ -43,6 +43,11 @@ struct KeyValue;
     "COMBINED: Light an albedo with diffuse, specular and ambient light in a single pass, producing a finished surface.",
     "NORMAL: Write the surface normals to RGB for use as a displacement map.")
 
+  enums("NMC", { type="int", start=0, comment="Axis conventions for normal maps read by LightingFX and DisplacementFX." },
+    "AUTO: DisplacementFX only.  Read the map as a normal map only if it was written by LightingFX with type NORMAL, otherwise as colour.",
+    "Y_DOWN: Green encodes Y in image axes, increasing downwards.  Used by DirectX and by LightingFX's NORMAL type.",
+    "Y_UP: Green encodes Y increasing upwards, as in OpenGL.  The green component is negated when read.")
+
   flags("LFX", { comment="Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features." },
     "DEQUANTISE: Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.",
     "SHARPEN: Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.",

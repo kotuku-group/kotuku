@@ -232,13 +232,13 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
          if (auto error = Self->Bitmap->resize(width, height); error != ERR::Okay) return error;
       }
 
-      if ((not Self->CacheTransform.is_equal(sampling, 0.0)) or (Self->CacheColourSpace != filter->ColourSpace) or
+      if ((not Self->CacheTransform.is_equal(sampling, 0.0)) or (Self->CacheColourSpace != effect_colour_space(Self)) or
           (Self->CacheRegion.left != region.left) or (Self->CacheRegion.top != region.top) or
           (Self->CacheRegion.right != region.right) or (Self->CacheRegion.bottom != region.bottom)) Self->Dirty = true;
    }
 
    if (scalar or Self->Dirty) {
-      const bool linear_rgb = filter->ColourSpace IS VCS::LINEAR_RGB;
+      const bool linear_rgb = effect_colour_space(Self) IS VCS::LINEAR_RGB;
       double fx = Self->FX, fy = Self->FY;
       int stitch_width = 0, stitch_height = 0, wrap_x = PerlinN, wrap_y = PerlinN;
       if (Self->Stitch) {
@@ -339,7 +339,7 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
       if (scalar) return ERR::Okay;
       Self->CacheTransform = sampling;
       Self->CacheRegion = region;
-      Self->CacheColourSpace = filter->ColourSpace;
+      Self->CacheColourSpace = effect_colour_space(Self);
       Self->Dirty = false;
    }
 

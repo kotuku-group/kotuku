@@ -40,6 +40,17 @@
 
   <fields>
     <field>
+      <name>ColourSpace</name>
+      <comment>The colour space in which this effect processes its inputs.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="VCS">VCS</type>
+      <description>
+<p>By default the effect inherits <class name="VectorFilter" field="ColourSpace">VectorFilter.ColourSpace</class>.  Set <code>SRGB</code> or <code>LINEAR_RGB</code> to override it for this effect alone.  Effects in different colour spaces can be chained freely, because every effect stores its result in sRGB and decodes its inputs in its own colour space.  This field is the SVG equivalent of the <code>color-interpolation-filters</code> property on a filter primitive.</p>
+<types lookup="VCS"/>
+      </description>
+    </field>
+
+    <field>
       <name>Height</name>
       <comment>Primitive height of the effect area.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -156,6 +167,12 @@
 
   </fields>
   <types>
+    <constants lookup="VCS" comment="Colour space options.">
+      <const name="INHERIT">Inherit the colour space option from the parent vector.</const>
+      <const name="LINEAR_RGB">Operate in linear light.  This produces higher quality results, and is the SVG default for <code>color-interpolation-filters</code>.</const>
+      <const name="SRGB">Operate on sRGB-encoded values directly.  This is the fastest option, and is the SVG default for <code>color-interpolation</code>.</const>
+    </constants>
+
     <constants lookup="VSF" comment="Filter source types - these are used internally">
       <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
       <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>

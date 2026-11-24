@@ -48,7 +48,7 @@ static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
    auto step = active_filter_step(Self);
    if (not step) return ERR::InvalidState;
 
-   BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
+   BAF copy_flags = (effect_colour_space(Self) IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
 
    for (size_t i = 0; i < step->Inputs.size(); i++) {
       const objBitmap *bmp;

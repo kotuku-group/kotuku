@@ -583,6 +583,15 @@ static void write_filter_xml_subregion(std::ostream &Stream, const objFilterEffe
 
 //********************************************************************************************************************
 
+//********************************************************************************************************************
+// The colour space in which an effect processes its inputs: its own ColourSpace, or the filter's if it inherits.
+// Results are stored in sRGB either way, so effects with different colour spaces can be chained freely.
+
+static VCS effect_colour_space(const extFilterEffect *Effect)
+{
+   return (Effect->ColourSpace != VCS::INHERIT) ? Effect->ColourSpace : Effect->Filter->ColourSpace;
+}
+
 #include "filter_effect.cpp"
 #include "filter_blur.cpp"
 #include "filter_colourmatrix.cpp"
@@ -2426,6 +2435,9 @@ Colours that are input values, such as the colour of a @FloodFX, are stored as g
 This setting applies only to the processing of effects within the pipeline.  The composite of the filter's output into
 the target is governed by the client vector's @Vector.ColourSpace.
 
+An effect can override this setting with its own @FilterEffect.ColourSpace, which is the SVG equivalent of
+`color-interpolation-filters` on a filter primitive.
+
 The SVG standard defaults to linear RGB for filter effects, so the SVG parser selects `LINEAR_RGB` unless the
 `color-interpolation-filters` attribute states otherwise.  Filters created through the API retain the SRGB default.
 
@@ -2499,6 +2511,8 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          write_input("in", effect->SourceType, effect->Input);
          write_input("in2", effect->MixType, effect->Mix);
       }
+      if (effect->ColourSpace IS VCS::SRGB) ss << " color-interpolation-filters=\"sRGB\"";
+      else if (effect->ColourSpace IS VCS::LINEAR_RGB) ss << " color-interpolation-filters=\"linearRGB\"";
       if (auto result = results.find(effect); result != results.end()) {
          ss << " result=\"effect" << result->second << '"';
       }

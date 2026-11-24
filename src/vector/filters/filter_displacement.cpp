@@ -29,7 +29,9 @@ operation.
 
 A normal map supplied directly by @LightingFX with type `NORMAL` uses its stored RGB values in either filter colour
 space.  Select red for X and green for Y.  A component of 128, or a pixel outside the normal map's subregion, gives
-zero displacement along that axis.
+zero displacement along that axis.  To read a normal map from any other source, such as an image loaded by
+@ImageFX, set #NormalConvention to the map's convention.  Refraction then reads the map in the same way as
+@LightingFX.NormalMap.
 
 -END-
 
@@ -58,6 +60,7 @@ class extDisplacementFX : public extFilterEffect {
    double Scale = 0; // SVG default requires this is 0, which makes the displacment algorithm ineffective.
    VSM ResampleMethod = VSM::BILINEAR; // Resample method.
    CMP XChannel = CMP::ALPHA, YChannel = CMP::ALPHA;
+   NMC NormalConvention = NMC::AUTO; // AUTO reads the Mix as a normal map only if LightingFX wrote it
 
    extDisplacementFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
@@ -114,29 +117,47 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    const int draw_height = (mix_height < height) ? mix_height : height;
    if ((draw_width < 1) or (draw_height < 1)) return ERR::Okay;
 
-   const auto &bounds = Self->Filter->Render->ClientPathBounds;
-   const auto diagonal = filter_render_context::normalised_diagonal(bounds.width(), bounds.height());
-   if ((not std::isfinite(diagonal)) or (not std::isfinite(Self->Scale))) return ERR::InvalidValue;
-   if (diagonal <= 0) return ERR::Okay;
-   const double scale = Self->Scale / diagonal;
+   if (not std::isfinite(Self->Scale)) return ERR::InvalidValue;
    const auto x_channel = Self->XChannel;
    const auto y_channel = Self->YChannel;
    if ((unsigned(x_channel) > unsigned(CMP::ALPHA)) or (unsigned(y_channel) > unsigned(CMP::ALPHA))) {
       return ERR::InvalidValue;
    }
-   const bool normal_x = map.NormalMap and (x_channel != CMP::ALPHA);
-   const bool normal_y = map.NormalMap and (y_channel != CMP::ALPHA);
-   const double sx = scale * double(mix_width) * (normal_x ? (0.5 / NORMAL_MAP_RANGE) : (1.0 / 255.0));
-   const double sy = scale * double(mix_height) * (normal_y ? (0.5 / NORMAL_MAP_RANGE) : (1.0 / 255.0));
-   if ((not std::isfinite(sx)) or (not std::isfinite(sy))) return ERR::InvalidValue;
+   const bool normals = map.NormalMap or (Self->NormalConvention != NMC::AUTO);
+   const bool normal_x = normals and (x_channel != CMP::ALPHA);
+   const bool normal_y = normals and (y_channel != CMP::ALPHA);
+
+   // The displacement is Scale * (C - 0.5) in the coordinate system of PrimitiveUnits, which for bounding box units
+   // is a fraction of the bounding box on each axis.  The linear part of the client transform maps the user-space
+   // vector to bitmap pixels, so that scaling and rotation of the client also apply to the displacement.  The
+   // factors convert a sampled component (C - 0.5 in 8-bit steps, or a signed normal component) to that vector.
+
+   const auto &render = *Self->Filter->Render;
+   const bool bounding_box = render.PrimitiveUnits IS VUNIT::BOUNDING_BOX;
+   const double unit_x = bounding_box ? render.ClientBounds.width() : 1.0;
+   const double unit_y = bounding_box ? render.ClientBounds.height() : 1.0;
+   const double ux = Self->Scale * unit_x * (normal_x ? (0.5 / NORMAL_MAP_RANGE) : (1.0 / 255.0));
+   const double uy = Self->Scale * unit_y * (normal_y ? (0.5 / NORMAL_MAP_RANGE) : (1.0 / 255.0));
+   const auto &t = render.Transform;
+   const double xx = t.sx * ux, xy = t.shy * ux; // Bitmap displacement for a unit X component
+   const double yx = t.shx * uy, yy = t.sy * uy; // Bitmap displacement for a unit Y component
+   if ((not std::isfinite(xx)) or (not std::isfinite(xy)) or (not std::isfinite(yx)) or (not std::isfinite(yy))) {
+      return ERR::InvalidValue;
+   }
 
    const uint8_t x_type = RGBA[int(x_channel)];
    const uint8_t y_type = RGBA[int(y_channel)];
    const uint8_t alpha = RGBA[int(CMP::ALPHA)];
-   const bool linear_mix = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+   const bool linear_mix = effect_colour_space(Self) IS VCS::LINEAR_RGB;
+   const bool flip_green = Self->NormalConvention IS NMC::Y_UP; // Y_UP maps store Y negated in green
 
-   auto sample_mix = [linear_mix, alpha](const uint8_t *Pixel, CMP Channel, uint8_t Type, bool Normal) -> double {
-      if (Normal) return Pixel[alpha] ? int(Pixel[Type]) - NORMAL_MAP_CENTRE : 0;
+   auto sample_mix = [linear_mix, alpha, flip_green](const uint8_t *Pixel, CMP Channel, uint8_t Type,
+      bool Normal) -> double {
+      if (Normal) {
+         if (not Pixel[alpha]) return 0;
+         const int component = int(Pixel[Type]) - NORMAL_MAP_CENTRE;
+         return (flip_green and (Channel IS CMP::GREEN)) ? -component : component;
+      }
       const auto value = (linear_mix and (Channel != CMP::ALPHA)) ? glLinearRGB.convert(Pixel[Type]) : Pixel[Type];
       return double(value) - 127.5;
    };
@@ -150,8 +171,10 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
          auto m = mix + std::ptrdiff_t(y) * mix_stride;
          auto d = dest + std::ptrdiff_t(y) * dest_stride;
          for (int x=0; x < draw_width; x++, m += mix_pixel_size, d += dest_pixel_size) {
-            const double sample_x = double(x) + sx * sample_mix(m, x_channel, x_type, normal_x);
-            const double sample_y = double(y) + sy * sample_mix(m, y_channel, y_type, normal_y);
+            const double vx = sample_mix(m, x_channel, x_type, normal_x);
+            const double vy = sample_mix(m, y_channel, y_type, normal_y);
+            const double sample_x = double(x) + (xx * vx) + (yx * vy);
+            const double sample_y = double(y) + (xy * vx) + (yy * vy);
 
             if (nearest) input.sample<filter_interpolation::NEAREST>(d,
                sample_x + in_bmp->Clip.Left, sample_y + in_bmp->Clip.Top);
@@ -186,6 +209,39 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
 /*********************************************************************************************************************
 
 -FIELD-
+NormalConvention: Reads the Mix input as a normal map in the given axis convention.
+
+The default, `AUTO`, reads the Mix input as a normal map only if it is the result of @LightingFX with type `NORMAL`,
+and as colour otherwise.  `Y_DOWN` and `Y_UP` read any Mix input as a normal map: the red, green and blue channels
+are signed components centred on 128, read as data in either filter colour space, and transparent pixels give zero
+displacement.  `Y_UP` negates the green component, for maps whose Y increases upwards, as in OpenGL.  Use the same
+value as @LightingFX.NormalConvention so that refraction and shading agree.  The alpha channel, if selected, is
+always read as colour.
+
+In normal map mode a component of 127 displaces by half of #Scale, as a colour component of 255 does in colour mode.
+
+The SVG attribute is `kotuku:normalConvention`, with the values `auto`, `y-down` and `y-up`.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR DISPLACEMENTFX_GET_NormalConvention(extDisplacementFX *Self, NMC &Value)
+{
+   Value = Self->NormalConvention;
+   return ERR::Okay;
+}
+
+static ERR DISPLACEMENTFX_SET_NormalConvention(extDisplacementFX *Self, NMC Value)
+{
+   if ((Value != NMC::AUTO) and (Value != NMC::Y_DOWN) and (Value != NMC::Y_UP)) return ERR::OutOfRange;
+   Self->NormalConvention = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 ResampleMethod: The resample algorithm to use for transforming the source image.
 
 Currently `NEIGHBOUR` and `BILINEAR` are supported.  Other resample methods fall back to bilinear filtering.
@@ -195,8 +251,12 @@ Currently `NEIGHBOUR` and `BILINEAR` are supported.  Other resample methods fall
 -FIELD-
 Scale: Displacement scale factor.
 
-The amount is expressed in the coordinate system established by @VectorFilter.PrimitiveUnits on the parent @VectorFilter.
-When the value of this field is 0, this operation has no effect on the source image.
+The amount is expressed in the coordinate system established by @VectorFilter.PrimitiveUnits on the parent
+@VectorFilter.  In user space units, a map component of 255 displaces by half of Scale in user units, and a component
+of 0 by half of Scale in the opposite direction.  In bounding box units, Scale is a fraction of the width of the
+client's bounding box on the X axis and of its height on the Y axis.  The displacement is transformed with the client,
+so it scales and rotates with it.  When the value of this field is 0, this operation has no effect on the source
+image.
 
 -FIELD-
 XChannel: X axis channel selection.
@@ -226,6 +286,8 @@ static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string &Value
    write_filter_xml_subregion(stream, *Self);
    if (Self->ResampleMethod IS VSM::NEIGHBOUR) stream << " image-rendering=\"optimizeSpeed\"";
    else if (Self->ResampleMethod IS VSM::LANCZOS) stream << " image-rendering=\"optimizeQuality\"";
+   if (Self->NormalConvention IS NMC::Y_DOWN) stream << " kotuku:normalConvention=\"y-down\"";
+   else if (Self->NormalConvention IS NMC::Y_UP) stream << " kotuku:normalConvention=\"y-up\"";
 
    Value = stream.str();
    return ERR::Okay;
@@ -240,6 +302,8 @@ static const FieldArray clDisplacementFXFields[] = {
    { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXVSM },
    { "XChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
    { "YChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
+   { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_NormalConvention,
+     DISPLACEMENTFX_SET_NormalConvention, &clDisplacementFXNMC },
    { "XMLDef",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, DISPLACEMENTFX_GET_XMLDef },
    END_FIELD
 };
