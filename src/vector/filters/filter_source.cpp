@@ -10,8 +10,21 @@ SourceFX: Renders a source vector in the effect pipeline.
 
 The SourceFX class will render a named vector into a given rectangle within the current user coordinate system.
 
-Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by attributes `X`, `Y`,
-`Width` and `Height`.  The placement and scaling of the referenced vector is controlled by the #AspectRatio field.
+Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by the primitive
+subregion: the `X`, `Y`, `Width` and `Height` fields of the effect.  The referenced vector is drawn at its own size,
+with the origin of its user space at the top-left corner of the subregion, and it is clipped to the subregion.  The
+viewport has no view box, so the #AspectRatio field does not scale the vector.  This is how web browsers place an
+element referenced by the SVG `feImage` primitive.
+
+If the subregion is not set, it defaults to the filter region.  The vector then moves with the filtered element: with
+a filter region that starts at (40, 40), a vector point at (0, 0) is drawn at (40, 40).  Maps drawn by other routes,
+such as a pattern fill, will not line up with it.  To draw the vector in the user space of the filtered element, set
+`X` and `Y` to 0 and set `Width` and `Height` so that the subregion covers the filter region.  This applies when the
+filter's primitive units are user space, which is the default.  In SVG:
+
+<pre>
+&lt;feImage href="#heightMap" x="0" y="0" width="1000" height="600"/&gt;
+</pre>
 
 -END-
 

@@ -183,6 +183,27 @@ spelling of some tokens may differ from the source.  `var()` and `env()` are not
 such as `fill="var(--glaze)"`, consistent with web browsers.  `@property` and pseudo-classes other than `:root` are
 not supported.
 
+<header>Images in Filters</header>
+
+An `feImage` primitive that references an element, such as `href="#map"`, draws that element at its own size with the
+origin of its user space at the top-left corner of the primitive subregion.  This matches web browsers.  If the
+subregion is not set it defaults to the filter region, so the element moves with the filtered element.  It is then
+offset from content drawn in user space, such as a pattern fill of the same map.
+
+To draw the referenced element in the user space of the filtered element, give `feImage` `x="0"` and `y="0"`, and a
+`width` and `height` that cover the filter region.  This applies when `primitiveUnits` is `userSpaceOnUse`, which is
+the default.  The output is clipped to the filter region as usual.  Use the same attributes on every `feImage` that
+supplies a texture map, so that the albedo, height and normal maps of a material align with each other and with the
+document.
+
+<pre>
+&lt;filter id="material" x="0" y="0" width="1" height="1"&gt;
+  &lt;feImage href="#albedoMap" x="0" y="0" width="1000" height="600" result="albedo"/&gt;
+  &lt;feImage href="#normalMap" x="0" y="0" width="1000" height="600" result="normals"/&gt;
+  ...
+&lt;/filter&gt;
+</pre>
+
 <header>Lighting Extensions</header>
 
 A document that declares a Kōtuku namespace is rendered with a @VectorScene.Compliance of `NONE` (see #Init), which
