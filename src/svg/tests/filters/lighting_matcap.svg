@@ -155,13 +155,16 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
     </filter>
 
     <!-- 9: Bevelled chrome star with cavity: a blurred shape as the height, the studio matcap and a gold albedo at half
-      metalness -->
+      metalness.  The blurred height extends past the star, where the dielectric half of the material would reflect
+      highlights over the transparent albedo, so the result is clipped to the star's shape. -->
     <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="height" kotuku:outputMode="height"/>
       <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="30" diffuseConstant="0.8" specularConstant="0.8"
         specularExponent="40" ambient="#303030" metalness="0.5" features="all" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
       </kotuku:feLighting>
+      <!-- Clip lighting output to the shape -->
+      <feComposite in2="SourceAlpha" operator="in"/>
     </filter>
   </defs>
 
