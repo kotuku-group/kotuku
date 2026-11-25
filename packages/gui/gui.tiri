@@ -1231,7 +1231,7 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          text = table.merge({ fill = Palette.text }, gui.fonts.icon),
          effect = Icon('fill(pearl)')
       },
-      input = { -- Used by checkbox, input, combobox
+      input = { -- Used by toggle, input, combobox
          path  = gui.paths.rectangle,
          bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, opacity = 1 },
          focus = { stroke = Palette.contrast },

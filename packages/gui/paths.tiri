@@ -17,6 +17,9 @@ function cornerRadius(Size:num!):num
    return math.clamp(math.min(gui.maxCornerSize(), gui.sizing.widget.cornerSize * Size), 0, Size * 0.5)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- The standard paths in this section are typically used to host content
+
 @Doc(text=[[
 @desc Returns the simplest, undecorated rectangular path
 ]])
@@ -183,8 +186,12 @@ gui.paths.butt = function(Viewport:obj!, Options:table):table
    return { path=f'M {w - inset} 0 H {inset} {cap} {inset} {h} H {w - inset} {cap} {w - inset} 0 Z' }
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
+gui.paths.div = {}
+
 @NoDiscard
-gui.paths.divArrowhead = function(Viewport:obj!, Options:table):table
+gui.paths.div.arrowhead = function(Viewport:obj!, Options:table):table
    w = Viewport.width
    h = Viewport.height
    if w <= 0 or h <= 0 then return { path='' } end

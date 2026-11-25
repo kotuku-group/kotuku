@@ -42,8 +42,7 @@ function toggleMenu()
 
    err, bx, by, bw, bh = &inputViewport.mtGetBoundary(0)
    if err is ERR_Okay then
-      &menu.x = bx
-      &menu.y = by + bh
+      &menu.{ x = bx, y = by + bh }
       if &inputViewport.width > 0 then &menu.scale = bw / &inputViewport.width end
    end
 
@@ -175,11 +174,14 @@ gui.combobox = function(Options:table)
          gui.applyStyle(&bkgd, &input_theme.focus)
       end
 
-      -- The corner radius is relative to the box height
+      &_clipPath.{ strokeWidth = &bkgd.strokeWidth, lineJoin = &bkgd.lineJoin, miterLimit = &bkgd.miterLimit }
+   end
 
-      local h = math.max(0, (&_boxHeight ?? 0) - (&input_theme.bkgd.strokeWidth ?? 0))
-      &bkgd.cornerX = gui.sizing.widget.cornerSize * h
-      &bkgd.cornerY = &bkgd.cornerX
+   function reshape()
+      generate_path = &input_theme.path ?? gui.paths.rectangle
+      path = generate_path(&inputViewport, {}).path
+      &bkgd.sequence = path
+      &_clipPath.sequence = path
    end
 
    -- Change the active state of the combobox box to disabled or enabled
@@ -295,27 +297,47 @@ gui.combobox = function(Options:table)
       end
 
       &_boxHeight = &viewport.height - box.y - box.yOffset
-      BOX_HEIGHT <const> = &_boxHeight
 
       &inputViewport = &viewport.new('VectorViewport', box)
 
       if &_label then
-         &_label.place(&viewport.width, &viewport.height, box.y, BOX_HEIGHT)
+         &_label.place(&viewport.width, &viewport.height, box.y, &_boxHeight)
          &_label.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
             &_label.place(Width, Height, box.y, &_boxHeight)
          end
       end
 
-      edge = (&input_theme.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
+      sw = &input_theme.bkgd.strokeWidth ?? 0
+      edge = (sw * 0.5) % 1 -- Pixel-align the stroke edges only
 
-      &bkgd = &inputViewport.new('VectorRectangle', table.merge({
-         x = edge, y = edge, xOffset = edge, yOffset = edge
+      &bkgd = &inputViewport.new('VectorPath', table.merge({
+         x = edge, y = edge, xOffset = edge, yOffset = edge,
+         resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+            reshape()
+         end
       }, &input_theme.bkgd))
 
-      refreshStyle() -- Resolves the corner radius for the box height
+      -- In the box's coordinate space, a white fill and black border stroke clip the text and arrow to the
+      -- inner edge of the themed path.
 
-      clip_inset = math.ceil(&input_theme.bkgd.strokeWidth) -- Whole pixels keep the text and icon sharp
-      ICON_SIZE = math.min(FONT_HEIGHT * .6, BOX_HEIGHT - (clip_inset * 2))
+      &_clipMask = &inputViewport.scene.new('VectorClip', {
+         name = 'ComboboxClip', units = 'UserSpace', flags = VCLF_APPLY_FILLS | VCLF_APPLY_STROKES
+      })
+      &_clipPath = &_clipMask.viewport.new('VectorPath', {
+         x = edge, y = edge, xOffset = edge, yOffset = edge, fill = 'rgb(255,255,255)', stroke = 'rgb(0,0,0)'
+      })
+      refreshStyle()
+      reshape()
+
+      content = &inputViewport.new('VectorViewport', {
+         x = 0, y = 0, width = '100%', height = '100%', mask = &_clipMask
+      })
+
+      clip_mask = &_clipMask
+      &inputViewport.subscribe('Free', function() clip_mask?.free() end)
+
+      clip_inset = math.ceil(sw * 0.5) -- Whole pixels keep the text sharp
+      ICON_SIZE = math.min(FONT_HEIGHT * .6, &_boxHeight - (clip_inset * 2))
 
       -- Returns the drop-down icon pattern in the current text colour, and the placement of the viewport that paints
       -- it.  The viewport is padded to suit the pattern tile, see gui.createIcon().
@@ -324,16 +346,16 @@ gui.combobox = function(Options:table)
          icon = gui.createIcon(&viewport.scene, &menuIcon, ICON_SIZE, iconTheme(&&))
          return {
             xOffset = MARGIN - icon.margin,
-            y       = math.floor((BOX_HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
+            y       = math.floor((&_boxHeight - ICON_SIZE) * 0.5) - icon.margin,
             width   = ICON_SIZE + (icon.margin * 2),
             height  = ICON_SIZE + (icon.margin * 2),
             fill    = icon.fill
          }
       end
 
-      &iconRender = &inputViewport.new('VectorViewport', iconSettings())
+      &iconRender = content.new('VectorViewport', iconSettings())
 
-      &_textClip = &inputViewport.new('VectorViewport', {
+      &_textClip = content.new('VectorViewport', {
          cursor = (function()
             if &allowCustom then return 'text' end
          end)(),
@@ -349,11 +371,11 @@ gui.combobox = function(Options:table)
       -- The baseline centres the capitals in the box, and is relative to the clip viewport.  The text is inset from
       -- the left by the space above it, so that the margins look even at any box height.
 
-      text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (clip_inset * 2)) * 0.5)
+      text_inset = math.floor((&_boxHeight - FONT_HEIGHT - (clip_inset * 2)) * 0.5)
 
       &text = &_textClip.new('VectorText', {
          x         = text_inset,
-         y         = math.round((BOX_HEIGHT + ASCENT) * 0.5) - clip_inset,
+         y         = math.round((&_boxHeight + ASCENT) * 0.5) - clip_inset,
          string    = defaultText,
          lineLimit = 1,
          fontStyle = gui.fontStyle(&input_theme.text),
@@ -460,19 +482,24 @@ gui.combobox = function(Options:table)
 
       function restyle()
          sw = &input_theme.bkgd.strokeWidth ?? 0
-         edge = sw * 0.5
+         edge = (sw * 0.5) % 1
          &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+         &_clipPath.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
 
          refreshStyle()
+         reshape()
 
-         inset = math.ceil(sw)
+         inset = (sw * 0.5) % 1
          &_textClip.{ x = inset, y = inset, yOffset = inset }
 
          if &input_theme.text.fill then &text.fill = &input_theme.text.fill end
-         if &labelText then -- The label is drawn with widget.text; its size is kept so the layout does not move
-            size = &labelText.fontSize
-            &labelText.fontStyle = gui.fontStyle(&theme.widget.text)
-            &labelText.fontSize = f'{size}px'
+
+         if &labelText then
+            size = &labelText.fontSize -- Must retrieve existing size before setting fontStyle
+            &labelText.{
+               fontStyle = gui.fontStyle(&theme.widget.text),
+               fontSize  = size -- Maintain the original size
+            }
          end
 
          try

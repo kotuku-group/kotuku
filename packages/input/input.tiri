@@ -101,11 +101,13 @@ gui.input = function(Options)
 
    function refreshStyle()
       gui.applyStyle(&bkgd, input_theme.bkgd)
+
       if &disabled then
          gui.applyStyle(&bkgd, input_theme.disabled)
       elseif &_focus then
          gui.applyStyle(&bkgd, input_theme.focus)
       end
+
       &_clipPath?.{ strokeWidth = &bkgd.strokeWidth, lineJoin = &bkgd.lineJoin, miterLimit = &bkgd.miterLimit }
    end
 
@@ -148,7 +150,7 @@ gui.input = function(Options)
       edge = (sw * 0.5) % 1 -- Pixel-align the stroke edges only
       &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
 
-      inset = math.ceil(sw * .5)
+      inset = (sw * .5) % 1
       &_textClip.{ x = inset, y = inset, xOffset = inset, yOffset = inset }
       &_clipPath.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
       refreshStyle()
@@ -306,9 +308,7 @@ gui.input = function(Options)
          &_currentText = new_text
          if &maskMode is 'keystroke' then &_lastGoodInput = new_text end
       else
-         &text.string = &_currentText
-         &text.cursorRow = &_cursorRow
-         &text.cursorColumn = &_cursorColumn
+         &text.{ string = &_currentText, cursorRow = &_cursorRow, cursorColumn = &_cursorColumn }
          &viewport.acDraw()
       end
 
@@ -391,7 +391,7 @@ gui.input = function(Options)
       -- border for any shape.  The mask's user space is the input viewport, so the mask path is placed as the
       -- background is.
 
-      clip_inset = math.ceil((input_theme.bkgd.strokeWidth ?? 0) * .5) -- Whole pixels keep the text sharp
+      clip_inset = ((input_theme.bkgd.strokeWidth ?? 0) * .5) % 1 -- Whole pixels keep the text sharp
       &_textClip = &inputViewport.new('VectorViewport', {
          name = 'vp_input_clip',
          x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset
@@ -403,7 +403,9 @@ gui.input = function(Options)
       &_clipPath = &_clipMask.viewport.new('VectorPath', {
          x = edge, y = edge, xOffset = edge, yOffset = edge, fill = 'rgb(255,255,255)', stroke = 'rgb(0,0,0)'
       })
+
       refreshStyle() -- Copies the border's stroke settings to the mask
+
       &_textClip.mask = &_clipMask
 
       -- The scene owns the mask, so it is freed with the input box.

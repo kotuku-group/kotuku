@@ -200,7 +200,8 @@ gui.dialog.file = function(Options)
          xOffset    = 0,
          text       = &currentPath,
          theme      = {
-            bkgd = { fill = 'none', stroke = 'none', cornerX = 0, cornerY = 0 },
+            path = gui.paths.plain,
+            bkgd = { fill = 'none', stroke = 'none' },
             text = { face = gui.fonts.filesys.face }
          },
          events = {
@@ -250,7 +251,8 @@ gui.dialog.file = function(Options)
             xOffset     = 0,
             placeholder = 'Enter file name',
             theme       = {
-               bkgd = { fill = 'none', stroke = 'none', cornerX = 0, cornerY = 0 },
+               path = gui.paths.plain,
+               bkgd = { fill = 'none', stroke = 'none' },
                text = { face = gui.fonts.filesys.face }
             },
             text = target_file,
