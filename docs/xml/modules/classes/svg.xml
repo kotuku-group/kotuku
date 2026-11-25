@@ -132,6 +132,7 @@ document, not from the element that references them.</li>
   ...
 &lt;/filter&gt;
 </pre>
+<p>On an <code>feImage</code> with an external file reference, <code>kotuku:outputMode=&quot;height&quot;</code> supplies a floating-point height map. 16-bit greyscale PNGs retain their full sample precision.  For other images, <code>kotuku:heightChannel</code> selects the stored channel as <code>R</code> (default), <code>G</code>, <code>B</code>, <code>A</code> or <code>luminance</code>.  The values are resampled as heights without colour conversion.</p>
 <p>To repeat a map, limit the primitive that supplies it to a single tile with <code>x</code>, <code>y</code>, <code>width</code> and <code>height</code>, then pass its result to <code>feTile</code>.  The tile repeats across the subregion of <code>feTile</code>, which defaults to the filter region, with copies aligned to the tile's own position.  <code>feTile</code> keeps the data kind of its input: a normal map from <code>kotuku:feNormalMap</code> is still read as normals by <code>feDisplacementMap</code>, and a floating-point height from <code>kotuku:outputMode=&quot;height&quot;</code> is repeated at full precision.  See <class name="TileFX">TileFX</class> for how tiles that do not cover whole pixels are resampled.</p>
 <pre>&lt;feImage href=&quot;#normalMap&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;512&quot; height=&quot;512&quot; result=&quot;normalTile&quot;/&gt;
 &lt;feTile in=&quot;normalTile&quot; result=&quot;normals&quot;/&gt;

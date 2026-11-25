@@ -101,7 +101,7 @@
       <const name="TRANSPARENT">Sample transparent black outside the input.</const>
     </constants>
 
-    <constants lookup="FOM" comment="Output modes for TurbulenceFX and BlurFX.">
+    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX and BlurFX.">
       <const name="HEIGHT">Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.</const>
       <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
     </constants>

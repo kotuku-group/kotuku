@@ -98,9 +98,11 @@
     { id=16, name='SetLightOptions' }
   })
 
-  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM', 'FOM', 'MCH' } }, [[
     ~int(VSM) ResampleMethod
     ~int(ARF) AspectRatio
+    ~int(FOM) OutputMode
+    ~int(MCH) HeightChannel
   ]])
 
   klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true }, [[

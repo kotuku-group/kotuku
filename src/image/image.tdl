@@ -10,7 +10,8 @@ module({ name="Image", copyright="Paul Manias © 2001-2026", version=1.0, timest
     "MASK: A mask has been generated for the image.",
     "ALPHA: If an image supports an alpha channel, this field will be set (if you will be saving a Image with an alpha channel, set this flag prior to initialisation and build the channel using the object provided in the #Mask field).",
     "LAZY: Prevents automatic loading of the image.  Use the Query action to process the image header or Activate to load the image data.",
-    "FORCE_ALPHA_32: If the image source includes an alpha channel mask, it will normally be separated out and stored in the #Mask field.  If you set the `FORCE_ALPHA_32` option before loading, the image will be forced into 32-bit graphics mode with alpha channel.  The mask information will be stored in the alpha byte and the #Mask field will not be set.")
+    "FORCE_ALPHA_32: If the image source includes an alpha channel mask, it will normally be separated out and stored in the #Mask field.  If you set the `FORCE_ALPHA_32` option before loading, the image will be forced into 32-bit graphics mode with alpha channel.  The mask information will be stored in the alpha byte and the #Mask field will not be set.",
+    "RAW_SAMPLES: Load PNG channels without gamma correction.  With an unspecified bitmap depth, native 16-bit greyscale takes precedence over FORCE_ALPHA_32.  For other PNG formats, combining these flags stores transparency keys in the alpha channel.")
 
   klass("Image", { src="image.cpp", output="image_def.c", extended=true }, [[
     string Path         # Path to the image

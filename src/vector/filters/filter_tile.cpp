@@ -16,8 +16,8 @@ of its input, so that a TileFX without an explicit subregion fills the filter re
 
 The result has the same data kind as the input.  Colour images are copied without colour conversion, so a tiled
 normal map produced by a @LightingFX of type `NORMAL` is still recognised as a normal map.  Scalar heights produced
-in the `HEIGHT` output mode of @TurbulenceFX or @BlurFX remain floating-point values, so they can be tiled at full
-precision before they are lit.
+in the `HEIGHT` output mode of @ImageFX, @TurbulenceFX or @BlurFX remain floating-point values, so they can be tiled
+at full precision before they are lit.
 
 If the tile covers a whole number of device pixels, every pixel of the output is an exact copy of a pixel in the tile.
 Otherwise, for example when the client is scaled or rotated, the tile is resampled with bilinear interpolation.

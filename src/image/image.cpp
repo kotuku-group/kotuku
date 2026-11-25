@@ -98,7 +98,8 @@ static uint8_t scale_sample8(int Value, int BitDepth)
 //********************************************************************************************************************
 // The Bitmap dictates the target format.  A greyscale source is decoded directly into a 16-bit BMF::GREYSCALE bitmap
 // if the client preset that flag, or if the Bitmap was left undefined and the source has 16-bit samples, so that it
-// loads as-is.  FORCE_ALPHA_32 and a preset BitsPerPixel otherwise select the usual conversion.
+// loads as-is.  FORCE_ALPHA_32 selects the usual conversion unless RAW_SAMPLES is also set.  A preset
+// BitsPerPixel disables automatic format selection.
 
 static bool use_greyscale16(extImage *Self, int ColourType, int BitDepth)
 {
@@ -106,7 +107,7 @@ static bool use_greyscale16(extImage *Self, int ColourType, int BitDepth)
    if ((ColourType != PNG_COLOR_TYPE_GRAY) and (ColourType != PNG_COLOR_TYPE_GRAY_ALPHA)) return false;
    if ((bmp->Flags & BMF::GREYSCALE) != BMF::NIL) return true;
    if (bmp->initialised()) return false;
-   if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) return false;
+   if ((Self->Flags & (PCF::FORCE_ALPHA_32|PCF::RAW_SAMPLES)) IS PCF::FORCE_ALPHA_32) return false;
    return (!bmp->BitsPerPixel) and (BitDepth IS 16);
 }
 
@@ -196,15 +197,18 @@ static ERR IMAGE_Activate(extImage *Self)
 
    auto bmp = Self->Bitmap;
    const bool force_alpha_requested = (Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL;
-   const bool override_greyscale = Self->prvInferredGreyscale and (force_alpha_requested or (bmp->BitsPerPixel != 16));
+   const bool raw_samples = (Self->Flags & PCF::RAW_SAMPLES) != PCF::NIL;
+   const bool override_greyscale = Self->prvInferredGreyscale and
+      ((force_alpha_requested and not raw_samples) or (bmp->BitsPerPixel != 16));
    const bool grey_target = (!override_greyscale) and ((bmp->Flags & BMF::GREYSCALE) != BMF::NIL);
-   const bool force_alpha_32 = (!grey_target) and force_alpha_requested;
    png_structp read_ptr = nullptr;
    png_infop info_ptr = nullptr;
    png_infop end_info = nullptr;
    bool file_opened = false;
+   bool force_alpha_32 = false;
+   bool transparency_in_alpha = false;
    volatile bool mask_created = false;
-   bool grey16 = false; // Load into a 16-bit BMF::GREYSCALE bitmap (PCF::GREYSCALE_16)
+   bool grey16 = false; // Load into a 16-bit BMF::GREYSCALE bitmap.
    int grey16_key = -1; // Exact 16-bit transparency key for greyscale bitmaps
 
    if (!Self->prvFile) {
@@ -255,6 +259,9 @@ static ERR IMAGE_Activate(extImage *Self)
       Self->prvInferredGreyscale = false;
    }
    grey16 = use_greyscale16(Self, color_type, bit_depth);
+   force_alpha_32 = force_alpha_requested and not (grey_target or grey16);
+   transparency_in_alpha = raw_samples and force_alpha_32 and
+      png_get_valid(read_ptr, info_ptr, PNG_INFO_tRNS);
 
    // If the image contains a palette, load the palette into our Bitmap
 
@@ -298,7 +305,7 @@ static ERR IMAGE_Activate(extImage *Self)
    // If a background colour has been specified for the image (instead of an alpha channel), read it and create the
    // mask based on the data that we have read.
 
-   if (info_ptr->valid & PNG_INFO_tRNS) {
+   if ((info_ptr->valid & PNG_INFO_tRNS) and not transparency_in_alpha) {
       // The first colour index in the list is taken as the background, any others are ignored
 
       RGB8 rgb;
@@ -441,7 +448,10 @@ static ERR IMAGE_Activate(extImage *Self)
       }
    }
    else {
-      error = decompress_png(Self, bmp, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height, grey16);
+      // The alpha decode expands tRNS before reducing the sample depth.  Palette alpha is read from the palette.
+      const int decode_type = (transparency_in_alpha and (color_type != PNG_COLOR_TYPE_PALETTE)) ?
+         color_type | PNG_COLOR_MASK_ALPHA : color_type;
+      error = decompress_png(Self, bmp, bit_depth, decode_type, read_ptr, info_ptr, png_width, png_height, grey16);
 
       // setTransColour() can only express an 8-bit key, so replace it with the exact 16-bit sample.
       if ((error IS ERR::Okay) and (grey16_key >= 0)) bmp->TransIndex = grey16_key;
@@ -1314,8 +1324,11 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
    // colours.  Gamma correction would also reduce 16-bit precision (libpng's 16-bit gamma tables are indexed at
    // reduced depth).
 
+   const bool raw_samples = (Self->Flags & PCF::RAW_SAMPLES) != PCF::NIL;
    double file_gamma;
-   if ((!Grey16) and (png_get_gAMA(ReadPtr, InfoPtr, &file_gamma))) png_set_gamma(ReadPtr, 2.2, file_gamma);
+   if (not (Grey16 or raw_samples) and png_get_gAMA(ReadPtr, InfoPtr, &file_gamma)) {
+      png_set_gamma(ReadPtr, 2.2, file_gamma);
+   }
 
    png_read_update_info(ReadPtr, InfoPtr);
 

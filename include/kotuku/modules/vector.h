@@ -121,7 +121,7 @@ enum class NMC : int {
    Y_UP = 2,
 };
 
-// Channel selection for scalar maps read by LightingFX, such as ambient occlusion and roughness maps.
+// Channel selection for scalar maps, such as height, ambient occlusion and roughness maps.
 
 enum class MCH : int {
    NIL = 0,
@@ -432,7 +432,7 @@ enum class VPF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VPF)
 
-// Output modes for TurbulenceFX and BlurFX.
+// Output modes for ImageFX, TurbulenceFX and BlurFX.
 
 enum class FOM : int {
    NIL = 0,
@@ -2515,13 +2515,23 @@ class objImageFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getOutputMode(FOM &Value) noexcept {
+      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
+      return ERR::Okay;
+   }
+
+   inline ERR getHeightChannel(MCH &Value) noexcept {
+      Value = *((MCH *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 20));
+      return ERR::Okay;
+   }
+
    inline ERR getBitmap(OBJECTPTR &Value) noexcept {
       Value = *((OBJECTPTR *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
    inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -2542,12 +2552,22 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOutputMode(const FOM Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setHeightChannel(const MCH Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00804508, &Value);
    }
 
