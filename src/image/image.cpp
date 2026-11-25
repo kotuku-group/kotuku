@@ -27,6 +27,17 @@ significant differences between the source and destination bitmap types.
 Dynamically sized image formats like SVG will use the #DisplayWidth and #DisplayHeight values to determine the
 rendered image size.
 
+The format of the loaded image is dictated by the #Bitmap.  Preset its fields, such as @Bitmap.BitsPerPixel, before
+loading to define the format that you need, and the image will be converted to it.  If the #Bitmap is left undefined,
+the image is loaded in a format that matches the source as closely as possible.
+
+Greyscale PNG images with 16-bit samples load as-is into a 16-bit #Bitmap with the `GREYSCALE` flag, preserving their
+full precision.  Presetting the `GREYSCALE` flag in @Bitmap.Flags loads greyscale images of any bit depth this way;
+samples of 8 bits or fewer are expanded so that white is stored as `0xffff`, and colour images are converted to their
+luminance.  The preset flag takes precedence over `FORCE_ALPHA_32`.  An alpha channel is stored in the #Mask at
+8-bit precision.  These samples are not gamma corrected, so that they can be used as data such as height maps.  To
+load a 16-bit greyscale image at 8 bits instead, preset a @Bitmap.BitsPerPixel of 8 or more.
+
 -END-
 
 *********************************************************************************************************************/
@@ -42,6 +53,8 @@ rendered image size.
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
+#include <bit>
+#include <cstring>
 #include <vector>
 #include "../link/linear_rgb.h"
 
@@ -56,7 +69,7 @@ static thread_local bool tlError = false;
 JUMPTABLE_CORE
 JUMPTABLE_DISPLAY
 
-static ERR decompress_png(extImage *, objBitmap *, int, int, png_structp, png_infop, png_uint_32, png_uint_32);
+static ERR decompress_png(extImage *, objBitmap *, int, int, png_structp, png_infop, png_uint_32, png_uint_32, bool);
 static void read_row_callback(png_structp, png_uint_32, int);
 static void write_row_callback(png_structp, png_uint_32, int);
 static void png_error_hook(png_structp png_ptr, png_const_charp message);
@@ -65,6 +78,50 @@ static void kotuku_flush_callback(png_structp png);
 void kotuku_read_callback(png_structp png, png_bytep data, png_size_t length);
 void kotuku_write_callback(png_structp png, png_bytep data, png_size_t length);
 static ERR create_image_class(void);
+
+//********************************************************************************************************************
+// Scale a raw PNG sample, such as a tRNS or bKGD value, from its file bit depth to 16 or 8 bits.  Sample values from
+// low bit depths are expanded in the same way as libpng expands pixel data, so that the maximum maps to the maximum.
+
+static uint16_t scale_sample16(int Value, int BitDepth)
+{
+   if (BitDepth >= 16) return uint16_t(Value);
+   const int max = (1 << BitDepth) - 1;
+   return uint16_t(((Value & max) * 65535) / max);
+}
+
+static uint8_t scale_sample8(int Value, int BitDepth)
+{
+   return uint8_t(scale_sample16(Value, BitDepth) >> 8);
+}
+
+//********************************************************************************************************************
+// The Bitmap dictates the target format.  A greyscale source is decoded directly into a 16-bit BMF::GREYSCALE bitmap
+// if the client preset that flag, or if the Bitmap was left undefined and the source has 16-bit samples, so that it
+// loads as-is.  FORCE_ALPHA_32 and a preset BitsPerPixel otherwise select the usual conversion.
+
+static bool use_greyscale16(extImage *Self, int ColourType, int BitDepth)
+{
+   auto bmp = Self->Bitmap;
+   if ((ColourType != PNG_COLOR_TYPE_GRAY) and (ColourType != PNG_COLOR_TYPE_GRAY_ALPHA)) return false;
+   if ((bmp->Flags & BMF::GREYSCALE) != BMF::NIL) return true;
+   if (bmp->initialised()) return false;
+   if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) return false;
+   return (!bmp->BitsPerPixel) and (BitDepth IS 16);
+}
+
+// Set the depth of a Bitmap that will be loaded as greyscale.  A preset BitsPerPixel is left for Bitmap Init to
+// validate.
+
+static void set_greyscale16(objBitmap *Bitmap)
+{
+   if (Bitmap->initialised()) return;
+   if (!Bitmap->BitsPerPixel) {
+      Bitmap->BitsPerPixel  = 16;
+      Bitmap->BytesPerPixel = 2;
+   }
+   Bitmap->Flags |= BMF::GREYSCALE;
+}
 
 //********************************************************************************************************************
 
@@ -138,11 +195,17 @@ static ERR IMAGE_Activate(extImage *Self)
    tlError = false;
 
    auto bmp = Self->Bitmap;
+   const bool force_alpha_requested = (Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL;
+   const bool override_greyscale = Self->prvInferredGreyscale and (force_alpha_requested or (bmp->BitsPerPixel != 16));
+   const bool grey_target = (!override_greyscale) and ((bmp->Flags & BMF::GREYSCALE) != BMF::NIL);
+   const bool force_alpha_32 = (!grey_target) and force_alpha_requested;
    png_structp read_ptr = nullptr;
    png_infop info_ptr = nullptr;
    png_infop end_info = nullptr;
    bool file_opened = false;
    volatile bool mask_created = false;
+   bool grey16 = false; // Load into a 16-bit BMF::GREYSCALE bitmap (PCF::GREYSCALE_16)
+   int grey16_key = -1; // Exact 16-bit transparency key for greyscale bitmaps
 
    if (!Self->prvFile) {
       std::string_view path;
@@ -187,6 +250,12 @@ static ERR IMAGE_Activate(extImage *Self)
    if (!Self->DisplayWidth)  Self->DisplayWidth  = png_width;
    if (!Self->DisplayHeight) Self->DisplayHeight = png_height;
 
+   if (override_greyscale) {
+      bmp->Flags &= ~BMF::GREYSCALE;
+      Self->prvInferredGreyscale = false;
+   }
+   grey16 = use_greyscale16(Self, color_type, bit_depth);
+
    // If the image contains a palette, load the palette into our Bitmap
 
    if (info_ptr->valid & PNG_INFO_PLTE) {
@@ -206,12 +275,14 @@ static ERR IMAGE_Activate(extImage *Self)
       }
    }
 
-   if ((Self->Flags & PCF::FORCE_ALPHA_32) != PCF::NIL) {
-      // Force the image to 32-bit and store the alpha channel in the alpha byte of the pixel data.
+   if (force_alpha_32) {
+      // Force the image to 32-bit and store the alpha channel in the alpha byte of the pixel data.  A Bitmap preset
+      // as greyscale takes precedence, and receives any alpha channel as a mask.
 
       bmp->BitsPerPixel  = 32;
       bmp->BytesPerPixel = 4;
       bmp->Flags |= BMF::ALPHA_CHANNEL;
+      Self->Flags &= ~(PCF::MASK|PCF::ALPHA);
    }
    else if (color_type & PNG_COLOR_MASK_ALPHA) {
       // An image can have an alpha channel that is separate to the RGB image data.
@@ -251,7 +322,9 @@ static ERR IMAGE_Activate(extImage *Self)
                }
             }
 
-            if ((partial_alpha or (trans_count > 1)) and ((Self->Flags & PCF::FORCE_ALPHA_32) IS PCF::NIL)) {
+            // Distinct palette entries can map to the same luminance, so keep even a single transparent index
+            // in the mask when converting to greyscale.
+            if ((!force_alpha_32) and (trans_count > 0) and (grey_target or partial_alpha or (trans_count > 1))) {
                if (!Self->Mask) {
                   if ((Self->Mask = objBitmap::create::local(
                         fl::Width(Self->Bitmap->Width), fl::Height(Self->Bitmap->Height),
@@ -273,17 +346,18 @@ static ERR IMAGE_Activate(extImage *Self)
          else if ((info_ptr->color_type IS PNG_COLOR_TYPE_GRAY) or
                   (info_ptr->color_type IS PNG_COLOR_TYPE_GRAY_ALPHA)) {
             if (trans_colour) {
-               rgb.Red   = trans_colour->gray;
-               rgb.Green = trans_colour->gray;
-               rgb.Blue  = trans_colour->gray;
+               rgb.Red   = scale_sample8(trans_colour->gray, bit_depth);
+               rgb.Green = rgb.Red;
+               rgb.Blue  = rgb.Red;
                rgb.Alpha = 255;
                bmp->setTransColour(rgb);
+               if (grey16) grey16_key = scale_sample16(trans_colour->gray, bit_depth);
             }
          }
          else if (trans_colour) {
-            rgb.Red   = trans_colour->red;
-            rgb.Green = trans_colour->green;
-            rgb.Blue  = trans_colour->blue;
+            rgb.Red   = scale_sample8(trans_colour->red, bit_depth);
+            rgb.Green = scale_sample8(trans_colour->green, bit_depth);
+            rgb.Blue  = scale_sample8(trans_colour->blue, bit_depth);
             rgb.Alpha = 255;
             bmp->setTransColour(rgb);
          }
@@ -303,15 +377,15 @@ static ERR IMAGE_Activate(extImage *Self)
          }
       }
       else if ((color_type IS PNG_COLOR_TYPE_GRAY) or (color_type IS PNG_COLOR_TYPE_GRAY_ALPHA)) {
-         bmp->Bkgd.Red   = prgb->gray;
-         bmp->Bkgd.Green = prgb->gray;
-         bmp->Bkgd.Blue  = prgb->gray;
+         bmp->Bkgd.Red   = scale_sample8(prgb->gray, bit_depth);
+         bmp->Bkgd.Green = bmp->Bkgd.Red;
+         bmp->Bkgd.Blue  = bmp->Bkgd.Red;
          bmp->Bkgd.Alpha = 255;
       }
       else {
-         bmp->Bkgd.Red   = prgb->red;
-         bmp->Bkgd.Green = prgb->green;
-         bmp->Bkgd.Blue  = prgb->blue;
+         bmp->Bkgd.Red   = scale_sample8(prgb->red, bit_depth);
+         bmp->Bkgd.Green = scale_sample8(prgb->green, bit_depth);
+         bmp->Bkgd.Blue  = scale_sample8(prgb->blue, bit_depth);
          bmp->Bkgd.Alpha = 255;
       }
       log.trace("Background Colour: %d,%d,%d", bmp->Bkgd.Red, bmp->Bkgd.Green, bmp->Bkgd.Blue);
@@ -330,7 +404,8 @@ static ERR IMAGE_Activate(extImage *Self)
          total_bit_depth = std::max(bit_depth, 8);
    }
 
-   if (!bmp->BitsPerPixel) {
+   if (grey16 or grey_target) set_greyscale16(bmp);
+   else if (!bmp->BitsPerPixel) {
       if ((color_type IS PNG_COLOR_TYPE_GRAY) or (color_type IS PNG_COLOR_TYPE_PALETTE)) {
          bmp->BitsPerPixel = 8;
       }
@@ -341,7 +416,7 @@ static ERR IMAGE_Activate(extImage *Self)
       bmp->BitsPerPixel = 32;
    }
 
-   if ((bmp->BitsPerPixel < 24) and
+   if ((!grey16) and (bmp->BitsPerPixel < 24) and
        ((bmp->BitsPerPixel < total_bit_depth) or
         ((total_bit_depth <= 8) and (bmp->BitsPerPixel > 8)))) {
 
@@ -359,12 +434,18 @@ static ERR IMAGE_Activate(extImage *Self)
       };
 
       if (tmp_bitmap.ok()) {
-         if (!(error = decompress_png(Self, *tmp_bitmap, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height))) {
+         if (!(error = decompress_png(Self, *tmp_bitmap, bit_depth, color_type, read_ptr, info_ptr, png_width,
+               png_height, false))) {
             error = gfx::CopyArea(*tmp_bitmap, bmp, BAF::DITHER, 0, 0, bmp->Width, bmp->Height, 0, 0);
          }
       }
    }
-   else error = decompress_png(Self, bmp, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height);
+   else {
+      error = decompress_png(Self, bmp, bit_depth, color_type, read_ptr, info_ptr, png_width, png_height, grey16);
+
+      // setTransColour() can only express an 8-bit key, so replace it with the exact 16-bit sample.
+      if ((error IS ERR::Okay) and (grey16_key >= 0)) bmp->TransIndex = grey16_key;
+   }
 
    if (!error) {
       if (setjmp(png_jmpbuf(read_ptr))) {
@@ -373,6 +454,10 @@ static ERR IMAGE_Activate(extImage *Self)
       }
 
       png_read_end(read_ptr, end_info);
+      if (grey16) {
+         png_get_gAMA_fixed(read_ptr, info_ptr, &Self->prvPNGFileGamma);
+         png_get_sRGB(read_ptr, info_ptr, &Self->prvPNGsRGBIntent);
+      }
       if (Self->prvFile) { FreeResource(Self->prvFile); Self->prvFile = nullptr; }
    }
    else {
@@ -552,7 +637,11 @@ static ERR IMAGE_Query(extImage *Self)
    if (!Self->DisplayHeight) Self->DisplayHeight = height;
    if (color_type & PNG_COLOR_MASK_ALPHA) Self->Flags |= PCF::ALPHA;
 
-   if (!Bitmap->BitsPerPixel) {
+   if ((use_greyscale16(Self, color_type, bit_depth)) or ((Bitmap->Flags & BMF::GREYSCALE) != BMF::NIL)) {
+      if ((Bitmap->Flags & BMF::GREYSCALE) IS BMF::NIL) Self->prvInferredGreyscale = true;
+      set_greyscale16(Bitmap);
+   }
+   else if (!Bitmap->BitsPerPixel) {
       if ((color_type IS PNG_COLOR_TYPE_GRAY) or (color_type IS PNG_COLOR_TYPE_PALETTE)) {
          Bitmap->BitsPerPixel = 8;
          Bitmap->BytesPerPixel = 1;
@@ -635,7 +724,8 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    ERR error = ERR::Compression;
    tlError = false;
 
-   bool alpha_mask = ((Self->Flags & PCF::ALPHA) != PCF::NIL);
+   const bool alpha_mask = (Self->Flags & PCF::ALPHA) != PCF::NIL;
+   const bool grey16 = (bmp->Flags & BMF::GREYSCALE) != BMF::NIL;
 
    if (((Self->Flags & (PCF::ALPHA|PCF::MASK)) != PCF::NIL) and (!Self->Mask)) {
       log.warning("Illegal use of the ALPHA/MASK flags without an accompanying mask bitmap.");
@@ -673,7 +763,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
       goto exit;
    }
 
-   if (alpha_mask or (bmp->BitsPerPixel IS 32) or (bmp->BytesPerPixel IS 2)) {
+   if (alpha_mask or (bmp->BitsPerPixel IS 32) or ((!grey16) and (bmp->BytesPerPixel IS 2))) {
       row_buffer.resize(size_t(bmp->Width) * 4);
    }
 
@@ -682,7 +772,17 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
       goto exit;
    }
 
-   if ((bmp->AmtColours > 256) or alpha_mask) {
+   if (grey16) {
+      png_set_IHDR(write_ptr, info_ptr, bmp->Width, bmp->Height, 16,
+         alpha_mask ? PNG_COLOR_TYPE_GRAY_ALPHA : PNG_COLOR_TYPE_GRAY,
+         PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+      // The samples from a greyscale load are in the source transfer space.
+      if (bmp->ColourSpace IS CS::LINEAR_RGB) png_set_gAMA_fixed(write_ptr, info_ptr, PNG_GAMMA_LINEAR);
+      else if (Self->prvPNGsRGBIntent >= 0) png_set_sRGB(write_ptr, info_ptr, Self->prvPNGsRGBIntent);
+      else if (Self->prvPNGFileGamma > 0) png_set_gAMA_fixed(write_ptr, info_ptr, Self->prvPNGFileGamma);
+   }
+   else if ((bmp->AmtColours > 256) or alpha_mask) {
       if ((bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) {
          log.trace("Saving as 32-bit alpha.");
          png_set_IHDR(write_ptr, info_ptr, bmp->Width, bmp->Height, 8, PNG_COLOR_TYPE_RGB_ALPHA,
@@ -726,24 +826,26 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    // Set the background colour
 
    if (bmp->Bkgd.Alpha) {
-      png_color_16 rgb;
+      png_color_16 rgb{};
       if (bmp->AmtColours < 256) rgb.index = bmp->BkgdIndex;
       else rgb.index = 0;
       rgb.red   = bmp->Bkgd.Red;
       rgb.green = bmp->Bkgd.Green;
       rgb.blue  = bmp->Bkgd.Blue;
+      if (grey16) rgb.gray = uint16_t(bmp->BkgdIndex);
       png_set_bKGD(write_ptr, info_ptr, &rgb);
    }
 
    // Set the transparent colour
 
-   if (bmp->TransColour.Alpha) {
-      png_color_16 rgb;
+   if (bmp->TransColour.Alpha and ((!grey16) or (!alpha_mask))) {
+      png_color_16 rgb{};
       if (bmp->AmtColours < 256) rgb.index = bmp->TransIndex;
       else rgb.index = 0;
       rgb.red   = bmp->TransColour.Red;
       rgb.green = bmp->TransColour.Green;
       rgb.blue  = bmp->TransColour.Blue;
+      if (grey16) rgb.gray = uint16_t(bmp->TransIndex);
       png_set_tRNS(write_ptr, info_ptr, &rgb.index, 1, &rgb);
    }
 
@@ -757,7 +859,27 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
 
    // Write the image data to the PNG file
 
-   if (bmp->BitsPerPixel IS 8) {
+   if (grey16) {
+      if constexpr (std::endian::native IS std::endian::little) png_set_swap(write_ptr);
+      for (int y=0; y < bmp->Height; y++) {
+         auto data = bmp->Data + (size_t(y) * bmp->LineWidth);
+         row_pointers = data;
+         if (alpha_mask) {
+            auto mask = Self->Mask->Data + (size_t(y) * Self->Mask->LineWidth);
+            auto pixel = row_buffer.data();
+            for (int x=0; x < bmp->Width; x++, pixel+=4, data+=2) {
+               std::memcpy(pixel, data, 2);
+               // Expand alpha by repeating the byte, which also scales 255 to 65535.
+               pixel[2] = mask[x];
+               pixel[3] = mask[x];
+            }
+            row_pointers = row_buffer.data();
+         }
+         png_write_row(write_ptr, row_pointers);
+         if (tlError) { error = ERR::Write; goto exit; }
+      }
+   }
+   else if (bmp->BitsPerPixel IS 8) {
       if (alpha_mask) {
          row_pointers = row_buffer.data();
          uint8_t *data = bmp->Data;
@@ -1154,7 +1276,7 @@ static void png_warning_hook(png_structp png_ptr, png_const_charp message)
 //********************************************************************************************************************
 
 static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int ColourType, png_structp ReadPtr,
-                            png_infop InfoPtr, png_uint_32 PngWidth, png_uint_32 PngHeight)
+                            png_infop InfoPtr, png_uint_32 PngWidth, png_uint_32 PngHeight, bool Grey16)
 {
    ERR error = ERR::Decompression;
    std::vector<uint8_t> row;
@@ -1170,7 +1292,12 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
    if (setjmp(png_jmpbuf(ReadPtr))) return ERR::Read;
 
    if (ColourType & PNG_COLOR_MASK_ALPHA) png_set_expand(ReadPtr); // Alpha channel
-   if (BitDepth IS 16) png_set_strip_16(ReadPtr); // Reduce bit depth to 24bpp if the image is 48bpp
+   if (BitDepth IS 16) {
+      if (Grey16) { // Keep 16-bit samples, in native byte order
+         if constexpr (std::endian::native IS std::endian::little) png_set_swap(ReadPtr);
+      }
+      else png_set_strip_16(ReadPtr); // Reduce bit depth to 24bpp if the image is 48bpp
+   }
    if (BitDepth < 8) {
       if (ColourType IS PNG_COLOR_TYPE_GRAY) png_set_expand_gray_1_2_4_to_8(ReadPtr);
       else png_set_packing(ReadPtr);
@@ -1183,8 +1310,12 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
    int passes = 1;
    if (interlace_type IS PNG_INTERLACE_ADAM7) passes = png_set_interlace_handling(ReadPtr);
 
+   // 16-bit greyscale loads return samples as stored, because they are data such as heights rather than display
+   // colours.  Gamma correction would also reduce 16-bit precision (libpng's 16-bit gamma tables are indexed at
+   // reduced depth).
+
    double file_gamma;
-   if (png_get_gAMA(ReadPtr, InfoPtr, &file_gamma)) png_set_gamma(ReadPtr, 2.2, file_gamma);
+   if ((!Grey16) and (png_get_gAMA(ReadPtr, InfoPtr, &file_gamma))) png_set_gamma(ReadPtr, 2.2, file_gamma);
 
    png_read_update_info(ReadPtr, InfoPtr);
 
@@ -1260,7 +1391,40 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
       passes = 1;
    }
 
-   if (ColourType IS PNG_COLOR_TYPE_GRAY) {
+   if (Grey16) {
+      // Write samples directly to the 16-bit BMF::GREYSCALE bitmap.  Sources of 8 bits or less are expanded with
+      // packGrey() so that white is 0xffff.  Any alpha channel goes to the mask at 8-bit precision.
+
+      log.trace("Greyscale image source, 16-bit greyscale target.");
+
+      if ((Bitmap->Flags & BMF::GREYSCALE) IS BMF::NIL) { error = ERR::InvalidState; goto exit; }
+
+      const bool wide = BitDepth IS 16;
+      const int channels = (ColourType IS PNG_COLOR_TYPE_GRAY_ALPHA) ? 2 : 1;
+
+      for (png_uint_32 y=0; y < PngHeight; y++) {
+         auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
+         if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
+         auto dest = (uint16_t *)(Bitmap->Data + (size_t(y) * Bitmap->LineWidth));
+         auto mask = Self->Mask ? Self->Mask->Data + (size_t(y) * Self->Mask->LineWidth) : nullptr;
+
+         if (wide) {
+            for (png_uint_32 x=0; x < PngWidth; x++) {
+               uint16_t sample[2];
+               std::memcpy(sample, source_row + (size_t(x) * channels * 2), channels * 2);
+               dest[x] = sample[0];
+               if ((mask) and (channels IS 2)) mask[x] = uint8_t(sample[1] >> 8);
+            }
+         }
+         else {
+            for (png_uint_32 x=0; x < PngWidth; x++) {
+               dest[x] = Bitmap->packGrey(source_row[x * channels]);
+               if ((mask) and (channels IS 2)) mask[x] = source_row[(x * channels) + 1];
+            }
+         }
+      }
+   }
+   else if (ColourType IS PNG_COLOR_TYPE_GRAY) {
       log.trace("Greyscale image source.");
       rgb.Alpha = 255;
 

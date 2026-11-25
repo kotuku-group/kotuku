@@ -11,6 +11,9 @@ class extImage : public objImage {
    int FrameRate;
    int8_t  prvHeader[256];
    objFile *prvFile;
+   int32_t prvPNGFileGamma = 0;
+   int prvPNGsRGBIntent = -1;
+   bool prvInferredGreyscale = false;
    uint8_t Cached:1;
    uint8_t Queried:1;
 
