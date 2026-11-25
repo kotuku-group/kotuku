@@ -121,6 +121,28 @@ end
    assert(scene.compliance is VSC_SVG2, f'A Kotuku namespace must not alter a target scene, got {scene.compliance}')
 end
 
+@Test function UserSpaceClippingFollowsNestedSVGPosition()
+   for _, effect in array<table> {
+      { tag='clipPath', attr='clip-path', units='clipPathUnits="userSpaceOnUse"' },
+      { tag='mask', attr='mask', units='maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse"' }
+   } do
+      local svg <close> = obj.new('svg', { statement=
+         '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80">' ..
+         f'<defs><{effect.tag} id="crop" {effect.units}>' ..
+         f'<rect width="20" height="25" fill="white"/></{effect.tag}></defs>' ..
+         f'<svg x="60" y="30" width="60" height="50" {effect.attr}="url(#crop)">' ..
+         '<rect width="60" height="50" fill="red"/></svg></svg>'
+      })
+      local bmp <close> = obj.new('bitmap', { width=120, height=80, bitsPerPixel=32, bkgd='0,0,0,255' })
+      check bmp.acClear()
+      check svg.mtRender(bmp, 0, 0, 120, 80)
+
+      assert(mGfx.ReadRGBPixel(bmp, 65, 35).red is 255, f'{effect.attr} must follow the nested viewport position')
+      assert(mGfx.ReadRGBPixel(bmp, 85, 35).red is 0, f'{effect.attr} must hide pixels beyond its right edge')
+      assert(mGfx.ReadRGBPixel(bmp, 65, 60).red is 0, f'{effect.attr} must hide pixels beyond its bottom edge')
+   end
+end
+
 @Test function BoundingBoxOffsetFollowsSVG()
    -- The offset is a fraction of the bounding box width and height, so (0.1, 0.1) moves the 120x40 rectangle by
    -- (12, 4).  Diagonal scaling would move it by 8.94 on both axes.

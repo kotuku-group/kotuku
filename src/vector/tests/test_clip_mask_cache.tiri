@@ -309,3 +309,30 @@ end
          f'{buffered.red},{buffered.green},{buffered.blue} vs {plain.red},{plain.green},{plain.blue}')
    end
 end
+
+-- A native user-space clip on a viewport defaults to the parent viewport's coordinate system.
+-- The parent supplies both the origin and the dimensions used by far-edge offsets.
+
+@Test function UserSpaceMaskOnViewportUsesParentSpace()
+   scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   outer = scene.new('VectorViewport', { x=10, y=5, width=110, height=75 })
+   inner = outer.new('VectorViewport', { x=20, y=10, width=90, height=60 }) -- (30,15) to (120,75) on the page
+   inner.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,0,0)' })
+
+   clip = scene.new('VectorClip', { units=VUNIT_USERSPACE })
+   clip.viewport.new('VectorRectangle', { x=30, y=20, xOffset=30, yOffset=20 }) -- (40,25) to (90,60) on the page
+   inner.mask = clip
+
+   bmp = newBitmap(120, 80)
+   drawScene(scene, bmp)
+
+   function isRed(X:num!, Y:num!):bool
+      local p = mGfx.ReadRGBPixel(bmp, X, Y)
+      return p.red > 200
+   end
+
+   assert(isRed(45, 30) and isRed(85, 55), 'The clip area must be drawn')
+   assert(not isRed(35, 20), 'The clip must not move with the position of the viewport')
+   assert(not isRed(95, 30), 'The right offset of the clip must resolve against the parent viewport')
+   assert(not isRed(45, 65), 'The bottom offset of the clip must resolve against the parent viewport')
+end

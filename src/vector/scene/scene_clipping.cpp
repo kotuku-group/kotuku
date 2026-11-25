@@ -352,7 +352,14 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
 {
    auto transform = m_shape->Transform;
 
-   if (m_shape->classID() IS CLASSID::VECTORTEXT) {
+   if ((m_shape->classID() IS CLASSID::VECTORVIEWPORT) and
+       ((m_clip->Flags & VCLF::VIEWPORT_RELATIVE) IS VCLF::NIL)) {
+      // Compose the viewport's explicit transforms with its ancestors to keep the clip in parent space.
+
+      transform = build_matrix_transform(m_shape->matrices());
+      apply_parent_transforms(get_parent(m_shape), transform);
+   }
+   else if (m_shape->classID() IS CLASSID::VECTORTEXT) {
       // This feels a bit hacky and might not necessarily be right... but it does get around the
       // issue of VectorText's positioning around the baseline and having path bounds in negative space.
       transform.tx = 0;

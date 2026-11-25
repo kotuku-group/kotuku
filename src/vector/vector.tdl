@@ -23,7 +23,8 @@ struct KeyValue;
 
   flags('VCLF', { comment='Options for VectorClip.' },
     'APPLY_FILLS: Apply fill instructions when drawing the clipping path(s).',
-    'APPLY_STROKES: Apply stroke instructions when drawing the clipping path(s).')
+    'APPLY_STROKES: Apply stroke instructions when drawing the clipping path(s).',
+    'VIEWPORT_RELATIVE: Position a user-space clip relative to the referencing viewport.')
 
   flags('VF', { comment='Optional flags and indicators for the Vector class.' },
      "DISABLED: The vector is disabled and user input should be ignored.",

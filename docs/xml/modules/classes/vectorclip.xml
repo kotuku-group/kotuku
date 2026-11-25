@@ -50,7 +50,8 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="VUNIT">VUNIT</type>
       <description>
-<p>The default coordinate system for clip-paths is <code>BOUNDING_BOX</code>, which positions the clipping region relative to the vector that references it.  The alternative is <code>USERSPACE</code>, which positions the path relative to the vector's parent viewport.</p>
+<p>With <code>BOUNDING_BOX</code>, the clipping region is relative to the vector that references it.  With <code>USERSPACE</code> (the default), relative dimensions such as percentages and offsets from the far edges resolve against the referencing vector's parent viewport.</p>
+<p>When a <class name="VectorViewport">VectorViewport</class> references a <code>USERSPACE</code> clip, the viewport's explicit transforms apply to the clip and its origin comes from the parent viewport.  Set <code>VCLF::VIEWPORT_RELATIVE</code> in <fl>Flags</fl> to position the clip relative to the referencing viewport.  The SVG module sets this flag on imported clip paths and masks.</p>
 <types lookup="VUNIT"/>
       </description>
     </field>
@@ -70,6 +71,7 @@
     <constants lookup="VCLF" comment="Options for VectorClip.">
       <const name="APPLY_FILLS">Apply fill instructions when drawing the clipping path(s).</const>
       <const name="APPLY_STROKES">Apply stroke instructions when drawing the clipping path(s).</const>
+      <const name="VIEWPORT_RELATIVE">Position a user-space clip relative to the referencing viewport.</const>
     </constants>
 
     <constants lookup="VUNIT">

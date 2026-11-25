@@ -10,6 +10,7 @@ static const struct FieldDef clVectorClipUnits[] = {
 static const struct FieldDef clVectorClipFlags[] = {
    { "ApplyFills", 0x00000001 },
    { "ApplyStrokes", 0x00000002 },
+   { "ViewportRelative", 0x00000004 },
    { nullptr, 0 }
 };
 
