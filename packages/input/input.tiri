@@ -92,18 +92,8 @@ gui.input = function(Options)
 
    function buildTheme()
       input_theme = table.merge(theme.input, Options.theme, true, true)
+      input_theme.path ?= gui.paths.rectangle
       if override then input_theme = table.merge(input_theme, override, true, true) end
-   end
-
-   -- The corner radius is relative to the height of a single-line box, not the size of the box, so that it is the
-   -- same at any width and a multi-line box matches a single-line one.  A percentage radius in the theme is applied
-   -- to sqrt(h * h), and a number is a fixed radius.
-
-   round_height = 0 -- Set when the box is created
-
-   function roundCorners()
-      &bkgd.cornerX = gui.sizing.widget.cornerSize * round_height
-      &bkgd.cornerY = &bkgd.cornerX
    end
 
    -- Compose the box style from the current focus and disabled states.  Focus styling is suppressed while the input
@@ -116,7 +106,7 @@ gui.input = function(Options)
       elseif &_focus then
          gui.applyStyle(&bkgd, input_theme.focus)
       end
-      roundCorners()
+      &_clipPath?.{ strokeWidth = &bkgd.strokeWidth, lineJoin = &bkgd.lineJoin, miterLimit = &bkgd.miterLimit }
    end
 
    self.disable = function()
@@ -135,18 +125,20 @@ gui.input = function(Options)
       &viewport.acDraw()
    end
 
-   -- Multi-line mode: the scrollbar is flush with the inner edge of the border.  Its track follows the rounding of
-   -- the right corners, and margins keep the slider out of the rounded ends.
+   -- The box shape comes from the theme's path generator.  The clip mask shares the background's path, so that the
+   -- text and the scrollbar are cut to the inner edge of the border.
+
+   function reshape()
+      path = input_theme.path(&inputViewport, {}).path
+      &bkgd.sequence = path
+      &_clipPath.sequence = path
+   end
+
+   -- Multi-line mode: the scrollbar is flush with the inner edge of the border and is clipped to its shape.
 
    function scrollbarTheme():table
-      edge      = input_theme.bkgd.strokeWidth ?? 0
-      r         = gui.sizing.widget.cornerSize * round_height
-      round     = math.max(0, r - edge)
       bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'
-      return { [bar_style] = table.merge({
-         bkgd   = { corners = { 0, 0, round, round, round, round, 0, 0 } },
-         margin = round
-      }, input_theme.scrollbar ?? {}, true, true) }
+      return { [bar_style] = table.merge({ }, input_theme.scrollbar ?? {}, true, true) }
    end
 
    -- Apply the current theme to the existing vectors.  The font and the position of the text are not changed.
@@ -155,10 +147,12 @@ gui.input = function(Options)
       sw = input_theme.bkgd.strokeWidth ?? 0
       edge = (sw * 0.5) % 1 -- Pixel-align the stroke edges only
       &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
-      refreshStyle()
 
       inset = math.ceil(sw * .5)
       &_textClip.{ x = inset, y = inset, xOffset = inset, yOffset = inset }
+      &_clipPath.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+      refreshStyle()
+      reshape()
 
       if input_theme.text.fill then
          &text.fill = input_theme.text.fill
@@ -171,10 +165,7 @@ gui.input = function(Options)
          &labelText.fontSize = f'{size}px'
       end
 
-      if &scrollbar then
-         &scrollbar.setTheme(scrollbarTheme())
-         &scrollbar.vbar.viewport.{ y = sw, yOffset = sw, xOffset = sw }
-      end
+      &scrollbar?.setTheme(scrollbarTheme())
 
       &viewport.acDraw()
    end
@@ -388,19 +379,39 @@ gui.input = function(Options)
 
       edge = ((input_theme.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
 
-      &bkgd = &inputViewport.new('VectorRectangle', table.merge({
-         x = edge, y = edge, xOffset = edge, yOffset = edge
+      &bkgd = &inputViewport.new('VectorPath', table.merge({
+         x = edge, y = edge, xOffset = edge, yOffset = edge,
+         resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height) -- Reports the input viewport
+            reshape()
+         end
       }, input_theme.bkgd))
 
-      round_height = (&multiline ? LINE_HEIGHT : BOX_HEIGHT) - (edge * 2)
-      roundCorners()
+      -- The clip viewport covers the area inside the border.  Its mask is a luminance copy of the background path:
+      -- a white fill, less a black stroke of the border's width, leaves the area inside the inner edge of the
+      -- border for any shape.  The mask's user space is the input viewport, so the mask path is placed as the
+      -- background is.
 
       clip_inset = math.ceil((input_theme.bkgd.strokeWidth ?? 0) * .5) -- Whole pixels keep the text sharp
       &_textClip = &inputViewport.new('VectorViewport', {
          name = 'vp_input_clip',
-         x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset,
-         overflow = VOF_HIDDEN
+         x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset
       })
+
+      &_clipMask = &inputViewport.scene.new('VectorClip', {
+         name = 'InputClip', units = 'UserSpace', flags = VCLF_APPLY_FILLS | VCLF_APPLY_STROKES
+      })
+      &_clipPath = &_clipMask.viewport.new('VectorPath', {
+         x = edge, y = edge, xOffset = edge, yOffset = edge, fill = 'rgb(255,255,255)', stroke = 'rgb(0,0,0)'
+      })
+      refreshStyle() -- Copies the border's stroke settings to the mask
+      &_textClip.mask = &_clipMask
+
+      -- The scene owns the mask, so it is freed with the input box.
+
+      clip_mask = &_clipMask
+      &inputViewport.subscribe('Free', function() clip_mask?.free() end)
+
+      reshape()
 
       -- The text is centred vertically in a single-line box.  A multi-line box places its first line where a
       -- default single-line box would.
@@ -431,13 +442,10 @@ gui.input = function(Options)
          -- depends on the base theme, which can change.
 
          &scrollbar = gui.scrollbar({
-            target = &inputViewport, view = &_textView, page = &page, direction = 'vertical'
+            target = &_textClip, view = &_textView, page = &page, direction = 'vertical'
          })
 
          &scrollbar.setTheme(scrollbarTheme())
-
-         edge = input_theme.bkgd.strokeWidth ?? 0
-         &scrollbar.vbar.viewport.{ y = edge, yOffset = edge, xOffset = edge }
       end
 
       if Options.placeholder then

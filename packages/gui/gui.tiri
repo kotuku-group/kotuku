@@ -1232,7 +1232,8 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          effect = Icon('fill(pearl)')
       },
       input = { -- Used by checkbox, input, combobox
-         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.corner, cornerY = Edge.corner, opacity = 1 },
+         path  = gui.paths.rectangle,
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, opacity = 1 },
          focus = { stroke = Palette.contrast },
          text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }
@@ -1376,7 +1377,8 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          effect = Icon('fill(carbon)')
       },
       input = {
-         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, cornerX = Edge.corner, cornerY = Edge.corner, opacity = 1 },
+         path  = gui.paths.rectangle,
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, opacity = 1 },
          focus = { stroke = Palette.contrast },
          text  = table.merge({ fill = Palette.text }, gui.fonts.input),
          disabled = { opacity = 0.5 }

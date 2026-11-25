@@ -1,5 +1,6 @@
    import 'gui', 'gui/input'
    include 'display', 'vector'
+   module display as mGfx
 
 function fixture(Options:table!):<obj, table, obj>
    local surface = obj.new('Surface', { width=400, height=200 })
@@ -357,17 +358,16 @@ end
    local light = gui.setTheme(scene, 'light')
    local dark = gui.themes.dark
    local plain = gui.input({ target=root, x=10, y=10, width=200, label='Name', placeholder='Type here' })
-   local multi = gui.input({ target=root, x=10, y=60, width=200, multiline=true, text=lines(20),
-      theme={ bkgd={ cornerX=8, cornerY=8 } } }) -- The default radius is too small to need a scrollbar margin
+   local multi = gui.input({ target=root, x=10, y=60, width=200, multiline=true, text=lines(20) })
    local disabled = gui.input({ target=root, x=10, y=220, width=200, text='Fixed', disabled=true })
    local styled = gui.input({ target=root, x=10, y=260, width=200, theme={ bkgd={ fill='#ff0000' } } })
    check surface.acShow()
    draw(surface, root)
 
    local bar = multi.scrollbar.vbar
-   assert(bar.barBkgd.corners, 'The multi-line scrollbar must follow the rounded border')
-   local margin = bar.sliderHostVP.y
-   assert(margin > 0, 'The multi-line scrollbar must have a margin for the rounded border')
+   assert(bar.viewport.parent.id is multi._textClip.id, 'The scrollbar must be inside the clip')
+   assert(multi._textClip.mask.id is multi._clipMask.id, 'The clip must be masked by the box path')
+   local clip_path = multi._clipPath.sequence
 
    gui.broadcastTheme(scene, gui.setTheme(scene, 'dark'))
    assert(plain.bkgd.fill is dark.input.bkgd.fill, 'The background must take the dark theme')
@@ -379,7 +379,7 @@ end
    assert(styled.bkgd.fill is '#ff0000', 'Options.theme must survive the broadcast')
    assert(bar.theme is multi.scrollbar.theme.scrollbar_v, 'The dark multi-line scrollbar must use scrollbar_v')
    assert(bar.barBkgd.fill is dark.scrollbar_v.bkgd.fill, 'The multi-line scrollbar must take the dark theme')
-   assert(bar.barBkgd.corners and bar.sliderHostVP.y is margin, 'The scrollbar must keep its rounding and margin')
+   assert(multi._textClip.mask.id is multi._clipMask.id, 'The clip must keep its mask')
 
    styled.setTheme({ bkgd={ fill='#00ff00' } })
    assert(styled.bkgd.fill is '#00ff00', 'setTheme() must apply the per-instance override')
@@ -391,7 +391,7 @@ end
       'Returning to the light theme must restore the input')
    assert(multi.scrollbar.theme.scrollbar_v is nil, 'A stale scrollbar_v section must not survive the light theme')
    assert(bar.barBkgd.fill is light.scrollbar.bkgd.fill, 'The multi-line scrollbar must return to the light theme')
-   assert(bar.barBkgd.corners and bar.sliderHostVP.y is margin, 'The light scrollbar must keep its rounding')
+   assert(multi._clipPath.sequence is clip_path, 'The clip path must be unchanged by the light theme')
    assert(styled.bkgd.fill is '#00ff00', 'The override must survive the broadcast')
    styled.setTheme(nil)
    assert(styled.bkgd.fill is '#ff0000', 'setTheme(nil) must restore Options.theme')
