@@ -158,6 +158,7 @@
     <description>
 <p>This function will copy data from a described surface to a destination bitmap object.  You are required to provide the function with a full description of the source in a <st>BitmapSurface</st> structure.</p>
 <p>The <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code> parameters define the area from the source that you wish to copy.  The <code>XDest</code> and <code>YDest</code> parameters define the top left corner that you will blit the graphics to in the destination.</p>
+<p><code>CSRF::DEFAULT_FORMAT</code> assumes RGB565 for a 16-bit surface.  To copy 16-bit grey samples to a <code>BMF::GREYSCALE</code> bitmap without conversion, describe the surface's <code>Format</code> with <function>GetColourFormat</function> and masks of <code>0xff00</code> for red, green and blue.  A 16-bit surface with any other format is converted to luminance pixel by pixel.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -294,6 +295,7 @@
     </input>
     <description>
 <p>This function will generate the values for a <st>ColourFormat</st> structure, for either a given bit depth or customised colour bit values.  The <st>ColourFormat</st> structure is used by internal bitmap routines to pack and unpack bit values to and from bitmap memory.</p>
+<p>For example, the format of a 16-bit <code>BMF::GREYSCALE</code> bitmap is generated with <code>GetColourFormat(Format, 16, 0xff00, 0xff00, 0xff00, 0)</code>.  All three colour channels then unpack from the high byte of the pixel.</p>
 <p>The <st>ColourFormat</st> structure is supported by the following macros for packing and unpacking colour bit values:</p>
 <pre>Colour = CFPackPixel(Format,Red,Green,Blue)
 Colour = CFPackPixelA(Format,Red,Green,Blue,Alpha)
@@ -647,9 +649,11 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <description>
 <p>The Resample() function provides a means for resampling a bitmap to a new colour format without changing the actual bit depth of the image. It uses dithering so as to retain the quality of the image when down-sampling.  This function is generally used to 'pre-dither' true colour bitmaps in preparation for copying to bitmaps with lower colour quality.</p>
 <p>You are required to supply a <st>ColourFormat</st> structure that describes the colour format that you would like to apply to the bitmap's image data.</p>
+<p>Greyscale bitmaps (<code>BMF::GREYSCALE</code>) cannot be resampled, and return <code>ERR::NoSupport</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="NoSupport">Operation not supported</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

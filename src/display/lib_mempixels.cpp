@@ -190,6 +190,39 @@ static void MemReadRGBIndex16(objBitmap *Bitmap, uint16_t *Data, struct RGB8 *RG
 }
 
 //********************************************************************************************************************
+// GREY16: BMF::GREYSCALE bitmaps.  Colours are written as 16-bit luminance and read back as the 8-bit grey in the high
+// byte.  MemDrawPixel16() and MemReadPixel16() serve for raw values.
+
+static void MemDrawRGBPixelGrey16(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB)
+{
+   ((uint16_t *)(Bitmap->Data + (Y * Bitmap->LineWidth) + X + X))[0] =
+      objBitmap::packGrey(RGB->Red, RGB->Green, RGB->Blue);
+}
+
+static void MemDrawRGBIndexGrey16(objBitmap *Bitmap, uint16_t *Data, struct RGB8 *RGB)
+{
+   Data[0] = objBitmap::packGrey(RGB->Red, RGB->Green, RGB->Blue);
+}
+
+static void MemReadRGBPixelGrey16(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB)
+{
+   const uint8_t grey = objBitmap::unpackGrey(((uint16_t *)(Bitmap->Data + (Y * Bitmap->LineWidth) + X + X))[0]);
+   RGB->Red   = grey;
+   RGB->Green = grey;
+   RGB->Blue  = grey;
+   RGB->Alpha = 255;
+}
+
+static void MemReadRGBIndexGrey16(objBitmap *Bitmap, uint16_t *Data, struct RGB8 *RGB)
+{
+   const uint8_t grey = objBitmap::unpackGrey(Data[0]);
+   RGB->Red   = grey;
+   RGB->Green = grey;
+   RGB->Blue  = grey;
+   RGB->Alpha = 255;
+}
+
+//********************************************************************************************************************
 // CHUNKY8
 
 static void MemDrawPixel8(objBitmap *Bitmap, int X, int Y, uint32_t Colour)

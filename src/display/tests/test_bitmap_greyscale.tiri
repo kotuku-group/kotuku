@@ -1,0 +1,448 @@
+-- Verifies 16-bit greyscale bitmaps (BMF_GREYSCALE): initialisation, reads, luminance encoding, and the CopyArea()
+-- paths that write to or read from them.  Raw samples are written with Write() and read back through Bitmap.data.
+--
+-- See docs/plans/graphics/2_bitmap_greyscale_16.md.
+
+   module display as mGfx
+
+GRID <const> = 64
+STRIPS = array<int> { 64, 1, 3, 4, 5, 15, 16, 17 }
+
+-- Rec. 709 luminance at 16-bit precision, as objBitmap::packGrey(R, G, B) computes it.  Division is used rather than
+-- shifts because Tiri's bitwise operators work on 32-bit signed values.
+
+function luma16(R:num, G:num, B:num):num
+   return math.floor((((R * 13933) + (G * 46871) + (B * 4732)) * 257) / 65536)
+end
+
+function mulDiv255(V:num, A:num):num
+   return math.floor(((V * A) / 255) + 0.5)
+end
+
+-- The 16-bit mix used for greyscale destinations: round((S * A + D * (255 - A)) / 255).
+
+function mix16(S:num, D:num, A:num):num
+   return math.floor((((S * A) + (D * (255 - A))) / 255) + 0.5)
+end
+
+function newGrey(Width:num, Height:num, Extra:table):obj
+   local fields = { width=Width, height=Height, bitsPerPixel=16, flags=BMF_GREYSCALE }
+   if Extra then
+      for k, v in Extra do fields[k] = v end
+   end
+   return obj.new('Bitmap', fields)
+end
+
+-- Fills a bitmap through Write().  Fill(X, Y, Buffer, Offset, Format) writes one pixel.
+
+function fill(Bitmap:obj, Fill:func):array<byte>
+   local buffer = array<byte, Bitmap.size>
+   local line_width = Bitmap.lineWidth
+   local bytes = Bitmap.bytesPerPixel
+   local format = Bitmap.colourFormat
+   for y in {0 to Bitmap.height} do
+      for x in {0 to Bitmap.width} do
+         Fill(x, y, buffer, (y * line_width) + (x * bytes), format)
+      end
+   end
+   check Bitmap.acSeek(0, SEEK_START)
+   check Bitmap.acWrite(buffer)
+   return buffer
+end
+
+function put16(Buffer:array<byte>, Offset:num, Value:num)
+   Buffer[Offset]     = Value & 0xff
+   Buffer[Offset + 1] = (Value >> 8) & 0xff
+end
+
+function put32(Buffer:array<byte>, Offset:num, Format:any, R:num, G:num, B:num, A:num)
+   Buffer[Offset + (Format.redPos >> 3)]   = R
+   Buffer[Offset + (Format.greenPos >> 3)] = G
+   Buffer[Offset + (Format.bluePos >> 3)]  = B
+   Buffer[Offset + (Format.alphaPos >> 3)] = A
+end
+
+function sample(Pixels:any, Bitmap:obj, X:num, Y:num):num
+   local i = (Y * Bitmap.lineWidth) + (X * 2)
+   return Pixels[i] | (Pixels[i + 1] << 8)
+end
+
+-- Raw grey samples with every low byte represented.
+
+function greySample(X:num, Y:num):num return ((X * 1031) + (Y * 4099) + 0x1234) & 0xffff end
+function otherSample(X:num, Y:num):num return ((X * 7919) ^ (Y * 263) ^ 0x5a5a) & 0xffff end
+
+-- Compares every pixel of Dest against Expected(X, Y, Pixels), which returns nil for a match or a description of the
+-- difference.
+
+function compare(Dest:obj, Expected:func):<num, str>
+   local pixels <view> = Dest.data
+   local mismatches = 0
+   local first = ''
+   for y in {0 to Dest.height} do
+      for x in {0 to Dest.width} do
+         local problem = Expected(x, y, pixels)
+         if problem then
+            if mismatches is 0 then first = f'at {x},{y}: {problem}' end
+            mismatches++
+         end
+      end
+   end
+   return mismatches, first
+end
+
+function blitStrips(Source:obj, Dest:obj, Flags:num, Strip:num)
+   for x in {0 to Source.width by Strip} do
+      check mGfx.CopyArea(Source, Dest, Flags, x, 0, math.min(Strip, Source.width - x), Source.height, x, 0)
+   end
+end
+
+-- RGB565 helpers, matching objBitmap's default 16-bit format.
+
+function pack565(R:num, G:num, B:num):num return ((R >> 3) << 11) | ((G >> 2) << 5) | (B >> 3) end
+function red565(P:num):num return ((P >> 11) & 0x1f) << 3 end
+function green565(P:num):num return ((P >> 5) & 0x3f) << 2 end
+function blue565(P:num):num return (P & 0x1f) << 3 end
+
+--------------------------------------------------------------------------------------------------------------------
+
+@Test function InitialisesWithTheGreyFormat()
+   local bmp = newGrey(8, 4)
+   local cf = bmp.colourFormat
+   assert(cf.redPos is 8 and cf.greenPos is 8 and cf.bluePos is 8, 'All channels must sit in the high byte')
+   assert(cf.redMask is 0xff and cf.greenMask is 0xff and cf.blueMask is 0xff, 'All channel masks must be 0xff')
+   assert(cf.redShift is 0 and cf.greenShift is 0 and cf.blueShift is 0, 'No channel may be shifted')
+   assert(bmp.flags has BMF_FIXED_DEPTH, 'Greyscale bitmaps must have a fixed depth')
+   assert(bmp.memType is BMT_DATA, 'Greyscale bitmaps must use data memory')
+   assert(bmp.bytesPerPixel is 2, 'Greyscale bitmaps use two bytes per pixel')
+
+   for _, bpp in array<int> { 32, 24, 8 } do
+      local failed = false
+      try
+         obj.new('Bitmap', { width=8, height=4, bitsPerPixel=bpp, flags=BMF_GREYSCALE })
+      except e
+         failed = true
+         assert(e.code is ERR_InvalidState, f'Expected ERR_InvalidState at {bpp} bits, got {e.code}')
+      end
+      assert(failed, f'BMF_GREYSCALE with {bpp} bits per pixel must fail')
+   end
+end
+
+@Test function ResizeKeepsTheGreyFormat()
+   local bmp = newGrey(8, 4)
+   check bmp.acResize(32, 16, 32)
+   assert(bmp.bitsPerPixel is 16, 'Resize() must not change the depth of a greyscale bitmap')
+   assert(bmp.width is 32 and bmp.height is 16, 'Resize() must apply the new dimensions')
+   local cf = bmp.colourFormat
+   assert(cf.redPos is 8 and cf.redMask is 0xff, 'Resize() must keep the grey format')
+   local rgb = mGfx.ReadRGBPixel(bmp, 0, 0) -- Exercises the pixel routines after a resize
+   assert(rgb.red is rgb.green and rgb.green is rgb.blue, 'Reads after Resize() must be grey')
+end
+
+-- A ramp of samples, each with a non-zero low byte, reads back as the high byte on all three channels.
+
+@Test function ReadsReturnTheHighByte()
+   local bmp = newGrey(256, 2)
+   fill(bmp, function(X, Y, Buffer, Offset)
+      put16(Buffer, Offset, (X * 257) ^ (Y * 0x7f))
+   end)
+   for y in {0 to 2} do
+      for x in {0 to 256} do
+         local rgb = mGfx.ReadRGBPixel(bmp, x, y)
+         local expected = ((x * 257) ^ (y * 0x7f)) >> 8
+         assert(rgb.red is expected and rgb.green is expected and rgb.blue is expected and rgb.alpha is 255,
+            f'Pixel {x},{y}: got {rgb.red},{rgb.green},{rgb.blue},{rgb.alpha}, expected {expected}')
+      end
+   end
+end
+
+@Test function GetColourEncodesLuminance()
+   local bmp = newGrey(4, 4)
+   for v in {0 to 256} do
+      local _, colour = bmp.mtGetColour(v, v, v, 255)
+      assert(colour is v * 257, f'Grey {v}: got {colour}, expected {v * 257}')
+   end
+
+   local _, red = bmp.mtGetColour(255, 0, 0, 255)
+   local _, green = bmp.mtGetColour(0, 255, 0, 255)
+   local _, blue = bmp.mtGetColour(0, 0, 255, 255)
+   local _, white = bmp.mtGetColour(255, 255, 255, 255)
+   assert(red is 13932, f'Red: got {red}, expected 13932')
+   assert(green is 46870, f'Green: got {green}, expected 46870')
+   assert(blue is 4731, f'Blue: got {blue}, expected 4731')
+   assert(white is 0xffff, f'White: got {white}, expected 65535')
+
+   -- Against the floating-point formula
+
+   for _, rgb in array<table> { { 12, 200, 77 }, { 255, 128, 0 }, { 1, 2, 3 }, { 99, 99, 250 } } do
+      local _, colour = bmp.mtGetColour(rgb[0], rgb[1], rgb[2], 255)
+      local exact = ((0.2126 * rgb[0]) + (0.7152 * rgb[1]) + (0.0722 * rgb[2])) * 257
+      assert(math.abs(colour - exact) < 2, f'{rgb[0]},{rgb[1]},{rgb[2]}: got {colour}, expected about {exact}')
+   end
+end
+
+-- Raw samples survive opaque copies between greyscale bitmaps, at full opacity.
+
+@Test function GreyToGreyCopyKeepsPrecision()
+   local source = newGrey(GRID, GRID)
+   fill(source, function(X, Y, Buffer, Offset) put16(Buffer, Offset, greySample(X, Y)) end)
+   for _, strip in STRIPS do
+      local dest = newGrey(GRID, GRID)
+      blitStrips(source, dest, 0, strip)
+      local mismatches, first = compare(dest, function(X, Y, Pixels)
+         local got = sample(Pixels, dest, X, Y)
+         if got != greySample(X, Y) then return f'got {got}, expected {greySample(X, Y)}' end
+      end)
+      assert(mismatches is 0, f'Strip {strip}: {mismatches} pixels differ; first {first}')
+   end
+end
+
+@Test function GreyToGreyOpacityMixesSixteenBits()
+   local source = newGrey(GRID, GRID)
+   fill(source, function(X, Y, Buffer, Offset) put16(Buffer, Offset, greySample(X, Y)) end)
+   for _, opacity in array<int> { 1, 77, 128, 254 } do
+      source.opacity = opacity
+      for _, strip in STRIPS do
+         local dest = newGrey(GRID, GRID)
+         fill(dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, otherSample(X, Y)) end)
+         blitStrips(source, dest, 0, strip)
+         local mismatches, first = compare(dest, function(X, Y, Pixels)
+            local expected = mix16(greySample(X, Y), otherSample(X, Y), opacity)
+            local got = sample(Pixels, dest, X, Y)
+            if got != expected then return f'got {got}, expected {expected}' end
+         end)
+         assert(mismatches is 0, f'Opacity {opacity}, strip {strip}: {mismatches} pixels differ; first {first}')
+      end
+   end
+end
+
+@Test function CopyToThirtyTwoBit()
+   local source = newGrey(GRID, GRID)
+   fill(source, function(X, Y, Buffer, Offset) put16(Buffer, Offset, greySample(X, Y)) end)
+   for _, alpha_flag in array<int> { 0, BMF_ALPHA_CHANNEL } do
+      for _, strip in STRIPS do
+         local dest = obj.new('Bitmap', { width=GRID, height=GRID, bitsPerPixel=32, flags=alpha_flag })
+         blitStrips(source, dest, 0, strip)
+         local f = dest.colourFormat
+         local r_pos, g_pos, b_pos, a_pos = f.redPos >> 3, f.greenPos >> 3, f.bluePos >> 3, f.alphaPos >> 3
+         local mismatches, first = compare(dest, function(X, Y, Pixels)
+            local i = (Y * dest.lineWidth) + (X * 4)
+            local expected = greySample(X, Y) >> 8
+            local r, g, b, a = Pixels[i + r_pos], Pixels[i + g_pos], Pixels[i + b_pos], Pixels[i + a_pos]
+            if (r != expected) or (g != expected) or (b != expected) or (a != 255) then
+               return f'got {r},{g},{b},{a}, expected {expected} and alpha 255'
+            end
+         end)
+         assert(mismatches is 0, f'Flags {alpha_flag}, strip {strip}: {mismatches} pixels differ; first {first}')
+      end
+   end
+end
+
+-- Translucent grey to 32-bit copies take the generic route, which reads the grey value through ReadUCRPixel.
+
+@Test function OpacityCopyToThirtyTwoBit()
+   local source = newGrey(GRID, GRID, { opacity=128 })
+   fill(source, function(X, Y, Buffer, Offset) put16(Buffer, Offset, greySample(X, Y)) end)
+   local dest = obj.new('Bitmap', { width=GRID, height=GRID, bitsPerPixel=32 })
+   fill(dest, function(X, Y, Buffer, Offset, Format) put32(Buffer, Offset, Format, X, Y, 200, 255) end)
+   check mGfx.CopyArea(source, dest, 0, 0, 0, GRID, GRID, 0, 0)
+   local f = dest.colourFormat
+   local mismatches, first = compare(dest, function(X, Y, Pixels)
+      local i = (Y * dest.lineWidth) + (X * 4)
+      local s = greySample(X, Y) >> 8
+      local er, eg, eb = mulDiv255(s, 128) + mulDiv255(X, 127), mulDiv255(s, 128) + mulDiv255(Y, 127),
+         mulDiv255(s, 128) + mulDiv255(200, 127)
+      local r, g, b = Pixels[i + (f.redPos >> 3)], Pixels[i + (f.greenPos >> 3)], Pixels[i + (f.bluePos >> 3)]
+      if (r != er) or (g != eg) or (b != eb) then return f'got {r},{g},{b}, expected {er},{eg},{eb}' end
+   end)
+   assert(mismatches is 0, f'{mismatches} pixels differ; first {first}')
+end
+
+function colourSource(Flags:num):obj
+   local source = obj.new('Bitmap', { width=GRID, height=GRID, bitsPerPixel=32, flags=Flags })
+   fill(source, function(X, Y, Buffer, Offset, Format)
+      put32(Buffer, Offset, Format, (X * 4) & 255, (Y * 4) & 255, ((X + Y) * 3) & 255, (X * 4) & 255)
+   end)
+   return source
+end
+
+function sourceLuma(X:num, Y:num):num
+   return luma16((X * 4) & 255, (Y * 4) & 255, ((X + Y) * 3) & 255)
+end
+
+@Test function OpaqueCopyFromThirtyTwoBit()
+   local source = colourSource(0)
+   for _, flags in array<int> { 0, BAF_DITHER } do -- Dithering into a greyscale bitmap is ignored
+      local dest = newGrey(GRID, GRID)
+      check mGfx.CopyArea(source, dest, flags, 0, 0, GRID, GRID, 0, 0)
+      local mismatches, first = compare(dest, function(X, Y, Pixels)
+         local got = sample(Pixels, dest, X, Y)
+         if got != sourceLuma(X, Y) then return f'got {got}, expected {sourceLuma(X, Y)}' end
+      end)
+      assert(mismatches is 0, f'Flags {flags}: {mismatches} pixels differ; first {first}')
+   end
+end
+
+@Test function OpacityCopyFromThirtyTwoBit()
+   local source <close> = colourSource(0)
+   local dest <close> = newGrey(GRID, GRID)
+   for _, opacity in array<int> { 0, 128 } do
+      source.opacity = opacity
+      fill(dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, otherSample(X, Y)) end)
+      check mGfx.CopyArea(source, dest, 0, 0, 0, GRID, GRID, 0, 0)
+      local mismatches, first = compare(dest, function(X, Y, Pixels)
+         local expected = mix16(sourceLuma(X, Y), otherSample(X, Y), opacity)
+         local got = sample(Pixels, dest, X, Y)
+         if got != expected then return f'got {got}, expected {expected}' end
+      end)
+      assert(mismatches is 0, f'Opacity {opacity}: {mismatches} pixels differ; first {first}')
+   end
+end
+
+-- Alpha blending from 32-bit to grey mixes a single 16-bit channel.  Source alpha follows the x axis, so alpha 0
+-- pixels must keep the destination's low byte.  Pixels outside the copied area must be untouched.
+
+@Test function BlendFromThirtyTwoBit()
+   local source = colourSource(BMF_ALPHA_CHANNEL)
+   for _, opacity in array<int> { 255, 128 } do
+      source.opacity = opacity
+      for _, strip in array<int> { 48, 1, 5, 16, 17 } do
+         local dest = newGrey(GRID, GRID)
+         fill(dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, otherSample(X, Y)) end)
+         for x in {0 to 48 by strip} do
+            check mGfx.CopyArea(source, dest, BAF_BLEND, x, 0, math.min(strip, 48 - x), 48, x, 0)
+         end
+         local mismatches, first = compare(dest, function(X, Y, Pixels)
+            local got = sample(Pixels, dest, X, Y)
+            local d = otherSample(X, Y)
+            if (X >= 48) or (Y >= 48) then
+               if got != d then return f'outside the copy: got {got}, expected {d}' end
+               return
+            end
+            local a = mulDiv255((X * 4) & 255, opacity)
+            local expected = mix16(sourceLuma(X, Y), d, a)
+            if got != expected then return f'got {got}, expected {expected} (alpha {a})' end
+            local analytic = ((sourceLuma(X, Y) * a) + (d * (255 - a))) / 255
+            if math.abs(got - analytic) > 257 then return f'got {got}, analytic {analytic}' end
+         end)
+         assert(mismatches is 0, f'Opacity {opacity}, strip {strip}: {mismatches} pixels differ; first {first}')
+      end
+   end
+end
+
+-- Grey and RGB565 bitmaps share a depth but not a format, so copies between them must convert colours.
+
+@Test function MixedSixteenBitPairs()
+   local grey = newGrey(GRID, GRID)
+   fill(grey, function(X, Y, Buffer, Offset) put16(Buffer, Offset, greySample(X, Y)) end)
+   local rgb = obj.new('Bitmap', { width=GRID, height=GRID, bitsPerPixel=16 })
+   fill(rgb, function(X, Y, Buffer, Offset) put16(Buffer, Offset, otherSample(X, Y)) end)
+
+   for _, opacity in array<int> { 255, 128 } do
+      local dest = obj.new('Bitmap', { width=GRID, height=GRID, bitsPerPixel=16 })
+      fill(dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, 0) end)
+      grey.opacity = opacity
+      check mGfx.CopyArea(grey, dest, 0, 0, 0, GRID, GRID, 0, 0)
+      local mismatches, first = compare(dest, function(X, Y, Pixels)
+         local v = mulDiv255(greySample(X, Y) >> 8, opacity)
+         local expected = pack565(v, v, v)
+         local got = sample(Pixels, dest, X, Y)
+         if got != expected then return f'got {got}, expected {expected}' end
+      end)
+      assert(mismatches is 0, f'Grey to RGB565, opacity {opacity}: {mismatches} pixels differ; first {first}')
+
+      local grey_dest = newGrey(GRID, GRID)
+      fill(grey_dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, greySample(X, Y)) end)
+      rgb.opacity = opacity
+      check mGfx.CopyArea(rgb, grey_dest, 0, 0, 0, GRID, GRID, 0, 0)
+      mismatches, first = compare(grey_dest, function(X, Y, Pixels)
+         local p = otherSample(X, Y)
+         local expected = mix16(luma16(red565(p), green565(p), blue565(p)), greySample(X, Y), opacity)
+         local got = sample(Pixels, grey_dest, X, Y)
+         if got != expected then return f'got {got}, expected {expected}' end
+      end)
+      assert(mismatches is 0, f'RGB565 to grey, opacity {opacity}: {mismatches} pixels differ; first {first}')
+   end
+end
+
+-- A colour key on a greyscale source is compared in packed form.
+
+@Test function KeyedCopyFromGrey()
+   local key = struct<RGB8> { red=200, green=10, blue=60, alpha=255 }
+   local key_value = luma16(200, 10, 60)
+   local isKey = (X, Y) => ((X + Y) % 5) is 0
+   local source = newGrey(GRID, GRID)
+   source.transColour = key
+   assert(source.flags has BMF_TRANSPARENT, 'Setting transColour must enable colour keying')
+   fill(source, function(X, Y, Buffer, Offset)
+      put16(Buffer, Offset, isKey(X, Y) ? key_value : greySample(X, Y))
+   end)
+
+   local grey_dest = newGrey(GRID, GRID)
+   for _, opacity in array<int> { 0, 128, 255 } do
+      source.opacity = opacity
+      fill(grey_dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, otherSample(X, Y)) end)
+      check mGfx.CopyArea(source, grey_dest, 0, 0, 0, GRID, GRID, 0, 0)
+      local mismatches, first = compare(grey_dest, function(X, Y, Pixels)
+         local d = otherSample(X, Y)
+         local expected = isKey(X, Y) ? d : mix16(greySample(X, Y), d, opacity)
+         local got = sample(Pixels, grey_dest, X, Y)
+         if got != expected then return f'got {got}, expected {expected}' end
+      end)
+      assert(mismatches is 0, f'Grey to grey, opacity {opacity}: {mismatches} pixels differ; first {first}')
+   end
+
+   source.opacity = 255
+   local dest = obj.new('Bitmap', { width=GRID, height=GRID, bitsPerPixel=32 })
+   fill(dest, function(X, Y, Buffer, Offset, Format) put32(Buffer, Offset, Format, 1, 2, 3, 255) end)
+   check mGfx.CopyArea(source, dest, 0, 0, 0, GRID, GRID, 0, 0)
+   local f = dest.colourFormat
+   local mismatches, first = compare(dest, function(X, Y, Pixels)
+      local i = (Y * dest.lineWidth) + (X * 4)
+      local r = Pixels[i + (f.redPos >> 3)]
+      local expected = isKey(X, Y) ? 1 : (greySample(X, Y) >> 8)
+      if r != expected then return f'got red {r}, expected {expected}' end
+   end)
+   assert(mismatches is 0, f'Grey to 32-bit: {mismatches} pixels differ; first {first}')
+end
+
+@Test function KeyedCopyFromRGB565()
+   local source <close> = obj.new('Bitmap', { width=2, height=1, bitsPerPixel=16 })
+   local dest <close> = newGrey(2, 1)
+   local key = 0xf800
+   local background = 0x1234
+   source.transColour = struct<RGB8> { red=255, green=0, blue=0, alpha=255 }
+   assert(source.transIndex is key, 'Expected the packed RGB565 key')
+   fill(source, function(X, Y, Buffer, Offset) put16(Buffer, Offset, key + X) end)
+
+   for _, opacity in array<int> { 255, 128 } do
+      source.opacity = opacity
+      fill(dest, function(X, Y, Buffer, Offset) put16(Buffer, Offset, background) end)
+      check mGfx.CopyArea(source, dest, 0, 0, 0, 2, 1, 0, 0)
+      local pixels <view> = dest.data
+      assert(sample(pixels, dest, 0, 0) is background, f'Opacity {opacity}: packed key changed the destination')
+      local expected = mix16(luma16(248, 0, 8), background, opacity)
+      assert(sample(pixels, dest, 1, 0) is expected, f'Opacity {opacity}: adjacent colour must copy')
+   end
+end
+
+@Test function ClearUsesTheLuminanceOfBkgd()
+   local bkgd = struct<RGB8> { red=255, green=128, blue=10, alpha=255 }
+   local bmp = newGrey(13, 5, { flags=BMF_GREYSCALE|BMF_CLEAR, bkgd=bkgd })
+   local expected = luma16(255, 128, 10)
+   assert(bmp.bkgdIndex is expected, f'bkgdIndex: got {bmp.bkgdIndex}, expected {expected}')
+   local mismatches, first = compare(bmp, function(X, Y, Pixels)
+      local got = sample(Pixels, bmp, X, Y)
+      if got != expected then return f'got {got}, expected {expected}' end
+   end)
+   assert(mismatches is 0, f'BMF_CLEAR: {mismatches} pixels differ; first {first}')
+
+   fill(bmp, function(X, Y, Buffer, Offset) put16(Buffer, Offset, 0x1234) end)
+   bmp.bkgd = struct<RGB8> { red=255, green=255, blue=255, alpha=255 }
+   check bmp.acClear()
+   mismatches, first = compare(bmp, function(X, Y, Pixels)
+      local got = sample(Pixels, bmp, X, Y)
+      if got != 0xffff then return f'got {got}, expected 65535' end
+   end)
+   assert(mismatches is 0, f'acClear(): {mismatches} pixels differ; first {first}')
+end
