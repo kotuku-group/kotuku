@@ -81,7 +81,7 @@ extern OBJECTPTR clGradientGouraud, clGradientMesh, clGradientDiffusion, clGradi
 extern OBJECTPTR clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
-extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX;
+extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX, clTileFX;
 extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
@@ -1303,6 +1303,7 @@ extern ERR init_offsetfx(void);
 extern ERR init_pattern(void);
 extern ERR init_remapfx(void);
 extern ERR init_sourcefx(void);
+extern ERR init_tilefx(void);
 extern ERR init_transition(void);
 extern ERR init_turbulencefx(void);
 extern ERR init_vectorscene(void);

@@ -42,6 +42,7 @@ class objMergeFX;
 class objMorphologyFX;
 class objOffsetFX;
 class objRemapFX;
+class objTileFX;
 class objTurbulenceFX;
 class objWaveFunctionFX;
 class objVectorFilter;
@@ -3669,6 +3670,39 @@ class objRemapFX : public objFilterEffect {
       struct rf::SelectMask args = { Component, Mask };
       return Action(AC(-16), this, &args);
    }
+
+   // Customised field getting
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->GetValue(this, &Value);
+   }
+
+
+   // Customised field setting
+
+};
+
+// TileFX class definition
+
+#define VER_TILEFX (1.000000)
+
+class objTileFX : public objFilterEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::TILEFX;
+   static constexpr CSTRING CLASS_NAME = "TileFX";
+
+   using create = kt::Create<objTileFX>;
+   objTileFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
+   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
+      struct acDraw args = { X, Y, Width, Height };
+      return Action(AC::Draw, this, &args);
+   }
+   inline ERR init() noexcept { return InitObject(this); }
 
    // Customised field getting
 

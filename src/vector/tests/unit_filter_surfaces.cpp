@@ -354,6 +354,12 @@ static bool test_filter_numerical_surfaces()
       return false;
    }
    if (FILTEREFFECT_SET_Input(legacy, converter) != ERR::Okay) return false;
+   auto tile = extTileFX::create::local(owner);
+   if (not tile) return false;
+   tile->Input = tile; // Bypass the setter to check validation of the native fields during format inference.
+   if (not filter_test_expect(scene.draw(output) IS ERR::Recursion, "A tile accepted a self-reference.")) return false;
+   if (FreeResource(tile) != ERR::Okay) return false;
+
    bitmap_inputs[2].Contract.BitmapConversion = filter_bitmap_conversion::NONE;
    if (not filter_test_expect(scene.draw(output) IS ERR::NoSupport, "A bitmap slot implicitly converted a field.")) {
       return false;

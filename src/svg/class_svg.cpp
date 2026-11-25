@@ -204,6 +204,18 @@ document.
 &lt;/filter&gt;
 </pre>
 
+To repeat a map, limit the primitive that supplies it to a single tile with `x`, `y`, `width` and `height`, then pass
+its result to `feTile`.  The tile repeats across the subregion of `feTile`, which defaults to the filter region, with
+copies aligned to the tile's own position.  `feTile` keeps the data kind of its input: a normal map from
+`kotuku:feNormalMap` is still read as normals by `feDisplacementMap`, and a floating-point height from
+`kotuku:outputMode="height"` is repeated at full precision.  See @TileFX for how tiles that do not cover whole pixels
+are resampled.
+
+<pre>
+&lt;feImage href="#normalMap" x="0" y="0" width="512" height="512" result="normalTile"/&gt;
+&lt;feTile in="normalTile" result="normals"/&gt;
+</pre>
+
 <header>Lighting Extensions</header>
 
 A document that declares a Kōtuku namespace is rendered with a @VectorScene.Compliance of `NONE` (see #Init), which

@@ -344,6 +344,7 @@ private:
    ERR  parse_fe_morphology(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_offset(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_source(objVectorFilter *, XTag &, std::string_view) noexcept;
+   ERR  parse_fe_tile(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_turbulence(objVectorFilter *, XTag &) noexcept;
    ERR  parse_fe_wavefunction(objVectorFilter *, XTag &) noexcept;
 };

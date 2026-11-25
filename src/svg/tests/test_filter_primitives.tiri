@@ -2224,3 +2224,202 @@ end
    assert(exported.find('kotuku:roughnessMap="effect', 0, true) and
       exported.find('kotuku:roughnessChannel="luminance"', 0, true), f'Standard elements must prefix: {exported}')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- feTile.  The tile is the 8 x 6 subregion of the feOffset at (4, 4).  Its lime flood covers the lower right of the
+-- tile, at (8, 7) to (12, 10), so the copies to the left and above the tile also reach the page.
+
+TILE_SOURCE <const> = '<feFlood x="8" y="7" width="4" height="3" flood-color="lime"/>' ..
+   '<feOffset x="4" y="4" width="8" height="6" result="tile"/>'
+
+TILE_CONTENT <const> = '<g filter="url(#f)"/>'
+
+-- Expected is true for lime, false for transparent output, and nil for the opaque black background beyond the
+-- filter region.
+
+function assertLime(P:table, Expected:bool, Message:str)
+   if Expected then assertRGBA(P, 0, 255, 0, 255, Message)
+   elseif Expected is nil then assertRGBA(P, 0, 0, 0, 255, Message)
+   else assert(P.alpha is 0, f'{Message}: expected transparent, got alpha {P.alpha}') end
+end
+
+@Test function TileRepeatsTheInputSubregion()
+   local points = { { 9, 8 }, { 5, 5 }, { 17, 14 }, { 41, 32 }, { 1, 2 }, { 13, 11 }, { 12, 8 }, { 11, 9 } }
+   local p = samples(TILE_SOURCE .. '<feTile in="tile"/>', TILE_CONTENT, points)
+   assertLime(p[0], true, 'The tile must appear at its own position')
+   assertLime(p[1], false, 'The transparent part of the tile must stay transparent')
+   assertLime(p[2], true, 'The tile must repeat to the right and below')
+   assertLime(p[3], true, 'Distant copies must line up with the tile')
+   assertLime(p[4], true, 'The tile must repeat to the left and above, to the edge of the filter region')
+   assertLime(p[5], false, 'Gaps must repeat with the tile')
+   assertLime(p[6], false, 'The copy must start one tile width from the tile')
+   assertLime(p[7], true, 'The last pixel of the flood must be copied exactly')
+end
+
+@Test function TileRepeatsAnOffPageProducer()
+   local svg <close> = obj.new('svg', { statement='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' ..
+      '<filter id="f" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="64">' ..
+      '<feFlood x="195" y="2" width="8" height="8" flood-color="lime"/>' ..
+      '<feOffset x="200" y="2" width="8" height="8" dx="5"/><feTile/></filter>' ..
+      TILE_CONTENT .. '</svg>' })
+   local bmp <close> = draw(svg, 64)
+   for x in {0 to 64} do
+      local p = mGfx.ReadRGBPixel(bmp, x, 3)
+      assertRGBA({ red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }, 0, 255, 0, 255,
+         f'Off-page tile at pixel {x},3')
+   end
+end
+
+-- An explicit subregion clips the repetition without moving the lattice, which stays anchored to the input.
+
+@Test function TileSubregionClipsTheRepetition()
+   local points = { { 9, 8 }, { 17, 14 }, { 25, 20 }, { 33, 32 }, { 41, 32 } }
+   local p = samples(TILE_SOURCE .. '<feTile in="tile" x="16" y="16" width="24" height="24"/>', TILE_CONTENT,
+      points)
+   assertLime(p[0], false, 'The tile itself lies outside of the subregion')
+   assertLime(p[1], false, 'Copies outside of the subregion must be clipped')
+   assertLime(p[2], true, 'Copies inside of the subregion keep the lattice of the input')
+   assertLime(p[3], true, 'Copies inside of the subregion keep the lattice of the input')
+   assertLime(p[4], false, 'The right edge of the subregion must clip the copies')
+
+   local empty = samples('<feFlood x="4" y="4" width="0" height="6" flood-color="lime"/><feTile/>', TILE_CONTENT,
+      { { 4, 4 }, { 30, 30 } })
+   assertLime(empty[0], false, 'A tile without area must produce no output')
+   assertLime(empty[1], false, 'A tile without area must produce no output')
+end
+
+-- The W3C filters-tile-01-b layout: feTile without an input reference uses the previous result and fills the
+-- filter region, and the offset flood is clipped by the feOffset subregion.
+
+@Test function TileFillsTheFilterRegionByDefault()
+   local svg <close> = obj.new('svg', { statement='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' ..
+      '<filter id="f" filterUnits="userSpaceOnUse" x="10" y="10" width="40" height="40">' ..
+      '<feFlood x="10" y="10" width="9" height="5" flood-color="lime"/>' ..
+      '<feOffset x="10" y="10" width="8" height="6" dx="2" dy="2"/><feTile/></filter>' ..
+      '<g filter="url(#f)"/></svg>' })
+   local bmp <close> = draw(svg, 64)
+   for _, case in array<table> {
+      { 12, 12, true }, { 17, 15, true }, { 17, 16, false }, { 18, 12, false }, { 11, 11, false }, { 20, 18, true }, { 49, 49, true },
+      { 50, 49, nil }, { 9, 12, nil }
+   } do
+      local p = mGfx.ReadRGBPixel(bmp, case[0], case[1])
+      assertLime({ red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }, case[2], f'Pixel {case[0]},{case[1]}')
+   end
+end
+
+-- A tiled float height lights identically to the height drawn untiled, so the tile keeps the native float samples.
+-- The lit result is exactly periodic, including where the copies meet.
+
+TILE_HEIGHT <const> = '<feTurbulence x="8" y="8" width="16" height="16" type="fractalNoise" baseFrequency=".125" ' ..
+   'numOctaves="2" stitchTiles="stitch" kotuku:outputMode="height" result="height"/>'
+
+function litHeight(Input:str):str
+   return f'<kotuku:feLighting in="{Input}" surfaceScale="20" specularConstant="0" features="none">' ..
+      '<feDistantLight azimuth="135" elevation="40"/></kotuku:feLighting>'
+end
+
+@Test function TiledFloatHeightLightsLikeTheUntiledHeight()
+   local untiled <close> = draw(document(TILE_HEIGHT .. litHeight('height'), TILE_CONTENT, 64, KOTUKU_NS,
+      'filterUnits="userSpaceOnUse"'), 64)
+   local svg <close> = document(TILE_HEIGHT .. '<feTile in="height" result="tiled"/>' .. litHeight('tiled'),
+      TILE_CONTENT, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local tiled <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(tiled, 40, 40).alpha is 255, 'The tiled height must be lit across the filter region')
+
+   local varied = false
+   local first = mGfx.ReadRGBPixel(untiled, 11, 11).red
+   for y in {11 to 21} do
+      for x in {11 to 21} do
+         local p = mGfx.ReadRGBPixel(untiled, x, y)
+         local r, g, b, a = p.red, p.green, p.blue, p.alpha
+         if r != first then varied = true end
+         local q = mGfx.ReadRGBPixel(tiled, x, y)
+         assert((r is q.red) and (g is q.green) and (b is q.blue) and (a is q.alpha),
+            f'Tiled lighting differs at {x},{y}: {q.red},{q.green},{q.blue},{q.alpha} vs {r},{g},{b},{a}')
+      end
+   end
+   assert(varied, 'The height must produce visible relief')
+
+   for y in {2 to 46} do
+      for x in {2 to 46} do
+         assertSame(tiled, tiled, x, y, x + 16, y + 16)
+      end
+   end
+end
+
+-- A copied normal map is still recognised as one, unlike an feOffset copy, so the default displacement reads it as
+-- normals.
+
+@Test function TileCarriesTheNormalMapFlag()
+   for space in values(array<str> { 'sRGB', 'linearRGB' }) do
+      local flagged <close> = refraction('down', nil, space)
+      local tiled <close> = draw(document(domeNormals() .. '<feTile in="down" result="copy"/>' ..
+         '<feTurbulence baseFrequency=".15" seed="3" result="image"/>' ..
+         '<feDisplacementMap in="image" in2="copy" scale="10" xChannelSelector="R" yChannelSelector="G"/>',
+         DOME_CONTENT, 64, KOTUKU_NS, f'color-interpolation-filters="{space}"'), 64)
+      local diff = imageDifference(flagged, tiled)
+      assert(diff is 0, f'A tiled normal map must refract like the original in {space} (max difference {diff})')
+   end
+end
+
+-- Interpolation wraps across the tile edges.  An opaque tile of 8 user units is 10.67 pixels wide under this
+-- viewBox, and a rotated client resamples every copy.  A seam would read transparent pixels beyond the tile.
+
+@Test function TileInterpolationWrapsAcrossEdges()
+   local effects = '<feFlood x="4" y="4" width="8" height="8" flood-color="lime"/><feTile/>'
+   for _, group in array<str> { '', 'transform="rotate(30 24 24)"' } do
+      local svg <close> = document(effects, f'<g {group} filter="url(#f)"/>', 64, 'viewBox="0 0 48 48"',
+         'filterUnits="userSpaceOnUse"')
+      local bmp <close> = draw(svg, 64)
+      for y in {16 to 48} do
+         for x in {16 to 48} do
+            local p = mGfx.ReadRGBPixel(bmp, x, y)
+            local r, g, b, a = p.red, p.green, p.blue, p.alpha
+            assert((r is 0) and (g is 255) and (b is 0) and (a is 255),
+               f'Seam at {x},{y} with "{group}": {r},{g},{b},{a}')
+         end
+      end
+   end
+end
+
+@Test function TilePreservesFractionallyScaledSourceGraphic()
+   local content = '<g transform="scale(.93 1)" filter="url(#f)">' ..
+      '<rect x="31" y="12" width="1" height="25" fill="lime"/></g>'
+   local filter_units = 'filterUnits="userSpaceOnUse"'
+   local original <close> = draw(document('<feOffset/>', content, 64, nil, filter_units), 64)
+   local tiled <close> = draw(document('<feTile in="SourceGraphic"/>', content, 64, nil, filter_units), 64)
+   assert(mGfx.ReadRGBPixel(original, 29, 25).green is 255, 'The source graphic must be visible')
+   assert(imageDifference(original, tiled) is 0, 'Tiling the full filter region must preserve its source pixels')
+end
+
+@Test function ReflectedOpaqueTileHasNoSeams()
+   local svg <close> = obj.new('svg', { statement='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">' ..
+      '<filter id="f" filterUnits="userSpaceOnUse" x="-64" y="0" width="80" height="64">' ..
+      '<feFlood x="0" y="0" width="8" height="8" flood-color="lime"/><feTile/></filter>' ..
+      '<g transform="matrix(-1 0 0 1 8.5 0)" filter="url(#f)"/></svg>' })
+   local bmp <close> = draw(svg, 64)
+   for x in {0 to 64} do
+      local p = mGfx.ReadRGBPixel(bmp, x, 3)
+      assertRGBA({ red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }, 0, 255, 0, 255,
+         f'Reflected tile at pixel {x},3')
+   end
+end
+
+-- feTile and feOffset subregions and the input reference survive EffectXML.  The tile reads a result that is not
+-- the previous effect, so the reference must be written.
+
+@Test function TileXMLDefRoundTrips()
+   local effects = TILE_SOURCE .. '<feFlood flood-color="blue" flood-opacity="0.5" result="other"/>' ..
+      '<feTile in="tile" x="2" y="3" width="50" height="40"/>'
+   local svg <close> = document(effects, TILE_CONTENT, 64, nil, 'filterUnits="userSpaceOnUse"')
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   assert(xml.find('<feTile in="effect0"', 0, true) and xml.find('x="2" y="3" width="50" height="40"', 0, true),
+      f'XMLDef must write the tile input and subregion: {xml}')
+   assert(xml.find('<feOffset result="effect0" dx="0" dy="0" x="4" y="4" width="8" height="6"', 0, true),
+      f'XMLDef must write the offset subregion: {xml}')
+   local loaded <close> = document(xml, TILE_CONTENT, 64, nil, 'filterUnits="userSpaceOnUse"')
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'The tile must survive XMLDef (max difference {diff}): {xml}')
+   assert(mGfx.ReadRGBPixel(original, 17, 14).green is 255, 'The tiled flood must be drawn')
+end

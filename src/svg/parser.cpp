@@ -1589,9 +1589,50 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
       if (val.empty()) continue;
 
       switch(strhash(Tag.Attribs[a].Name)) {
-         case SVF_dx: fx->setXOffset(svtonum<double>(val)); break;
-         case SVF_dy: fx->setYOffset(svtonum<double>(val)); break;
-         case SVF_in: parse_input_source(Self, fx, val); break;
+         case SVF_dx:     fx->setXOffset(svtonum<double>(val)); break;
+         case SVF_dy:     fx->setYOffset(svtonum<double>(val)); break;
+         case SVF_x:      fx->setX(SVGUnit(val)); break;
+         case SVF_y:      fx->setY(SVGUnit(val)); break;
+         case SVF_width:  fx->setWidth(SVGUnit(val)); break;
+         case SVF_height: fx->setHeight(SVGUnit(val)); break;
+         case SVF_in:     parse_input_source(Self, fx, val); break;
+         case SVF_result: result_name = val; break;
+      }
+   }
+
+   apply_primitive_colour_space(fx, Tag);
+   if (!fx->init()) {
+      if (!result_name.empty()) parse_result(Self, fx, result_name);
+      return ERR::Okay;
+   }
+   else {
+      FreeResource(fx);
+      return ERR::Init;
+   }
+}
+
+//********************************************************************************************************************
+// feTile repeats the primitive subregion of its input across its own subregion, which defaults to the filter region.
+
+ERR svgState::parse_fe_tile(objVectorFilter *Filter, XTag &Tag) noexcept
+{
+   kt::Log log(__FUNCTION__);
+   objTileFX *fx;
+
+   if (NewObject(CLASSID::TILEFX, &fx) != ERR::Okay) return ERR::NewObject;
+   SetOwner(fx, Filter);
+
+   std::string result_name;
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      switch(strhash(Tag.Attribs[a].Name)) {
+         case SVF_x:      fx->setX(SVGUnit(val)); break;
+         case SVF_y:      fx->setY(SVGUnit(val)); break;
+         case SVF_width:  fx->setWidth(SVGUnit(val)); break;
+         case SVF_height: fx->setHeight(SVGUnit(val)); break;
+         case SVF_in:     parse_input_source(Self, fx, val); break;
          case SVF_result: result_name = val; break;
       }
    }
@@ -3028,9 +3069,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
                case SVF_kotuku_feNormalMap:  parse_fe_lighting(filter, child, LT::NORMAL); break;
                case SVF_feDisplacementMap:   parse_fe_displacement_map(filter, child); break;
                case SVF_feWaveFunction:      parse_fe_wavefunction(filter, child); break;
-               case SVF_feTile:
-                  log.warning("Filter element '%s' is not currently supported.", child.name());
-                  break;
+               case SVF_feTile:              parse_fe_tile(filter, child); break;
 
                default:
                   log.warning("Filter element '%s' not recognised.", child.name());
