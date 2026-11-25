@@ -926,6 +926,12 @@ follow a <code>url()</code> reference.</li>
       <const name="NO_SHADOWS">The light casts no shadows.</const>
     </constants>
 
+    <constants lookup="LS" comment="Light source identifiers.">
+      <const name="DISTANT">Distant light source.</const>
+      <const name="POINT">Point light source.</const>
+      <const name="SPOT">Spot light source.</const>
+    </constants>
+
     <constants lookup="PCO" comment="PathCommand options.">
       <const name="LARGE_ARC">Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path.</const>
       <const name="SWEEP">Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</const>
@@ -997,6 +1003,20 @@ follow a <code>url()</code> reference.</li>
     <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
       <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
       <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
+    <struct name="LightGeometry" comment="Type, position and direction of one light of LightingFX, read by GetLight() and applied by SetLight().">
+      <field name="Type" type="LS" lookup="LS">The kind of light.  SetLight() requires the light's current type.</field>
+      <field name="Azimuth" type="DOUBLE">Distant lights: direction angle on the XY plane (clockwise), in degrees from the X axis.</field>
+      <field name="Elevation" type="DOUBLE">Distant lights: direction angle from the XY plane towards the Z axis, in degrees.</field>
+      <field name="X" type="DOUBLE">Point and spot lights: X location of the light source.</field>
+      <field name="Y" type="DOUBLE">Point and spot lights: Y location of the light source.</field>
+      <field name="Z" type="DOUBLE">Point and spot lights: Z location of the light source.</field>
+      <field name="PX" type="DOUBLE">Spot lights: X location of the light source's target.</field>
+      <field name="PY" type="DOUBLE">Spot lights: Y location of the light source's target.</field>
+      <field name="PZ" type="DOUBLE">Spot lights: Z location of the light source's target.</field>
+      <field name="Exponent" type="DOUBLE">Spot lights: exponent controlling the focus of the light.</field>
+      <field name="ConeAngle" type="DOUBLE">Spot lights: limiting cone angle in degrees, or 0 for no cone.</field>
     </struct>
 
     <struct name="LightOptions" comment="Options for one light of LightingFX, applied by SetLightOptions().">

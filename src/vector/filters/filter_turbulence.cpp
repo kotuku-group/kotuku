@@ -519,6 +519,7 @@ static ERR TURBULENCEFX_SET_OutputMode(extTurbulenceFX *Self, FOM Value)
       Self->OutputMode = Value;
       if (Self->Filter) Self->Filter->GraphRevision++;
    }
+   effect_modified(Self);
    return ERR::Okay;
 }
 

@@ -1536,6 +1536,7 @@ static void replace_lights(extLightingFX *Self, light_record Light)
    Light.Intensity = Self->Lights.front().Intensity;
    Self->Lights.assign(1, Light);
    Self->Configured = true;
+   effect_modified(Self);
 }
 
 // Appends a light.  The first append replaces the implicit light and keeps its intensity.  Further lights require the
@@ -1556,6 +1557,7 @@ static ERR append_light(extLightingFX *Self, light_record Light)
    }
 
    Self->Lights.push_back(Light);
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -1782,6 +1784,136 @@ static ERR LIGHTINGFX_SetLightOptions(extLightingFX *Self, struct lt::SetLightOp
    light.Intensity = options.Intensity;
    light.Range = options.Range;
    light.Shadows = (options.Flags & LOF::NO_SHADOWS) IS LOF::NIL;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetLight: Read the type, position and direction of a light.
+
+This method copies the geometry of the light at Index into a !LightGeometry structure, where 0 is the first light that
+was configured with a light method.  `Type` is always set.  The members that do not apply to the type are set to zero,
+such as `Azimuth` and `Elevation` for a point light.  An effect that has not been configured has one distant light
+with an azimuth and elevation of zero.
+
+-INPUT-
+int Index: Index of the light, from zero.
+struct(*LightGeometry) Light: Receives the geometry of the light.
+
+-RESULT-
+Okay:
+NullArgs:
+OutOfRange: The Index does not refer to a light.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GetLight(extLightingFX *Self, struct lt::GetLight *Args)
+{
+   kt::Log log;
+
+   if ((not Args) or (not Args->Light)) return log.warning(ERR::NullArgs);
+   if ((Args->Index < 0) or (size_t(Args->Index) >= Self->Lights.size())) return log.warning(ERR::OutOfRange);
+
+   const auto &light = Self->Lights[Args->Index];
+   auto &geometry = *Args->Light;
+   geometry = LightGeometry { };
+   geometry.Type = light.Kind;
+
+   if (light.Kind IS LS::DISTANT) {
+      geometry.Azimuth   = light.Azimuth;
+      geometry.Elevation = light.Elevation;
+   }
+   else {
+      geometry.X = light.Position.x;
+      geometry.Y = light.Position.y;
+      geometry.Z = light.Position.z;
+      if (light.Kind IS LS::SPOT) {
+         geometry.PX        = light.Target.x;
+         geometry.PY        = light.Target.y;
+         geometry.PZ        = light.Target.z;
+         geometry.Exponent  = light.SpotExponent;
+         geometry.ConeAngle = light.ConeAngle;
+      }
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+SetLight: Change the position and direction of a light.
+
+This method changes the geometry of the light at Index, where 0 is the first light that was configured with a light
+method.  It is intended for moving a light that is already configured, for example to animate it, so the light keeps
+its place in the list and the options set by #SetLightOptions().  Read the light with #GetLight(), change the members
+of interest and pass the structure back.
+
+`Type` must be the light's current type; a light cannot be changed into a different kind of light.  The members that
+apply to the type are used as the arguments of #SetDistantLight(), #SetPointLight() or #SetSpotLight(), and the
+others are ignored.  The light is unchanged if an error is returned.
+
+-INPUT-
+int Index: Index of the light, from zero.
+struct(*LightGeometry) Light: The new geometry of the light.
+
+-RESULT-
+Okay:
+NullArgs:
+OutOfRange: The Index does not refer to a light.
+Mismatch: The Type differs from the type of the light.
+InvalidValue: A member that applies to the type is not finite.
+
+-TAGS-
+mutates-object
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_SetLight(extLightingFX *Self, struct lt::SetLight *Args)
+{
+   kt::Log log;
+
+   if ((not Args) or (not Args->Light)) return log.warning(ERR::NullArgs);
+   if ((Args->Index < 0) or (size_t(Args->Index) >= Self->Lights.size())) return log.warning(ERR::OutOfRange);
+
+   auto &light = Self->Lights[Args->Index];
+   const auto &geometry = *Args->Light;
+   if (geometry.Type != light.Kind) return log.warning(ERR::Mismatch);
+
+   if (light.Kind IS LS::DISTANT) {
+      if ((not std::isfinite(geometry.Azimuth)) or (not std::isfinite(geometry.Elevation))) {
+         return log.warning(ERR::InvalidValue);
+      }
+      const auto update = light_record::distant(geometry.Azimuth, geometry.Elevation);
+      light.Azimuth   = update.Azimuth;
+      light.Elevation = update.Elevation;
+      light.Direction = update.Direction;
+      effect_modified(Self);
+      return ERR::Okay;
+   }
+
+   if ((not std::isfinite(geometry.X)) or (not std::isfinite(geometry.Y)) or (not std::isfinite(geometry.Z))) {
+      return log.warning(ERR::InvalidValue);
+   }
+
+   if ((light.Kind IS LS::SPOT) and ((not std::isfinite(geometry.PX)) or (not std::isfinite(geometry.PY)) or
+       (not std::isfinite(geometry.PZ)) or (not std::isfinite(geometry.Exponent)) or
+       (not std::isfinite(geometry.ConeAngle)))) {
+      return log.warning(ERR::InvalidValue);
+   }
+
+   light.Position = point3(geometry.X, geometry.Y, geometry.Z);
+   if (light.Kind IS LS::SPOT) {
+      light.Target       = point3(geometry.PX, geometry.PY, geometry.PZ);
+      light.SpotExponent = geometry.Exponent;
+      light.ConeAngle    = geometry.ConeAngle;
+   }
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -1903,6 +2035,7 @@ static ERR LIGHTINGFX_SET_Ambient(extLightingFX *Self, FRGB *Value)
       Self->Ambient = *Value;
    }
    else Self->Ambient = { 0, 0, 0, 0 };
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -1929,6 +2062,7 @@ static ERR LIGHTINGFX_SET_Cavity(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
    Self->Cavity = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -1951,6 +2085,7 @@ static ERR LIGHTINGFX_SET_Colour(extLightingFX *Self, FRGB *Value)
 
    Self->LinearColour = Self->Colour;
    glLinearRGB.convert(Self->LinearColour);
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -1968,6 +2103,7 @@ static ERR LIGHTINGFX_SET_Constant(extLightingFX *Self, double Value)
 {
    if (Value >= 0) {
       Self->Constant = Value;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -1997,6 +2133,7 @@ static ERR LIGHTINGFX_SET_Detail(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 1.0)) return ERR::OutOfRange;
    Self->Detail = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2017,6 +2154,7 @@ static ERR LIGHTINGFX_SET_Exponent(extLightingFX *Self, double Value)
 {
    if ((Value >= MIN_SPECULAR_EXPONENT) and (Value <= MAX_SPECULAR_EXPONENT)) {
       Self->SpecularExponent = Value;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -2058,6 +2196,7 @@ static ERR LIGHTINGFX_SET_Features(extLightingFX *Self, LFX Value)
 {
    if ((Value & ~(LFX::ALL | LFX::DEQUANTISE_WIDE)) != LFX::NIL) return ERR::InvalidValue;
    Self->Features = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2099,6 +2238,7 @@ static ERR LIGHTINGFX_SET_Fresnel(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
    Self->Fresnel = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2131,6 +2271,7 @@ static ERR LIGHTINGFX_SET_Intensity(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
    Self->Lights.front().Intensity = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2178,6 +2319,7 @@ static ERR LIGHTINGFX_SET_Matcap(extLightingFX *Self, objBitmap *Value)
 
    if (not Value) {
       Self->release_matcap();
+      effect_modified(Self);
       return ERR::Okay;
    }
 
@@ -2194,6 +2336,7 @@ static ERR LIGHTINGFX_SET_Matcap(extLightingFX *Self, objBitmap *Value)
    Self->release_matcap();
    Self->Matcap = Value;
    Self->MatcapPinned = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2224,6 +2367,7 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
 
    if (Value.empty()) {
       Self->release_matcap();
+      effect_modified(Self);
       return ERR::Okay;
    }
 
@@ -2238,6 +2382,7 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
    Self->MatcapImage = loaded;
    Self->Matcap = loaded->Bitmap;
    Self->MatcapPath = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2276,6 +2421,7 @@ static ERR LIGHTINGFX_SET_Metalness(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
    Self->Metalness = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2349,6 +2495,7 @@ static ERR LIGHTINGFX_SET_NormalConvention(extLightingFX *Self, NMC Value)
 {
    if ((Value != NMC::Y_DOWN) and (Value != NMC::Y_UP)) return ERR::OutOfRange;
    Self->NormalConvention = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2375,6 +2522,7 @@ static ERR LIGHTINGFX_SET_NormalStrength(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
    Self->NormalStrength = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2402,6 +2550,7 @@ static ERR LIGHTINGFX_SET_OcclusionChannel(extLightingFX *Self, MCH Value)
 {
    if ((Value < MCH::RED) or (Value > MCH::LUMINANCE)) return ERR::OutOfRange;
    Self->OcclusionChannel = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2466,6 +2615,7 @@ static ERR LIGHTINGFX_SET_OcclusionStrength(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
    Self->OcclusionStrength = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2493,6 +2643,7 @@ static ERR LIGHTINGFX_SET_Penumbra(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
    Self->Penumbra = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2520,6 +2671,7 @@ static ERR LIGHTINGFX_SET_RoughnessChannel(extLightingFX *Self, MCH Value)
 {
    if ((Value < MCH::RED) or (Value > MCH::LUMINANCE)) return ERR::OutOfRange;
    Self->RoughnessChannel = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2596,6 +2748,7 @@ static ERR LIGHTINGFX_SET_SpecularConstant(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0)) return ERR::OutOfRange;
    Self->SpecularConstant = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2622,6 +2775,7 @@ static ERR LIGHTINGFX_SET_Type(extLightingFX *Self, LT Value)
       Self->Type = Value;
       if (Self->Filter) Self->Filter->GraphRevision++;
    }
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2653,6 +2807,7 @@ static ERR LIGHTINGFX_SET_UnitX(extLightingFX *Self, double Value)
    if (Value <= 0.0) return ERR::InvalidValue;
    Self->UnitX = Value;
    Self->UnitXProvided = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2673,6 +2828,7 @@ static ERR LIGHTINGFX_SET_UnitY(extLightingFX *Self, double Value)
    if (Value <= 0.0) return ERR::InvalidValue;
    Self->UnitY = Value;
    Self->UnitYProvided = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2710,6 +2866,7 @@ static ERR LIGHTINGFX_SET_Wrap(extLightingFX *Self, double Value)
 {
    if ((not std::isfinite(Value)) or (Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
    Self->Wrap = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -2765,6 +2922,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
       stream.precision(std::numeric_limits<double>::max_digits10);
       stream << "<kotuku:feNormalMap surfaceScale=\"" << Self->MapHeight << '"';
       write_filter_xml_subregion(stream, *Self);
+
       if (Self->UnitXProvided and Self->UnitYProvided) {
          stream << " kernelUnitLength=\"" << Self->UnitX << ' ' << Self->UnitY << '"';
       }
@@ -2775,6 +2933,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
          write_lfx_features(stream, Self->Features);
          stream << '"';
       }
+
       if (Self->Detail != DEFAULT_DETAIL) stream << " detail=\"" << Self->Detail << '"';
       write_normal_options(stream, *Self, "");
       stream << "/>";
@@ -2812,6 +2971,7 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
       write_lfx_features(stream, Self->Features);
       stream << '"';
    }
+
    if (Self->Cavity != DEFAULT_CAVITY) stream << ' ' << prefix << "cavity=\"" << Self->Cavity << '"';
    if (Self->Detail != DEFAULT_DETAIL) stream << ' ' << prefix << "detail=\"" << Self->Detail << '"';
    if (Self->Penumbra != DEFAULT_PENUMBRA) stream << ' ' << prefix << "penumbra=\"" << Self->Penumbra << '"';
@@ -2876,6 +3036,16 @@ static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
 #include "filter_lighting_enhanced.cpp"
 #include "filter_lighting_def.c"
 
+//********************************************************************************************************************
+// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
+// the filter's clients.
+
+static ERR LIGHTINGFX_SET_Scale(extLightingFX *Self, double Value)
+{
+   Self->MapHeight = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
 static const FieldArray clLightingFXFields[] = {
    { "Colour",    FDF_STRUCT|FDF_RW, nullptr, LIGHTINGFX_SET_Colour, "FRGB" },
    { "Constant",  FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Constant },
@@ -2894,14 +3064,14 @@ static const FieldArray clLightingFXFields[] = {
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
    { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },
    { "NormalMap",  FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalMap, LIGHTINGFX_SET_NormalMap, CLASSID::FILTEREFFECT },
-   { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalConvention, LIGHTINGFX_SET_NormalConvention, &clLightingFXNMC },
-   { "NormalStrength", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalStrength, LIGHTINGFX_SET_NormalStrength },
-   { "OcclusionChannel", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionChannel, LIGHTINGFX_SET_OcclusionChannel, &clLightingFXMCH },
-   { "OcclusionMap", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionMap, LIGHTINGFX_SET_OcclusionMap, CLASSID::FILTEREFFECT },
+   { "NormalConvention",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalConvention, LIGHTINGFX_SET_NormalConvention, &clLightingFXNMC },
+   { "NormalStrength",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalStrength, LIGHTINGFX_SET_NormalStrength },
+   { "OcclusionChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionChannel, LIGHTINGFX_SET_OcclusionChannel, &clLightingFXMCH },
+   { "OcclusionMap",      FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionMap, LIGHTINGFX_SET_OcclusionMap, CLASSID::FILTEREFFECT },
    { "OcclusionStrength", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_OcclusionStrength, LIGHTINGFX_SET_OcclusionStrength },
-   { "RoughnessChannel", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_RoughnessChannel, LIGHTINGFX_SET_RoughnessChannel, &clLightingFXMCH },
-   { "RoughnessMap", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_RoughnessMap, LIGHTINGFX_SET_RoughnessMap, CLASSID::FILTEREFFECT },
-   { "Scale",      FDF_DOUBLE|FDF_RW },
+   { "RoughnessChannel",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_RoughnessChannel, LIGHTINGFX_SET_RoughnessChannel, &clLightingFXMCH },
+   { "RoughnessMap",      FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_RoughnessMap, LIGHTINGFX_SET_RoughnessMap, CLASSID::FILTEREFFECT },
+   { "Scale",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_Scale },
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
    { "Type",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, LIGHTINGFX_SET_Type, &clLightingFXLT },

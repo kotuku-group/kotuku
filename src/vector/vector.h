@@ -1503,13 +1503,28 @@ inline static void mark_dirty(objVector *Vector, RC Flags)
    mark_children((extVector *)Vector, Flags);
 }
 
-//********************************************************************************************************************
-// Keep shared-definition versions monotonic and reserve zero as the "never rendered" value for viewport caches.
-
-inline static void bump_share_version(extVectorScene *Scene)
+inline static void filter_modified(extVectorFilter *Filter)
 {
-   Scene->ShareVersion++;
-   if (Scene->ShareVersion IS 0) Scene->ShareVersion = 1;
+   if (Filter->initialised()) {
+      auto scene = Filter->Scene;
+      if (scene->HostScene) ((extVectorScene *)scene->HostScene)->ShareVersion++;
+      else scene->ShareVersion++;
+   }
+}
+
+//********************************************************************************************************************
+// Reports a change to an initialised filter or effect that its clients cannot observe, such as a light moved by
+// LightingFX.SetLight().  Filters are shared definitions, so the share version of the scene that hosts them is bumped
+// and buffered viewports redraw the filter's clients.  Field setters call these; writes made by the renderer during a
+// draw do not.
+
+inline static void effect_modified(extFilterEffect *Effect)
+{
+   if (Effect->initialised()) {
+      auto scene = Effect->Filter->Scene;
+      if (scene->HostScene) ((extVectorScene *)scene->HostScene)->ShareVersion++;
+      else scene->ShareVersion++;
+   }
 }
 
 //********************************************************************************************************************
@@ -2143,5 +2158,5 @@ template <class T> TClipRectangle<T>::TClipRectangle(const class extVectorViewpo
 }
 
 inline void SceneDef::modified() {
-   if (HostScene) bump_share_version(HostScene);
+   if (HostScene) HostScene->ShareVersion++;
 }

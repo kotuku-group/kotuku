@@ -218,13 +218,22 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
 /*********************************************************************************************************************
 
 -FIELD-
 Operator: Set to either `ERODE` or `DILATE`.
 Lookup: MOP
+
+*********************************************************************************************************************/
+
+static ERR MORPHOLOGYFX_SET_Operator(extMorphologyFX *Self, MOP Value)
+{
+   Self->Operator = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 RadiusX: X radius value.
@@ -235,6 +244,7 @@ static ERR MORPHOLOGYFX_SET_RadiusX(extMorphologyFX *Self, int Value)
 {
    if (Value >= 0) {
       Self->RadiusX = Value;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -251,6 +261,7 @@ static ERR MORPHOLOGYFX_SET_RadiusY(extMorphologyFX *Self, int Value)
 {
    if (Value >= 0) {
       Self->RadiusY = Value;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -286,7 +297,7 @@ static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string &Value)
 static const FieldArray clMorphologyFXFields[] = {
    { "RadiusX",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
    { "RadiusY",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
-   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clMorphologyFXMOP },
+   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, MORPHOLOGYFX_GET_XMLDef },
    END_FIELD
 };

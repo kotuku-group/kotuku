@@ -216,6 +216,8 @@ static void render_frame(extSVG *SVG, double Time)
       value.applied = selected != nullptr;
    }
 
+   apply_light_animations(SVG);
+
    for (auto &record : SVG->Animations) {
       if (auto motion = std::get_if<anim_motion>(&record)) {
          if (motion->contributes()) motion->perform();

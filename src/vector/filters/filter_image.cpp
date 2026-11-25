@@ -57,6 +57,14 @@ class extImageFX : public extFilterEffect {
    }
 };
 
+static objImage * load_filter_image(const std::string_view &Path, FOM Mode)
+{
+   if (Mode IS FOM::HEIGHT) {
+      return objImage::create::local(fl::Path(Path), fl::Flags(PCF::FORCE_ALPHA_32|PCF::RAW_SAMPLES));
+   }
+   return objImage::create::local(fl::Path(Path), fl::BitsPerPixel(32), fl::Flags(PCF::FORCE_ALPHA_32));
+}
+
 //********************************************************************************************************************
 // Read one height sample.  Clamp the taps to the bitmap edges without blending in zero at the boundary.
 
@@ -222,6 +230,17 @@ static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
 AspectRatio: SVG compliant aspect ratio settings.
 Lookup: ARF
 
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_SET_AspectRatio(extImageFX *Self, ARF Value)
+{
+   Self->AspectRatio = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 Bitmap: The @Bitmap being used as the image source.
 
@@ -230,6 +249,63 @@ assigned by making the ImageFX object its owner prior to initialisation, as desc
 
 If an image has been processed by setting the #Path, the Bitmap will refer to the content that has been
 processed.
+
+-FIELD-
+HeightChannel: Selects the stored channel to read in height mode.
+Lookup: MCH
+
+A 16-bit greyscale bitmap supplies its grey samples regardless of this setting.  For other bitmaps, alpha reads
+as 1 when the bitmap has no alpha channel.
+
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_SET_HeightChannel(extImageFX *Self, MCH Value)
+{
+   if ((Value < MCH::RED) or (Value > MCH::LUMINANCE)) return ERR::InvalidValue;
+   Self->HeightChannel = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR IMAGEFX_SET_ImageHref(extImageFX *Self, const std::string_view &Value)
+{
+   Self->ImageHref = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+OutputMode: Selects image or floating-point height output.
+Lookup: FOM
+
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_SET_OutputMode(extImageFX *Self, FOM Value)
+{
+   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::InvalidValue;
+   if (Self->initialised()) return ERR::Immutable;
+   if (Value IS Self->OutputMode) return ERR::Okay;
+
+   // Path and OutputMode may be supplied in either order during construction.
+
+   if (Self->Image) {
+      std::string_view path;
+      if (auto error = Self->Image->getPath(path); error != ERR::Okay) return error;
+      auto image = load_filter_image(path, Value);
+      if (not image) return ERR::CreateObject;
+      FreeResource(Self->Image);
+      Self->Image = image;
+      Self->Bitmap = image->Bitmap;
+   }
+
+   Self->OutputMode = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 Path: Path to an image file supported by the @Image class.
@@ -243,14 +319,6 @@ static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
    return ERR::Okay;
 }
 
-static objImage * load_filter_image(const std::string_view &Path, FOM Mode)
-{
-   if (Mode IS FOM::HEIGHT) {
-      return objImage::create::local(fl::Path(Path), fl::Flags(PCF::FORCE_ALPHA_32|PCF::RAW_SAMPLES));
-   }
-   return objImage::create::local(fl::Path(Path), fl::BitsPerPixel(32), fl::Flags(PCF::FORCE_ALPHA_32));
-}
-
 static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
 {
    if ((Self->Bitmap) or (Self->Image)) return ERR::Immutable;
@@ -262,39 +330,6 @@ static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
    else return ERR::CreateObject;
 }
 
-static ERR IMAGEFX_SET_OutputMode(extImageFX *Self, FOM Value)
-{
-   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::InvalidValue;
-   if (Self->initialised()) return ERR::Immutable;
-   if (Value IS Self->OutputMode) return ERR::Okay;
-
-   // Path and OutputMode may be supplied in either order during construction.
-   if (Self->Image) {
-      std::string_view path;
-      if (auto error = Self->Image->getPath(path); error != ERR::Okay) return error;
-      auto image = load_filter_image(path, Value);
-      if (not image) return ERR::CreateObject;
-      FreeResource(Self->Image);
-      Self->Image = image;
-      Self->Bitmap = image->Bitmap;
-   }
-   Self->OutputMode = Value;
-   return ERR::Okay;
-}
-
-static ERR IMAGEFX_SET_HeightChannel(extImageFX *Self, MCH Value)
-{
-   if ((Value < MCH::RED) or (Value > MCH::LUMINANCE)) return ERR::InvalidValue;
-   Self->HeightChannel = Value;
-   return ERR::Okay;
-}
-
-static ERR IMAGEFX_SET_ImageHref(extImageFX *Self, const std::string_view &Value)
-{
-   Self->ImageHref = Value;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
@@ -302,18 +337,16 @@ ResampleMethod: The resample algorithm to use for transforming the source image.
 
 !VSM
 
--FIELD-
-OutputMode: Selects image or floating-point height output.
-Lookup: FOM
+*********************************************************************************************************************/
 
-Set this field before initialisation.
+static ERR IMAGEFX_SET_ResampleMethod(extImageFX *Self, VSM Value)
+{
+   Self->ResampleMethod = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
 
--FIELD-
-HeightChannel: Selects the stored channel to read in height mode.
-Lookup: MCH
-
-A 16-bit greyscale bitmap supplies its grey samples regardless of this setting.  For other bitmaps, alpha reads
-as 1 when the bitmap has no alpha channel.
+/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the filter.
@@ -368,9 +401,11 @@ static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string &Value)
 // Keep the private field after the generated ImageFX accessors' indexed fields in the dictionary.
 static_assert(kt::fieldhash("ImageHref") > kt::fieldhash("AspectRatio"));
 
+//********************************************************************************************************************
+
 static const FieldArray clImageFXFields[] = {
-   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clAspectRatio },
-   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageFXVSM },
+   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_AspectRatio, &clAspectRatio },
+   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_ResampleMethod, &clImageFXVSM },
    { "Bitmap",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "OutputMode",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, IMAGEFX_SET_OutputMode, &clImageFXFOM },
    { "HeightChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_HeightChannel, &clImageFXMCH },

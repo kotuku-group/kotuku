@@ -166,6 +166,7 @@ Lookup: ARF
 static ERR SOURCEFX_SET_AspectRatio(extSourceFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -188,6 +189,7 @@ static ERR SOURCEFX_SET_Source(extSourceFX *Self, objVector *Value)
    if (Self->Source) Self->Source->unpinWeak();
    Value->pinWeak();
    Self->Source = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 

@@ -25,8 +25,10 @@ static ERR FILTEREFFECT_Init(extFilterEffect *Self)
    // Resolve the implicit input once, using the current authored order.
    if (Self->SourceType IS VSF::PREVIOUS) {
       const auto &effects = Self->Filter->Effects;
+
       auto position = std::ranges::find(effects, Self);
       if (position IS effects.end()) return log.warning(ERR::InvalidState);
+
       if (position != effects.begin()) {
          Self->Input = *std::prev(position);
          Self->SourceType = VSF::REFERENCE;
@@ -34,6 +36,7 @@ static ERR FILTEREFFECT_Init(extFilterEffect *Self)
       else Self->SourceType = VSF::GRAPHIC;
    }
 
+   filter_modified(Self->Filter); // An effect added to a live filter changes its output
    return ERR::Okay;
 }
 
@@ -46,6 +49,7 @@ MoveToBack: Move an effect to the back of the VectorFilter's list order.
 static ERR FILTEREFFECT_MoveToBack(extFilterEffect *Self)
 {
    if (not Self->Filter) return ERR::UnsupportedOwner;
+
    auto &effects = Self->Filter->Effects;
    auto position = std::ranges::find(effects, Self);
    if (position IS effects.end()) return ERR::InvalidState;
@@ -54,7 +58,6 @@ static ERR FILTEREFFECT_MoveToBack(extFilterEffect *Self)
    update_filter_links(Self->Filter);
    return ERR::Okay;
 }
-
 
 /*********************************************************************************************************************
 -ACTION-
@@ -65,6 +68,7 @@ MoveToFront: Move an effect to the front of the VectorFilter's list order.
 static ERR FILTEREFFECT_MoveToFront(extFilterEffect *Self)
 {
    if (not Self->Filter) return ERR::UnsupportedOwner;
+
    auto &effects = Self->Filter->Effects;
    auto position = std::ranges::find(effects, Self);
    if (position IS effects.end()) return ERR::InvalidState;
@@ -79,10 +83,12 @@ static ERR FILTEREFFECT_MoveToFront(extFilterEffect *Self)
 static ERR FILTEREFFECT_NewOwner(extFilterEffect *Self, struct acNewOwner *Args)
 {
    if ((not Args) or (not Args->NewOwner)) return ERR::NullArgs;
+
    if (Self->Filter and (Args->NewOwner != Self->Filter)) {
       clear_filter_references(Self);
       unlink_filter_effect(Self);
    }
+
    return ERR::Okay;
 }
 
@@ -114,6 +120,7 @@ static ERR FILTEREFFECT_SET_Input(extFilterEffect *Self, extFilterEffect *Value)
    Self->Input = Value;
    Self->SourceType = Value ? VSF::REFERENCE : VSF::NIL;
    if (Self->Filter) Self->Filter->GraphRevision++;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -141,6 +148,7 @@ static ERR FILTEREFFECT_SET_ColourSpace(extFilterEffect *Self, VCS Value)
 {
    if ((Value != VCS::INHERIT) and (Value != VCS::SRGB) and (Value != VCS::LINEAR_RGB)) return ERR::OutOfRange;
    Self->ColourSpace = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -174,6 +182,7 @@ static ERR FILTEREFFECT_SET_Mix(extFilterEffect *Self, extFilterEffect *Value)
    Self->Mix = Value;
    Self->MixType = Value ? VSF::REFERENCE : VSF::NIL;
    if (Self->Filter) Self->Filter->GraphRevision++;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -228,21 +237,78 @@ static ERR FILTEREFFECT_GET_XMLDef(extFilterEffect *Self, std::string &Value)
 
 #include "filter_effect_def.c"
 
+//********************************************************************************************************************
+// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
+// the filter's clients.
+
+static ERR FILTEREFFECT_SET_X(extFilterEffect *Self, Unit &Value)
+{
+   Self->X = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR FILTEREFFECT_SET_Y(extFilterEffect *Self, Unit &Value)
+{
+   Self->Y = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR FILTEREFFECT_SET_Width(extFilterEffect *Self, Unit &Value)
+{
+   Self->Width = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR FILTEREFFECT_SET_Height(extFilterEffect *Self, Unit &Value)
+{
+   Self->Height = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR FILTEREFFECT_SET_SourceType(extFilterEffect *Self, VSF Value)
+{
+   Self->SourceType = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR FILTEREFFECT_SET_MixType(extFilterEffect *Self, VSF Value)
+{
+   Self->MixType = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static const FieldArray clFilterEffectFields[] = {
-   { "Next",       FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::FILTEREFFECT },
-   { "Prev",       FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::FILTEREFFECT },
-   { "Target",     FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
-   { "Input",      FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Input, CLASSID::FILTEREFFECT },
-   { "Mix",        FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Mix, CLASSID::FILTEREFFECT },
-   { "X",          FDF_UNIT|FDF_RW },
-   { "Y",          FDF_UNIT|FDF_RW },
-   { "Width",      FDF_UNIT|FDF_RW },
-   { "Height",     FDF_UNIT|FDF_RW },
-   { "SourceType", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectSourceType },
-   { "MixType",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectMixType },
-   { "ColourSpace", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, FILTEREFFECT_GET_ColourSpace,
-     FILTEREFFECT_SET_ColourSpace, &clFilterEffectVCS },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
+   { "Next",        FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::FILTEREFFECT },
+   { "Prev",        FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::FILTEREFFECT },
+   { "Target",      FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
+   { "Input",       FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Input, CLASSID::FILTEREFFECT },
+   { "Mix",         FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Mix, CLASSID::FILTEREFFECT },
+   { "X",           FDF_UNIT|FDF_RW, nullptr, FILTEREFFECT_SET_X },
+   { "Y",           FDF_UNIT|FDF_RW, nullptr, FILTEREFFECT_SET_Y },
+   { "Width",       FDF_UNIT|FDF_RW, nullptr, FILTEREFFECT_SET_Width },
+   { "Height",      FDF_UNIT|FDF_RW, nullptr, FILTEREFFECT_SET_Height },
+   { "SourceType",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, FILTEREFFECT_SET_SourceType, &clFilterEffectSourceType },
+   { "MixType",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, FILTEREFFECT_SET_MixType, &clFilterEffectMixType },
+   { "ColourSpace", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, FILTEREFFECT_GET_ColourSpace, FILTEREFFECT_SET_ColourSpace, &clFilterEffectVCS },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

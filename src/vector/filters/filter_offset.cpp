@@ -61,11 +61,33 @@ XOffset: The delta X coordinate for the input graphic.
 The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.  The
 value is measured in the units of the filter's @VectorFilter.PrimitiveUnits.
 
+*********************************************************************************************************************/
+
+static ERR OFFSETFX_SET_XOffset(extOffsetFX *Self, double Value)
+{
+   Self->XOffset = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 YOffset: The delta Y coordinate for the input graphic.
 
 The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.  The
 value is measured in the units of the filter's @VectorFilter.PrimitiveUnits.
+
+*********************************************************************************************************************/
+
+static ERR OFFSETFX_SET_YOffset(extOffsetFX *Self, double Value)
+{
+   Self->YOffset = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
@@ -88,8 +110,8 @@ static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string &Value)
 #include "filter_offset_def.c"
 
 static const FieldArray clOffsetFXFields[] = {
-   { "XOffset", FDF_DOUBLE|FDF_RW },
-   { "YOffset", FDF_DOUBLE|FDF_RW },
+   { "XOffset", FDF_DOUBLE|FDF_RW, nullptr, OFFSETFX_SET_XOffset },
+   { "YOffset", FDF_DOUBLE|FDF_RW, nullptr, OFFSETFX_SET_YOffset },
    { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, OFFSETFX_GET_XMLDef },
    END_FIELD
 };

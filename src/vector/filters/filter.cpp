@@ -898,6 +898,7 @@ static ERR set_named_filter_input(extFilterEffect *Effect, std::string_view Name
    slot->Source = Source;
    slot->Reference = (Source IS VSF::REFERENCE) ? Reference : nullptr;
    if (Effect->Filter) Effect->Filter->GraphRevision++;
+   effect_modified(Effect);
    return ERR::Okay;
 }
 
@@ -935,6 +936,7 @@ static void update_filter_links(extVectorFilter *Filter)
       effects[i]->Next = (i + 1 < effects.size()) ? effects[i + 1] : nullptr;
    }
    Filter->GraphRevision++;
+   filter_modified(Filter);
 }
 
 //********************************************************************************************************************
@@ -2526,6 +2528,7 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
    }
 
    Self->GraphRevision++;
+   filter_modified(Self);
    release_filter_surface(Self, Self->LastOutput);
    auto surfaces = std::exchange(Self->FreeSurfaces, nullptr);
    Self->SurfaceBytes = 0;
@@ -2624,6 +2627,17 @@ bounding box, so the default region adds a margin of 10% of the normalised diago
 
 The following effects support `NONE`: @BlurFX, @LightingFX and @OffsetFX.
 
+*********************************************************************************************************************/
+
+static ERR VECTORFILTER_SET_AspectRatio(extVectorFilter *Self, VFA Value)
+{
+   Self->AspectRatio = Value;
+   filter_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 ColourSpace: The colour space of the filter graphics (SRGB or linear RGB).
 
@@ -2646,6 +2660,17 @@ An effect can override this setting with its own @FilterEffect.ColourSpace, whic
 
 The SVG standard defaults to linear RGB for filter effects, so the SVG parser selects `LINEAR_RGB` unless the
 `color-interpolation-filters` attribute states otherwise.  Filters created through the API retain the SRGB default.
+
+*********************************************************************************************************************/
+
+static ERR VECTORFILTER_SET_ColourSpace(extVectorFilter *Self, VCS Value)
+{
+   Self->ColourSpace = Value;
+   filter_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 EffectXML: Returns a SVG XML string that defines the filter's effects.
@@ -2756,6 +2781,7 @@ static ERR VECTORFILTER_SET_Height(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
       Self->Height = Value;
+      filter_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -2777,6 +2803,7 @@ static ERR VECTORFILTER_SET_Inherit(extVectorFilter *Self, extVectorFilter *Valu
       else return ERR::InvalidValue;
    }
    else Self->Inherit = nullptr;
+   filter_modified(Self);
    return ERR::Okay;
 }
 
@@ -2792,16 +2819,29 @@ is 1.0.
 static ERR VECTORFILTER_SET_Opacity(extVectorFilter *Self, double Value)
 {
    Self->Opacity = std::clamp(Value, 0.0, 1.0);
+   filter_modified(Self);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
+
 -FIELD-
 PrimitiveUnits: Alters the behaviour of some effects that support alternative position calculations.
 
 PrimitiveUnits alters the behaviour of some effects when their dimensions are calculated.  The default value is
 `USERSPACE`.  When set to `BOUNDING_BOX`, the effect may calculate its dimensions strictly based on the client vector
 using a scaled coordinate space of `(0, 0, 100%, 100%)`.
+
+*********************************************************************************************************************/
+
+static ERR VECTORFILTER_SET_PrimitiveUnits(extVectorFilter *Self, VUNIT Value)
+{
+   Self->PrimitiveUnits = Value;
+   filter_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 ResX: Stores the requested horizontal filter resolution for compatibility.
@@ -2818,6 +2858,17 @@ Units: Defines the coordinate system for #X, #Y, #Width and #Height.
 
 The default coordinate system is `BOUNDING_BOX`, which positions the filter within the client vector.
 The alternative is `USERSPACE`, which positions the filter relative to the client vector's nearest viewport.
+
+*********************************************************************************************************************/
+
+static ERR VECTORFILTER_SET_Units(extVectorFilter *Self, VUNIT Value)
+{
+   Self->Units = Value;
+   filter_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 Width: The width of the filter area.  Can be expressed as a fixed or scaled coordinate.
@@ -2837,6 +2888,7 @@ static ERR VECTORFILTER_SET_Width(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
       Self->Width = Value;
+      filter_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -2854,6 +2906,17 @@ normalised diagonal.  It is important to note that coordinates are measured befo
 The default values for X and #Y is `10%`, as per the SVG standard.  This provides a buffer space for the filter
 algorithms to work with, and is usually a sufficient default.
 
+*********************************************************************************************************************/
+
+static ERR VECTORFILTER_SET_X(extVectorFilter *Self, Unit &Value)
+{
+   Self->X = Value;
+   filter_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 Y: Y coordinate for the filter.
 
@@ -2868,21 +2931,32 @@ algorithms to work with, and is usually a sufficient default.
 -END-
 *********************************************************************************************************************/
 
+static ERR VECTORFILTER_SET_Y(extVectorFilter *Self, Unit &Value)
+{
+   Self->Y = Value;
+   filter_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 #include "filter_def.c"
 
+//********************************************************************************************************************
+
 static const FieldArray clFilterFields[] = {
-   { "X",              FDF_UNIT|FDF_RW },
-   { "Y",              FDF_UNIT|FDF_RW },
+   { "X",              FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_X },
+   { "Y",              FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Y },
    { "Width",          FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Width },
    { "Height",         FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Height },
    { "Opacity",        FDF_DOUBLE|FDF_RW, nullptr, VECTORFILTER_SET_Opacity },
    { "Inherit",        FDF_OBJECT|FDF_RW, nullptr, VECTORFILTER_SET_Inherit },
    { "ResX",           FDF_INT|FDF_RI },
    { "ResY",           FDF_INT|FDF_RI },
-   { "Units",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterUnits },
-   { "PrimitiveUnits", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterPrimitiveUnits },
-   { "ColourSpace",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterColourSpace },
-   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterAspectRatio },
+   { "Units",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORFILTER_SET_Units, &clVectorFilterUnits },
+   { "PrimitiveUnits", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORFILTER_SET_PrimitiveUnits, &clVectorFilterPrimitiveUnits },
+   { "ColourSpace",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORFILTER_SET_ColourSpace, &clVectorFilterColourSpace },
+   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORFILTER_SET_AspectRatio, &clVectorFilterAspectRatio },
    // Virtual fields
    { "EffectXML",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, VECTORFILTER_GET_EffectXML },
    END_FIELD

@@ -279,6 +279,20 @@ have a range; the attribute is reported and ignored.</li>
 An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown
 namespace and draw the standard SVG lighting.
 
+A light source element can be animated with `animate` and `set` children, as in web browsers.  They animate the
+numeric attributes of the light's own type: `azimuth` and `elevation` of `feDistantLight`, `x`, `y` and `z` of
+`fePointLight`, and those plus `pointsAtX`, `pointsAtY`, `pointsAtZ`, `specularExponent` and `limitingConeAngle` of
+`feSpotLight`.  The animations move the light in place with @LightingFX.SetLight(), so its `kotuku:` options and its
+place among the lights of `kotuku:feLighting` are kept.  Other attributes and an `href` to another element are
+reported and ignored, and the light's colour cannot be animated.  An exported document does not include the
+animations.
+
+<pre>
+&lt;feSpotLight x="180" y="120" z="120" pointsAtX="820" pointsAtY="330" limitingConeAngle="40"&gt;
+  &lt;animate attributeName="pointsAtX" values="820;580;340;580;820" dur="16s" repeatCount="indefinite"/&gt;
+&lt;/feSpotLight&gt;
+</pre>
+
 <pre>
 &lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"&gt;
   &lt;filter id="relief"&gt;
@@ -1373,6 +1387,7 @@ content.
 *********************************************************************************************************************/
 
 #include "anim_metrics.cpp"
+#include "anim_light.cpp"
 #include "anim_timing.cpp"
 #include "anim_parsing.cpp"
 #include "anim_motion.cpp"

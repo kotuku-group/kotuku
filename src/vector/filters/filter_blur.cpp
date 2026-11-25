@@ -642,6 +642,7 @@ static ERR BLURFX_SET_EdgeMode(extBlurFX *Self, FEM Value)
 {
    if ((Value < FEM::TRANSPARENT) or (Value > FEM::MIRROR)) return ERR::OutOfRange;
    Self->EdgeMode = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -652,6 +653,7 @@ static ERR BLURFX_SET_OutputMode(extBlurFX *Self, FOM Value)
       Self->OutputMode = Value;
       if (Self->Filter) Self->Filter->GraphRevision++;
    }
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -675,12 +677,32 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
 
 #include "filter_blur_def.c"
 
+//********************************************************************************************************************
+// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
+// the filter's clients.
+
+static ERR BLURFX_SET_SX(extBlurFX *Self, double Value)
+{
+   Self->SX = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+static ERR BLURFX_SET_SY(extBlurFX *Self, double Value)
+{
+   Self->SY = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static const FieldArray clBlurFXFields[] = {
-   { "SX",       FDF_DOUBLE|FDF_RW },
-   { "SY",       FDF_DOUBLE|FDF_RW },
-   { "EdgeMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_EdgeMode, &clBlurFXFEM },
+   { "SX",         FDF_DOUBLE|FDF_RW, nullptr, BLURFX_SET_SX },
+   { "SY",         FDF_DOUBLE|FDF_RW, nullptr, BLURFX_SET_SY },
+   { "EdgeMode",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_EdgeMode, &clBlurFXFEM },
    { "OutputMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_OutputMode, &clBlurFXFOM },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
    END_FIELD
 };
 

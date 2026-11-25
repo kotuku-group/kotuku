@@ -88,6 +88,20 @@
     int(LOF) Flags       # Optional settings.
   ]])
 
+  structdef('LightGeometry', { comment='Type, position and direction of one light of LightingFX, read by GetLight() and applied by SetLight().' }, [[
+    int(LS) Type      # The kind of light.  SetLight() requires the light's current type.
+    double Azimuth    # Distant lights: direction angle on the XY plane (clockwise), in degrees from the X axis.
+    double Elevation  # Distant lights: direction angle from the XY plane towards the Z axis, in degrees.
+    double X          # Point and spot lights: X location of the light source.
+    double Y          # Point and spot lights: Y location of the light source.
+    double Z          # Point and spot lights: Z location of the light source.
+    double PX         # Spot lights: X location of the light source's target.
+    double PY         # Spot lights: Y location of the light source's target.
+    double PZ         # Spot lights: Z location of the light source's target.
+    double Exponent   # Spot lights: exponent controlling the focus of the light.
+    double ConeAngle  # Spot lights: limiting cone angle in degrees, or 0 for no cone.
+  ]])
+
   methods('LightingFX', 'LT', {
     { id=10, name='SetDistantLight' },
     { id=12, name='SetPointLight' },
@@ -95,7 +109,9 @@
     { id=13, name='AddDistantLight' },
     { id=14, name='AddPointLight' },
     { id=15, name='AddSpotLight' },
-    { id=16, name='SetLightOptions' }
+    { id=16, name='SetLightOptions' },
+    { id=17, name='GetLight' },
+    { id=18, name='SetLight' }
   })
 
   klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM', 'FOM', 'MCH' } }, [[
@@ -137,7 +153,7 @@
     ~struct(FRGB) Colour
   ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX', 'LOF', 'NMC', 'MCH', 'LightOptions' } }, [[
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX', 'LOF', 'NMC', 'MCH', 'LightOptions', 'LightGeometry', 'LS' } }, [[
     ~struct(FRGB) Colour
     ~int(LT) Type
     ~int(LFX) Features

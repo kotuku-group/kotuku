@@ -84,7 +84,7 @@ public:
    struct spline_point {
       kt::POINT<float> point;
       float angle;
-      float cos_angle;
+      float cos_angle = 0;
       spline_point(kt::POINT<float> pPoint, float pAngle) : point(pPoint), angle(pAngle) { }
    };
 
@@ -129,6 +129,7 @@ public:
    double get_total_dist();
    double get_dimension(objVector &, FIELD);
    double get_numeric_value(objVector &, FIELD);
+   double interpolate_numeric(double, double, double) const;
    static double interval_seek(double, double, double) noexcept;
    static double mod_seek(double, int) noexcept;
    static double spline_seek(const spline_path &, double) noexcept;
@@ -205,6 +206,25 @@ public:
 
    anim_value(extSVG *pSVG, OBJECTID pTarget, XTag *pTag) : anim_base(pSVG, pTarget), tag(pTag) { }
    void set_value(objVector &Vector);
+};
+
+//********************************************************************************************************************
+// Animates a numeric attribute of a light source element, such as feSpotLight's pointsAtX.  The light belongs to a
+// LightingFX, so target_vector holds the UID of that effect rather than a vector.  Every animation of a light starts
+// from the same base geometry, which is the light as parsed.
+
+class anim_light : public anim_base {
+public:
+   LightGeometry base;    // Geometry of the light before animation
+   int light_index = 0;   // Index of the light within the effect
+   bool applied = false;  // True if the animation contributed to the last frame
+   std::vector<double> samples;
+
+   anim_light(extSVG *pSVG, OBJECTID pEffect, int pIndex, const LightGeometry &pBase) :
+      anim_base(pSVG, pEffect), base(pBase), light_index(pIndex) { }
+
+   bool prepare(double);
+   void apply(LightGeometry &);
 };
 
 //********************************************************************************************************************

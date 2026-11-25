@@ -236,6 +236,7 @@ static ERR DISPLACEMENTFX_SET_NormalConvention(extDisplacementFX *Self, NMC Valu
 {
    if ((Value != NMC::AUTO) and (Value != NMC::Y_DOWN) and (Value != NMC::Y_UP)) return ERR::OutOfRange;
    Self->NormalConvention = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -294,17 +295,54 @@ static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string &Value
 }
 
 //********************************************************************************************************************
+// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
+// the filter's clients.
+
+static ERR DISPLACEMENTFX_SET_Scale(extDisplacementFX *Self, double Value)
+{
+   Self->Scale = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR DISPLACEMENTFX_SET_ResampleMethod(extDisplacementFX *Self, VSM Value)
+{
+   Self->ResampleMethod = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR DISPLACEMENTFX_SET_XChannel(extDisplacementFX *Self, CMP Value)
+{
+   Self->XChannel = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR DISPLACEMENTFX_SET_YChannel(extDisplacementFX *Self, CMP Value)
+{
+   Self->YChannel = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 
 #include "filter_displacement_def.c"
 
 static const FieldArray clDisplacementFXFields[] = {
-   { "Scale",     FDF_DOUBLE|FDF_RW },
-   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXVSM },
-   { "XChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
-   { "YChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clDisplacementFXCMP },
-   { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_NormalConvention,
-     DISPLACEMENTFX_SET_NormalConvention, &clDisplacementFXNMC },
-   { "XMLDef",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, DISPLACEMENTFX_GET_XMLDef },
+   { "Scale",            FDF_DOUBLE|FDF_RW, nullptr, DISPLACEMENTFX_SET_Scale },
+   { "ResampleMethod",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_ResampleMethod, &clDisplacementFXVSM },
+   { "XChannel",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_XChannel, &clDisplacementFXCMP },
+   { "YChannel",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_YChannel, &clDisplacementFXCMP },
+   { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_NormalConvention, DISPLACEMENTFX_SET_NormalConvention, &clDisplacementFXNMC },
+   { "XMLDef",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, DISPLACEMENTFX_GET_XMLDef },
    END_FIELD
 };
 

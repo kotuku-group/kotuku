@@ -405,9 +405,15 @@ template <class T = double> std::string_view read_numseq(std::string_view String
 {
    for (T *v : Value) {
       String = next_value(String);
+      if (String.empty()) return String;
 
+      auto start = String.data();
+      if (String.starts_with('+')) {
+         if ((String.size() IS 1) or (String[1] IS '-')) return String;
+         start++;
+      }
       T num;
-      auto [ next, error ] = std::from_chars(String.data(), String.data() + String.size(), num);
+      auto [ next, error ] = std::from_chars(start, String.data() + String.size(), num);
       if (error != std::errc()) return String;
       String = std::string_view(next, String.data() + String.size() - next);
       *v = num;

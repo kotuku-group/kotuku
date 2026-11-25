@@ -20,7 +20,9 @@
 <header>Technical Notes</header>
 <p>To find out general information about an image before initialising it, <action>Query</action> it first so that the image object can load initial details on the file format.</p>
 <p>Images are also remapped automatically if the source palette and destination palettes do not match, or if there are significant differences between the source and destination bitmap types.</p>
-<p>Dynamically sized image formats like SVG will use the <fl>DisplayWidth</fl> and <fl>DisplayHeight</fl> values to determine the rendered image size.</p></description>
+<p>Dynamically sized image formats like SVG will use the <fl>DisplayWidth</fl> and <fl>DisplayHeight</fl> values to determine the rendered image size.</p>
+<p>The format of the loaded image is dictated by the <fl>Bitmap</fl>.  Preset its fields, such as <class name="Bitmap" field="BitsPerPixel">Bitmap.BitsPerPixel</class>, before loading to define the format that you need, and the image will be converted to it.  If the <fl>Bitmap</fl> is left undefined, the image is loaded in a format that matches the source as closely as possible.</p>
+<p>Greyscale PNG images with 16-bit samples load as-is into a 16-bit <fl>Bitmap</fl> with the <code>GREYSCALE</code> flag, preserving their full precision.  Presetting the <code>GREYSCALE</code> flag in <class name="Bitmap" field="Flags">Bitmap.Flags</class> loads greyscale images of any bit depth this way; samples of 8 bits or fewer are expanded so that white is stored as <code>0xffff</code>, and colour images are converted to their luminance.  The preset flag takes precedence over <code>FORCE_ALPHA_32</code>.  An alpha channel is stored in the <fl>Mask</fl> at 8-bit precision.  These samples are not gamma corrected, so that they can be used as data such as height maps.  To load a 16-bit greyscale image at 8 bits instead, preset a <class name="Bitmap" field="BitsPerPixel">Bitmap.BitsPerPixel</class> of 8 or more.</p></description>
     <source>
       <file>image.cpp</file>
     </source>

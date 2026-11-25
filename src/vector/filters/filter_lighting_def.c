@@ -42,6 +42,13 @@ static const struct FieldDef clLightingFXMCH[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clLightingFXLS[] = {
+   { "Distant", 0x00000000 },
+   { "Spot", 0x00000001 },
+   { "Point", 0x00000002 },
+   { nullptr, 0 }
+};
+
 FDEF maSetDistantLight[] = { { "Azimuth", FD_DOUBLE }, { "Elevation", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetPointLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "PX", FD_DOUBLE }, { "PY", FD_DOUBLE }, { "PZ", FD_DOUBLE }, { "Exponent", FD_DOUBLE }, { "ConeAngle", FD_DOUBLE }, { 0, 0 } };
@@ -49,6 +56,8 @@ FDEF maAddDistantLight[] = { { "Azimuth", FD_DOUBLE }, { "Elevation", FD_DOUBLE 
 FDEF maAddPointLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { 0, 0 } };
 FDEF maAddSpotLight[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "PX", FD_DOUBLE }, { "PY", FD_DOUBLE }, { "PZ", FD_DOUBLE }, { "Exponent", FD_DOUBLE }, { "ConeAngle", FD_DOUBLE }, { 0, 0 } };
 FDEF maSetLightOptions[] = { { "Index", FD_INT }, { "LightOptions:Options", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF maGetLight[] = { { "Index", FD_INT }, { "LightGeometry:Light", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF maSetLight[] = { { "Index", FD_INT }, { "LightGeometry:Light", FD_PTR|FD_STRUCT }, { 0, 0 } };
 
 static const struct MethodEntry clLightingFXMethods[] = {
    { AC(-10), (APTR)LIGHTINGFX_SetDistantLight, "SetDistantLight", maSetDistantLight, sizeof(struct lt::SetDistantLight) },
@@ -58,6 +67,8 @@ static const struct MethodEntry clLightingFXMethods[] = {
    { AC(-14), (APTR)LIGHTINGFX_AddPointLight, "AddPointLight", maAddPointLight, sizeof(struct lt::AddPointLight) },
    { AC(-15), (APTR)LIGHTINGFX_AddSpotLight, "AddSpotLight", maAddSpotLight, sizeof(struct lt::AddSpotLight) },
    { AC(-16), (APTR)LIGHTINGFX_SetLightOptions, "SetLightOptions", maSetLightOptions, sizeof(struct lt::SetLightOptions) },
+   { AC(-17), (APTR)LIGHTINGFX_GetLight, "GetLight", maGetLight, sizeof(struct lt::GetLight) },
+   { AC(-18), (APTR)LIGHTINGFX_SetLight, "SetLight", maSetLight, sizeof(struct lt::SetLight) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

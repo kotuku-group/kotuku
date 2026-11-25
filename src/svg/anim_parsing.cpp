@@ -248,12 +248,9 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
             while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
             for (s=v; s < std::ssize(Value) and (Value[s] != ';'); s++);
             std::string_view val = Value.substr(v, s-v);
-            double fv = 0;
-            auto [ ptr, error ] = std::from_chars(val.data(), val.data() + val.size(), fv);
-            if ((error IS std::errc()) and (ptr IS val.data() + val.size())) {
-               fv = std::clamp(fv, last_val, 1.0);
-               Anim.timing.push_back(fv);
-               last_val = fv;
+            if (auto value = kt::font_traits::parse_number(val)) {
+               last_val = std::clamp(*value, last_val, 1.0);
+               Anim.timing.push_back(last_val);
             }
             v = s;
             if ((v < std::ssize(Value)) and (Value[v] IS ';')) v++;
@@ -275,38 +272,37 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
 
       case SVF_keySplines: {
          Anim.splines.clear();
+         Anim.spline_paths.clear();
          int s, v = 0;
          while (v < std::ssize(Value)) {
             while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
             for (s=v; s < std::ssize(Value) and (Value[s] != ';'); s++);
             auto quad = std::string_view(Value.substr(v, s-v));
 
-            POINT<double> a, b;
-            read_numseq(quad, { &a.x, &a.y, &b.x, &b.y });
-            a.x = std::clamp(a.x, 0.0, 1.0);
-            a.y = std::clamp(a.y, 0.0, 1.0);
-            b.x = std::clamp(b.x, 0.0, 1.0);
-            b.y = std::clamp(b.y, 0.0, 1.0);
+            POINT<double> a(-1, -1), b(-1, -1);
+            const auto tail = read_numseq(quad, { &a.x, &a.y, &b.x, &b.y });
+            const auto valid = [](double Number) { return (Number >= 0.0) and (Number <= 1.0); };
+            if ((not kt::font_traits::trim(tail).empty()) or
+                (not valid(a.x)) or (not valid(a.y)) or (not valid(b.x)) or (not valid(b.y))) {
+               return ERR::InvalidValue;
+            }
             Anim.splines.push_back(std::make_pair(a, b));
 
             v = s;
             if ((v < std::ssize(Value)) and (Value[v] IS ';')) v++;
          }
 
-         if (Anim.splines.size() < 2) Anim.splines.clear();
-         else {
-            // Convert the splines into bezier paths and generate a point-based path in advance.
-            for (auto &sp : Anim.splines) {
-               APTR path;
-               if (!vec::GeneratePath("", &path)) {
-                  anim_base::SPLINE_POINTS lookup;
-                  vec::MoveTo(path, 0, 0);
-                  vec::Curve4(path, sp.first.x, sp.first.y, sp.second.x, sp.second.y, 1.0, 1.0);
-                  auto func = C_FUNCTION(parse_spline, &lookup);
-                  vec::TracePath(path, &func, 512.0);
-                  Anim.spline_paths.push_back(lookup);
-                  FreeResource(path);
-               }
+         // Convert the splines into bezier paths and generate a point-based path in advance.
+         for (auto &sp : Anim.splines) {
+            APTR path;
+            if (vec::GeneratePath("", &path) IS ERR::Okay) {
+               anim_base::SPLINE_POINTS lookup;
+               vec::MoveTo(path, 0, 0);
+               vec::Curve4(path, sp.first.x, sp.first.y, sp.second.x, sp.second.y, 1.0, 1.0);
+               auto func = C_FUNCTION(parse_spline, &lookup);
+               auto error = vec::TracePath(path, &func, 512.0);
+               FreeResource(path);
+               if (error IS ERR::Okay) Anim.spline_paths.emplace_back(std::move(lookup));
             }
          }
          break;
