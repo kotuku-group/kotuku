@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>TileFX</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>A filter effect that repeats its input to fill the primitive subregion.</comment>
+    <version>1</version>
+    <id>81e5a147</id>
+    <idstring>TILEFX</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>TileFX takes the primitive subregion of its <class name="FilterEffect" field="Input">FilterEffect.Input</class> as a tile and repeats it across its own primitive subregion, as for the SVG <code>feTile</code> element.  The tile lattice is anchored at the top-left of the input's subregion, so the tile appears at its original position and the copies extend from it in every direction.</p>
+<p>The input's subregion is typically set with <class name="FilterEffect" field="X">FilterEffect.X</class>, <class name="FilterEffect" field="Y">FilterEffect.Y</class>, <class name="FilterEffect" field="Width">FilterEffect.Width</class> and <class name="FilterEffect" field="Height">FilterEffect.Height</class> on the producer, e.g. a <class name="FloodFX">FloodFX</class> or <class name="OffsetFX">OffsetFX</class> limited to a small rectangle.  A standard source such as <code>SourceGraphic</code> covers the filter region, so tiling it has no visible effect.</p>
+<p>Unlike other effects, the default primitive subregion of a TileFX is the full filter region rather than the subregion of its input, so that a TileFX without an explicit subregion fills the filter region.</p>
+<p>The result has the same data kind as the input.  Colour images are copied without colour conversion, so a tiled normal map produced by a <class name="LightingFX">LightingFX</class> of type <code>NORMAL</code> is still recognised as a normal map.  Scalar heights produced in the <code>HEIGHT</code> output mode of <class name="TurbulenceFX">TurbulenceFX</class> or <class name="BlurFX">BlurFX</class> remain floating-point values, so they can be tiled at full precision before they are lit.</p>
+<p>If the tile covers a whole number of device pixels, every pixel of the output is an exact copy of a pixel in the tile. Otherwise, for example when the client is scaled or rotated, the tile is resampled with bilinear interpolation. Interpolation wraps across the edges of the tile, so the copies join without seams.  Repetition does not repair discontinuities that are already present between opposite edges of the tile.</p></description>
+    <source>
+      <file path="filters/">filter_tile.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Draw</name>
+      <comment>Draws object graphics to drawable areas.</comment>
+      <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="X">The X position of the region to be drawn.</param>
+        <param type="INT" name="Y">The Y position of the region to be drawn.</param>
+        <param type="INT" name="Width">The width of the region to be drawn.</param>
+        <param type="INT" name="Height">The height of the region to be drawn.</param>
+      </input>
+    </action>
+
+  </actions>
+
+  <fields>
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

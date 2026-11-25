@@ -116,6 +116,8 @@ struct filter_operation {
    filter_sampling (*Sampling)(const filter_step &) = [](const filter_step &) -> filter_sampling { return {}; };
    filter_input_kind Primary = filter_input_kind::IMAGE; // Contract kind of the ordinary Input binding
    filter_surface_format Format = filter_surface_format::RGBA8; // Result format for the effect's current settings
+   bool InputFormat = false; // The result takes the format of the Input producer, overriding Format and Primary
+   bool InputRegion = true;  // The Input binding contributes to the default primitive subregion
 };
 
 //********************************************************************************************************************
@@ -808,6 +810,7 @@ static VCS effect_colour_space(const extFilterEffect *Effect)
 #include "filter_offset.cpp"
 #include "filter_remap.cpp"
 #include "filter_source.cpp"
+#include "filter_tile.cpp"
 #include "filter_turbulence.cpp"
 #include "filter_wavefunction.cpp"
 
@@ -1002,6 +1005,8 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
       case CLASSID::OFFSETFX:       return { SINGLE, effect_sampling<extOffsetFX> };
       case CLASSID::REMAPFX:        return { SINGLE };
       case CLASSID::SOURCEFX:       return { GENERATOR };
+      case CLASSID::TILEFX:
+         return { .Inputs = SINGLE, .InputFormat = true, .InputRegion = false };
       case CLASSID::TURBULENCEFX:
          return { .Inputs = GENERATOR, .Format = ((const extTurbulenceFX *)Effect)->OutputMode IS FOM::HEIGHT ?
             filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8 };
@@ -1010,6 +1015,18 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
          return { SINGLE, [](const filter_step &) -> filter_sampling {
             return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED };
          } };
+   }
+}
+
+//********************************************************************************************************************
+// Returns the input contract kind that accepts a producer of the given Format unchanged.
+
+static filter_input_kind filter_input_kind_of(filter_surface_format Format)
+{
+   switch (Format) {
+      case filter_surface_format::SCALAR_F32: return filter_input_kind::SCALAR_MAP;
+      case filter_surface_format::VECTOR_F32: return filter_input_kind::VECTOR_MAP;
+      default: return filter_input_kind::IMAGE;
    }
 }
 
@@ -1109,9 +1126,23 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       }
 
       positions.emplace(effect, i);
-      const auto operation = describe_filter_operation(effect);
+      auto operation = describe_filter_operation(effect);
       const auto extension = effect->FilterExtension;
-      const auto format = extension ? extension->Format : operation.Format;
+      auto format = extension ? extension->Format : operation.Format;
+
+      if (operation.InputFormat) {
+         // A valid producer precedes its consumer, so its format is already known.  An invalid reference keeps the
+         // RGBA8 default and is reported when the inputs are resolved.
+         format = filter_surface_format::RGBA8;
+         if (effect->SourceType IS VSF::REFERENCE) {
+            if (auto producer = positions.find(effect->Input); (producer != positions.end()) and
+                (producer->second < i)) {
+               format = Plan.Steps[producer->second].Format;
+            }
+         }
+         operation.Primary = filter_input_kind_of(format);
+      }
+
       Plan.Steps.push_back({ .Effect = effect, .Operation = operation, .Inputs = {}, .Format = format });
       if ((format != filter_surface_format::RGBA8) and
           (CheckAction(effect, AC::Draw) != ERR::True)) {
@@ -1216,7 +1247,9 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
          case filter_inputs::DUAL:
          case filter_inputs::SINGLE:
             if (auto error = add_input(effect->SourceType, effect->Input, filter_input_role::INPUT, 0,
-                { .Kind = operation.Primary }); error != ERR::Okay) return error;
+                { .Kind = operation.Primary, .ContributesRegion = operation.InputRegion }); error != ERR::Okay) {
+               return error;
+            }
             if (operation.Inputs IS filter_inputs::DUAL) {
                if (auto error = add_input(effect->MixType, effect->Mix, filter_input_role::MIX); error != ERR::Okay) {
                   return error;
@@ -1964,8 +1997,7 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
 }
 
 //********************************************************************************************************************
-// Sum the per-effect bounds across the whole pipeline.  Only the page and this conservative margin constrain
-// processing.  The scene composites the final output using the actual drawing clip.
+// Sum the sampling margins across the pipeline.  Reference tiles are included separately using their geometry.
 
 static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
 {
@@ -2029,10 +2061,49 @@ static bool transform_filter_region(TClipRectangle<double> &Region, const agg::t
    return finite_region(Region);
 }
 
+static TClipRectangle<double> resolve_subregion(const filter_render_context &, const filter_step &);
+
+//********************************************************************************************************************
+// Reserve the reference tiles and the sampling margin their producers may need, even when the tiles are off-page.
+
+static void include_tile_inputs(filter_render_context &Render, const TClipRectangle<double> &Region,
+   double MarginX, double MarginY, TClipRectangle<double> &Clip)
+{
+   auto tile_producer = [](const filter_step &Step) -> const filter_step * {
+      if (Step.Effect->classID() IS CLASSID::TILEFX) return Step.Inputs.front().Producer;
+      return nullptr;
+   };
+   auto &steps = Render.Plan.Steps;
+   if (std::ranges::none_of(steps, tile_producer)) return;
+
+   // Resolve in draw order so that a producer can inherit the subregion of an earlier effect.
+   for (auto &step : steps) step.Subregion = resolve_subregion(Render, step);
+
+   for (const auto &step : steps) {
+      const auto producer = tile_producer(step);
+      if ((not producer) or (not step.Subregion.valid())) continue;
+      auto bounds = producer->Subregion;
+      if ((not bounds.valid()) or (not finite_region(bounds))) continue;
+
+      // The output lies inside the original tile, so this step only reads at the current pixel.
+      const auto &output = step.Subregion;
+      if ((output.left >= bounds.left) and (output.top >= bounds.top) and
+          (output.right <= bounds.right) and (output.bottom <= bounds.bottom)) continue;
+
+      if (not transform_filter_region(bounds, Render.ToScene)) continue;
+      bounds.shrinking(Region);
+      if (not bounds.valid()) continue;
+      bounds = { std::floor(bounds.left) - MarginX, std::floor(bounds.top) - MarginY,
+         std::ceil(bounds.right) + MarginX, std::ceil(bounds.bottom) + MarginY };
+      bounds.shrinking(Region);
+      Clip.expanding(bounds);
+   }
+}
+
 //********************************************************************************************************************
 // Computes the processing rectangle in scene device pixels.  The filter region is extended by the pipeline's
-// sampling reach and limited to the page plus a bounded margin.  The local bitmap transforms are derived from the
-// result.
+// sampling reach, limited to the visible page plus a bounded margin and the source tiles.  The local bitmap
+// transforms are derived from the result.
 
 static ERR set_clip_region(extVectorFilter *Self)
 {
@@ -2090,14 +2161,13 @@ static ERR set_clip_region(extVectorFilter *Self)
    if (auto error = filter_reach(render.Plan, reach_x, reach_y); error != ERR::Okay) return error;
    const double max_margin = std::max(page_width, page_height);
 
-   auto limit_region = [&](double MarginX, double MarginY) -> TClipRectangle<double> {
-      return { std::max(region.left, -MarginX), std::max(region.top, -MarginY),
-         std::min(region.right, page_width + MarginX), std::min(region.bottom, page_height + MarginY) };
-   };
-
-   auto clip = limit_region(std::ceil(std::min(reach_x, max_margin)), std::ceil(std::min(reach_y, max_margin)));
-
+   const double margin_x = std::ceil(std::min(reach_x, max_margin));
+   const double margin_y = std::ceil(std::min(reach_y, max_margin));
+   TClipRectangle<double> clip = { -margin_x, -margin_y, page_width + margin_x, page_height + margin_y };
+   clip.shrinking(region);
    if (not clip.valid()) return ERR::NothingDone;
+   include_tile_inputs(render, region, margin_x, margin_y, clip);
+
    if ((clip.left < std::numeric_limits<int>::min()) or (clip.top < std::numeric_limits<int>::min()) or
        (clip.right > std::numeric_limits<int>::max()) or (clip.bottom > std::numeric_limits<int>::max()) or
        (clip.width() > 0xffff) or (clip.height() > 0xffff)) return ERR::OutOfRange;
@@ -2121,7 +2191,7 @@ static ERR set_clip_region(extVectorFilter *Self)
 // Resolve the primitive subregion in client user coordinates.  With only producer images it defaults to their
 // union.  A qualifying standard source or the absence of qualifying inputs uses the filter region.
 
-static ERR compute_subregion(const filter_render_context &Render, filter_step &Step)
+static TClipRectangle<double> resolve_subregion(const filter_render_context &Render, const filter_step &Step)
 {
    TClipRectangle<double> inputs = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
       std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
@@ -2154,10 +2224,14 @@ static ERR compute_subregion(const filter_render_context &Render, filter_step &S
       height = filter_length(effect->Height, Render.ViewportHeight, height);
    }
 
-   Step.Subregion = { x, y, x + width, y + height };
-   auto local = Step.Subregion;
+   return { x, y, x + width, y + height };
+}
+
+static ERR compute_subregion(const filter_render_context &Render, filter_step &Step)
+{
+   auto local = Step.Subregion = resolve_subregion(Render, Step);
    if ((not finite_region(local)) or (local.valid() and (not transform_filter_region(local, Render.Transform)))) {
-      kt::Log("FilterGeometry").warning("%s #%d has an invalid subregion.", effect->className(), effect->UID);
+      kt::Log("FilterGeometry").warning("%s #%d has an invalid subregion.", Step.Effect->className(), Step.Effect->UID);
       return ERR::InvalidValue;
    }
 
@@ -2207,6 +2281,20 @@ static void clip_to_subregion(const filter_render_context &Render, const filter_
          return [=](int X) { std::fill_n(row + std::ptrdiff_t(X) * components, components, INVALID_FILTER_SAMPLE); };
       });
    }
+}
+
+//********************************************************************************************************************
+// Returns true if an RGBA8 result stores normal components as data.  Effects that take the format of their input
+// pass the flag through from the producer, whose result is still live while its consumer is drawing.
+
+static bool normal_map_result(const filter_step &Step)
+{
+   const auto effect = Step.Effect;
+   if (effect->classID() IS CLASSID::LIGHTINGFX) return ((const extLightingFX *)effect)->Type IS LT::NORMAL;
+   if (Step.Operation.InputFormat and (not Step.Inputs.empty())) {
+      if (auto producer = Step.Inputs.front().Producer; producer) return producer->Result.NormalMap;
+   }
+   return false;
 }
 
 //********************************************************************************************************************
@@ -2327,8 +2415,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
       if ((&step IS plan.Final) or step.Consumers) {
          if (target) {
             step.Result = filter_view(render, target);
-            step.Result.NormalMap = (effect->classID() IS CLASSID::LIGHTINGFX) and
-               (((const extLightingFX *)effect)->Type IS LT::NORMAL);
+            step.Result.NormalMap = normal_map_result(step);
          }
       }
       else release_result(step);
@@ -2558,7 +2645,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
    std::stringstream ss;
    filter_positions results;
 
-   // Assign result names before serialising the primitives referenced by lighting and displacement.
+   // Assign result names before serialising the primitives referenced by lighting, displacement and tiling.
 
    auto name_reference = [&](VSF Source, objFilterEffect *Producer) {
       if ((Source IS VSF::REFERENCE) and Producer) results.try_emplace(Producer, results.size());
@@ -2576,6 +2663,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          name_reference(effect->SourceType, effect->Input);
          name_reference(effect->MixType, effect->Mix);
       }
+      else if (effect->classID() IS CLASSID::TILEFX) name_reference(effect->SourceType, effect->Input);
    }
 
    auto write_input = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer) {
@@ -2620,6 +2708,7 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
          write_input("in", effect->SourceType, effect->Input);
          write_input("in2", effect->MixType, effect->Mix);
       }
+      else if (effect->classID() IS CLASSID::TILEFX) write_input("in", effect->SourceType, effect->Input);
       if (effect->ColourSpace IS VCS::SRGB) ss << " color-interpolation-filters=\"sRGB\"";
       else if (effect->ColourSpace IS VCS::LINEAR_RGB) ss << " color-interpolation-filters=\"linearRGB\"";
       if (auto result = results.find(effect); result != results.end()) {

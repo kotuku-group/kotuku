@@ -132,6 +132,10 @@ document, not from the element that references them.</li>
   ...
 &lt;/filter&gt;
 </pre>
+<p>To repeat a map, limit the primitive that supplies it to a single tile with <code>x</code>, <code>y</code>, <code>width</code> and <code>height</code>, then pass its result to <code>feTile</code>.  The tile repeats across the subregion of <code>feTile</code>, which defaults to the filter region, with copies aligned to the tile's own position.  <code>feTile</code> keeps the data kind of its input: a normal map from <code>kotuku:feNormalMap</code> is still read as normals by <code>feDisplacementMap</code>, and a floating-point height from <code>kotuku:outputMode=&quot;height&quot;</code> is repeated at full precision.  See <class name="TileFX">TileFX</class> for how tiles that do not cover whole pixels are resampled.</p>
+<pre>&lt;feImage href=&quot;#normalMap&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;512&quot; height=&quot;512&quot; result=&quot;normalTile&quot;/&gt;
+&lt;feTile in=&quot;normalTile&quot; result=&quot;normals&quot;/&gt;
+</pre>
 <header>Lighting Extensions</header>
 <p>A document that declares a Kōtuku namespace is rendered with a <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of <code>NONE</code> (see #Init), which enables the enhanced lighting of <class name="LightingFX">LightingFX</class>.  The following attributes of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code> configure it, using any prefix that is bound to the Kōtuku namespace:</p>
 <list type="bullet">

@@ -1,0 +1,207 @@
+   include 'display', 'vector'
+   module display as mGfx
+
+-- Tests for the Vector PaintOrder field, which is the equivalent of the SVG paint-order property.
+--
+-- The rendering tests draw a blue rectangle with a 20 pixel red stroke on a black page.  The probe point sits 5 pixels
+-- inside the rectangle's edge, so it lies under the inner half of the stroke.  It reads red when the stroke is painted
+-- after the fill and blue when the fill is painted after the stroke.
+
+PAGE <const> = 140
+PROBE_X <const> = 25 -- The rectangle's left edge is at 20
+PROBE_Y <const> = 70
+
+glAllOrders = array<int> { VPO_NORMAL, VPO_FILL_MARKERS_STROKE, VPO_STROKE_FILL_MARKERS, VPO_STROKE_MARKERS_FILL,
+   VPO_MARKERS_FILL_STROKE, VPO_MARKERS_STROKE_FILL }
+
+glOrderNames = array<str> { 'Normal', 'FillMarkersStroke', 'StrokeFillMarkers', 'StrokeMarkersFill',
+   'MarkersFillStroke', 'MarkersStrokeFill' }
+
+function readPixel(Bitmap, X:num, Y:num):table
+   return struct.toTable(mGfx.ReadRGBPixel(Bitmap, X, Y))
+end
+
+function fmt(Pixel:table):str
+   return f'{Pixel.red},{Pixel.green},{Pixel.blue}'
+end
+
+function isRed(Pixel:table):bool
+   return (Pixel.red > 200) and (Pixel.green < 50) and (Pixel.blue < 50)
+end
+
+function isBlue(Pixel:table):bool
+   return (Pixel.blue > 200) and (Pixel.red < 50) and (Pixel.green < 50)
+end
+
+function newScene()
+   local scene = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   return scene, viewport
+end
+
+function draw(Scene)
+   local bmp = obj.new('bitmap', { width=PAGE, height=PAGE, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   Scene.bitmap = bmp
+   check Scene.acDraw()
+   return bmp
+end
+
+-- Render the test rectangle with the given fill and paint order, and return the pixel under the inner stroke.
+
+function renderRect(Order:num, Fill:str):table
+   local scene, viewport = newScene()
+   viewport.new('VectorRectangle', {
+      x=20, y=20, width=100, height=100, fill=Fill ?? 'rgb(0,0,255)', stroke='rgb(255,0,0)', strokeWidth=20,
+      paintOrder=Order
+   })
+   return readPixel(draw(scene), PROBE_X, PROBE_Y)
+end
+
+-- Count the blue and red pixels of the whole page.
+
+function countColours(Bitmap):<num, num>
+   local blue = 0
+   local red = 0
+   for y in {0 to PAGE} do
+      for x in {0 to PAGE} do
+         local px = readPixel(Bitmap, x, y)
+         if isBlue(px) then blue++
+         elseif isRed(px) then red++ end
+      end
+   end
+   return blue, red
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Field behaviour
+
+@Test function DefaultsToNormal()
+   local scene, viewport = newScene()
+   local rect = viewport.new('VectorRectangle', { width=10, height=10 })
+   assert(rect.paintOrder is VPO_NORMAL, f'PaintOrder should default to NORMAL, got {rect.paintOrder}')
+end
+
+@Test function AllOrdersRoundTrip()
+   local scene, viewport = newScene()
+   local rect = viewport.new('VectorRectangle', { width=10, height=10 })
+   for i, order in glAllOrders do
+      rect.paintOrder = VPO_NORMAL
+      rect.paintOrder = order
+      assert(rect.paintOrder is order, f'PaintOrder {order} should round-trip by value, got {rect.paintOrder}')
+
+      rect.paintOrder = VPO_NORMAL
+      rect.paintOrder = glOrderNames[i]
+      assert(rect.paintOrder is order, f'PaintOrder {glOrderNames[i]} should round-trip by name, got {rect.paintOrder}')
+   end
+end
+
+@Test function InvalidValuesAreRejected()
+   local scene, viewport = newScene()
+   local rect = viewport.new('VectorRectangle', { width=10, height=10 })
+   rect.paintOrder = VPO_STROKE_FILL_MARKERS
+   for bad in values(array<int> { VPO_END, -1, 99 }) do
+      local rejected = false
+      try
+         rect.paintOrder = bad
+      except e
+         rejected = true
+      end
+      assert(rejected, f'PaintOrder {bad} should be rejected')
+      assert(rect.paintOrder is VPO_STROKE_FILL_MARKERS,
+         f'A rejected PaintOrder must keep the previous value, got {rect.paintOrder}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rendering
+
+@Test function NormalPaintsStrokeOverFill()
+   local px = renderRect(VPO_NORMAL)
+   assert(isRed(px), f'NORMAL should paint the stroke over the fill (got {fmt(px)})')
+end
+
+@Test function StrokeFirstPaintsFillOverStroke()
+   local px = renderRect(VPO_STROKE_FILL_MARKERS)
+   assert(isBlue(px), f'STROKE_FILL_MARKERS should paint the fill over the stroke (got {fmt(px)})')
+end
+
+@Test function MarkersFirstUsesTheFullOrder()
+   -- The stroke is not the first stage here, so a stroke-first flag would get this wrong.
+   local px = renderRect(VPO_MARKERS_STROKE_FILL)
+   assert(isBlue(px), f'MARKERS_STROKE_FILL should paint the fill over the stroke (got {fmt(px)})')
+
+   px = renderRect(VPO_MARKERS_FILL_STROKE)
+   assert(isRed(px), f'MARKERS_FILL_STROKE should paint the stroke over the fill (got {fmt(px)})')
+end
+
+@Test function FillMarkersStrokePaintsStrokeLast()
+   local px = renderRect(VPO_FILL_MARKERS_STROKE)
+   assert(isRed(px), f'FILL_MARKERS_STROKE should paint the stroke over the fill (got {fmt(px)})')
+
+   px = renderRect(VPO_STROKE_MARKERS_FILL)
+   assert(isBlue(px), f'STROKE_MARKERS_FILL should paint the fill over the stroke (got {fmt(px)})')
+end
+
+@Test function ChangingOrderRedraws()
+   local scene, viewport = newScene()
+   local rect = viewport.new('VectorRectangle', {
+      x=20, y=20, width=100, height=100, fill='rgb(0,0,255)', stroke='rgb(255,0,0)', strokeWidth=20
+   })
+   local px = readPixel(draw(scene), PROBE_X, PROBE_Y)
+   assert(isRed(px), f'The initial draw should paint the stroke on top (got {fmt(px)})')
+
+   rect.paintOrder = VPO_STROKE_FILL_MARKERS
+   px = readPixel(draw(scene), PROBE_X, PROBE_Y)
+   assert(isBlue(px), f'Changing PaintOrder should take effect on the next draw (got {fmt(px)})')
+end
+
+@Test function FillLayersMoveTogether()
+   -- The top fill layer is blue.  If any fill layer were painted separately from the others, the probe would show
+   -- the wrong colour in one of the two orders.
+   local px = renderRect(VPO_NORMAL, 'rgb(0,255,0);rgb(0,0,255)')
+   assert(isRed(px), f'NORMAL should paint the stroke over every fill layer (got {fmt(px)})')
+
+   px = renderRect(VPO_STROKE_FILL_MARKERS, 'rgb(0,255,0);rgb(0,0,255)')
+   assert(isBlue(px), f'STROKE_FILL_MARKERS should paint every fill layer over the stroke (got {fmt(px)})')
+end
+
+@Test function OutlinedTextShowsMoreFill()
+   -- Outlined text is the main use case: painting the stroke first keeps the glyph shapes intact.
+   local counts = { }
+   for order in values(array<int> { VPO_NORMAL, VPO_STROKE_FILL_MARKERS }) do
+      local scene, viewport = newScene()
+      viewport.new('VectorText', {
+         x=10, y=110, fontSize=100, face='Noto Sans', string='H', fill='rgb(0,0,255)', stroke='rgb(255,0,0)',
+         strokeWidth=4, paintOrder=order
+      })
+      local blue, red = countColours(draw(scene))
+      counts[order] = { blue=blue, red=red }
+   end
+
+   local normal = counts[VPO_NORMAL]
+   local stroke_first = counts[VPO_STROKE_FILL_MARKERS]
+   assert(normal.blue > 0 and normal.red > 0, f'The text should be filled and stroked ({normal.blue}/{normal.red})')
+   assert(stroke_first.blue > normal.blue,
+      f'Painting the stroke first should reveal more fill ({stroke_first.blue} vs {normal.blue})')
+   assert(stroke_first.red < normal.red,
+      f'Painting the stroke first should hide the inner stroke ({stroke_first.red} vs {normal.red})')
+end
+
+@Test function ClipMaskFollowsPaintOrder()
+   -- The mask shape has a white fill and a black stroke, so the masked luminance under the inner stroke is 0 when the
+   -- stroke is painted last and 1 when the fill is painted last.
+   local scene, viewport = newScene()
+   local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS|VCLF_APPLY_STROKES, units=VUNIT_USERSPACE })
+   local mask_shape = clip.viewport.new('VectorRectangle', {
+      x=20, y=20, width=100, height=100, fill='rgb(255,255,255)', stroke='rgb(0,0,0)', strokeWidth=20
+   })
+   viewport.new('VectorRectangle', { x=0, y=0, width=PAGE, height=PAGE, fill='rgb(0,0,255)', mask=clip })
+
+   local px = readPixel(draw(scene), PROBE_X, PROBE_Y)
+   assert(px.blue < 50, f'With NORMAL order the mask stroke should hide the content (got {fmt(px)})')
+
+   mask_shape.paintOrder = VPO_STROKE_FILL_MARKERS
+   px = readPixel(draw(scene), PROBE_X, PROBE_Y)
+   assert(isBlue(px), f'With STROKE_FILL_MARKERS the mask fill should reveal the content (got {fmt(px)})')
+end

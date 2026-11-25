@@ -30,6 +30,7 @@ OBJECTPTR clVectorSpiral = nullptr, clVectorShape = nullptr, clVectorTransition 
 OBJECTPTR clBlurFX = nullptr, clColourFX = nullptr, clCompositeFX = nullptr, clConvolveFX = nullptr, clFilterEffect = nullptr;
 OBJECTPTR clFloodFX = nullptr, clMergeFX = nullptr, clMorphologyFX = nullptr, clOffsetFX = nullptr, clTurbulenceFX = nullptr;
 OBJECTPTR clSourceFX = nullptr, clRemapFX = nullptr, clLightingFX = nullptr, clDisplacementFX = nullptr, clWaveFunctionFX = nullptr;
+OBJECTPTR clTileFX = nullptr;
 
 static OBJECTPTR modDisplay = nullptr;
 static OBJECTPTR modFont = nullptr;
@@ -110,6 +111,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if ((error = init_mergefx()) != ERR::Okay) return error;
    if ((error = init_morphfx()) != ERR::Okay) return error;
    if ((error = init_offsetfx()) != ERR::Okay) return error;
+   if ((error = init_tilefx()) != ERR::Okay) return error;
    if ((error = init_turbulencefx()) != ERR::Okay) return error;
    if ((error = init_remapfx()) != ERR::Okay) return error;
    if ((error = init_lightingfx()) != ERR::Okay) return error;
@@ -212,6 +214,7 @@ static ERR MODExpunge(void)
    if (clMergeFX)          { FreeResource(clMergeFX);          clMergeFX = nullptr; }
    if (clMorphologyFX)     { FreeResource(clMorphologyFX);     clMorphologyFX = nullptr; }
    if (clOffsetFX)         { FreeResource(clOffsetFX);         clOffsetFX = nullptr; }
+   if (clTileFX)           { FreeResource(clTileFX);           clTileFX = nullptr; }
    if (clTurbulenceFX)     { FreeResource(clTurbulenceFX);     clTurbulenceFX = nullptr; }
    if (clRemapFX)          { FreeResource(clRemapFX);          clRemapFX = nullptr; }
    if (clLightingFX)       { FreeResource(clLightingFX);       clLightingFX = nullptr; }

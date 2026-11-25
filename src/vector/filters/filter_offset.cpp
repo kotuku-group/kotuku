@@ -77,6 +77,7 @@ static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "feOffset dx=\"" << Self->XOffset << "\" dy=\"" << Self->YOffset << "\"";
+   write_filter_xml_subregion(stream, *Self);
 
    Value = stream.str();
    return ERR::Okay;

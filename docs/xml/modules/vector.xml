@@ -40,6 +40,7 @@
       <class>OffsetFX</class>
       <class>RemapFX</class>
       <class>SourceFX</class>
+      <class>TileFX</class>
       <class>TurbulenceFX</class>
       <class>Vector</class>
       <class>VectorClip</class>
