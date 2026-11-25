@@ -113,7 +113,7 @@
     <field>
       <name>PreserveAlpha</name>
       <comment>If TRUE, the alpha channel is protected from the effects of the convolve algorithm.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>When PreserveAlpha is TRUE, the kernel is applied only to the colour channels.  The colour values are unpremultiplied before the kernel is applied, so translucent pixels contribute their full colour, and Bias is added to the unpremultiplied colour.  The result alpha is the source alpha.  When FALSE, the default, all four channels are convolved as premultiplied values.</p>

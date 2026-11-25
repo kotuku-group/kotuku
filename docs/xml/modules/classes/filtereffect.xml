@@ -53,7 +53,7 @@
     <field>
       <name>Height</name>
       <comment>Primitive height of the effect area.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The <code>(Width, Height)</code> field values define the dimensions of the effect within the target clipping area.</p>
@@ -86,7 +86,7 @@
     <field>
       <name>MixType</name>
       <comment>If a secondary mix input is required for the effect, specify it here.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VSF">VSF</type>
       <description>
 <p>Some effects support a secondary mix input for compositing, such as the <class name="CompositeFX">CompositeFX</class> class.  If the mixing source is a reference to another effect, set the <fl>Mix</fl> field instead and this field will be set to <code>REFERENCE</code> automatically.</p>
@@ -111,7 +111,7 @@
     <field>
       <name>SourceType</name>
       <comment>Specifies an input source for the effect algorithm, if required.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VSF">VSF</type>
       <description>
 <p>If an effect requires an input source for processing, it must be specified here.  If the source is a reference to another effect, set the <fl>Input</fl> field instead and this field will be set to <code>REFERENCE</code> automatically.</p>
@@ -129,7 +129,7 @@
     <field>
       <name>Width</name>
       <comment>Primitive width of the effect area.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the effect within the target clipping area.</p>
@@ -140,7 +140,7 @@
     <field>
       <name>X</name>
       <comment>Primitive X coordinate for the effect.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the offset of the effect within the target clipping area.  Undefined values default as described for <fl>Width</fl>.</p>
@@ -158,7 +158,7 @@
     <field>
       <name>Y</name>
       <comment>Primitive Y coordinate for the effect.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the offset of the effect within the target clipping area.</p>

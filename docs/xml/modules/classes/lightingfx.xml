@@ -519,7 +519,7 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
     <field>
       <name>Scale</name>
       <comment>The maximum height of the input surface (bump map) when the alpha input is 1.0.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The height is measured in kernel units when computing the surface normal, so the steepness of the lit surface is determined by Scale in combination with <fl>UnitX</fl> and <fl>UnitY</fl>.  Refer to <fl>UnitX</fl> for details.</p>

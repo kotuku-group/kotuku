@@ -2433,33 +2433,33 @@ class objFilterEffect : public Object {
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      this->X = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      this->Y = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setWidth(const Unit Value) noexcept {
-      this->Width = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setHeight(const Unit Value) noexcept {
-      this->Height = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setSourceType(const VSF Value) noexcept {
-      this->SourceType = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMixType(const VSF Value) noexcept {
-      this->MixType = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[0];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColourSpace(const VCS Value) noexcept {
@@ -4079,13 +4079,13 @@ class objVectorFilter : public Object {
    // Customised field setting
 
    inline ERR setX(const Unit Value) noexcept {
-      this->X = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      this->Y = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setWidth(const Unit Value) noexcept {
@@ -4121,23 +4121,23 @@ class objVectorFilter : public Object {
    }
 
    inline ERR setUnits(const VUNIT Value) noexcept {
-      this->Units = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPrimitiveUnits(const VUNIT Value) noexcept {
-      this->PrimitiveUnits = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColourSpace(const VCS Value) noexcept {
-      this->ColourSpace = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAspectRatio(const VFA Value) noexcept {
-      this->AspectRatio = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
