@@ -31,15 +31,10 @@ equal to the alpha channel.
 
 **********************************************************************************************************************
 
-TODO: The current implementation computes each output pixel's min/max over the full kernel span, costing O(radius)
-per pixel even with the SSE2 fast path.  The van Herk/Gil-Werman algorithm would reduce this to O(1) per pixel
-regardless of radius: divide each row (or column) into segments of length `2 * radius + 1`, precompute running
-min/max prefixes and suffixes within each segment, then form each output as `op(suffix[x - radius],
-prefix[x + radius])` - three operations per pixel in total.  The two extra prefix/suffix buffers need only cover a
-single row/column at a time, and the technique combines well with the existing SIMD span helpers since prefix and
-suffix accumulation are themselves 16-byte vectorisable.  Worthwhile if profiling shows large-radius morphology as
-a bottleneck; for small radii (1-3, the common SVG case) the present approach is likely faster due to its lower
-setup cost.
+Radii below VHGW_MIN_RADIUS use a direct kernel that costs O(radius) per pixel, which is fastest for the small radii
+common in SVG.  Larger radii use the van Herk/Gil-Werman algorithm, which costs O(1) per pixel.  Benchmarked crossovers
+were radius 6-8 at one megapixel; the direct vertical pass degrades sharply once its 2r+1 strided rows exceed the
+cache, taking around 90ms per megapixel at radius 128 against 1.5ms for van Herk/Gil-Werman.
 
 *********************************************************************************************************************/
 
@@ -137,6 +132,137 @@ static void morph_span_sse2(const uint8_t *Start, const uint8_t *End, int Step, 
 
 #endif
 
+//********************************************************************************************************************
+// Large radii use the van Herk/Gil-Werman algorithm, which costs a constant three min/max operations per pixel
+// whatever the radius.  Each row (or column) is divided into segments of K = 2 * radius + 1 pixels, and running
+// prefix (P) and suffix (S) extremes are computed within each segment.  A full kernel window [A, B] always spans the
+// tail of one segment and the head of the next (or exactly one whole segment), so its result is op(S[A], P[B]).
+// Windows clamped by the left edge start a segment, so they are P[B] alone.  Windows clamped by the right edge are
+// S[A] alone if they lie within the final segment.
+//
+// The prefix is written directly to the output.  Output position X reads P[B] with B >= X, so ascending order never
+// reads a prefix that has already been replaced by a result.  Below the threshold the direct kernel is faster
+// because it has no setup cost.
+
+static constexpr int VHGW_MIN_RADIUS = 7;
+
+template <bool Dilate> static inline uint8_t morph_op(uint8_t A, uint8_t B)
+{
+   if constexpr (Dilate) return std::max(A, B);
+   else return std::min(A, B);
+}
+
+// Out = op(A, B) for Bytes bytes.  Out may be A or B, or may trail B in the same row.
+
+template <bool Dilate> static void morph_combine(const uint8_t *A, const uint8_t *B, uint8_t *Out, size_t Bytes)
+{
+   size_t i = 0;
+#ifdef FILTER_SSE2
+   for (; i + 16 <= Bytes; i += 16) {
+      auto a = _mm_loadu_si128((const __m128i *)(A + i));
+      auto b = _mm_loadu_si128((const __m128i *)(B + i));
+      if constexpr (Dilate) _mm_storeu_si128((__m128i *)(Out + i), _mm_max_epu8(a, b));
+      else _mm_storeu_si128((__m128i *)(Out + i), _mm_min_epu8(a, b));
+   }
+#endif
+   for (; i < Bytes; i++) Out[i] = morph_op<Dilate>(A[i], B[i]);
+}
+
+template <bool Dilate> static inline void morph_pixel(const uint8_t *A, const uint8_t *B, uint8_t *Out)
+{
+#ifdef FILTER_SSE2
+   int32_t a, b;
+   std::memcpy(&a, A, 4);
+   std::memcpy(&b, B, 4);
+   const auto va = _mm_cvtsi32_si128(a), vb = _mm_cvtsi32_si128(b);
+   const int32_t result = _mm_cvtsi128_si32(Dilate ? _mm_max_epu8(va, vb) : _mm_min_epu8(va, vb));
+   std::memcpy(Out, &result, 4);
+#else
+   Out[0] = morph_op<Dilate>(A[0], B[0]);
+   Out[1] = morph_op<Dilate>(A[1], B[1]);
+   Out[2] = morph_op<Dilate>(A[2], B[2]);
+   Out[3] = morph_op<Dilate>(A[3], B[3]);
+#endif
+}
+
+// Horizontal van Herk/Gil-Werman pass over one row of Width pixels.  Suffix is a row buffer of Width pixels.
+// Radius must be less than Width.
+
+template <bool Dilate>
+static void morph_row_vhgw(const uint8_t *In, uint8_t *Out, uint8_t *Suffix, int Width, int Radius)
+{
+   const int k = (2 * Radius) + 1;
+
+   for (int start=0; start < Width; start += k) {
+      const int end = std::min(start + k, Width) - 1;
+
+      std::copy_n(In + (start<<2), 4, Out + (start<<2));
+      for (int x=start + 1; x <= end; x++) morph_pixel<Dilate>(Out + ((x - 1)<<2), In + (x<<2), Out + (x<<2));
+
+      std::copy_n(In + (end<<2), 4, Suffix + (end<<2));
+      for (int x=end - 1; x >= start; x--) morph_pixel<Dilate>(Suffix + ((x + 1)<<2), In + (x<<2), Suffix + (x<<2));
+   }
+
+   const int last = Width - 1;
+   int x = 0;
+   for (; x < Radius; x++) { // Clamped by the left edge
+      std::copy_n(Out + (std::min(last, x + Radius)<<2), 4, Out + (x<<2));
+   }
+
+   if (const int interior = Width - (2 * Radius); interior > 0) { // Full windows
+      morph_combine<Dilate>(Suffix, Out + ((2 * Radius)<<2), Out + (Radius<<2), size_t(interior)<<2);
+      x += interior;
+   }
+
+   for (; x < Width; x++) { // Clamped by the right edge
+      const int a = x - Radius;
+      if (a / k IS last / k) std::copy_n(Suffix + (a<<2), 4, Out + (x<<2));
+      else morph_pixel<Dilate>(Suffix + (a<<2), Out + (last<<2), Out + (x<<2));
+   }
+}
+
+// Vertical van Herk/Gil-Werman pass.  Rows are combined whole, so the work vectorises across the row.  Suffix may be
+// Src, in which case the source is overwritten.  Radius must be less than Height.
+
+template <bool Dilate>
+static void morph_columns_vhgw(const uint8_t *Src, int SrcStride, uint8_t *Dest, int DestStride, uint8_t *Suffix,
+   int SuffixStride, int Width, int Height, int Radius)
+{
+   const int k = (2 * Radius) + 1;
+   const size_t row_bytes = size_t(Width)<<2;
+   const auto src  = [&](int Y) { return Src + (size_t(Y) * SrcStride); };
+   const auto dest = [&](int Y) { return Dest + (size_t(Y) * DestStride); };
+   const auto sfx  = [&](int Y) { return Suffix + (size_t(Y) * SuffixStride); };
+
+   // The prefix of each segment is completed before its suffix, because the suffix may overwrite the source.
+
+   for (int start=0; start < Height; start += k) {
+      const int end = std::min(start + k, Height) - 1;
+
+      std::copy_n(src(start), row_bytes, dest(start));
+      for (int y=start + 1; y <= end; y++) morph_combine<Dilate>(dest(y - 1), src(y), dest(y), row_bytes);
+
+      if (sfx(end) != src(end)) std::copy_n(src(end), row_bytes, sfx(end));
+      for (int y=end - 1; y >= start; y--) morph_combine<Dilate>(sfx(y + 1), src(y), sfx(y), row_bytes);
+   }
+
+   const int last = Height - 1;
+   int y = 0;
+   for (; y < Radius; y++) { // Clamped by the top edge
+      std::copy_n(dest(std::min(last, y + Radius)), row_bytes, dest(y));
+   }
+
+   for (; y + Radius <= last; y++) { // Full windows
+      morph_combine<Dilate>(sfx(y - Radius), dest(y + Radius), dest(y), row_bytes);
+   }
+
+   for (; y < Height; y++) { // Clamped by the bottom edge
+      const int a = y - Radius;
+      if (a / k IS last / k) std::copy_n(sfx(a), row_bytes, dest(y));
+      else morph_combine<Dilate>(sfx(a), dest(last), dest(y), row_bytes);
+   }
+}
+
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -160,25 +286,48 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       return copy_filter_bitmap(in_bmp, Self->Target, copy_flags, 0, 0, in_bmp->Width, in_bmp->Height, 0, 0);
    }
 
+   const int clamped_x = std::min(radius_x, canvasWidth - 1);
+   const int clamped_y = std::min(radius_y, canvasHeight - 1);
+   bool vhgw_x = clamped_x >= VHGW_MIN_RADIUS;
+   bool vhgw_y = clamped_y >= VHGW_MIN_RADIUS;
+   const bool both_axes = (radius_x > 0) and (radius_y > 0);
+
+   // An image buffer is required if the effect applies on both axes, in which case it holds the horizontal result.
+   // The vertical van Herk/Gil-Werman pass also needs one for its suffixes, which overwrite the horizontal result in
+   // place.  The horizontal pass needs a row buffer for its suffixes.  Otherwise results are written directly to the
+   // target bitmap.
+
+   const size_t image_bytes = size_t(canvasWidth) * canvasHeight * 4;
+   const bool need_image = both_axes or vhgw_y;
+   const size_t scratch_bytes = (need_image ? image_bytes : 0) + (vhgw_x ? size_t(canvasWidth) * 4 : 0);
+
+   uint8_t *scratch = nullptr;
+   if (scratch_bytes) {
+      if (auto error = get_filter_scratch(Self, scratch_bytes, scratch); error != ERR::Okay) {
+         // Retry with only the intermediate image required by the two-axis pass. Its storage also serves
+         // as the vertical suffix buffer, so the vertical fast path can still run when both axes apply.
+         if ((error != ERR::AllocMemory) or (both_axes and not vhgw_x)) return error;
+         vhgw_x = false;
+         if (both_axes) {
+            if (auto retry = get_filter_scratch(Self, image_bytes, scratch); retry != ERR::Okay) return retry;
+         }
+         else vhgw_y = false;
+      }
+   }
+
+   uint8_t *buffer = (both_axes or vhgw_y) ? scratch : nullptr;
+   uint8_t *row_suffix = vhgw_x ? scratch + (need_image ? image_bytes : 0) : nullptr;
+
    uint8_t *out_line;
-   uint8_t *buffer = nullptr;
    int out_linewidth;
-   bool buffer_as_input;
 
-   // A temporary buffer is required if we are applying the effect on both axis.  Otherwise we can
-   // directly write to the target bitmap.
-
-   if ((radius_x > 0) and (radius_y > 0)) {
-      auto error = get_filter_scratch(Self, size_t(canvasWidth) * canvasHeight * 4, buffer);
-      if (error != ERR::Okay) return error;
+   if (both_axes) {
       out_line = buffer;
       out_linewidth = canvasWidth * 4;
-      buffer_as_input = true;
    }
    else {
       out_line = (uint8_t *)(Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth));
       out_linewidth = Self->Target->LineWidth;
-      buffer_as_input = false;
    }
 
    const uint8_t *input = in_bmp->Data + (in_bmp->Clip.Top * in_bmp->LineWidth) +
@@ -186,9 +335,16 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
    const bool dilate = Self->Operator IS MOP::DILATE;
 
-   if (radius_x > 0) { // Horizontal pass
-      auto radius = radius_x;
-      if (canvasWidth - 1 < radius) radius = canvasWidth - 1;
+   if (vhgw_x) { // Horizontal pass, large radius
+      for (int y=0; y < canvasHeight; y++) {
+         const uint8_t *in_row = input + (y * in_bmp->LineWidth);
+         uint8_t *out = out_line + (y * out_linewidth);
+         if (dilate) morph_row_vhgw<true>(in_row, out, row_suffix, canvasWidth, clamped_x);
+         else morph_row_vhgw<false>(in_row, out, row_suffix, canvasWidth, clamped_x);
+      }
+   }
+   else if (radius_x > 0) { // Horizontal pass
+      auto radius = clamped_x;
 
       for (int y=0; y < canvasHeight; y++) {
          const uint8_t *in_row = input + (y * in_bmp->LineWidth);
@@ -215,12 +371,11 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    }
 
    if (radius_y > 0) { // Vertical pass
-      auto radius = radius_y;
-      if (canvasHeight - 1 < radius) radius = canvasHeight - 1;
+      auto radius = clamped_y;
 
       const uint8_t *src;
       int src_stride;
-      if (buffer_as_input) {
+      if (both_axes) {
          src = buffer;
          src_stride = canvasWidth * 4;
       }
@@ -231,19 +386,33 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
       auto dest = (uint8_t *)(Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth));
 
-      for (int y=0; y < canvasHeight; y++) {
-         const uint8_t *start_row = src + (std::max(0, y - radius) * src_stride);
-         const uint8_t *end_row   = src + (std::min(canvasHeight - 1, y + radius) * src_stride);
-         uint8_t *out = dest + (y * Self->Target->LineWidth);
-
-         int x = 0;
-#ifdef FILTER_SSE2
-         for (; x + 4 <= canvasWidth; x += 4) {
-            morph_span_sse2(start_row + (x<<2), end_row + (x<<2), src_stride, dilate, out + (x<<2));
+      if (vhgw_y) {
+         const int dest_stride = Self->Target->LineWidth;
+         const int sfx_stride = canvasWidth * 4;
+         if (dilate) {
+            morph_columns_vhgw<true>(src, src_stride, dest, dest_stride, buffer, sfx_stride, canvasWidth,
+               canvasHeight, radius);
          }
+         else {
+            morph_columns_vhgw<false>(src, src_stride, dest, dest_stride, buffer, sfx_stride, canvasWidth,
+               canvasHeight, radius);
+         }
+      }
+      else {
+         for (int y=0; y < canvasHeight; y++) {
+            const uint8_t *start_row = src + (std::max(0, y - radius) * src_stride);
+            const uint8_t *end_row   = src + (std::min(canvasHeight - 1, y + radius) * src_stride);
+            uint8_t *out = dest + (y * Self->Target->LineWidth);
+
+            int x = 0;
+#ifdef FILTER_SSE2
+            for (; x + 4 <= canvasWidth; x += 4) {
+               morph_span_sse2(start_row + (x<<2), end_row + (x<<2), src_stride, dilate, out + (x<<2));
+            }
 #endif
-         for (; x < canvasWidth; x++) {
-            morph_span_scalar(start_row + (x<<2), end_row + (x<<2), src_stride, dilate, out + (x<<2));
+            for (; x < canvasWidth; x++) {
+               morph_span_scalar(start_row + (x<<2), end_row + (x<<2), src_stride, dilate, out + (x<<2));
+            }
          }
       }
    }

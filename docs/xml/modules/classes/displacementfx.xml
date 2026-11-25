@@ -58,7 +58,7 @@
     <field>
       <name>ResampleMethod</name>
       <comment>The resample algorithm to use for transforming the source image.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VSM">VSM</type>
       <description>
 <p>Currently <code>NEIGHBOUR</code> and <code>BILINEAR</code> are supported.  Other resample methods fall back to bilinear filtering.</p>
@@ -69,7 +69,7 @@
     <field>
       <name>Scale</name>
       <comment>Displacement scale factor.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>The amount is expressed in the coordinate system established by <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> on the parent <class name="VectorFilter">VectorFilter</class>.  In user space units, a map component of 255 displaces by half of Scale in user units, and a component of 0 by half of Scale in the opposite direction.  In bounding box units, Scale is a fraction of the width of the client's bounding box on the X axis and of its height on the Y axis.  The displacement is transformed with the client, so it scales and rotates with it.  When the value of this field is 0, this operation has no effect on the source image.</p>
@@ -79,7 +79,7 @@
     <field>
       <name>XChannel</name>
       <comment>X axis channel selection.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="CMP">CMP</type>
       <description>
 <types lookup="CMP"/>
@@ -97,7 +97,7 @@
     <field>
       <name>YChannel</name>
       <comment>Y axis channel selection.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="CMP">CMP</type>
       <description>
 <types lookup="CMP"/>
