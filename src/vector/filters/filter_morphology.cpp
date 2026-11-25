@@ -11,9 +11,14 @@ MorphologyFX: Applies the morphology filter effect.
 The MorphologyFX class performs "fattening" or "thinning" of artwork.  It is particularly useful for fattening or
 thinning an alpha channel.
 
-The dilation (or erosion) kernel is a rectangle with a width of `2 * RadiusX` and a height of `2 * RadiusY`. In
-dilation, the output pixel is the individual component-wise maximum of the corresponding R,G,B,A values in the input
-image's kernel rectangle.  In erosion, the output pixel is the individual component-wise minimum of the
+The radii are measured in the filter's primitive units.  When @VectorFilter.PrimitiveUnits is `BOUNDING_BOX`, the
+radii scale with the dimensions of the filtered vector's bounding box by default.  If @VectorFilter.AspectRatio
+is `NONE`, both radii scale with the normalised diagonal of the bounding box.  The renderer applies the magnitude
+of the vector's transform scale on each axis and converts the resulting radii to whole pixels.  The kernel stays
+aligned to the bitmap axes.  Its width and height are twice the respective pixel radii plus one.
+
+In dilation, the output pixel is the individual component-wise maximum of the corresponding R,G,B,A values in the
+input image's kernel rectangle.  In erosion, the output pixel is the individual component-wise minimum of the
 corresponding R,G,B,A values in the input image's kernel rectangle.
 
 Frequently this operation will take place on alpha-only images, such as that produced by the built-in input,
@@ -44,14 +49,40 @@ class extMorphologyFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "MorphologyFX";
    using create = kt::Create<extMorphologyFX>;
 
-   int RadiusX = 0, RadiusY = 0;
+   double RadiusX = 0, RadiusY = 0;
    MOP Operator = MOP::ERODE;
 
    extMorphologyFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
-   filter_sampling sampling() const {
-      return { filter_access::BOUNDED, double(std::max(RadiusX, 0)) + 1, double(std::max(RadiusY, 0)) + 1 };
+   // Computes the kernel radius of each axis in bitmap pixels.  Radii are scaled from primitive units to pixels and
+   // then truncated, as browsers do.  The epsilon prevents an exact product such as 0.3 * 10 from truncating to 2.
+
+   std::pair<int, int> pixel_radii() const {
+      const auto &render = *Filter->Render;
+      double unit_x = 1.0, unit_y = 1.0;
+      if (render.PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+         unit_x = render.ClientBounds.width();
+         unit_y = render.ClientBounds.height();
+         if (render.AspectRatio IS VFA::NONE) {
+            unit_x = unit_y = filter_render_context::normalised_diagonal(unit_x, unit_y);
+         }
+      }
+      const auto [scale_x, scale_y] = render.axis_scales();
+      const auto to_pixels = [](double Radius) {
+         if (not std::isfinite(Radius)) return 0;
+         return int(std::floor(std::clamp(Radius, 0.0, double(MAX_RADIUS)) + 1e-6));
+      };
+      return { to_pixels(RadiusX * unit_x * scale_x), to_pixels(RadiusY * unit_y * scale_y) };
    }
+
+   filter_sampling sampling() const {
+      const auto [x, y] = pixel_radii();
+      return { filter_access::BOUNDED, double(x) + 1, double(y) + 1 };
+   }
+
+   // Caps the pixel radius so that the sampling margin stays finite.  The cap exceeds any practical bitmap dimension.
+
+   static constexpr int MAX_RADIUS = 65536;
 };
 
 //********************************************************************************************************************
@@ -122,7 +153,9 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    const objBitmap *in_bmp;
    if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
 
-   if ((Self->RadiusX <= 0) and (Self->RadiusY <= 0)) {
+   const auto [radius_x, radius_y] = Self->pixel_radii();
+
+   if ((radius_x <= 0) and (radius_y <= 0)) {
       BAF copy_flags = (effect_colour_space(Self) IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
       return copy_filter_bitmap(in_bmp, Self->Target, copy_flags, 0, 0, in_bmp->Width, in_bmp->Height, 0, 0);
    }
@@ -135,7 +168,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    // A temporary buffer is required if we are applying the effect on both axis.  Otherwise we can
    // directly write to the target bitmap.
 
-   if ((Self->RadiusX > 0) and (Self->RadiusY > 0)) {
+   if ((radius_x > 0) and (radius_y > 0)) {
       auto error = get_filter_scratch(Self, size_t(canvasWidth) * canvasHeight * 4, buffer);
       if (error != ERR::Okay) return error;
       out_line = buffer;
@@ -153,8 +186,8 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 
    const bool dilate = Self->Operator IS MOP::DILATE;
 
-   if (Self->RadiusX > 0) { // Horizontal pass
-      auto radius = Self->RadiusX;
+   if (radius_x > 0) { // Horizontal pass
+      auto radius = radius_x;
       if (canvasWidth - 1 < radius) radius = canvasWidth - 1;
 
       for (int y=0; y < canvasHeight; y++) {
@@ -181,8 +214,8 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       }
    }
 
-   if (Self->RadiusY > 0) { // Vertical pass
-      auto radius = Self->RadiusY;
+   if (radius_y > 0) { // Vertical pass
+      auto radius = radius_y;
       if (canvasHeight - 1 < radius) radius = canvasHeight - 1;
 
       const uint8_t *src;
@@ -238,11 +271,15 @@ static ERR MORPHOLOGYFX_SET_Operator(extMorphologyFX *Self, MOP Value)
 -FIELD-
 RadiusX: X radius value.
 
+The horizontal radius of the kernel, in the filter's primitive units.  Fractional values are permitted.  A
+value of zero disables the effect on this axis; the input is copied unchanged if both radii resolve to less than one
+pixel.
+
 *********************************************************************************************************************/
 
-static ERR MORPHOLOGYFX_SET_RadiusX(extMorphologyFX *Self, int Value)
+static ERR MORPHOLOGYFX_SET_RadiusX(extMorphologyFX *Self, double Value)
 {
-   if (Value >= 0) {
+   if ((Value >= 0) and std::isfinite(Value)) {
       Self->RadiusX = Value;
       effect_modified(Self);
       return ERR::Okay;
@@ -255,11 +292,15 @@ static ERR MORPHOLOGYFX_SET_RadiusX(extMorphologyFX *Self, int Value)
 -FIELD-
 RadiusY: Y radius value.
 
+The vertical radius of the kernel, in the filter's primitive units.  Fractional values are permitted.  A
+value of zero disables the effect on this axis; the input is copied unchanged if both radii resolve to less than one
+pixel.
+
 *********************************************************************************************************************/
 
-static ERR MORPHOLOGYFX_SET_RadiusY(extMorphologyFX *Self, int Value)
+static ERR MORPHOLOGYFX_SET_RadiusY(extMorphologyFX *Self, double Value)
 {
-   if (Value >= 0) {
+   if ((Value >= 0) and std::isfinite(Value)) {
       Self->RadiusY = Value;
       effect_modified(Self);
       return ERR::Okay;
@@ -278,13 +319,14 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string &Value)
 {
    std::stringstream stream;
+   stream.precision(std::numeric_limits<double>::max_digits10);
 
    stream << "feMorphology operator=\"";
 
    if (Self->Operator IS MOP::ERODE) stream << "erode\"";
    else stream << "dilate\"";
 
-   stream << "radius=\"" << Self->RadiusX << " " << Self->RadiusY << "\"";
+   stream << " radius=\"" << Self->RadiusX << " " << Self->RadiusY << "\"";
 
    Value = stream.str();
    return ERR::Okay;
@@ -295,8 +337,8 @@ static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string &Value)
 #include "filter_morphology_def.c"
 
 static const FieldArray clMorphologyFXFields[] = {
-   { "RadiusX",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
-   { "RadiusY",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
+   { "RadiusX",  FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
+   { "RadiusY",  FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, MORPHOLOGYFX_GET_XMLDef },
    END_FIELD
