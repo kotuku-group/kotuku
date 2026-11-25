@@ -204,6 +204,11 @@ document.
 &lt;/filter&gt;
 </pre>
 
+On an `feImage` with an external file reference, `kotuku:outputMode="height"` supplies a floating-point height map.
+16-bit greyscale PNGs retain their full sample precision.  For other images, `kotuku:heightChannel` selects the
+stored channel as `R` (default), `G`, `B`, `A` or `luminance`.  The values are resampled as heights without colour
+conversion.
+
 To repeat a map, limit the primitive that supplies it to a single tile with `x`, `y`, `width` and `height`, then pass
 its result to `feTile`.  The tile repeats across the subregion of `feTile`, which defaults to the filter region, with
 copies aligned to the tile's own position.  `feTile` keeps the data kind of its input: a normal map from

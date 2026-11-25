@@ -591,7 +591,7 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <const name="SPECULAR">Select specular lighting.</const>
     </constants>
 
-    <constants lookup="MCH" comment="Channel selection for scalar maps read by LightingFX, such as ambient occlusion and roughness maps.">
+    <constants lookup="MCH" comment="Channel selection for scalar maps, such as height, ambient occlusion and roughness maps.">
       <const name="ALPHA">The alpha channel.</const>
       <const name="BLUE">The blue channel.</const>
       <const name="GREEN">The green channel, which is the roughness channel of a packed ORM map.</const>

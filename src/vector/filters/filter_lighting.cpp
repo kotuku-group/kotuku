@@ -2749,14 +2749,6 @@ static void write_normal_options(std::ostream &Stream, const extLightingFX &Self
    if (Self.NormalStrength != 1.0) Stream << ' ' << Prefix << "normalStrength=\"" << Self.NormalStrength << '"';
 }
 
-static void write_map_channel(std::ostream &Stream, CSTRING Prefix, CSTRING Name, MCH Channel)
-{
-   static constexpr CSTRING channels[] = { "R", "G", "B", "A", "luminance" };
-   if ((Channel > MCH::RED) and (Channel <= MCH::LUMINANCE)) {
-      Stream << ' ' << Prefix << Name << "=\"" << channels[int(Channel)] << '"';
-   }
-}
-
 static void write_map_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
 {
    write_map_channel(Stream, Prefix, "occlusionChannel", Self.OcclusionChannel);

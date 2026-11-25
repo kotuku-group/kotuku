@@ -1,6 +1,6 @@
 -- SVG filter regressions: normalised matrix offsets, named merge outputs and turbulence coordinates/colour space.
 
-   include 'svg', 'vector', 'display'
+   include 'svg', 'vector', 'display', 'image'
    module display as mGfx
 
 function draw(SVG:obj, Size:num):obj
@@ -2344,6 +2344,139 @@ end
       for x in {2 to 46} do
          assertSame(tiled, tiled, x, y, x + 16, y + 16)
       end
+   end
+end
+
+function writeHeightRampPNG(Path:str!, Grey16:bool!)
+   local pic <close> = obj.new('image')
+   pic.flags = Grey16 ? PCF_NEW : PCF_NEW|PCF_FORCE_ALPHA_32
+   local bmp = pic.bitmap
+   bmp.{ width=(Grey16 ? 128 : 256), height=(Grey16 ? 24 : 48), bitsPerPixel=(Grey16 ? 16 : 32) }
+   if Grey16 then bmp.flags = BMF_GREYSCALE end
+   check pic.init()
+   local colour = struct.new('RGB8', { red=96, blue=32 })
+   for y in {0 to bmp.height} do
+      for x in {0 to bmp.width} do
+         if Grey16 then mGfx.DrawPixel(bmp, x, y, 19660 + 128 * x)
+         else
+            colour.green = 76 + (x >> 2)
+            colour.alpha = colour.green
+            mGfx.DrawRGBPixel(bmp, x, y, colour)
+         end
+      end
+   end
+   do
+      local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+      check pic.acSaveImage(file)
+   end
+   if not Grey16 then
+      -- Insert a gAMA chunk (1.0) after IHDR.  A colour decode changes green but leaves its matching alpha alone.
+      local png = io.readAll(Path)
+      local gamma = string.char(0, 0, 0, 4, 103, 65, 77, 65, 0, 1, 134, 160, 49, 232, 150, 95)
+      io.writeAll(Path, png.sub(0, 33) .. gamma .. png.sub(33))
+   end
+end
+
+function writeHeightRampSVG(Path:str!, Effects:str!)
+   io.writeAll(Path, '<svg xmlns="http://www.w3.org/2000/svg" ' .. KOTUKU_NS .. ' width="512" height="48">' ..
+      '<filter id="f" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="48" ' ..
+      f'color-interpolation-filters="sRGB">{Effects}</filter><rect width="512" height="48" filter="url(#f)"/></svg>')
+end
+
+HEIGHT_RAMP_LIGHT <const> = '<kotuku:feLighting in="tiled" surfaceScale="16" specularConstant="0" ' ..
+   'features="none"><feDistantLight azimuth="0" elevation="45"/></kotuku:feLighting>'
+
+function heightRampSpread(Bitmap:obj!):<num, num, num>
+   local lo, hi, sum, sum_sq = 255, 0, 0, 0
+   for x in {12 to 244} do
+      local p = mGfx.ReadRGBPixel(Bitmap, x, 24)
+      assert(p.alpha is 255, 'The lighting result must cover the ramp')
+      local v = p.red
+      lo, hi = math.min(lo, v), math.max(hi, v)
+      sum += v
+      sum_sq += v * v
+   end
+   local mean = sum / 232
+   return hi - lo, mean, math.sqrt(math.max(0, sum_sq / 232 - mean * mean))
+end
+
+@Test function ExternalGreyscaleHeightKeepsShallowSlopesAfterResamplingAndTiling()
+   local name = f'svg_height16_{processing.task().id}'
+   local png_path, svg_path = f'temp:{name}.png', f'temp:{name}.svg'
+   defer
+      mSys.DeleteFile(svg_path)
+      mSys.DeleteFile(png_path)
+   end
+   writeHeightRampPNG(png_path, true)
+   writeHeightRampSVG(svg_path, f'<feImage href="{name}.png" width="256" height="48" ' ..
+      'kotuku:outputMode="height" result="ramp"/><feTile in="ramp" result="tiled"/>' .. HEIGHT_RAMP_LIGHT)
+   local svg <close> = obj.new('svg', { path=svg_path })
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('ImageFX')[0])
+   assert((fx.outputMode is FOM_HEIGHT) and (fx.bitmap.flags has BMF_GREYSCALE),
+      'Height mode must load the original 16-bit samples')
+   local bmp <close> = draw(svg, 512)
+   local range, mean, deviation = heightRampSpread(bmp)
+   local slope = 2 * 16 * 64 / 65535
+   local ideal = 255 * (1 - slope) / math.sqrt(2 * (1 + slope * slope))
+   assert((range <= 1) and (math.abs(mean - ideal) <= 1),
+      f'Expected uniform brightness near {ideal}, got {mean} (range {range}, deviation {deviation})')
+   for x in {12 to 244} do assertSame(bmp, bmp, x, 24, x + 256, 24) end
+
+   -- Changing construction field order must select the same decode mode.
+   local other = filter.new('ImageFX')
+   other.path = png_path
+   other.outputMode = FOM_HEIGHT
+   check other.init()
+   assert(other.bitmap.flags has BMF_GREYSCALE, 'Setting Path first must preserve the original samples')
+end
+
+@Test function ExternalHeightChannelUsesStoredSamplesAndSurvivesSVGExport()
+   local name = f'svg_height8_{processing.task().id}'
+   local png_path, svg_path, export_path = f'temp:{name}.png', f'temp:{name}.svg', f'temp:{name}_export.svg'
+   defer
+      mSys.DeleteFile(export_path)
+      mSys.DeleteFile(svg_path)
+      mSys.DeleteFile(png_path)
+   end
+   writeHeightRampPNG(png_path, false)
+   do
+      writeHeightRampSVG(svg_path, f'<feImage href="{name}.png" width="256" height="48" ' ..
+         'xmlns:other="urn:foreign" other:outputMode="height"/>')
+      local colour_svg <close> = obj.new('svg', { path=svg_path })
+      local colour <close> = draw(colour_svg, 512)
+      local original <close> = obj.new('image', { path=png_path, bitsPerPixel=32, flags=PCF_FORCE_ALPHA_32 })
+      for y in {0 to 48} do
+         for x in {0 to 256} do assertSame(colour, original.bitmap, x, y, x, y) end
+      end
+   end
+
+   writeHeightRampSVG(svg_path, f'<feImage href="{name}.png" width="256" height="48" ' ..
+      'kotuku:outputMode="height" kotuku:heightChannel="G" result="ramp"/><feTile in="ramp" result="tiled"/>' ..
+      HEIGHT_RAMP_LIGHT)
+   local svg <close> = obj.new('svg', { path=svg_path })
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('ImageFX')[0])
+   assert(fx.heightChannel is MCH_GREEN, 'The SVG channel attribute must set the field')
+   local green <close> = draw(svg, 512)
+   local range, _, deviation = heightRampSpread(green)
+   assert((range >= 8) and (deviation > 3), f'Expected 64-level terracing, got range {range}, deviation {deviation}')
+
+   do
+      local exporter <close> = obj.new('svg', { target=svg.scene })
+      local file <close> = obj.new('file', { path=export_path, flags=FL_NEW|FL_WRITE })
+      check exporter.acSaveToObject(file, 0)
+   end
+   local xml = io.readAll(export_path)
+   assert(xml.find('kotuku:outputMode="height"', 0, true) and xml.find('kotuku:heightChannel="G"', 0, true),
+      'The height attributes must survive SVG export')
+   local restored <close> = obj.new('svg', { path=export_path })
+   local restored_bmp <close> = draw(restored, 512)
+   fx.heightChannel = MCH_ALPHA
+   local alpha <close> = draw(svg, 512)
+   for x in {12 to 244} do
+      assertSame(green, restored_bmp, x, 24, x, 24)
+      assertSame(green, alpha, x, 24, x, 24)
    end
 end
 

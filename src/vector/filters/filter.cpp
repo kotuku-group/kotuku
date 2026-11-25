@@ -608,19 +608,12 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
 }
 
 //********************************************************************************************************************
-// Universal function for rendering a filter's Bitmap to the target region.
-//
-// No blending is performed because this is intended for use when there is no former input.  Copying is done with
-// only the transforms applied (if any).  Linear RGB interpolation will wait until post processing.
-//
-// The extent of the image is defined geometrically: the image's rectangle is rasterised with anti-aliasing and its
-// coverage is applied to the alpha channel only.  Sampling clamps to the edges of the source, so filter taps that
-// fall beyond the image do not mix transparent black into the colour of edge pixels.  This matters to consumers that
-// read the colour of a straight-alpha result as data, such as the map of @DisplacementFX.
+// Fits a bitmap to the primitive subregion and maps its pixel coordinates to the filter's local surface.
 
-static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
+static ERR filter_image_transform(extFilterEffect *Effect, const objBitmap &Bitmap, ARF AspectRatio,
+   agg::trans_affine &Forward, agg::trans_affine &Inverse)
 {
-   const auto step = active_filter_step(Self);
+   const auto step = active_filter_step(Effect);
    if (not step) return ERR::InvalidState;
    const auto &subregion = step->Subregion;
 
@@ -630,21 +623,32 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
    double p_x = std::round(subregion.left), p_y = std::round(subregion.top);
    double p_width = std::round(subregion.width()), p_height = std::round(subregion.height());
 
-   if ((p_width <= 0) or (p_height <= 0)) return ERR::Okay;
+   if ((p_width <= 0) or (p_height <= 0)) return ERR::NothingDone;
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
-   calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap->Width, Bitmap->Height, align_x, align_y,
+   calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap.Width, Bitmap.Height, align_x, align_y,
       x_scale, y_scale);
 
    p_x += std::round(align_x);
    p_y += std::round(align_y);
 
-   agg::trans_affine img_transform;
-   img_transform.scale(x_scale, y_scale);
-   img_transform.translate(p_x, p_y);
-   img_transform *= Self->Filter->Render->Transform;
-   const agg::trans_affine forward = img_transform; // Source pixels to Target pixels
-   if (not invert_filter_transform(img_transform)) return ERR::InvalidValue;
+   Forward = agg::trans_affine_scaling(x_scale, y_scale);
+   Forward.translate(p_x, p_y);
+   Forward *= Effect->Filter->Render->Transform;
+   Inverse = Forward;
+   return invert_filter_transform(Inverse) ? ERR::Okay : ERR::InvalidValue;
+}
+
+//********************************************************************************************************************
+// Render a filter's bitmap without blending.  Sampling clamps to the source edges, and coverage of the
+// transformed image rectangle is applied to alpha only.  Colour conversion waits until post-processing.
+
+static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
+{
+   agg::trans_affine forward, img_transform;
+   if (auto error = filter_image_transform(Self, *Bitmap, AspectRatio, forward, img_transform); error != ERR::Okay) {
+      return (error IS ERR::NothingDone) ? ERR::Okay : error;
+   }
    const auto &clip = Self->Target->Clip;
    TClipRectangle<double> samples { filter_pixel_centre(clip.Left), filter_pixel_centre(clip.Top),
       filter_pixel_centre(clip.Right), filter_pixel_centre(clip.Bottom) };
@@ -783,6 +787,14 @@ static void write_filter_xml_subregion(std::ostream &Stream, const objFilterEffe
    write_unit("y", Effect.Y);
    write_unit("width", Effect.Width);
    write_unit("height", Effect.Height);
+}
+
+static void write_map_channel(std::ostream &Stream, CSTRING Prefix, CSTRING Name, MCH Channel)
+{
+   static constexpr CSTRING channels[] = { "R", "G", "B", "A", "luminance" };
+   if ((Channel > MCH::RED) and (Channel <= MCH::LUMINANCE)) {
+      Stream << ' ' << Prefix << Name << "=\"" << channels[int(Channel)] << '"';
+   }
 }
 
 //********************************************************************************************************************
@@ -987,7 +999,9 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
       case CLASSID::CONVOLVEFX:     return { SINGLE, effect_sampling<extConvolveFX> };
       case CLASSID::DISPLACEMENTFX: return { DUAL, effect_sampling<extDisplacementFX> };
       case CLASSID::FLOODFX:        return { GENERATOR };
-      case CLASSID::IMAGEFX:        return { GENERATOR };
+      case CLASSID::IMAGEFX:
+         return { .Inputs = GENERATOR, .Format = ((const extImageFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+            filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8 };
       case CLASSID::LIGHTINGFX: {
          const auto lighting = (const extLightingFX *)Effect;
          const auto primary = lighting->enhanced(filter_surface_format::SCALAR_F32) ?

@@ -8,6 +8,7 @@ static const struct FieldDef clImageFlags[] = {
    { "Alpha", 0x00000010 },
    { "Lazy", 0x00000020 },
    { "ForceAlpha32", 0x00000040 },
+   { "RawSamples", 0x00000080 },
    { nullptr, 0 }
 };
 
@@ -37,4 +38,4 @@ static const struct ActionArray clImageActions[] = {
 };
 
 #undef MOD_IDL
-#define MOD_IDL "c.PCF:ALPHA=0x10,FORCE_ALPHA_32=0x40,LAZY=0x20,MASK=0x8,NEW=0x4,NO_PALETTE=0x1,SCALABLE=0x2\n"
+#define MOD_IDL "c.PCF:ALPHA=0x10,FORCE_ALPHA_32=0x40,LAZY=0x20,MASK=0x8,NEW=0x4,NO_PALETTE=0x1,RAW_SAMPLES=0x80,SCALABLE=0x2\n"

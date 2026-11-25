@@ -1932,8 +1932,7 @@ static std::optional<NMC> read_normal_convention(std::string_view Value, bool Al
 }
 
 //********************************************************************************************************************
-// Reads a kotuku:occlusionChannel or kotuku:roughnessChannel value: R, G, B, A or luminance, or the full channel
-// names.
+// Reads the short or full channel names used by scalar maps.
 
 static std::optional<MCH> read_map_channel(std::string_view Value) noexcept
 {
@@ -2936,6 +2935,15 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
             break;
 
          case SVF_result: result_name = val; break;
+         default: {
+            const auto local = kotuku_attrib(Self, Tag, Tag.Attribs[a].Name);
+            if ((local IS "outputMode") and iequals("height", val)) fx->setOutputMode(FOM::HEIGHT);
+            else if (local IS "heightChannel") {
+               if (const auto channel = read_map_channel(val); channel) fx->setHeightChannel(*channel);
+               else log.warning("Invalid heightChannel '%s' on %s.", val.c_str(), Tag.name());
+            }
+            break;
+         }
       }
    }
 

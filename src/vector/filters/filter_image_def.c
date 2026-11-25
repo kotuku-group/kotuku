@@ -17,6 +17,21 @@ static const struct FieldDef clImageFXVSM[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clImageFXFOM[] = {
+   { "Image", 0x00000000 },
+   { "Height", 0x00000001 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clImageFXMCH[] = {
+   { "Red", 0x00000000 },
+   { "Green", 0x00000001 },
+   { "Blue", 0x00000002 },
+   { "Alpha", 0x00000003 },
+   { "Luminance", 0x00000004 },
+   { nullptr, 0 }
+};
+
 static ERR IMAGEFX_New(extImageFX *Self) {
    new (Self) extImageFX(Self->Class, Self->UID);
    return ERR::Okay;
