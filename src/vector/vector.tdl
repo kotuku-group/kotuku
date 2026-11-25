@@ -64,7 +64,8 @@ struct KeyValue;
     "SHADOWS: Distant lights cast shadows from raised areas of the surface.",
     "SPECULAR_AA: Widen specular highlights where the surface varies within a pixel, preventing sparkle at high exponents.",
     "DEQUANTISE_WIDE: Reconstruct gently sloping terraces in 8-bit heights before DEQUANTISE smooths other samples.",
-    { ALL = "DEQUANTISE|SHARPEN|CAVITY|DETAIL|SHADOWS|SPECULAR_AA" })
+    "LOCAL_SHADOWS: Point and spot lights cast shadows from raised areas of the surface.",
+    { ALL = "DEQUANTISE|SHARPEN|CAVITY|DETAIL|SHADOWS|SPECULAR_AA|DEQUANTISE_WIDE|LOCAL_SHADOWS" })
 
   flags("LOF", { comment="Options for a light of the LightingFX class; refer to LightOptions." },
     "COLOUR: The light uses its own Colour in place of the colour of the effect.",

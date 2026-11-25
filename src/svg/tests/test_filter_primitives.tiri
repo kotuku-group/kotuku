@@ -773,6 +773,8 @@ end
       { value='  Detail\tSHARPEN  ', expected=LFX_DETAIL | LFX_SHARPEN },
       { value='dequantise specular-aa', expected=LFX_DEQUANTISE | LFX_SPECULAR_AA },
       { value='all dequantise-wide', expected=LFX_ALL | LFX_DEQUANTISE_WIDE },
+      { value='all local-shadows', expected=LFX_ALL | LFX_LOCAL_SHADOWS },
+      { value='local-shadows', expected=LFX_LOCAL_SHADOWS },
       { value='none', expected=0 },
       { value='all', expected=LFX_ALL },
       { value='shadows sky-occlusion bogus', expected=LFX_SHADOWS } -- Unknown names are skipped
@@ -850,6 +852,9 @@ end
       { attribs='', light=nil },
       { attribs='kotuku:features="shadows detail" kotuku:cavity="0.5" kotuku:penumbra="0"', light=nil },
       { attribs='kotuku:features="dequantise-wide"', light=nil },
+      { attribs='kotuku:features="all local-shadows" kotuku:penumbra="4"', light='<fePointLight x="56" y="20" z="30"/>' },
+      { attribs='kotuku:features="local-shadows cavity"',
+        light='<feSpotLight x="60" y="4" z="40" pointsAtX="20" pointsAtY="40" pointsAtZ="0" kotuku:shadows="false"/>' },
       { attribs='kotuku:features="none" lighting-color="#ffcc99" kernelUnitLength="2 1.5"',
         light='<fePointLight x="20" y="12" z="40"/>' },
       { attribs='kotuku:detail="3" lighting-color="rgb(64 128 255)"',
@@ -881,6 +886,75 @@ end
    local loaded <close> = document(xml, LIGHTING_CONTENT, 64, KOTUKU_NS)
    local diff = imageDifference(draw(specular, 64), draw(loaded, 64))
    assert(diff is 0, f'Specular XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+end
+
+@Test function LocalShadowsKeepOffPageBlockers()
+   for size in values(array<int> { 64, 128 }) do
+      for features in values(array<str> { 'local-shadows', 'none' }) do
+         -- The blocker is outside the old processing margin on the 64-pixel page.
+         local svg <close> = obj.new('svg', { statement=f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} ' ..
+            f'width="{size}" height="{size}">' ..
+            '<filter id="f" x="-110" y="0" width="174" height="64" filterUnits="userSpaceOnUse" ' ..
+            'color-interpolation-filters="sRGB"><feFlood x="-85" y="0" width="10" height="64" result="block"/>' ..
+            '<feDiffuseLighting in="block" x="-110" y="0" width="174" height="64" surfaceScale="64" ' ..
+            f'kotuku:features="{features}" kotuku:penumbra="0"><fePointLight x="-105" y="32" z="65"/>' ..
+            '</feDiffuseLighting></filter><rect width="64" height="64" filter="url(#f)"/></svg>' })
+         local bmp <close> = draw(svg, size)
+         local p = mGfx.ReadRGBPixel(bmp, 20, 32)
+         local expected = features is 'local-shadows' ? 0 : 117
+         assert((p.alpha is 255) and (math.abs(p.red - expected) <= 1),
+            f'Expected red {expected} on the {size}-pixel page with {features}, got {p.red}')
+      end
+   end
+end
+
+-- A filter region too large to allocate whole is limited to the page and its margin, as for other effects, instead
+-- of failing the draw.
+
+@Test function LocalShadowsFallBackForOversizedRegions()
+   for features in values(array<str> { 'local-shadows', 'none' }) do
+      local svg <close> = obj.new('svg', { statement=f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} ' ..
+         'width="64" height="64"><filter id="f" x="-100000" y="0" width="100064" height="64" ' ..
+         'filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood x="40" y="0" width="10" ' ..
+         'height="64" result="block"/><feDiffuseLighting in="block" x="-100000" y="0" width="100064" ' ..
+         'height="64" surfaceScale="64" ' ..
+         f'kotuku:features="{features}" kotuku:penumbra="0"><fePointLight x="60" y="32" z="65"/>' ..
+         '</feDiffuseLighting></filter><rect width="64" height="64" filter="url(#f)"/></svg>' })
+      local bmp <close> = draw(svg, 64)
+      -- ReadRGBPixel() reuses its result, so the channels are copied before the next read.  The ground between the
+      -- block and the light is lit whether or not shadows are cast, but an unfiltered draw would leave it black.
+
+      local p = mGfx.ReadRGBPixel(bmp, 20, 32)
+      local red, alpha = p.red, p.alpha
+      local open = mGfx.ReadRGBPixel(bmp, 56, 32).red
+      assert(alpha is 255, f'An oversized filter region must still render with {features}')
+      assert(open > 20, f'The ground beside the light must be lit with {features}, got red {open}')
+      if features is 'local-shadows' then
+         assert(red <= 1, f'The block on the page must still cast its shadow, got red {red}')
+      else
+         assert(red > 20, f'The ground must be lit without shadows, got red {red}')
+      end
+   end
+end
+
+@Test function LocalShadowsHandleFarOffCanvasLights()
+   for position in values(array<table> {
+      { x=-10000000000, y=32 }, { x=10000000000, y=32 },
+      { x=10000000000, y=10000000000 }, { x=-10000000000, y=-10000000000 }
+   }) do
+      local light = f'<fePointLight x="{position.x}" y="{position.y}" z="10000000000"/>'
+      local terrain = '<rect width="64" height="64" filter="url(#f)"/>'
+      local lighting = '<feDiffuseLighting in="SourceAlpha" kotuku:penumbra="0" '
+      local svg <close> = document(lighting .. 'kotuku:features="local-shadows">' .. light .. '</feDiffuseLighting>',
+         terrain, 64, KOTUKU_NS)
+      local baseline <close> = document(lighting .. 'kotuku:features="none">' .. light .. '</feDiffuseLighting>',
+         terrain, 64, KOTUKU_NS)
+      local shadowed <close> = draw(svg, 64)
+      local unshadowed <close> = draw(baseline, 64)
+      local p = mGfx.ReadRGBPixel(unshadowed, 32, 32)
+      assert((p.alpha is 255) and (p.red > 0), f'Expected a lit reference for {light}')
+      assert(imageDifference(shadowed, unshadowed) <= 1, f'A far light must illuminate the flat field: {light}')
+   end
 end
 
 @Test function WideDequantisationReconstructsRampsAndPreservesLedges()
@@ -941,11 +1015,13 @@ end
    end
    ramp ..= '</g>'
 
-   local lighting = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" features="all">' ..
+   assert((LFX_ALL & LFX_DEQUANTISE_WIDE) != 0, 'ALL must include DEQUANTISE_WIDE')
+   local lighting = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
+      'features="dequantise sharpen cavity detail shadows specular-aa local-shadows">' ..
       '<feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
    local svg <close> = document(lighting, ramp, 64, KOTUKU_NS)
    local legacy <close> = draw(svg, 64)
-   lightingFX(svg).features = LFX_ALL | LFX_DEQUANTISE_WIDE
+   lightingFX(svg).features = LFX_ALL
    local wide <close> = draw(svg, 64)
    assert(imageDifference(legacy, wide) is 0, 'Both modes must keep legacy smoothing on 17-pixel terraces')
 end

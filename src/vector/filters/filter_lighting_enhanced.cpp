@@ -7,7 +7,8 @@ replaces the gradient stage only; normals, kernel units and the light models are
 1. The alpha channel is converted to a float height buffer, padded with replicated edge values so that no special
    edge kernels are required.
 2. For 8-bit heights, the default dequantiser applies a weighted mean where the 3x3 neighbourhood spans one alpha
-   level or less. The wider opt-in estimates a slope from successive one-level transitions that bound a terrace.
+   level or less. The wide pass first estimates a slope from successive one-level transitions that bound a
+   terrace; with both enabled, the default dequantiser smooths only the samples that the wide pass leaves.
 3. Gradients use a 4th-order central difference with light cross-axis smoothing.  The result is doubled to match the
    slope gain of the SVG interior kernel, so broad shapes are lit identically in both modes.  Where a kernel unit
    covers more than a pixel the stencil blends back to the SVG kernel, because magnified features are already wide
@@ -44,6 +45,12 @@ replaces the gradient stage only; normals, kernel units and the light models are
 12. A roughness map replaces the constant specular exponent.  Each row is converted once into row buffers of
    exponents and highlight gains, and the Toksvig factor of SPECULAR_AA is computed with the exponent of each pixel.
    Without a map the gain is exactly 1 and the exponent is the Exponent field, so the arithmetic is unchanged.
+13. With LOCAL_SHADOWS, point and spot lights cast shadows.  The surface is swept outwards from the light's projection
+   in four regions, carrying the height of the shadow along each ray (refer to filter_local_shadows.h).  The penumbra
+   is sampled with light heights fixed at the centre of the filter region, so that the shadows do not depend on the
+   clip, and the effect reads its entire input because a shadow can cross the filter region.  Lights at the same
+   position share one map, and Wrap adds a second sweep from the light raised by the wrap angle as for distant
+   lights.
 
 *********************************************************************************************************************/
 
@@ -114,7 +121,7 @@ struct lit_surface {
    const float *heights; // Padded, dequantised heights
    const float *detail;  // Padded, cored detail layer, or nullptr if detail is not boosted
    const float *curve;   // Padded heights from which curvature is measured
-   const float *shadow;  // Fraction of a distant light reaching each pixel, unpadded, or nullptr
+   const float *shadow;  // Fraction of the light reaching each pixel, unpadded, or nullptr
    const float *raised;  // As shadow, with the light raised by the wrap angle, or nullptr if it is unshadowed
    const uint8_t *albedo; // First pixel of the albedo for the combined type, or nullptr if it is opaque white
    const float *albedo_lut; // Converts a stored albedo channel to the filter's colour space, 0 - 1
@@ -1435,6 +1442,81 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
             light.raised = raised;
          }
          light.wrap_blend = sin(std::min(Penumbra * DEG2RAD, elevation * 0.5));
+      }
+   }
+
+   // Shadows for point and spot lights.  The light's height is converted to alpha levels.  The penumbra's light
+   // heights are chosen at the centre of the filter region, at height 0, so that they do not depend on the clip.
+   // Lights at the same position share their maps.
+
+   const bool local_shadows = ((Features & LFX::LOCAL_SHADOWS) != LFX::NIL) and (SpotHeight > 0);
+   if (local_shadows) {
+      const auto &render = *Filter->Render;
+      double anchor_x = (render.FilterRegion.left + render.FilterRegion.right) * 0.5;
+      double anchor_y = (render.FilterRegion.top + render.FilterRegion.bottom) * 0.5;
+      render.Transform.transform(&anchor_x, &anchor_y);
+      anchor_x -= Target->Clip.Left;
+      anchor_y -= Target->Clip.Top;
+      const double to_levels = 255.0 / SpotHeight;
+
+      auto launch = [&pool](int Count, auto &&Function) {
+         for (int t=0; t < Count; ++t) pool.detach_task([&Function, t]() { Function(t); });
+         pool.wait();
+      };
+
+      // Sweeps one map for Source, which is in client units on the vertical axis
+
+      auto sweep = [&](local_shadows::light Source, float *&Map) -> ERR {
+         for (auto &z : Source.z) z = float(z * to_levels);
+         if (auto error = get_filter_scratch(this, size_t(Width) * Height, Map); error != ERR::Okay) return error;
+         const local_shadows::field field { surface_heights, stride, Width, Height, Map };
+         if (not local_shadows::sweep_parallel(field, Source, int(pool.get_thread_count()), launch)) {
+            return ERR::AllocMemory;
+         }
+         return ERR::Okay;
+      };
+
+      for (size_t i=0; i < Prepared.size(); i++) {
+         auto &light = Prepared[i];
+         if ((light.kind IS LS::DISTANT) or (not Lights[i].Shadows)) continue;
+
+         bool shared = false;
+         for (size_t j=0; j < i; j++) {
+            const auto &other = Prepared[j];
+            if ((other.kind != LS::DISTANT) and (other.shadow) and (other.position.x IS light.position.x) and
+                (other.position.y IS light.position.y) and (other.position.z IS light.position.z)) {
+               light.shadow = other.shadow;
+               light.raised = other.raised;
+               light.wrap_shadows = other.wrap_shadows;
+               light.wrap_blend = other.wrap_blend;
+               shared = true;
+               break;
+            }
+         }
+         if (shared) continue;
+
+         const auto &lt = light.position;
+         if (not local_shadows::valid_projection(lt.x, lt.y)) return ERR::OutOfRange;
+         const double penumbra = Penumbra * DEG2RAD;
+         float *shadow;
+         if (auto error = sweep(local_shadows::penumbra_light(lt.x, lt.y, lt.z, anchor_x, anchor_y, 0, penumbra),
+            shadow); error != ERR::Okay) return error;
+         light.shadow = shadow;
+
+         // As for distant lights, with the elevation seen at the anchor
+
+         const double elevation = local_shadows::anchor_elevation(lt.x, lt.y, lt.z, anchor_x, anchor_y, 0);
+         light.wrap_shadows = (Material) and (Wrap > 0) and (elevation > 0);
+         if (light.wrap_shadows) {
+            const double lift = asin(Wrap);
+            if (elevation + lift < 89.0 * DEG2RAD) {
+               float *raised;
+               if (auto error = sweep(local_shadows::penumbra_light(lt.x, lt.y, lt.z, anchor_x, anchor_y, 0,
+                  penumbra, lift), raised); error != ERR::Okay) return error;
+               light.raised = raised;
+            }
+            light.wrap_blend = sin(std::min(penumbra, elevation * 0.5));
+         }
       }
    }
 

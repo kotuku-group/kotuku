@@ -141,8 +141,8 @@ document, not from the element that references them.</li>
 <p>A document that declares a Kōtuku namespace is rendered with a <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of <code>NONE</code> (see #Init), which enables the enhanced lighting of <class name="LightingFX">LightingFX</class>.  The following attributes of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code> configure it, using any prefix that is bound to the Kōtuku namespace:</p>
 <list type="bullet">
 <li><code>kotuku:features</code>: <code>all</code>, <code>none</code>, or a space-separated list of <code>dequantise</code>, <code>sharpen</code>, <code>cavity</code>, <code>detail</code>,
-<code>shadows</code>, <code>specular-aa</code> and <code>dequantise-wide</code>.  Sets <class name="LightingFX" field="Features">LightingFX.Features</class>.  The default is <code>all</code>, which excludes the opt-in
-<code>dequantise-wide</code>.</li>
+<code>shadows</code>, <code>specular-aa</code>, <code>dequantise-wide</code> and <code>local-shadows</code>.  Sets <class name="LightingFX" field="Features">LightingFX.Features</class>.  The default is <code>all</code>,
+which enables every feature.</li>
 <li><code>kotuku:cavity</code>: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
 <class name="LightingFX" field="Cavity">LightingFX.Cavity</class>.</li>
 <li><code>kotuku:detail</code>: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets <class name="LightingFX" field="Detail">LightingFX.Detail</class>.</li>
@@ -182,7 +182,8 @@ direct light.</li>
 <code>z</code> coordinate, or <code>none</code>.  The light is at full strength at the point of the surface nearest to it and falls with the
 square of the distance from there.  Omitting it, <code>none</code> and 0 leave the light unlimited.  A distant light cannot
 have a range; the attribute is reported and ignored.</li>
-<li><code>kotuku:shadows</code>: <code>true</code> (the default) or <code>false</code>.  With <code>false</code> a distant light casts no shadows.</li>
+<li><code>kotuku:shadows</code>: <code>true</code> (the default) or <code>false</code>.  With <code>false</code> the light casts no shadows.  Point and spot
+lights cast shadows with the <code>local-shadows</code> feature, and distant lights with <code>shadows</code>.</li>
 </list>
 <p>An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown namespace and draw the standard SVG lighting.</p>
 <p>A light source element can be animated with <code>animate</code> and <code>set</code> children, as in web browsers.  They animate the numeric attributes of the light's own type: <code>azimuth</code> and <code>elevation</code> of <code>feDistantLight</code>, <code>x</code>, <code>y</code> and <code>z</code> of <code>fePointLight</code>, and those plus <code>pointsAtX</code>, <code>pointsAtY</code>, <code>pointsAtZ</code>, <code>specularExponent</code> and <code>limitingConeAngle</code> of <code>feSpotLight</code>.  The animations move the light in place with <class name="LightingFX" method="SetLight">LightingFX.SetLight()</class>, so its <code>kotuku:</code> options and its place among the lights of <code>kotuku:feLighting</code> are kept.  Other attributes and an <code>href</code> to another element are reported and ignored, and the light's colour cannot be animated.  An exported document does not include the animations.</p>

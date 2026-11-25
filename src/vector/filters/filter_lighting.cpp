@@ -96,8 +96,8 @@ applies the features selected by the #Features field.  The default is `ALL`.
 <li>`DEQUANTISE`: Heights are read as floating point values, and areas that vary by no more than one alpha level are
 smoothed to remove terracing.</li>
 <li>`DEQUANTISE_WIDE`: Reconstruct a gradual slope across flat runs of up to sixteen pixels bracketed by successive
-one-level steps in 8-bit heights.  Enable this mode explicitly.  When both modes are enabled, `DEQUANTISE` smooths
-samples the wide pass leaves unresolved.</li>
+one-level steps in 8-bit heights.  When both modes are enabled, as they are in `ALL`, `DEQUANTISE` smooths only
+the samples that the wide pass leaves unresolved.</li>
 <li>`SHARPEN`: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
 wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
 SVG kernel, reaching it at two pixels per unit.</li>
@@ -111,6 +111,10 @@ the light's elevation, and the edge of the shadow softens with distance from the
 by #Penumbra.</li>
 <li>`SPECULAR_AA`: Specular highlights are widened where the surface varies within a pixel, so that high exponents
 do not produce isolated bright pixels.</li>
+<li>`LOCAL_SHADOWS`: Point and spot lights cast shadows, in the same way as `SHADOWS` for distant lights.  It does not
+depend on `SHADOWS`.  The width of the shadow edge is set by
+#Penumbra at the centre of the filter region, so receivers nearer to the light have wider edges and further ones
+narrower.  A shadow can be cast from anywhere in the filter region, so the effect reads its entire input.</li>
 </list>
 
 Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies
@@ -196,6 +200,7 @@ terms and several light sources; refer to the SVG class for details.
 *********************************************************************************************************************/
 
 #include <charconv>
+#include "filter_local_shadows.h"
 
 #define USE_SIMD 1
 
@@ -649,8 +654,23 @@ class extLightingFX : public extFilterEffect {
          constexpr double invalid = std::numeric_limits<double>::quiet_NaN();
          return { filter_access::BOUNDED, invalid, invalid };
       }
+      if (local_shadows(PrimaryFormat)) {
+         return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED, true };
+      }
       const double radius = reach(PrimaryFormat);
       return { filter_access::BOUNDED, radius, radius };
+   }
+
+   // True if a point or spot light casts shadows.  A low light behind a tall blocker can cast a shadow across the
+   // entire filter region, so the effect then reads all of its input.
+
+   bool local_shadows(filter_surface_format PrimaryFormat) const {
+      if (((Features & LFX::LOCAL_SHADOWS) IS LFX::NIL) or (Type IS LT::NORMAL) or (MapHeight IS 0)) return false;
+      if (not enhanced(PrimaryFormat)) return false;
+      for (size_t i=0; i < light_count(); i++) {
+         if ((Lights[i].Kind != LS::DISTANT) and (Lights[i].Shadows)) return true;
+      }
+      return false;
    }
 
    // True if ambient light is added to the result.  The specular type ignores it.
@@ -1356,7 +1376,7 @@ static void write_lfx_features(std::ostream &Stream, LFX Features)
    static const std::pair<LFX, CSTRING> names[] = {
       { LFX::DEQUANTISE, "dequantise" }, { LFX::SHARPEN, "sharpen" }, { LFX::CAVITY, "cavity" },
       { LFX::DETAIL, "detail" }, { LFX::SHADOWS, "shadows" }, { LFX::SPECULAR_AA, "specular-aa" },
-      { LFX::DEQUANTISE_WIDE, "dequantise-wide" }
+      { LFX::DEQUANTISE_WIDE, "dequantise-wide" }, { LFX::LOCAL_SHADOWS, "local-shadows" }
    };
 
    if (Features IS LFX::NIL) {
@@ -1721,7 +1741,8 @@ as #Colour, and its alpha is ignored.  Without the flag the light uses the effec
 <li>`Intensity` multiplies the light's colour, as #Intensity does for the first light.  It must be zero or greater.</li>
 <li>`Range` is the distance at which a point or spot light fades to nothing, in the units of its z coordinate.  Zero
 means that the light is unlimited.  A distant light cannot have a range.</li>
-<li>The `NO_SHADOWS` flag stops a distant light from casting shadows.</li>
+<li>The `NO_SHADOWS` flag stops the light from casting shadows.  Distant lights cast shadows with the `SHADOWS`
+feature, and point and spot lights with `LOCAL_SHADOWS`; refer to #Features.</li>
 </list>
 
 A light with a range is brightest at the point of the surface nearest to it, where its strength is unchanged.  Its
@@ -2171,9 +2192,14 @@ enabled here.  The default is `ALL`.  Each feature can be disabled independently
 from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG
 algorithm.  Disabling `SHARPEN` measures slopes with the same kernel as the SVG algorithm.
 
-Both dequantisation modes apply to 8-bit alpha inputs only.  Use `DEQUANTISE_WIDE` for shallow slopes in existing
-8-bit height maps.  Select it alone to keep isolated ledges and terraces without successive one-level steps at
-their original heights.
+Both dequantisation modes apply to 8-bit alpha inputs only.  Together they give the smoothest result: the wide pass
+reconstructs shallow slopes whose terraces are up to sixteen pixels long, and `DEQUANTISE` smooths what remains.
+Select `DEQUANTISE_WIDE` without `DEQUANTISE` to keep isolated ledges, and terraces without successive one-level
+steps, at their original heights.  Select `DEQUANTISE` without `DEQUANTISE_WIDE` to keep deliberate one-level steps
+that are no more than sixteen pixels apart, which the wide pass would turn into a ramp.
+
+`SHADOWS` controls the shadows of distant lights and `LOCAL_SHADOWS` those of point and spot lights, so either can be
+used without the other.  A light's `NO_SHADOWS` option excludes it from both.
 
 The strength of `CAVITY` and `DETAIL`, and the width of the shadow edge, are set by the #Cavity, #Detail and
 #Penumbra fields.
@@ -2194,7 +2220,7 @@ static ERR LIGHTINGFX_GET_Features(extLightingFX *Self, LFX &Value)
 
 static ERR LIGHTINGFX_SET_Features(extLightingFX *Self, LFX Value)
 {
-   if ((Value & ~(LFX::ALL | LFX::DEQUANTISE_WIDE)) != LFX::NIL) return ERR::InvalidValue;
+   if ((Value & ~LFX::ALL) != LFX::NIL) return ERR::InvalidValue;
    Self->Features = Value;
    effect_modified(Self);
    return ERR::Okay;

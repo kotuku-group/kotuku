@@ -229,8 +229,8 @@ enables the enhanced lighting of @LightingFX.  The following attributes of `feDi
 
 <list type="bullet">
 <li>`kotuku:features`: `all`, `none`, or a space-separated list of `dequantise`, `sharpen`, `cavity`, `detail`,
-`shadows`, `specular-aa` and `dequantise-wide`.  Sets @LightingFX.Features.  The default is `all`, which excludes the opt-in 
-`dequantise-wide`.</li>
+`shadows`, `specular-aa`, `dequantise-wide` and `local-shadows`.  Sets @LightingFX.Features.  The default is `all`,
+which enables every feature.</li>
 <li>`kotuku:cavity`: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
 @LightingFX.Cavity.</li>
 <li>`kotuku:detail`: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets @LightingFX.Detail.</li>
@@ -273,7 +273,8 @@ direct light.</li>
 `z` coordinate, or `none`.  The light is at full strength at the point of the surface nearest to it and falls with the
 square of the distance from there.  Omitting it, `none` and 0 leave the light unlimited.  A distant light cannot
 have a range; the attribute is reported and ignored.</li>
-<li>`kotuku:shadows`: `true` (the default) or `false`.  With `false` a distant light casts no shadows.</li>
+<li>`kotuku:shadows`: `true` (the default) or `false`.  With `false` the light casts no shadows.  Point and spot
+lights cast shadows with the `local-shadows` feature, and distant lights with `shadows`.</li>
 </list>
 
 An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown
