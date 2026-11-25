@@ -173,7 +173,8 @@ class extSVG : public objSVG {
    double PauseStart = 0; // Real time (seconds) at which the animation was deactivated, or 0 if not paused
    objXML *XML;
    std::string Folder;
-   std::list<std::variant<anim_transform, anim_motion, anim_value>> Animations; // NB: Pointer stability is a container requirement
+   // NB: Pointer stability is a container requirement
+   std::list<std::variant<anim_transform, anim_motion, anim_value, anim_light>> Animations;
    ankerl::unordered_dense::map<OBJECTID, svgAnimState> Animatrix; // For animated transforms, a vector may have one matrix only.
    std::vector<std::unique_ptr<svgLink>> Links;
    std::vector<svgInherit> Inherit;
@@ -280,6 +281,7 @@ private:
    ERR  proc_defs(XTag &, OBJECTPTR) noexcept;
    ERR  proc_set(XTag &, XTag &, OBJECTPTR) noexcept;
    ERR  proc_animate(XTag &, XTag &, OBJECTPTR) noexcept;
+   void parse_light_animations(objLightingFX *, int, XTag &) noexcept;
    ERR  proc_animate_colour(XTag &, XTag &, OBJECTPTR) noexcept;
    ERR  proc_animate_motion(XTag &, OBJECTPTR) noexcept;
    ERR  proc_animate_transform(XTag &, OBJECTPTR) noexcept;

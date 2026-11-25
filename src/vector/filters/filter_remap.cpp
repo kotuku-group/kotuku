@@ -259,6 +259,7 @@ static ERR REMAPFX_SelectDiscrete(extRemapFX *Self, struct rf::SelectDiscrete *A
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_discrete(*Args->Values);
       log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -293,6 +294,7 @@ static ERR REMAPFX_SelectIdentity(extRemapFX *Self, struct rf::SelectIdentity *A
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_identity();
       log.detail("%s", cmp->Name.c_str());
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -330,6 +332,7 @@ static ERR REMAPFX_SelectGamma(extRemapFX *Self, struct rf::SelectGamma *Args)
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_gamma(Args->Amplitude, Args->Exponent, Args->Offset);
       log.detail("%s Amplitude: %.2f, Exponent: %.2f, Offset: %.2f", cmp->Name.c_str(), cmp->Amplitude, cmp->Exponent, cmp->Offset);
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -367,6 +370,7 @@ static ERR REMAPFX_SelectInvert(extRemapFX *Self, struct rf::SelectInvert *Args)
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_invert();
       log.detail("%s", cmp->Name.c_str());
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -405,6 +409,7 @@ static ERR REMAPFX_SelectLinear(extRemapFX *Self, struct rf::SelectLinear *Args)
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_linear(Args->Slope, Args->Intercept);
       log.detail("%s Slope: %.2f, Intercept: %.2f", cmp->Name.c_str(), cmp->Slope, Args->Intercept);
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -444,6 +449,7 @@ static ERR REMAPFX_SelectMask(extRemapFX *Self, struct rf::SelectMask *Args)
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_mask(Args->Mask);
       log.detail("%s, Mask: $%.2x", cmp->Name.c_str(), Args->Mask);
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -483,6 +489,7 @@ static ERR REMAPFX_SelectTable(extRemapFX *Self, struct rf::SelectTable *Args)
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_table(*Args->Values);
       log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);

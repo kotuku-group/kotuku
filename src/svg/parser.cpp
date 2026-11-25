@@ -2282,6 +2282,8 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             log.warning("Failed to set the options of light %d: %s", light_index, GetErrorMsg(error));
          }
       }
+
+      parse_light_animations(fx, light_index, Child);
       light_index++;
       return ERR::Okay;
    };
@@ -2318,6 +2320,61 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
    else {
       FreeResource(fx);
       return ERR::Init;
+   }
+}
+
+//********************************************************************************************************************
+// <animate> and <set> children of a light source element animate the light's attributes, such as feSpotLight's
+// pointsAtX.  The animations target the light at Index of the LightingFX, starting from its parsed geometry.
+
+void svgState::parse_light_animations(objLightingFX *Effect, int Index, XTag &Light) noexcept
+{
+   kt::Log log(__FUNCTION__);
+
+   LightGeometry base;
+   bool have_base = false;
+
+   for (auto &child : Light.Children) {
+      if (not child.isTag()) continue;
+      const bool set = svg_tag_is(child, SVF_set);
+      if ((not set) and (not svg_tag_is(child, SVF_animate))) {
+         if ((not svg_tag_is(child, SVF_desc)) and (not svg_tag_is(child, SVF_title))) {
+            log.warning("Unsupported %s child node '%s'", Light.name(), child.name());
+         }
+         continue;
+      }
+
+      if ((not have_base) and (Effect->getLight(Index, &base) != ERR::Okay)) return;
+      have_base = true;
+
+      auto &new_anim = Self->Animations.emplace_back(anim_light { Self, Effect->UID, Index, base });
+      auto &anim = std::get<anim_light>(new_anim);
+
+      for (int a=1; a < std::ssize(child.Attribs); a++) {
+         auto &value = child.Attribs[a].Value;
+         if (value.empty()) continue;
+         const auto hash = strhash(child.Attribs[a].Name);
+         if ((hash IS SVF_href) or (hash IS SVF_xlink_href)) {
+            log.warning("The href of an animation in %s is not supported; the light is animated.", Light.name());
+         }
+         else set_anim_property(anim, child, hash, value);
+      }
+
+      if (set) {
+         anim.calc_mode = CMODE::DISCRETE;
+         anim.non_interpolating = true;
+      }
+
+      if (auto member = light_member(anim.base, strhash(anim.target_attrib))) {
+         if (not anim.prepare(*member)) {
+            log.warning("Invalid animation values for %s.%s.", Light.name(), anim.target_attrib.c_str());
+            Self->Animations.pop_back();
+         }
+      }
+      else {
+         log.warning("%s cannot animate the '%s' attribute.", Light.name(), anim.target_attrib.c_str());
+         Self->Animations.pop_back();
+      }
    }
 }
 
@@ -2783,10 +2840,14 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 
       switch(strhash(Tag.Attribs[a].Name)) {
          case SVF_radius: {
-            double x = -1, y = -1;
+            // A single value applies to both axes.  Negative values are in error and leave the default of zero,
+            // which disables the effect.
+
+            double x = -1, y = std::numeric_limits<double>::quiet_NaN();
             read_numseq(val, { &x, &y });
-            if (x > 0) fx->setRadiusX(int(x));
-            if (y > 0) fx->setRadiusY(int(y));
+            if (std::isnan(y)) y = x;
+            if (x > 0) fx->setRadiusX(x);
+            if (y > 0) fx->setRadiusY(y);
             break;
          }
 

@@ -185,6 +185,11 @@ have a range; the attribute is reported and ignored.</li>
 <li><code>kotuku:shadows</code>: <code>true</code> (the default) or <code>false</code>.  With <code>false</code> a distant light casts no shadows.</li>
 </list>
 <p>An invalid value is ignored and the default is kept.  Other renderers are expected to ignore attributes in an unknown namespace and draw the standard SVG lighting.</p>
+<p>A light source element can be animated with <code>animate</code> and <code>set</code> children, as in web browsers.  They animate the numeric attributes of the light's own type: <code>azimuth</code> and <code>elevation</code> of <code>feDistantLight</code>, <code>x</code>, <code>y</code> and <code>z</code> of <code>fePointLight</code>, and those plus <code>pointsAtX</code>, <code>pointsAtY</code>, <code>pointsAtZ</code>, <code>specularExponent</code> and <code>limitingConeAngle</code> of <code>feSpotLight</code>.  The animations move the light in place with <class name="LightingFX" method="SetLight">LightingFX.SetLight()</class>, so its <code>kotuku:</code> options and its place among the lights of <code>kotuku:feLighting</code> are kept.  Other attributes and an <code>href</code> to another element are reported and ignored, and the light's colour cannot be animated.  An exported document does not include the animations.</p>
+<pre>&lt;feSpotLight x=&quot;180&quot; y=&quot;120&quot; z=&quot;120&quot; pointsAtX=&quot;820&quot; pointsAtY=&quot;330&quot; limitingConeAngle=&quot;40&quot;&gt;
+  &lt;animate attributeName=&quot;pointsAtX&quot; values=&quot;820;580;340;580;820&quot; dur=&quot;16s&quot; repeatCount=&quot;indefinite&quot;/&gt;
+&lt;/feSpotLight&gt;
+</pre>
 <pre>&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; xmlns:kotuku=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
   &lt;filter id=&quot;relief&quot;&gt;
     &lt;feDiffuseLighting in=&quot;SourceAlpha&quot; surfaceScale=&quot;8&quot; kotuku:features=&quot;shadows cavity&quot; kotuku:penumbra=&quot;4&quot;&gt;

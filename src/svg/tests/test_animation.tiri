@@ -2,6 +2,7 @@
 -- Flute tests for SVG animation playback control.
 
    include 'vector', 'display'
+   module display as mGfx
 
 glWhite = struct<RGB8> { red = 255, green = 255, blue = 255, alpha = 255 }
 
@@ -1071,4 +1072,129 @@ end
    end
    processing.sleep(0.03)
    assert(frames is 1, 'Field reads must not render or invoke FrameCallback')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Light source elements accept <animate> and <set> children, which move the light of the LightingFX in place.
+
+LIGHT_PAGE <const> = 48
+
+-- A document whose filter lights an opaque square with the given effect.
+
+function lightDocument(Lighting:str!):obj
+   local svg = obj.new('svg', { statement=
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" ' ..
+      f'width="{LIGHT_PAGE}" height="{LIGHT_PAGE}"><filter id="f" x="0" y="0" width="1" height="1" ' ..
+      f'color-interpolation-filters="sRGB">{Lighting}</filter>' ..
+      f'<rect width="{LIGHT_PAGE}" height="{LIGHT_PAGE}" filter="url(#f)"/></svg>' })
+   svg.scene.{ pageWidth=LIGHT_PAGE, pageHeight=LIGHT_PAGE }
+   return svg
+end
+
+function lightingEffect(SVG:obj!):obj
+   local _, filter = check SVG.scene.mtFindDef('f')
+   return obj.find(filter.children('LightingFX')[0])
+end
+
+function lightGeometry(SVG:obj!, Index:num!):any
+   local geometry = struct<LightGeometry> { }
+   check lightingEffect(SVG).mtGetLight(Index, geometry)
+   return geometry
+end
+
+-- Draws both documents and returns the largest channel difference.  The bitmaps are held here: a bitmap that is only
+-- referenced by the scene's Bitmap field would be collected.
+
+function renderDifference(A:obj!, B:obj!):num
+   local bmp_a <close> = obj.new('bitmap', { width=LIGHT_PAGE, height=LIGHT_PAGE, bitsPerPixel=32 })
+   local bmp_b <close> = obj.new('bitmap', { width=LIGHT_PAGE, height=LIGHT_PAGE, bitsPerPixel=32 })
+   A.scene.bitmap = bmp_a
+   B.scene.bitmap = bmp_b
+   check A.scene.acDraw()
+   check B.scene.acDraw()
+   local result = 0
+   for y in {0 into LIGHT_PAGE} do
+      for x in {0 into LIGHT_PAGE} do
+         local a = mGfx.ReadRGBPixel(bmp_a, x, y)
+         local ar, ag, ab = a.red, a.green, a.blue
+         local b = mGfx.ReadRGBPixel(bmp_b, x, y)
+         result = math.max(result, math.abs(ar - b.red), math.abs(ag - b.green), math.abs(ab - b.blue))
+      end
+   end
+   return result
+end
+
+SPOT_LIGHT <const> = '<feDiffuseLighting in="SourceAlpha" surfaceScale="2">' ..
+   '<feSpotLight x="24" y="24" z="20" pointsAtX="{px}" pointsAtY="24" pointsAtZ="0" limitingConeAngle="25" ' ..
+   'specularExponent="{exponent}">{animation}</feSpotLight></feDiffuseLighting>'
+
+function spotLight(PX:num!, Exponent:num!, Animation:str):str
+   return SPOT_LIGHT.replace('{px}', tostring(PX)).replace('{exponent}', tostring(Exponent))
+      .replace('{animation}', Animation ?? '')
+end
+
+-- pointsAtX interpolates over its values, <set> holds z for its interval, fill="freeze" keeps the final value and
+-- seeking back restores the parsed geometry.  Each frame renders the same as a static light at that geometry.
+
+@Test global function SpotLightAttributesAnimate()
+   local svg <close> = lightDocument(spotLight(10, 1,
+      '<animate attributeName="pointsAtX" values="10;30;38" dur="4s" fill="freeze"/>' ..
+      '<set attributeName="specularExponent" to="8" begin="1s" dur="1s"/>'))
+   for time in values(array<double> { 1, 3, 1.5, 6, 0, 2.5 }) do
+      check svg.acSeek(time, SEEK_START)
+      local px = time >= 4 ? 38 : (time < 2 ? 10 + 10 * time : 30 + 4 * (time - 2))
+      local exponent = (time >= 1 and time < 2) ? 8 : 1
+      local g = lightGeometry(svg, 0)
+      nearValue(g.px, px, f'pointsAtX at {time}')
+      nearValue(g.exponent, exponent, f'specularExponent at {time}')
+      assert((g.x is 24) and (g.y is 24) and (g.z is 20) and (g.py is 24) and (g.coneAngle is 25),
+         f'Unanimated attributes must keep their values at {time}')
+
+      local static <close> = lightDocument(spotLight(px, exponent))
+      local diff = renderDifference(svg, static)
+      assert(diff is 0, f'The animated light at {time}s must render as the static light (difference {diff})')
+   end
+end
+
+-- Animations target their own light of kotuku:feLighting, and the options of each light are kept.  A distant light
+-- of a standard lighting element can also be animated.
+
+@Test global function LightAnimationsTargetTheirOwnLight()
+   local lights = '<kotuku:feLighting in="SourceAlpha" surfaceScale="2" ambient="#000">' ..
+      '<feDistantLight azimuth="{azimuth}" elevation="40" kotuku:intensity="0.5">{a}</feDistantLight>' ..
+      '<fePointLight x="{x}" y="10" z="30" kotuku:colour="#f00">{b}</fePointLight></kotuku:feLighting>'
+   local function document(Azimuth:num!, X:num!, A:str, B:str):obj
+      return lightDocument(lights.replace('{azimuth}', tostring(Azimuth)).replace('{x}', tostring(X))
+         .replace('{a}', A ?? '').replace('{b}', B ?? ''))
+   end
+
+   local svg <close> = document(0, 10, '<animate attributeName="azimuth" from="0" to="180" dur="2s"/>',
+      '<animate attributeName="x" to="40" dur="2s"/>')
+   check svg.acSeek(1, SEEK_START)
+   nearValue(lightGeometry(svg, 0).azimuth, 90, 'Azimuth of the distant light')
+   nearValue(lightGeometry(svg, 1).x, 25, 'A to-animation must start from the parsed x')
+   local static <close> = document(90, 25)
+   local diff = renderDifference(svg, static)
+   assert(diff is 0, f'Both lights must keep their options while animated (difference {diff})')
+
+   check svg.acSeek(3, SEEK_START)
+   nearValue(lightGeometry(svg, 0).azimuth, 0, 'An ended animation must restore the azimuth')
+   nearValue(lightGeometry(svg, 1).x, 10, 'An ended animation must restore x')
+
+   local diffuse <close> = lightDocument('<feDiffuseLighting in="SourceAlpha"><feDistantLight azimuth="0" ' ..
+      'elevation="10"><animate attributeName="elevation" by="60" dur="2s"/></feDistantLight></feDiffuseLighting>')
+   check diffuse.acSeek(1, SEEK_START)
+   nearValue(lightGeometry(diffuse, 0).elevation, 40, 'A by-animation of a standard element')
+end
+
+-- An attribute that does not belong to the light is ignored and the light keeps its geometry.
+
+@Test global function LightAnimationsRejectOtherAttributes()
+   local svg <close> = lightDocument(spotLight(10, 1,
+      '<animate attributeName="azimuth" from="0" to="90" dur="2s"/>' ..
+      '<animate attributeName="lighting-color" from="red" to="blue" dur="2s"/>'))
+   check svg.acSeek(1, SEEK_START)
+   local g = lightGeometry(svg, 0)
+   assert((g.px is 10) and (g.azimuth is 0) and (g.exponent is 1), 'Unsupported attributes must not move the light')
+   assert(svg.duration is 0, f'Rejected animations must not be kept (duration {svg.duration})')
 end

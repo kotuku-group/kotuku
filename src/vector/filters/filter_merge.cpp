@@ -98,6 +98,7 @@ static ERR MERGEFX_SET_SourceList(extMergeFX *Self, std::span<const MergeSource>
 
    Self->List = std::move(list);
    if (Self->Filter) Self->Filter->GraphRevision++;
+   effect_modified(Self);
    return ERR::Okay;
 }
 

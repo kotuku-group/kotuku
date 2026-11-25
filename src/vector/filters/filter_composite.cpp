@@ -899,12 +899,61 @@ static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, std::string &Value)
 
 #include "filter_composite_def.c"
 
+//********************************************************************************************************************
+// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
+// the filter's clients.
+
+static ERR COMPOSITEFX_SET_K1(extCompositeFX *Self, double Value)
+{
+   Self->K1 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR COMPOSITEFX_SET_K2(extCompositeFX *Self, double Value)
+{
+   Self->K2 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR COMPOSITEFX_SET_K3(extCompositeFX *Self, double Value)
+{
+   Self->K3 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR COMPOSITEFX_SET_K4(extCompositeFX *Self, double Value)
+{
+   Self->K4 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR COMPOSITEFX_SET_Operator(extCompositeFX *Self, OP Value)
+{
+   Self->Operator = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static const FieldArray clCompositeFXFields[] = {
-   { "K1",       FDF_DOUBLE|FDF_RW },
-   { "K2",       FDF_DOUBLE|FDF_RW },
-   { "K3",       FDF_DOUBLE|FDF_RW },
-   { "K4",       FDF_DOUBLE|FDF_RW },
-   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clCompositeFXOP },
+   { "K1",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K1 },
+   { "K2",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K2 },
+   { "K3",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K3 },
+   { "K4",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K4 },
+   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, COMPOSITEFX_SET_Operator, &clCompositeFXOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, COMPOSITEFX_GET_XMLDef },
    END_FIELD
 };

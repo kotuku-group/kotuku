@@ -32,10 +32,13 @@ double anim_base::mod_seek(double Seek, int Size) noexcept
 
 double anim_base::spline_seek(const spline_path &Path, double X) noexcept
 {
+   if (X <= 0.0) return 0.0;
+   if (X >= 1.0) return 1.0;
    if (Path.points.empty()) return 0.0;
 
    int si;
    for (si=0; (si < std::ssize(Path.points)-1) and (Path.points[si+1].point.x < X); si++);
+   if (si IS std::ssize(Path.points)-1) return Path.points.back().point.y;
 
    const double mod_x = X - Path.points[si].point.x;
    const double cos_angle = Path.points[si].cos_angle;
@@ -305,9 +308,10 @@ double anim_base::get_paired_dist()
 //********************************************************************************************************************
 // Return a value based on the values or from/to/by settings; interpolates if necessary.
 
-double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
+double anim_base::get_numeric_value(objVector &, FIELD)
 {
-   double from_val, to_val;
+   double from_val = std::numeric_limits<double>::quiet_NaN();
+   double to_val = from_val;
    double seek_to = seek;
 
    if (non_interpolating) {
@@ -315,11 +319,16 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
       return svtonum<double>(value);
    }
 
-   if (not values.empty()) {
+   if (values.size() IS 1) {
+      read_numseq(values.front(), { &from_val });
+      to_val = from_val;
+   }
+   else if (not values.empty()) {
       int i;
       if (timing.size() IS values.size()) {
          seek_to = seek * timing.back(); // In discrete mode the last time doesn't have to be 1.0
          for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek_to); i++);
+         i = std::min(i, int(timing.size()) - 2);
          seek_to = interval_seek(seek_to, timing[i], timing[i+1]);
       }
       else {
@@ -355,27 +364,37 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
    }
    else return 0;
 
-   const auto offset = to_val;
+   if (std::isfinite(from_val) and std::isfinite(to_val)) return interpolate_numeric(from_val, to_val, seek_to);
+
+   const Unit original(target_attrib_orig);
+   return std::isfinite(original.Value) ? original.Value : 0.0;
+}
+
+//********************************************************************************************************************
+
+double anim_base::interpolate_numeric(double From, double To, double Progress) const
+{
+   const auto offset = To;
 
    if (accumulate and !(values.empty() and from.empty() and !to.empty())) {
       // Cumulative animation is not permitted for:
       // * The 'to animation' where 'from' is undefined.
 
-      from_val += offset * repeat_index;
-      to_val += offset * repeat_index;
+      From += offset * repeat_index;
+      To += offset * repeat_index;
    }
 
    if (additive IS ADD::SUM) {
-      from_val += offset;
-      to_val   += offset;
+      From += offset;
+      To   += offset;
    }
 
    if (calc_mode IS CMODE::DISCRETE) {
-      if (seek_to < 0.5) return from_val;
-      else return to_val;
+      if (Progress < 0.5) return From;
+      else return To;
    }
    else { // CMODE::LINEAR
-      return from_val + ((to_val - from_val) * seek_to);
+      return std::lerp(From, To, Progress);
    }
 }
 

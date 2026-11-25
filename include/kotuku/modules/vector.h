@@ -2482,6 +2482,20 @@ struct LightOptions {
    LOF    Flags;          // Optional settings.
 };
 
+struct LightGeometry {
+   LS     Type;       // The kind of light.  SetLight() requires the light's current type.
+   double Azimuth;    // Distant lights: direction angle on the XY plane (clockwise), in degrees from the X axis.
+   double Elevation;  // Distant lights: direction angle from the XY plane towards the Z axis, in degrees.
+   double X;          // Point and spot lights: X location of the light source.
+   double Y;          // Point and spot lights: Y location of the light source.
+   double Z;          // Point and spot lights: Z location of the light source.
+   double PX;         // Spot lights: X location of the light source's target.
+   double PY;         // Spot lights: Y location of the light source's target.
+   double PZ;         // Spot lights: Z location of the light source's target.
+   double Exponent;   // Spot lights: exponent controlling the focus of the light.
+   double ConeAngle;  // Spot lights: limiting cone angle in degrees, or 0 for no cone.
+};
+
 // ImageFX class definition
 
 #define VER_IMAGEFX (1.000000)
@@ -3136,6 +3150,8 @@ struct AddDistantLight { double Azimuth; double Elevation; static const AC id = 
 struct AddPointLight { double X; double Y; double Z; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddSpotLight { double X; double Y; double Z; double PX; double PY; double PZ; double Exponent; double ConeAngle; static const AC id = AC(-15); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetLightOptions { int Index; struct LightOptions *Options; static const AC id = AC(-16); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetLight { int Index; struct LightGeometry *Light; static const AC id = AC(-17); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetLight { int Index; struct LightGeometry *Light; static const AC id = AC(-18); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3182,6 +3198,14 @@ class objLightingFX : public objFilterEffect {
    inline ERR setLightOptions(int Index, struct LightOptions * Options) noexcept {
       struct lt::SetLightOptions args = { Index, Options };
       return Action(AC(-16), this, &args);
+   }
+   inline ERR getLight(int Index, struct LightGeometry * Light) noexcept {
+      struct lt::GetLight args = { Index, Light };
+      return Action(AC(-17), this, &args);
+   }
+   inline ERR setLight(int Index, struct LightGeometry * Light) noexcept {
+      struct lt::SetLight args = { Index, Light };
+      return Action(AC(-18), this, &args);
    }
 
    // Customised field getting

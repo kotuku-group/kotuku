@@ -172,6 +172,7 @@ static ERR WAVEFUNCTIONFX_SET_AspectRatio(extWaveFunctionFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
    Self->Dirty = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -200,6 +201,7 @@ static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::stri
       Self->Colours.reset(new (std::nothrow) GradientColours(it->second, 1));
       if (not Self->Colours) return ERR::AllocMemory;
       Self->ColourMap = Value;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::NotFound;
@@ -219,6 +221,7 @@ static ERR WAVEFUNCTIONFX_SET_L(extWaveFunctionFX *Self, int Value)
    if (Value >= 0) {
       Self->L = Value;
       Self->Dirty = true;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -237,6 +240,7 @@ static ERR WAVEFUNCTIONFX_SET_M(extWaveFunctionFX *Self, int Value)
 {
    Self->M = Value;
    Self->Dirty = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -254,6 +258,7 @@ static ERR WAVEFUNCTIONFX_SET_N(extWaveFunctionFX *Self, int Value)
    if (Value >= 1) {
       Self->N = Value;
       Self->Dirty = true;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -278,6 +283,7 @@ static ERR WAVEFUNCTIONFX_SET_Resolution(extWaveFunctionFX *Self, int Value)
    if (Value >= 0) {
       Self->Resolution = Value;
       Self->Dirty = true;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -295,6 +301,7 @@ static ERR WAVEFUNCTIONFX_SET_Scale(extWaveFunctionFX *Self, double Value)
    if (Value > 0) {
       Self->Scale = Value;
       Self->Dirty = true;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -320,6 +327,7 @@ static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const Gra
       Self->Stops.assign(Value.begin(), Value.end());
       Self->Colours.reset(new (std::nothrow) GradientColours(Self->Stops, /*Self->Filter->ColourSpace*/ VCS::SRGB, 1.0, 1));
       if (!Self->Colours) return ERR::AllocMemory;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else {

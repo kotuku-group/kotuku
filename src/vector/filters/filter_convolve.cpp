@@ -804,6 +804,19 @@ static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, std::string &Value)
 
 #include "filter_convolve_def.c"
 
+//********************************************************************************************************************
+// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
+// the filter's clients.
+
+static ERR CONVOLVEFX_SET_PreserveAlpha(extConvolveFX *Self, int Value)
+{
+   Self->PreserveAlpha = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static const FieldArray clConvolveFXFields[] = {
    { "Bias",          FDF_DOUBLE|FDF_RI },
    { "Divisor",       FDF_DOUBLE|FDF_RI,         nullptr, CONVOLVEFX_SET_Divisor },
@@ -811,7 +824,7 @@ static const FieldArray clConvolveFXFields[] = {
    { "MatrixRows",    FDF_INT|FDF_RI,            nullptr, CONVOLVEFX_SET_MatrixRows },
    { "MatrixColumns", FDF_INT|FDF_RI,            nullptr, CONVOLVEFX_SET_MatrixColumns },
    { "Matrix",        FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, CONVOLVEFX_GET_Matrix, CONVOLVEFX_SET_Matrix },
-   { "PreserveAlpha", FDF_INT|FDF_RW },
+   { "PreserveAlpha", FDF_INT|FDF_RW, nullptr, CONVOLVEFX_SET_PreserveAlpha },
    { "TargetX",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetX },
    { "TargetY",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetY },
    { "UnitX",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitX },

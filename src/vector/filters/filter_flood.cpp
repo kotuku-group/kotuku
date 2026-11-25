@@ -88,6 +88,7 @@ static ERR FLOODFX_SET_Colour(extFloodFX *Self, FRGB *Value)
       Self->ColourRGB.Alpha = std::clamp(Self->Colour.Alpha * 255.0, 0.0, 255.0);
    }
    else Self->Colour.Alpha = 0;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -103,6 +104,7 @@ static ERR FLOODFX_SET_Opacity(extFloodFX *Self, double Value)
    kt::Log log;
    if ((Value >= 0.0) and (Value <= 1.0)) {
       Self->Opacity = Value;
+      effect_modified(Self);
       return ERR::Okay;
    }
    else return log.warning(ERR::OutOfRange);
