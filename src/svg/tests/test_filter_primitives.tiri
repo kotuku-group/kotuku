@@ -2556,3 +2556,92 @@ end
    assert(diff is 0, f'The tile must survive XMLDef (max difference {diff}): {xml}')
    assert(mGfx.ReadRGBPixel(original, 17, 14).green is 255, 'The tiled flood must be drawn')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- feMorphology radii are lengths in the primitive units, so they scale with the client transform as blur deviations
+-- and displacement scales do, and objectBoundingBox radii are fractions of the bounding box.  Chrome scales the radius
+-- to device pixels before truncating it.  The extent of the result is measured through the centre of a 64 pixel page.
+-- Radii are given as x/y pairs so that the scaling tests do not depend on the single-value default.
+
+function morphExtent(Effects:str, Content:str, Attribs:str, FilterAttribs:str):<num, num>
+   local svg <close> = document(Effects, Content, 64, Attribs, FilterAttribs ?? 'filterUnits="userSpaceOnUse"')
+   local bmp <close> = draw(svg, 64)
+   local width, height = 0, 0
+   for i in {0 to 64} do
+      if mGfx.ReadRGBPixel(bmp, i, 32).alpha > 127 then width++ end
+      if mGfx.ReadRGBPixel(bmp, 32, i).alpha > 127 then height++ end
+   end
+   return width, height
+end
+
+function assertExtent(Width:num, Height:num, Expected:num, Label:str)
+   assert((math.abs(Width - Expected) <= 1) and (math.abs(Height - Expected) <= 1),
+      f'{Label}: expected a {Expected} pixel extent, got {Width}x{Height}')
+end
+
+-- A 16 pixel square at pixels 24-40, drawn at 2 pixels per user unit.
+
+ZOOMED_SQUARE <const> = '<rect x="12" y="12" width="8" height="8" fill="red" filter="url(#f)"/>'
+ZOOMED_PAGE <const> = 'viewBox="0 0 32 32"'
+
+UNIT_SQUARE <const> = '<rect x="24" y="24" width="16" height="16" fill="red" filter="url(#f)"/>'
+
+@Test function MorphologyRadiusAtUnitScale()
+   local width, height = morphExtent('<feMorphology operator="dilate" radius="4 4"/>', UNIT_SQUARE)
+   assertExtent(width, height, 24, 'Dilating a 16 pixel square by 4 at unit scale')
+end
+
+@Test function SingleMorphologyRadiusAppliesToBothAxes()
+   local width, height = morphExtent('<feMorphology operator="dilate" radius="4"/>', UNIT_SQUARE)
+   assertExtent(width, height, 24, 'A single radius value must also be used for the y radius')
+end
+
+@Test function DilateRadiusFollowsViewboxZoom()
+   local width, height = morphExtent('<feMorphology operator="dilate" radius="2 2"/>', ZOOMED_SQUARE, ZOOMED_PAGE)
+   assertExtent(width, height, 24, 'A radius of 2 user units must dilate by 4 pixels at 2x zoom')
+end
+
+@Test function ErodeRadiusFollowsViewboxZoom()
+   -- A 32 pixel square at pixels 16-48 eroded by 2 user units leaves pixels 20-44.
+   local width, height = morphExtent('<feMorphology operator="erode" radius="2 2"/>',
+      '<rect x="8" y="8" width="16" height="16" fill="red" filter="url(#f)"/>', ZOOMED_PAGE)
+   assertExtent(width, height, 24, 'A radius of 2 user units must erode by 4 pixels at 2x zoom')
+end
+
+@Test function MorphologyRadiusFollowsGroupTransform()
+   local width, height = morphExtent('<feMorphology operator="dilate" radius="2 2"/>',
+      '<g transform="scale(2)">' .. ZOOMED_SQUARE .. '</g>')
+   assertExtent(width, height, 24, 'A radius of 2 user units must dilate by 4 pixels inside scale(2)')
+end
+
+@Test function MorphologyRadiusScalesWithBoundingBoxUnits()
+   -- 0.25 of the 8 unit bounding box is 2 user units, or 4 pixels.
+   local width, height = morphExtent('<feMorphology operator="dilate" radius=".25 .25"/>', ZOOMED_SQUARE, ZOOMED_PAGE,
+      'filterUnits="userSpaceOnUse" primitiveUnits="objectBoundingBox"')
+   assertExtent(width, height, 24, 'A bounding-box radius of 0.25 must match a user radius of 2')
+end
+
+@Test function MorphologyUsesFractionalBoundingBoxDimensions()
+   -- The .4 unit square is 16 pixels across at 40x zoom, so a radius of .25 adds four pixels on each side.
+   local content = '<rect x=".6" y=".6" width=".4" height=".4" fill="red" filter="url(#f)"/>'
+   local width, height = morphExtent('<feMorphology operator="dilate" radius=".25 .25"/>', content,
+      'viewBox="0 0 1.6 1.6"', 'filterUnits="userSpaceOnUse" primitiveUnits="objectBoundingBox"')
+   assertExtent(width, height, 24, 'Morphology must preserve fractional bounding-box dimensions')
+end
+
+@Test function FractionalMorphologyRadiusIsNotTruncated()
+   -- 1.5 user units is 3 pixels at 2x zoom, giving pixels 21-43.
+   local width, height = morphExtent('<feMorphology operator="dilate" radius="1.5 1.5"/>', ZOOMED_SQUARE, ZOOMED_PAGE)
+   assertExtent(width, height, 22, 'A radius of 1.5 user units must dilate by 3 pixels at 2x zoom')
+end
+
+@Test function MorphologyXMLDefPreservesRadiusPrecision()
+   local attribs = 'filterUnits="userSpaceOnUse"'
+   local svg <close> = document('<feMorphology operator="dilate" radius="1.9999989 1.9999989"/>',
+      UNIT_SQUARE, 64, nil, attribs)
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   local loaded <close> = document(xml, UNIT_SQUARE, 64, nil, attribs)
+   local copy <close> = draw(loaded, 64)
+   assert(imageDifference(original, copy) is 0, f'XMLDef must preserve the resolved kernel: {xml}')
+end

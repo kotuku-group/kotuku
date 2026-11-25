@@ -3560,17 +3560,17 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(MOP &Value) noexcept {
-      Value = *((MOP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
+      Value = *((MOP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
-   inline ERR getRadiusX(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
+   inline ERR getRadiusX(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
-   inline ERR getRadiusY(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 4));
+   inline ERR getRadiusY(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
@@ -3587,14 +3587,14 @@ class objMorphologyFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setRadiusX(const int Value) noexcept {
+   inline ERR setRadiusX(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_INT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
-   inline ERR setRadiusY(const int Value) noexcept {
+   inline ERR setRadiusY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_INT, &Value);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };
