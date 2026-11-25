@@ -116,6 +116,58 @@ ROW_NOINLINE static void blend_row32to16(const uint32_t *Src, uint16_t *Dest, in
 }
 
 //********************************************************************************************************************
+// Greyscale (BMF::GREYSCALE) row functions.  These mix a single 16-bit channel, so that the low byte of each sample
+// is retained.  mix255_16() returns round((Src * Alpha + Dest * (255 - Alpha)) / 255) and the result never exceeds
+// 0xffff.  An Alpha of 255 returns Src and an Alpha of 0 returns Dest, so untouched pixels keep their full precision.
+
+inline uint32_t mix255_16(uint32_t Src, uint32_t Dest, uint32_t Alpha)
+{
+   return ((Src * Alpha) + (Dest * (0xff - Alpha)) + 127) / 255;
+}
+
+static inline void mix_grey_pixel(objBitmap *Bitmap, int X, int Y, uint32_t Sample, uint32_t Alpha)
+{
+   const auto dest = Bitmap->ReadUCPixel(Bitmap, X, Y);
+   Bitmap->DrawUCPixel(Bitmap, X, Y, mix255_16(Sample, dest, Alpha));
+}
+
+// Mixes a row of grey pixels onto grey pixels at a constant weight.
+
+ROW_NOINLINE static void mix_rowgrey16(const uint16_t *Src, uint16_t *Dest, int Width, uint32_t Alpha)
+{
+   for (int i=0; i < Width; i++) Dest[i] = uint16_t(mix255_16(Src[i], Dest[i], Alpha));
+}
+
+// Blends a row of 32-bit source pixels onto grey pixels, weighting each by its alpha scaled by Opacity.  Each source
+// colour is converted to 16-bit luminance with objBitmap::packGrey() before it is mixed.
+
+ROW_NOINLINE static void blend_row32togrey16(const uint32_t *Src, uint16_t *Dest, int Width,
+   const ColourFormat &SrcFormat, uint32_t Opacity)
+{
+   const uint32_t r_pos = SrcFormat.RedPos, g_pos = SrcFormat.GreenPos, b_pos = SrcFormat.BluePos;
+   const uint32_t a_pos = SrcFormat.AlphaPos;
+   for (int i=0; i < Width; i++) {
+      const uint32_t s = Src[i];
+      const uint32_t alpha = mul_div255((s >> a_pos) & 0xff, Opacity);
+      if (not alpha) continue;
+      const uint32_t grey = objBitmap::packGrey(uint8_t(s >> r_pos), uint8_t(s >> g_pos), uint8_t(s >> b_pos));
+      Dest[i] = uint16_t(mix255_16(grey, Dest[i], alpha));
+   }
+}
+
+// Copies a row of grey pixels to opaque 32-bit pixels.  The 8-bit grey value is written to all three channels.  The
+// channel positions are those of a whole-byte 32-bit format, as used by objBitmap::packPixelWB().
+
+ROW_NOINLINE static void copy_rowgrey16to32(const uint16_t *Src, uint32_t *Dest, int Width,
+   uint32_t RedPos, uint32_t GreenPos, uint32_t BluePos, uint32_t AlphaBits)
+{
+   for (int i=0; i < Width; i++) {
+      const uint32_t grey = objBitmap::unpackGrey(Src[i]);
+      Dest[i] = (grey << RedPos) | (grey << GreenPos) | (grey << BluePos) | AlphaBits;
+   }
+}
+
+//********************************************************************************************************************
 // Blends a source colour onto a 32-bit destination pixel with the sRGB formula used by CopyArea().  A translucent
 // destination (0 < alpha < 255) uses straight-alpha source-over, which weights each colour by its alpha.  The result
 // is identical to srgb_blend32 in the Vector module, which relies on this for its CopyArea() fast path.  An empty
@@ -1295,8 +1347,11 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
    if (Width < 1) return ERR::Okay;
    if (Height < 1) return ERR::Okay;
+   if ((not src->Opacity) and is_grey(dest)) return ERR::Okay;
 
-   if (glDriver) {
+   // Greyscale bitmaps are always data-backed.  Drivers would interpret their samples as RGB565.
+
+   if ((glDriver) and (not is_grey(src)) and (not is_grey(dest))) {
       if (auto error = glDriver->blitBitmap(dest, src, Flags, X, Y, Width, Height, DestX, DestY);
             error != ERR::NoSupport) {
          if (error IS ERR::Okay) BLIT_STAT(DRIVER, int64_t(Width) * Height);
@@ -1539,6 +1594,17 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   }
                }
             }
+            else if (is_grey(dest)) {
+               BLIT_STAT(BLEND_TO16, int64_t(Width) * Height);
+               uint32_t *sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
+               uint16_t *ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
+               while (Height > 0) {
+                  blend_row32togrey16(sdata, ddata, Width, src->prvColourFormat, src->Opacity);
+                  sdata = (uint32_t *)(((uint8_t *)sdata) + src->LineWidth);
+                  ddata = (uint16_t *)(((uint8_t *)ddata) + dest->LineWidth);
+                  Height--;
+               }
+            }
             else if (dest->BytesPerPixel IS 2) {
                BLIT_STAT(BLEND_TO16, int64_t(Width) * Height);
                uint16_t *ddata;
@@ -1600,10 +1666,19 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
             if (src->Opacity < 255) { // Transparent mask with translucent pixels (consistent blend level)
                BLIT_STAT(KEY_OPACITY, int64_t(Width) * Height);
                const uint32_t opacity = src->Opacity;
+               const bool grey_dest = is_grey(dest), grey_src = is_grey(src);
                while (Height > 0) {
                   for (i=0; i < Width; i++) {
                      colour = src->ReadUCPixel(src, X + i, Y);
-                     if (colour != (uint32_t)src->TransIndex) {
+                     if (colour IS uint32_t(src->TransIndex)) continue;
+                     if (grey_dest) {
+                        if (not grey_src) {
+                           src->ReadUCRPixel(src, X + i, Y, &srgb);
+                           colour = objBitmap::packGrey(srgb.Red, srgb.Green, srgb.Blue);
+                        }
+                        mix_grey_pixel(dest, DestX + i, DestY, colour, opacity);
+                     }
+                     else {
                         dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
 
                         pixel.Red   = mix255(src->unpackRed(colour), pixel.Red, opacity);
@@ -1617,7 +1692,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   Height--;
                }
             }
-            else if (src->BitsPerPixel IS dest->BitsPerPixel) {
+            else if ((src->BitsPerPixel IS dest->BitsPerPixel) and (is_grey(src) IS is_grey(dest))) {
                if (src->BytesPerPixel IS 4) {
                   BLIT_STAT(KEY_32, int64_t(Width) * Height);
                   uint32_t *ddata, *sdata;
@@ -1689,6 +1764,21 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      colour = src->ReadUCPixel(src, X + i, Y);
                      if (colour != (uint32_t)src->TransIndex) {
                         dest->DrawUCRPixel(dest, DestX + i, DestY, &src->Palette->Col[colour]);
+                     }
+                  }
+                  Y++; DestY++;
+                  Height--;
+               }
+            }
+            else if ((src->BytesPerPixel IS 2) and (is_grey(src) or is_grey(dest))) {
+               // The packed key accounts for the source format's channel quantisation.
+
+               BLIT_STAT(KEY_GENERIC, int64_t(Width) * Height);
+               while (Height > 0) {
+                  for (int i=0; i < Width; i++) {
+                     if (src->ReadUCPixel(src, X + i, Y) != (uint32_t)src->TransIndex) {
+                        src->ReadUCRPixel(src, X + i, Y, &pixel);
+                        dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
                      }
                   }
                   Y++; DestY++;
@@ -1784,7 +1874,20 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                      Height--;
                   }
                }
-               else if ((src->BytesPerPixel IS 2) and (dest->BytesPerPixel IS 2)) {
+               else if (is_grey(src) and is_grey(dest)) {
+                  BLIT_STAT(OPACITY16, int64_t(Width) * Height);
+                  auto sdata = (uint16_t *)(src->Data + (Y * src->LineWidth) + (X<<1));
+                  auto ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
+                  while (Height > 0) {
+                     mix_rowgrey16(sdata, ddata, Width, opacity);
+                     ddata = (uint16_t *)(((int8_t *)ddata) + dest->LineWidth);
+                     sdata = (uint16_t *)(((int8_t *)sdata) + src->LineWidth);
+                     Height--;
+                  }
+               }
+               else if ((src->BytesPerPixel IS 2) and (dest->BytesPerPixel IS 2) and
+                     (not is_grey(src)) and (not is_grey(dest))) {
+                  // Pairs of greyscale and RGB bitmaps take the generic route below.
                   BLIT_STAT(OPACITY16, int64_t(Width) * Height);
                   uint16_t *ddata, *sdata;
 
@@ -1800,23 +1903,28 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
                else {
                   BLIT_STAT(OPACITY_GENERIC, int64_t(Width) * Height);
+                  const bool grey_dest = is_grey(dest);
                   while (Height > 0) {
                      for (i=0; i < Width; i++) {
                         src->ReadUCRPixel(src, X + i, Y, &srgb);
-                        dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
-
-                        pixel.Red   = mix255(srgb.Red, pixel.Red, opacity);
-                        pixel.Green = mix255(srgb.Green, pixel.Green, opacity);
-                        pixel.Blue  = mix255(srgb.Blue, pixel.Blue, opacity);
-
-                        dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
+                        if (grey_dest) {
+                           const auto grey = objBitmap::packGrey(srgb.Red, srgb.Green, srgb.Blue);
+                           mix_grey_pixel(dest, DestX + i, DestY, grey, opacity);
+                        }
+                        else {
+                           dest->ReadUCRPixel(dest, DestX + i, DestY, &pixel);
+                           pixel.Red   = mix255(srgb.Red, pixel.Red, opacity);
+                           pixel.Green = mix255(srgb.Green, pixel.Green, opacity);
+                           pixel.Blue  = mix255(srgb.Blue, pixel.Blue, opacity);
+                           dest->DrawUCRPixel(dest, DestX + i, DestY, &pixel);
+                        }
                      }
                      Y++; DestY++;
                      Height--;
                   }
                }
             }
-            else if (src->BitsPerPixel IS dest->BitsPerPixel) {
+            else if ((src->BitsPerPixel IS dest->BitsPerPixel) and (is_grey(src) IS is_grey(dest))) {
                // Use this fast routine for identical bitmaps
 
                BLIT_STAT(COPY_SAME, int64_t(Width) * Height);
@@ -1846,11 +1954,28 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   }
                }
             }
+            else if (is_grey(src) and (dest->BytesPerPixel IS 4) and (dest->MemType IS BMT::DATA)) {
+               // Drawable targets use the pixel routines below.  Their Data may point to a read-back buffer.
+
+               BLIT_STAT(COPY_CONVERT, int64_t(Width) * Height);
+               BLIT_STAT_CONVERT(src->BitsPerPixel, dest->BitsPerPixel, int64_t(Width) * Height);
+               const auto &df = dest->prvColourFormat;
+               const uint32_t alpha_bits = ((0xffu >> df.AlphaShift) & df.AlphaMask) << df.AlphaPos;
+               auto sdata = (uint16_t *)(src->Data + (Y * src->LineWidth) + (X<<1));
+               auto ddata = (uint32_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<2));
+               while (Height > 0) {
+                  copy_rowgrey16to32(sdata, ddata, Width, df.RedPos, df.GreenPos, df.BluePos, alpha_bits);
+                  sdata = (uint16_t *)(((int8_t *)sdata) + src->LineWidth);
+                  ddata = (uint32_t *)(((int8_t *)ddata) + dest->LineWidth);
+                  Height--;
+               }
+            }
             else {
                // If the bitmaps do not match then we need to use this slower RGB translation subroutine.
+               // Dithering into a greyscale bitmap is not performed, because it holds more levels than any source.
 
                bool dithered = false;
-               if ((Flags & BAF::DITHER) != BAF::NIL) {
+               if (((Flags & BAF::DITHER) != BAF::NIL) and (not is_grey(dest))) {
                   if ((dest->BitsPerPixel < 24) and
                       ((src->BitsPerPixel > dest->BitsPerPixel) or
                        ((src->BitsPerPixel <= 8) and (dest->BitsPerPixel > 8)))) {
@@ -1910,6 +2035,10 @@ function with a full description of the source in a !BitmapSurface structure.
 
 The `X`, `Y`, `Width` and `Height` parameters define the area from the source that you wish to copy.  The `XDest` and
 `YDest` parameters define the top left corner that you will blit the graphics to in the destination.
+
+`CSRF::DEFAULT_FORMAT` assumes RGB565 for a 16-bit surface.  To copy 16-bit grey samples to a `BMF::GREYSCALE` bitmap
+without conversion, describe the surface's `Format` with ~GetColourFormat() and masks of `0xff00` for red, green and
+blue.  A 16-bit surface with any other format is converted to luminance pixel by pixel.
 
 -INPUT-
 struct(*BitmapSurface) Surface: Description of the surface source.
@@ -2052,9 +2181,19 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
       default: return log.warning(ERR::Args);
    }
 
+   // Raw copies require the formats to match.  A 16-bit surface matches a BMF::GREYSCALE bitmap only if its Format
+   // declares the greyscale masks, and CSRF::DEFAULT_FORMAT always declares RGB565.  Mismatched surfaces are converted
+   // per pixel.
+
+   const bool grey_dest = is_grey(Bitmap);
+   const bool same_format = (Surface->BitsPerPixel IS Bitmap->BitsPerPixel) and
+      ((Bitmap->BytesPerPixel != 2) or (grey_dest IS is_grey_format(Surface->Format)));
+   const bool blend_alpha = ((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32);
+   const bool translucent = ((Flags & CSRF::TRANSLUCENT) != CSRF::NIL) and (Surface->Opacity < 255);
+   if ((not Surface->Opacity) and grey_dest and (blend_alpha or translucent)) return ERR::Okay;
 
    if (!lock_surface((extBitmap *)Bitmap, SURFACE_WRITE)) {
-      if (((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32)) { // 32-bit alpha blending support
+      if (blend_alpha) {
          uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
 
          if (Bitmap->BitsPerPixel IS 32) {
@@ -2133,6 +2272,16 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                Height--;
             }
          }
+         else if (grey_dest) {
+            BLIT_STAT(RAW_BLEND_OTHER, int64_t(Width) * Height);
+            auto ddata = (uint16_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<1));
+            while (Height > 0) {
+               blend_row32togrey16(sdata, ddata, Width, Surface->Format, Surface->Opacity);
+               sdata = (uint32_t *)(((uint8_t *)sdata) + Surface->LineWidth);
+               ddata = (uint16_t *)(((uint8_t *)ddata) + Bitmap->LineWidth);
+               Height--;
+            }
+         }
          else {
             BLIT_STAT(RAW_BLEND_OTHER, int64_t(Width) * Height);
             while (Height > 0) {
@@ -2170,7 +2319,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
          BLIT_STAT(RAW_KEY, int64_t(Width) * Height);
 
-         if (((Flags & CSRF::TRANSLUCENT) != CSRF::NIL) and (Surface->Opacity < 255)) {
+         if (translucent) {
             // Transparent mask with translucent pixels
 
             const uint32_t opacity = Surface->Opacity;
@@ -2178,7 +2327,14 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
             while (Height > 0) {
                for (int i=0; i < Width; i++) {
                   colour = read_surface(Surface, X + i, Y);
-                  if (colour != (uint32_t)Surface->Colour) {
+                  if (colour IS uint32_t(Surface->Colour)) continue;
+                  if (grey_dest) {
+                     const uint32_t grey = same_format ? colour :
+                        objBitmap::packGrey(UnpackSRed(Surface, colour), UnpackSGreen(Surface, colour),
+                           UnpackSBlue(Surface, colour));
+                     mix_grey_pixel(Bitmap, XDest + i, YDest, grey, opacity);
+                  }
+                  else {
                      Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
 
                      pixel.Red   = mix255(UnpackSRed(Surface, colour), pixel.Red, opacity);
@@ -2192,7 +2348,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                Height--;
             }
          }
-         else if (Surface->BitsPerPixel IS Bitmap->BitsPerPixel) {
+         else if (same_format) {
             if (Surface->BytesPerPixel IS 4) {
                uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
                uint32_t *ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
@@ -2267,7 +2423,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
          }
       }
       else { // Straight copy operation
-         if (((Flags & CSRF::TRANSLUCENT) != CSRF::NIL) and (Surface->Opacity < 255)) { // Straight translucent blit
+         if (translucent) {
             const uint32_t opacity = Surface->Opacity;
 
             if ((Surface->BytesPerPixel IS 4) and (Bitmap->BytesPerPixel IS 4)) {
@@ -2326,7 +2482,18 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                   Height--;
                }
             }
-            else if ((Surface->BytesPerPixel IS 2) and (Bitmap->BytesPerPixel IS 2)) {
+            else if (grey_dest and same_format) {
+               BLIT_STAT(RAW_OPACITY_OTHER, int64_t(Width) * Height);
+               auto sdata = (uint16_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<1));
+               auto ddata = (uint16_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<1));
+               while (Height > 0) {
+                  mix_rowgrey16(sdata, ddata, Width, opacity);
+                  ddata = (uint16_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
+                  sdata = (uint16_t *)(((int8_t *)sdata) + Surface->LineWidth);
+                  Height--;
+               }
+            }
+            else if ((Surface->BytesPerPixel IS 2) and (Bitmap->BytesPerPixel IS 2) and (not grey_dest)) {
                BLIT_STAT(RAW_OPACITY_OTHER, int64_t(Width) * Height);
                uint16_t *ddata, *sdata;
 
@@ -2349,20 +2516,24 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                      src.Green = UnpackSGreen(Surface, colour);
                      src.Blue  = UnpackSBlue(Surface, colour);
 
-                     Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
-
-                     pixel.Red   = mix255(src.Red, pixel.Red, opacity);
-                     pixel.Green = mix255(src.Green, pixel.Green, opacity);
-                     pixel.Blue  = mix255(src.Blue, pixel.Blue, opacity);
-
-                     Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                     if (grey_dest) {
+                        const auto grey = objBitmap::packGrey(src.Red, src.Green, src.Blue);
+                        mix_grey_pixel(Bitmap, XDest + i, YDest, grey, opacity);
+                     }
+                     else {
+                        Bitmap->ReadUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                        pixel.Red   = mix255(src.Red, pixel.Red, opacity);
+                        pixel.Green = mix255(src.Green, pixel.Green, opacity);
+                        pixel.Blue  = mix255(src.Blue, pixel.Blue, opacity);
+                        Bitmap->DrawUCRPixel(Bitmap, XDest + i, YDest, &pixel);
+                     }
                   }
                   Y++; YDest++;
                   Height--;
                }
             }
          }
-         else if (Surface->BitsPerPixel IS Bitmap->BitsPerPixel) {
+         else if (same_format) {
             // Use this fast routine for identical bitmaps
 
             BLIT_STAT(RAW_COPY_SAME, int64_t(Width) * Height);
@@ -2509,6 +2680,9 @@ GetColourFormat: Generates the values for a !ColourFormat structure for a given 
 This function will generate the values for a !ColourFormat structure, for either a given bit depth or
 customised colour bit values.  The !ColourFormat structure is used by internal bitmap routines to pack and unpack bit
 values to and from bitmap memory.
+
+For example, the format of a 16-bit `BMF::GREYSCALE` bitmap is generated with `GetColourFormat(Format, 16, 0xff00,
+0xff00, 0xff00, 0)`.  All three colour channels then unpack from the high byte of the pixel.
 
 The !ColourFormat structure is supported by the following macros for packing and unpacking colour bit values:
 
@@ -2671,6 +2845,8 @@ is generally used to 'pre-dither' true colour bitmaps in preparation for copying
 You are required to supply a !ColourFormat structure that describes the colour format that you would like to apply to
 the bitmap's image data.
 
+Greyscale bitmaps (`BMF::GREYSCALE`) cannot be resampled, and return `ERR::NoSupport`.
+
 -INPUT-
 obj(Bitmap) Bitmap: The bitmap object to be resampled.
 struct(*ColourFormat) ColourFormat: The new colour format to be applied to the bitmap.
@@ -2678,6 +2854,7 @@ struct(*ColourFormat) ColourFormat: The new colour format to be applied to the b
 -ERRORS-
 Okay
 NullArgs
+NoSupport
 
 -TAGS-
 mutates-object
@@ -2687,6 +2864,7 @@ mutates-object
 ERR Resample(objBitmap *Bitmap, ColourFormat *Format)
 {
    if ((!Bitmap) or (!Format)) return ERR::NullArgs;
+   if (is_grey(Bitmap)) return ERR::NoSupport;
 
    dither((extBitmap *)Bitmap, (extBitmap *)Bitmap, Format, Bitmap->Width, Bitmap->Height, 0, 0, 0, 0);
    return ERR::Okay;

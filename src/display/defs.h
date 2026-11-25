@@ -480,6 +480,24 @@ extern ERR  get_surface_abs(OBJECTID, int *, int *, int *, int *);
 extern bool in_modal_scope(OBJECTID, OBJECTID);
 extern void resolve_popover(extSurface *);
 extern void input_event_loop(HOSTHANDLE, APTR);
+// BMF::GREYSCALE bitmaps store a 16-bit grey sample per pixel.  Their colour format places all three channels in the
+// high byte, so that the generic unpacking routines return the 8-bit grey value.
+
+inline bool is_grey(const objBitmap *Bitmap) { return (Bitmap->Flags & BMF::GREYSCALE) != BMF::NIL; }
+
+inline void set_grey_format(ColourFormat *Format)
+{
+   gfx::GetColourFormat(Format, 16, 0xff00, 0xff00, 0xff00, 0);
+}
+
+// True if a raw 16-bit surface format matches that of a greyscale bitmap.
+
+inline bool is_grey_format(const ColourFormat &Format)
+{
+   return (Format.RedPos IS 8) and (Format.GreenPos IS 8) and (Format.BluePos IS 8) and
+      (Format.RedMask IS 0xff) and (Format.GreenMask IS 0xff) and (Format.BlueMask IS 0xff);
+}
+
 extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);
 extern void fill_rectangle(extBitmap *, int, int, const int, const int, uint32_t);

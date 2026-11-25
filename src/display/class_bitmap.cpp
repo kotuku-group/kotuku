@@ -27,6 +27,21 @@ or encoding image formats is the main concern.
 
 Raw image bytes can be read and written with #Read() and #Write().  #SaveImage() writes the clipped bitmap image as PCX
 data to a destination object that supports writing.
+
+<header>Greyscale bitmaps</header>
+
+Setting `BMF::GREYSCALE` with a #BitsPerPixel of 16 creates a bitmap that stores one 16-bit grey sample per pixel,
+which suits data such as height maps that need more than 8 bits of precision.  Code that reads #Data directly gets the
+full 16-bit samples.  All other read paths, including ~Display.ReadRGBPixel() and ~Display.CopyArea(), see the high
+byte as an 8-bit grey value on all three channels, so a greyscale bitmap can be copied to a 32-bit bitmap for display.
+
+Colours written to a greyscale bitmap are converted to Rec. 709 luminance (0.2126 R + 0.7152 G + 0.0722 B, applied to
+the stored sRGB values) at 16-bit precision.  An 8-bit grey value `V` is stored as `V * 257`, so white is stored as
+`0xffff` and 8-bit values survive a round trip exactly.  Blending into a greyscale bitmap mixes the full 16-bit sample,
+and `BAF::DITHER` is ignored when it is the destination.
+
+Greyscale bitmaps are always hosted in `BMT::DATA` memory and have `BMF::FIXED_DEPTH` set.  The vector renderer cannot
+draw to them.
 -END-
 
 *********************************************************************************************************************/
@@ -78,6 +93,10 @@ static void MemReadRGBIndex32(objBitmap *, uint32_t *, RGB8 *);
 static void MemReadLSBRGBIndex24(objBitmap *, uint8_t *, RGB8 *);
 static void MemReadMSBRGBIndex24(objBitmap *, uint8_t *, RGB8 *);
 static void MemReadRGBIndex16(objBitmap *, uint16_t *, RGB8 *);
+static void MemReadRGBIndexGrey16(objBitmap *, uint16_t *, RGB8 *);
+static void MemReadRGBPixelGrey16(objBitmap *, int, int, RGB8 *);
+static void MemDrawRGBIndexGrey16(objBitmap *, uint16_t *, RGB8 *);
+static void MemDrawRGBPixelGrey16(objBitmap *, int, int, RGB8 *);
 static void MemReadRGBIndex8(objBitmap *, uint8_t *, RGB8 *);
 
 static void MemReadRGBPixelPlanar(objBitmap *, int, int, RGB8 *);
@@ -617,6 +636,8 @@ GetColour: Converts Red, Green, Blue components into a single colour value.
 The GetColour() method is used to convert `Red`, `Green`, `Blue` and `Alpha` colour components into a single colour
 index that can be used for directly writing colours to the bitmap.  The result is returned in the `Colour` parameter.
 
+For a `BMF::GREYSCALE` bitmap the result is the 16-bit luminance of the colour, and `Alpha` is ignored.
+
 -INPUT-
 int Red:    Red component from 0 - 255.
 int Green:  Green component from 0 - 255.
@@ -637,7 +658,10 @@ static ERR BITMAP_GetColour(extBitmap *Self, struct bmp::GetColour *Args)
 {
    if (not Args) return ERR::NullArgs;
 
-   if (Self->BitsPerPixel > 8) {
+   if (is_grey(Self)) {
+      Args->Colour = Self->packGrey(Args->Red, Args->Green, Args->Blue);
+   }
+   else if (Self->BitsPerPixel > 8) {
       Args->Colour = Self->packPixel(Args->Red, Args->Green, Args->Blue, Args->Alpha);
    }
    else {
@@ -686,9 +710,24 @@ static ERR BITMAP_Init(extBitmap *Self)
    if ((Self->Clip.Right > Self->Width)  or (Self->Clip.Right < 1)) Self->Clip.Right = Self->Width;
    if ((Self->Clip.Bottom > Self->Height) or (Self->Clip.Bottom < 1)) Self->Clip.Bottom = Self->Height;
 
-   // If the Bitmap is 15 or 16 bit, make corrections to the background values
+   // A greyscale bitmap has a fixed 16-bit depth and is always hosted in CPU memory, because drivers and the video
+   // pixel routines would interpret its samples as RGB565.
 
-   if (Self->BitsPerPixel IS 16) {
+   const bool grey = is_grey(Self);
+   if (grey) {
+      if ((Self->BitsPerPixel != 16) or (Self->BytesPerPixel != 2) or (Self->Type != BMP::CHUNKY)) {
+         log.warning("BMF::GREYSCALE requires a chunky 16-bit bitmap, not %d bits per pixel.", Self->BitsPerPixel);
+         return ERR::InvalidState;
+      }
+      Self->Flags  |= BMF::FIXED_DEPTH;
+      Self->MemType = BMT::DATA;
+   }
+
+   // If the Bitmap is 15 or 16 bit, make corrections to the background values.  Greyscale bitmaps keep the full
+   // precision of their background colours.
+
+   if (grey) { }
+   else if (Self->BitsPerPixel IS 16) {
       Self->TransColour.Red   &= 0xf8;
       Self->TransColour.Green &= 0xfc;
       Self->TransColour.Blue  &= 0xf8;
@@ -707,7 +746,7 @@ static ERR BITMAP_Init(extBitmap *Self)
       Self->Bkgd.Blue  &= 0xf8;
    }
 
-   if ((glDriver) and (not glHeadless)) {
+   if ((glDriver) and (not glHeadless) and (not grey)) {
       if (auto error = glDriver->allocBitmap(Self); (error != ERR::Okay) and (error != ERR::NoSupport)) {
          return log.warning(error);
       }
@@ -743,7 +782,8 @@ static ERR BITMAP_Init(extBitmap *Self)
 
    // Determine the correct pixel format for the bitmap
 
-   if ((glDriver) and (Self->MemType IS BMT::VIDEO)) {
+   if (grey) set_grey_format(Self->ColourFormat);
+   else if ((glDriver) and (Self->MemType IS BMT::VIDEO)) {
       if (glDriver->pixelFormat(*Self->ColourFormat) != ERR::Okay) {
          gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
       }
@@ -753,7 +793,11 @@ static ERR BITMAP_Init(extBitmap *Self)
 
    if (auto error = calc_pixel_routines(Self); error != ERR::Okay) return error;
 
-   if (Self->BitsPerPixel > 8) {
+   if (grey) {
+      Self->TransIndex = Self->packGrey(Self->TransColour.Red, Self->TransColour.Green, Self->TransColour.Blue);
+      Self->BkgdIndex  = Self->packGrey(Self->Bkgd.Red, Self->Bkgd.Green, Self->Bkgd.Blue);
+   }
+   else if (Self->BitsPerPixel > 8) {
       Self->TransIndex = (((Self->TransColour.Red   >> Self->prvColourFormat.RedShift)   & Self->prvColourFormat.RedMask)   << Self->prvColourFormat.RedPos) |
                          (((Self->TransColour.Green >> Self->prvColourFormat.GreenShift) & Self->prvColourFormat.GreenMask) << Self->prvColourFormat.GreenPos) |
                          (((Self->TransColour.Blue  >> Self->prvColourFormat.BlueShift)  & Self->prvColourFormat.BlueMask)  << Self->prvColourFormat.BluePos) |
@@ -1175,7 +1219,9 @@ setfields:
 
 
    if (origbpp != Self->BitsPerPixel) {
-      gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
+      // FIXED_DEPTH prevents a greyscale bitmap from reaching this point, but its format is kept regardless.
+      if (is_grey(Self)) set_grey_format(Self->ColourFormat);
+      else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
    }
 
    calc_pixel_routines(Self);
@@ -1517,6 +1563,10 @@ BitsPerPixel: The number of bits used to represent each pixel.
 
 This includes all bits used by the pixel format, including alpha bits where present.
 
+A value of 16 normally selects the RGB565 format.  If `BMF::GREYSCALE` is set in #Flags, each 16-bit pixel is instead
+a grey sample; see the class description.  `BMF::GREYSCALE` is valid only with a value of 16, and #Init() fails with
+`ERR::InvalidState` for any other depth.
+
 -FIELD-
 Bkgd: Background colour in RGB format.
 
@@ -1531,7 +1581,10 @@ static ERR SET_Bkgd(extBitmap *Self, RGB8 *Value)
 {
    Self->Bkgd = *Value;
 
-   if (Self->BitsPerPixel > 8) {
+   if (is_grey(Self)) {
+      Self->BkgdIndex = Self->packGrey(Self->Bkgd.Red, Self->Bkgd.Green, Self->Bkgd.Blue);
+   }
+   else if (Self->BitsPerPixel > 8) {
       Self->BkgdIndex = (((Self->Bkgd.Red   >>Self->prvColourFormat.RedShift)   & Self->prvColourFormat.RedMask)   << Self->prvColourFormat.RedPos) |
                          (((Self->Bkgd.Green>>Self->prvColourFormat.GreenShift) & Self->prvColourFormat.GreenMask) << Self->prvColourFormat.GreenPos) |
                          (((Self->Bkgd.Blue >>Self->prvColourFormat.BlueShift)  & Self->prvColourFormat.BlueMask)  << Self->prvColourFormat.BluePos) |
@@ -1677,6 +1730,17 @@ unpackBlue(Colour)
 unpackAlpha(Colour)
 </pre>
 
+A `BMF::GREYSCALE` bitmap uses a format in which the red, green and blue channels all occupy the high byte of the
+16-bit pixel (position 8, mask `0xff`, no shift), so the unpacking methods return its 8-bit grey value.  The packPixel()
+methods are not suitable for writing to it, because they combine the three channels with a bitwise OR.  Use these
+static C++ methods instead:
+
+<pre>
+packGrey(Value)            // 8-bit grey to a 16-bit sample: Value * 257
+packGrey(Red, Green, Blue) // Rec. 709 luminance as a 16-bit sample
+unpackGrey(Sample)         // 16-bit sample to 8-bit grey: Sample >> 8
+</pre>
+
 -FIELD-
 Data: Provides direct access to the bitmap's data area.
 
@@ -1739,6 +1803,9 @@ The new pixel value must be defined in the `RGB` parameter.
 
 -FIELD-
 Flags: Optional flags.
+
+`BMF::GREYSCALE` must be set before initialisation, together with a #BitsPerPixel of 16.  Initialisation then also sets
+`BMF::FIXED_DEPTH`.
 
 -FIELD-
 Handle: Platform-dependent field for referencing video memory.
@@ -1907,7 +1974,10 @@ static ERR SET_Trans(extBitmap *Self, RGB8 *Value)
 {
    Self->TransColour = *Value;
 
-   if (Self->BitsPerPixel > 8) {
+   if (is_grey(Self)) {
+      Self->TransIndex = Self->packGrey(Self->TransColour.Red, Self->TransColour.Green, Self->TransColour.Blue);
+   }
+   else if (Self->BitsPerPixel > 8) {
       Self->TransIndex = (((Self->TransColour.Red  >>Self->prvColourFormat.RedShift)   & Self->prvColourFormat.RedMask)   << Self->prvColourFormat.RedPos) |
                          (((Self->TransColour.Green>>Self->prvColourFormat.GreenShift) & Self->prvColourFormat.GreenMask) << Self->prvColourFormat.GreenPos) |
                          (((Self->TransColour.Blue >>Self->prvColourFormat.BlueShift)  & Self->prvColourFormat.BlueMask)  << Self->prvColourFormat.BluePos) |
@@ -1999,11 +2069,19 @@ static ERR calc_pixel_routines(extBitmap *Self)
 
       case 2:
          Self->ReadUCPixel  = MemReadPixel16;
-         Self->ReadUCRPixel = MemReadRGBPixel16;
-         Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))MemReadRGBIndex16;
          Self->DrawUCPixel  = MemDrawPixel16;
-         Self->DrawUCRPixel = MemDrawRGBPixel16;
-         Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))MemDrawRGBIndex16;
+         if (is_grey(Self)) {
+            Self->ReadUCRPixel = MemReadRGBPixelGrey16;
+            Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))MemReadRGBIndexGrey16;
+            Self->DrawUCRPixel = MemDrawRGBPixelGrey16;
+            Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))MemDrawRGBIndexGrey16;
+         }
+         else {
+            Self->ReadUCRPixel = MemReadRGBPixel16;
+            Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))MemReadRGBIndex16;
+            Self->DrawUCRPixel = MemDrawRGBPixel16;
+            Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))MemDrawRGBIndex16;
+         }
          break;
 
       case 3:

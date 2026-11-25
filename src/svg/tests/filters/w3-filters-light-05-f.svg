@@ -1,37 +1,10 @@
 <svg id="svg-root" width="100%" height="100%" viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <!--
-NOTE: It has been noted that Chrome does not pass this test when compared to the reference test image.
-
-This test verifies that the 'elevation' attribute is interpreted as a complementary value to the z-axis in degrees.
-
-The test shows four different elevation angles that can be used for feDistantLight source.
-The four different feDistantLight light sources are used in three different filter cases; feDiffuseLight, feSpecularLight
-and feMerge which merges both feDiffuseLight and feSpecularLight to form a single filter. Using four different elevation values
-in three different filter cases gives twelve different filters. All twelve filter cases are applied to a vector graphic and
-then to a raster graphic. The vector graphic results are shown to the left and the raster graphic results are shown to the right.
-
-The test has passed if the top row has from left to right for a single graphic set:
-
-   A green square with a black circle inside of it
-   A black square
-   A black square with a green semicircle inside the lefthand side of the rect
-   A black square with a green semicircle inside the righthand side of the rect
-
-The middle row has from left to right for a single graphic set:
-
-   A green square with a white circle inside of it
-   A green semicircle pointing to the right on top of a white background
-   A green square with a white crest inside pointing to the right
-   A green square with a white crest inside pointing to the left
-
-The bottom row has from left to right for a single graphic set:
-
-   A green square with a black circle inside of it
-   A black square with a green semicircle inside pointing to the right
-   A green square with a circle inside that has a shadow on the righthand side and a reflection on the lefthand side
-   A green square with a circle inside that has a shadow on the lefthand side and a reflection on the righthand side
-
-If the test shows any red, the test has failed.
+The W3C draft reference for light-05 and its pass criteria show specular semicircles at elevation 270.  That light
+points directly away from the eye, so the halfway vector L + E is zero and the formula is undefined.  The reference
+normalises the rounding residue of cos(270 degrees), which gives the 269 degree result.  The semicircles turn with
+azimuth and switch sides at -90, the same light (as in Firefox and Inkscape).  This hash has no specular light at
+270, as Chrome does.  See LightBehindTheSurfaceHasNoSpecularHighlight in test_filter_primitives.tiri.
 -->
   <g id="test-body-content" font-family="SVGFreeSansASCII,sans-serif" font-size="18">
     <defs color="#00FF00">

@@ -17,7 +17,11 @@
 <p>To create a bitmap, set <fl>Width</fl> and <fl>Height</fl> before initialisation.  The pixel format can be selected explicitly with <fl>BitsPerPixel</fl>, <fl>BytesPerPixel</fl>, <fl>AmtColours</fl> and <fl>Type</fl>, or left for <action>Query</action> and <action>Init</action> to derive from the current display environment.  <fl>MemType</fl> controls whether the bitmap uses regular CPU-accessible memory or a platform-specific video or texture resource where supported.</p>
 <p>Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video or texture resources may require <action>Lock</action> before reading or writing <fl>Data</fl>, and <action>Unlock</action> after direct access is complete.  Code that uses the drawing methods exposed by this class does not normally need to manage locking itself.</p>
 <p>Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use <class name="Image">Image</class> when decoding or encoding image formats is the main concern.</p>
-<p>Raw image bytes can be read and written with <action>Read</action> and <action>Write</action>.  <action>SaveImage</action> writes the clipped bitmap image as PCX data to a destination object that supports writing.</p></description>
+<p>Raw image bytes can be read and written with <action>Read</action> and <action>Write</action>.  <action>SaveImage</action> writes the clipped bitmap image as PCX data to a destination object that supports writing.</p>
+<header>Greyscale bitmaps</header>
+<p>Setting <code>BMF::GREYSCALE</code> with a <fl>BitsPerPixel</fl> of 16 creates a bitmap that stores one 16-bit grey sample per pixel, which suits data such as height maps that need more than 8 bits of precision.  Code that reads <fl>Data</fl> directly gets the full 16-bit samples.  All other read paths, including <function module="Display">ReadRGBPixel</function> and <function module="Display">CopyArea</function>, see the high byte as an 8-bit grey value on all three channels, so a greyscale bitmap can be copied to a 32-bit bitmap for display.</p>
+<p>Colours written to a greyscale bitmap are converted to Rec. 709 luminance (0.2126 R + 0.7152 G + 0.0722 B, applied to the stored sRGB values) at 16-bit precision.  An 8-bit grey value <code>V</code> is stored as <code>V * 257</code>, so white is stored as <code>0xffff</code> and 8-bit values survive a round trip exactly.  Blending into a greyscale bitmap mixes the full 16-bit sample, and <code>BAF::DITHER</code> is ignored when it is the destination.</p>
+<p>Greyscale bitmaps are always hosted in <code>BMT::DATA</code> memory and have <code>BMF::FIXED_DEPTH</code> set.  The vector renderer cannot draw to them.</p></description>
     <source>
       <file>class_bitmap.cpp</file>
     </source>
@@ -385,6 +389,7 @@
       </input>
       <description>
 <p>The GetColour() method is used to convert <code>Red</code>, <code>Green</code>, <code>Blue</code> and <code>Alpha</code> colour components into a single colour index that can be used for directly writing colours to the bitmap.  The result is returned in the <code>Colour</code> parameter.</p>
+<p>For a <code>BMF::GREYSCALE</code> bitmap the result is the 16-bit luminance of the colour, and <code>Alpha</code> is ignored.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -454,6 +459,7 @@
       <type>INT</type>
       <description>
 <p>This includes all bits used by the pixel format, including alpha bits where present.</p>
+<p>A value of 16 normally selects the RGB565 format.  If <code>BMF::GREYSCALE</code> is set in <fl>Flags</fl>, each 16-bit pixel is instead a grey sample; see the class description.  <code>BMF::GREYSCALE</code> is valid only with a value of 16, and <action>Init</action> fails with <code>ERR::InvalidState</code> for any other depth.</p>
       </description>
     </field>
 
@@ -594,6 +600,11 @@ unpackGreen(Colour)
 unpackBlue(Colour)
 unpackAlpha(Colour)
 </pre>
+<p>A <code>BMF::GREYSCALE</code> bitmap uses a format in which the red, green and blue channels all occupy the high byte of the 16-bit pixel (position 8, mask <code>0xff</code>, no shift), so the unpacking methods return its 8-bit grey value.  The packPixel() methods are not suitable for writing to it, because they combine the three channels with a bitwise OR.  Use these static C++ methods instead:</p>
+<pre>packGrey(Value)            // 8-bit grey to a 16-bit sample: Value * 257
+packGrey(Red, Green, Blue) // Rec. 709 luminance as a 16-bit sample
+unpackGrey(Sample)         // 16-bit sample to 8-bit grey: Sample &gt;&gt; 8
+</pre>
       </description>
     </field>
 
@@ -661,6 +672,7 @@ unpackAlpha(Colour)
       <access read="R" write="I">Read/Init</access>
       <type lookup="BMF">BMF</type>
       <description>
+<p><code>BMF::GREYSCALE</code> must be set before initialisation, together with a <fl>BitsPerPixel</fl> of 16.  Initialisation then also sets <code>BMF::FIXED_DEPTH</code>.</p>
 <types lookup="BMF"/>
       </description>
     </field>
@@ -872,6 +884,7 @@ unpackAlpha(Colour)
       <const name="CLEAR">Clear graphics on initialisation and when resizing.</const>
       <const name="COMPRESSED">The bitmap data is compressed.</const>
       <const name="FIXED_DEPTH">Prevent changing of bitmap depth after initialisation (e.g. via <code>Resize()</code>).</const>
+      <const name="GREYSCALE">The bitmap stores one 16-bit grey sample per pixel.  Valid only with a <class name="Bitmap" field="BitsPerPixel">Bitmap.BitsPerPixel</class> of 16.  The high byte of each sample is the 8-bit grey value that is returned for all three channels when the bitmap is read as RGB.  Colours written to the bitmap are converted to Rec. 709 luminance at 16-bit precision.  Greyscale bitmaps are always hosted in <code>BMT::DATA</code> memory, have a fixed depth and cannot be drawn to by the vector renderer.</const>
       <const name="INVERSE_ALPHA">Indicates reverse alpha blending, higher values are transparent.</const>
       <const name="MASK">Declare the <class name="Bitmap">Bitmap</class> as a 1 or 8 bit mask.  Must be set in conjunction with the <class name="Bitmap" field="BitsPerPixel">Bitmap.BitsPerPixel</class> field on initialisation.</const>
       <const name="NEVER_SHRINK">Ignore resize requests that would shrink the size of the bitmap.</const>

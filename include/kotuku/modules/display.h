@@ -292,6 +292,7 @@ enum class BMF : uint32_t {
    NEVER_SHRINK = 0x00001000,
    FIXED_DEPTH = 0x00002000,
    PREMUL = 0x00004000,
+   GREYSCALE = 0x00008000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(BMF)
@@ -605,7 +606,8 @@ class objBitmap : public Object {
    CS        ColourSpace;                                          // Defines the colour space for RGB values.
    public:
    inline uint32_t getColour(struct RGB8 &RGB) {
-      if (BitsPerPixel > 8) return packPixel(RGB);
+      if ((Flags & BMF::GREYSCALE) != BMF::NIL) return packGrey(RGB.Red, RGB.Green, RGB.Blue);
+      else if (BitsPerPixel > 8) return packPixel(RGB);
       else {
          uint32_t result;
          if (!getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result)) {
@@ -614,6 +616,8 @@ class objBitmap : public Object {
          else return 0;
       }
    }
+
+   // Colour packers for RGB formats.  Use packGrey() for BMF::GREYSCALE bitmaps.
 
    inline uint32_t packPixel(uint8_t R, uint8_t G, uint8_t B) {
       return
@@ -646,6 +650,19 @@ class objBitmap : public Object {
          (((RGB.Blue>>ColourFormat->BlueShift) & ColourFormat->BlueMask) << ColourFormat->BluePos) |
          (((RGB.Alpha>>ColourFormat->AlphaShift) & ColourFormat->AlphaMask) << ColourFormat->AlphaPos);
    }
+
+   // Grey packers for BMF::GREYSCALE bitmaps.  packPixel() is not suitable for these, because it ORs the three
+   // channels together.  packGrey(Value) expands an 8-bit grey to 16 bits, so that 255 is stored as 0xffff.
+   // packGrey(R, G, B) computes Rec. 709 luminance at 16-bit precision with weights in 16.16 fixed point that sum to
+   // exactly 65536, so that packGrey(V, V, V) IS packGrey(V).
+
+   static constexpr uint16_t packGrey(uint8_t Value) { return uint16_t(Value * 257); }
+
+   static constexpr uint16_t packGrey(uint8_t R, uint8_t G, uint8_t B) {
+      return uint16_t(((uint32_t(R) * 13933 + uint32_t(G) * 46871 + uint32_t(B) * 4732) * 257) >> 16);
+   }
+
+   template <class T> static constexpr uint8_t unpackGrey(T Packed) { return uint8_t(Packed >> 8); }
 
    // Pack pixel 'whole-byte' version, for faster 24/32 bit formats
 
