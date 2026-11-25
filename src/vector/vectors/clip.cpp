@@ -110,9 +110,13 @@ circumstances.
 -FIELD-
 Units: Defines the coordinate system for fields X, Y, Width and Height.
 
-The default coordinate system for clip-paths is `BOUNDING_BOX`, which positions the clipping region relative to the
-vector that references it.  The alternative is `USERSPACE`, which positions the path relative to the vector's parent
-viewport.
+With `BOUNDING_BOX`, the clipping region is relative to the vector that references it.  With `USERSPACE` (the
+default), relative dimensions such as percentages and offsets from the far edges resolve against the referencing
+vector's parent viewport.
+
+When a @VectorViewport references a `USERSPACE` clip, the viewport's explicit transforms apply to the clip and its
+origin comes from the parent viewport.  Set `VCLF::VIEWPORT_RELATIVE` in #Flags to position the clip relative to the
+referencing viewport.  The SVG module sets this flag on imported clip paths and masks.
 -END-
 *********************************************************************************************************************/
 
@@ -134,8 +138,6 @@ To define the path(s) that will be used to build the clipping mask, add at least
 declared here.
 -END-
 *********************************************************************************************************************/
-
-//********************************************************************************************************************
 
 #include "clip_def.cpp"
 

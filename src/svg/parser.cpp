@@ -1387,6 +1387,7 @@ void svgState::proc_clippath(XTag &Tag) noexcept
       if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
          clip->setOwner(Self->Scene->UID);
          clip->setName("SVGClip");
+         clip->setFlags(VCLF::VIEWPORT_RELATIVE);
          clip->setSID(id);
 
          if (not transform.empty()) parse_transform((objVector *)clip, transform, MTAG_SVG_TRANSFORM);
@@ -1476,7 +1477,7 @@ void svgState::proc_mask(XTag &Tag) noexcept
    if (!NewObject(CLASSID::VECTORCLIP, &clip)) {
       clip->setOwner(Self->Scene->UID);
       clip->setName("SVGMask");
-      clip->setFlags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES);
+      clip->setFlags(VCLF::APPLY_FILLS|VCLF::APPLY_STROKES|VCLF::VIEWPORT_RELATIVE);
       clip->setUnits(units);
       clip->setSID(id);
 
