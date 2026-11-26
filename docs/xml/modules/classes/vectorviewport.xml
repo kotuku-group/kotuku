@@ -151,11 +151,17 @@
 
     <field>
       <name>DropPrepare</name>
-      <comment>Snapshots widget state at native button release, before asynchronous data acquisition.</comment>
+      <comment>Saves destination state when a drop from another application is released over the viewport.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The callback receives <code>(Viewport, Snapshot, X, Y)</code>.  Snapshot is a temporary <class name="Config">Config</class> whose identity is exposed through <class name="Pointer" field="DropSession">Pointer.DropSession</class> during synchronous DragDrop delivery.  X/Y are frozen viewport coordinates.  A widget can save the resolved row, page position and destination folder keyed by Snapshot's ID, and release them on its Free action. The snapshot expires on every terminal path, including transfer failure and participant destruction.  Do not request native data in this callback.  To reject preparation set <class name="Pointer" field="DragFeedback">Pointer.DragFeedback</class> to zero.  C callbacks receive Meta as their final argument and return an ERR code.  Script errors reject preparation.</p>
+<p>Data dropped from another application can arrive after the user has released the mouse button.  By the time it arrives, the interface may have changed, e.g. by scrolling or by rows being added.  DropPrepare lets a <fl>DropTarget</fl> viewport record where the drop is meant to go at the moment of release, so that it does not go to the wrong row or folder.</p>
+<p>The callback is called once at release, before the DragDrop action is delivered.  It is only called for native drops routed by a <class name="VectorScene">VectorScene</class> that has the <code>DROP_TARGETS</code> flag set.  Drops that start inside the application are delivered immediately and do not use this callback.  The C callback has the following prototype:</p>
+<p><code>ERR function(*VectorViewport Viewport, *Config Snapshot, DOUBLE X, DOUBLE Y, APTR Meta)</code></p>
+<p><code>Meta</code> is the pointer supplied with the C callback.  Script callbacks receive <code>(Viewport, Snapshot, X, Y)</code>.</p>
+<p><code>X</code> and <code>Y</code> give the release position in the viewport's coordinate system.  <code>Snapshot</code> is a temporary <class name="Config">Config</class> object that identifies this drop.  The callback can store its state against the snapshot's ID, then read it back during DragDrop through the <class name="Pointer" field="DropSession">Pointer.DropSession</class> field, which refers to the same object.  The snapshot is freed when the drop completes, is rejected or cancelled, the transfer fails, or a participant is destroyed.  Subscribe to its Free action to release any saved state.</p>
+<p>To reject the drop, return an error code or set <class name="Pointer" field="DragFeedback">Pointer.DragFeedback</class> to <code>0</code>.  Do not request data from the source during this callback, because the data is only readable while DragDrop is being delivered.</p>
+<p>Set this field to <code>NULL</code> to remove the callback.</p>
       </description>
     </field>
 
@@ -166,7 +172,6 @@
       <type>INT</type>
       <description>
 <p>Setting DropTarget to <code>true</code> registers the viewport as a destination for drag and drop operations that are released over it.  The parent <class name="VectorScene">VectorScene</class> must have the <code>DROP_TARGETS</code> flag set for drops to be routed, and the viewport will receive the drop as a DragDrop action that can be monitored with a subscription.  The <class name="VectorScene" field="DropX">VectorScene.DropX</class> and <class name="VectorScene" field="DropY">VectorScene.DropY</class> fields indicate the drop position relative to the viewport for the duration of the DragDrop notification.</p>
-<p>Exactly one viewport receives each drop.  The front-most visible viewport under the pointer is chosen, taking transforms and clipping into account, and if it is not registered then the drop is passed to its nearest registered ancestor.  Shapes and unregistered viewports therefore never obscure their registered container.  Registration takes effect immediately and does not depend on the viewport having an input subscription.</p>
       </description>
     </field>
 

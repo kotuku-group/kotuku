@@ -407,35 +407,6 @@ static ERR VIEW_GET_DragCallback(extVectorViewport *Self, FUNCTION * &Value)
    else return ERR::FieldNotSet;
 }
 
-/*********************************************************************************************************************
--FIELD-
-DropPrepare: Snapshots widget state at native button release, before asynchronous data acquisition.
-
-The callback receives `(Viewport, Snapshot, X, Y)`.  Snapshot is a temporary @Config whose identity is exposed through
-@Pointer.DropSession during synchronous DragDrop delivery.  X/Y are frozen viewport coordinates.  A widget can save
-the resolved row, page position and destination folder keyed by Snapshot's ID, and release them on its Free action.
-The snapshot expires on every terminal path, including transfer failure and participant destruction.  Do not request
-native data in this callback.  To reject preparation set @Pointer.DragFeedback to zero.  C callbacks receive Meta as
-their final argument and return an ERR code.  Script errors reject preparation.
--END-
-*********************************************************************************************************************/
-
-static ERR VIEW_GET_DropPrepare(extVectorViewport *Self, FUNCTION * &Value)
-{
-   Value = &Self->vpDropPrepare;
-   return ERR::Okay;
-}
-
-static ERR VIEW_SET_DropPrepare(extVectorViewport *Self, FUNCTION *Value)
-{
-   FUNCTION replacement;
-   if (Value) replacement = *Value;
-   if (replacement.defined()) replacement.pin();
-   release_callback(Self->vpDropPrepare);
-   Self->vpDropPrepare = replacement;
-   return ERR::Okay;
-}
-
 static ERR VIEW_SET_DragCallback(extVectorViewport *Self, FUNCTION *Value)
 {
    if (Value) {
@@ -462,6 +433,53 @@ static ERR VIEW_SET_DragCallback(extVectorViewport *Self, FUNCTION *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+DropPrepare: Saves destination state when a drop from another application is released over the viewport.
+
+Data dropped from another application can arrive after the user has released the mouse button.  By the time it
+arrives, the interface may have changed, e.g. by scrolling or by rows being added.  DropPrepare lets a #DropTarget
+viewport record where the drop is meant to go at the moment of release, so that it does not go to the wrong row or
+folder.
+
+The callback is called once at release, before the DragDrop action is delivered.  It is only called for native drops
+routed by a @VectorScene that has the `DROP_TARGETS` flag set.  Drops that start inside the application are delivered
+immediately and do not use this callback.  The C callback has the following prototype:
+
+`ERR function(*VectorViewport Viewport, *Config Snapshot, DOUBLE X, DOUBLE Y, APTR Meta)`
+
+`Meta` is the pointer supplied with the C callback.  Script callbacks receive `(Viewport, Snapshot, X, Y)`.
+
+`X` and `Y` give the release position in the viewport's coordinate system.  `Snapshot` is a temporary @Config object
+that identifies this drop.  The callback can store its state against the snapshot's ID, then read it back during
+DragDrop through the @Pointer.DropSession field, which refers to the same object.  The snapshot is freed when the drop
+completes, is rejected or cancelled, the transfer fails, or a participant is destroyed.  Subscribe to its Free action
+to release any saved state.
+
+To reject the drop, return an error code or set @Pointer.DragFeedback to `0`.  Do not request data from the source
+during this callback, because the data is only readable while DragDrop is being delivered.
+
+Set this field to `NULL` to remove the callback.
+
+*********************************************************************************************************************/
+
+static ERR VIEW_GET_DropPrepare(extVectorViewport *Self, FUNCTION * &Value)
+{
+   Value = &Self->vpDropPrepare;
+   return ERR::Okay;
+}
+
+static ERR VIEW_SET_DropPrepare(extVectorViewport *Self, FUNCTION *Value)
+{
+   FUNCTION replacement;
+   if (Value) replacement = *Value;
+   if (replacement.defined()) replacement.pin();
+   release_callback(Self->vpDropPrepare);
+   Self->vpDropPrepare = replacement;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 DropTarget: Set to true if the viewport accepts drag and drop operations.
 
 Setting DropTarget to `true` registers the viewport as a destination for drag and drop operations that are released
@@ -469,11 +487,6 @@ over it.  The parent @VectorScene must have the `DROP_TARGETS` flag set for drop
 receive the drop as a DragDrop action that can be monitored with a subscription.  The @VectorScene.DropX and
 @VectorScene.DropY fields indicate the drop position relative to the viewport for the duration of the DragDrop
 notification.
-
-Exactly one viewport receives each drop.  The front-most visible viewport under the pointer is chosen, taking
-transforms and clipping into account, and if it is not registered then the drop is passed to its nearest registered
-ancestor.  Shapes and unregistered viewports therefore never obscure their registered container.  Registration takes
-effect immediately and does not depend on the viewport having an input subscription.
 
 *********************************************************************************************************************/
 

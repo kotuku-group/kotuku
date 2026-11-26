@@ -129,7 +129,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
-<p>While bound, this input takes precedence over <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> and contributes to the default primitive subregion. The first and second components multiply the effective X and Y scales directly.  A component of +1 thus displaces by one effective scale along its axis in primitive units.  Invalid or missing samples give zero displacement.  Channel selectors, colour transfer, normal conventions and colour neutral values apply only to <class name="FilterEffect" field="Mix">FilterEffect.Mix</class>.  Clearing this field reactivates the colour map on the live effect.  SVG serialises the active map binding, using <code>kotuku:vectorMap</code> for a numerical map.</p>
+<p>While bound, this input takes precedence over <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> and contributes to the default primitive subregion. The first and second components multiply the effective X and Y scales directly.  A component of +1 thus displaces by one effective scale along its axis in primitive units.  Invalid or missing samples give zero displacement.  Channel selectors, colour transfer, normal conventions and colour neutral values apply only to <class name="FilterEffect" field="Mix">FilterEffect.Mix</class>.  Clearing this field reactivates the colour map on the live effect.  This field requires a native vector producer.  <class name="VectorFilter" field="EffectXML">VectorFilter.EffectXML</class> returns <code>ERR::NoSupport</code> while this field is bound.</p>
       </description>
     </field>
 

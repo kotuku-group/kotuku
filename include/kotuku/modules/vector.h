@@ -2987,11 +2987,6 @@ class objConvolveFX : public objFilterEffect {
       return ERR::Okay;
    }
 
-   inline ERR getMatrix(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getPreserveAlpha(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 28));
       return ERR::Okay;
@@ -3015,6 +3010,11 @@ class objConvolveFX : public objFilterEffect {
    inline ERR getUnitY(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 48));
       return ERR::Okay;
+   }
+
+   inline ERR getMatrix(std::span<double> &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -3057,11 +3057,6 @@ class objConvolveFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setMatrix(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
-      return field->WriteValue(this, field, 0x80101308, &Value);
-   }
-
    inline ERR setPreserveAlpha(const int Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
@@ -3085,6 +3080,11 @@ class objConvolveFX : public objFilterEffect {
    inline ERR setUnitY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setMatrix(std::span<const double> Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
 };

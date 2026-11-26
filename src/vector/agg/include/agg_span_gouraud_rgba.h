@@ -121,14 +121,14 @@ public:
 
         // Keep fractional precision for shallow slopes without rounding at each horizontal step.
         const double width = std::max(int64_t(1), std::abs(int64_t(right->m_x) - left->m_x));
-        const double start = double(X) * subpixel_scale - left->m_x;
+        const double start = double(X) * int(subpixel_scale) - left->m_x;
         const int first[4] = { left->m_r, left->m_g, left->m_b, left->m_a };
         const int last[4] = { right->m_r, right->m_g, right->m_b, right->m_a };
         double position[4], step[4];
         for (int channel=0; channel < 4; ++channel) {
             const double slope = (last[channel] - first[channel]) / width;
             position[channel] = first[channel] + slope * start;
-            step[channel] = slope * subpixel_scale;
+            step[channel] = slope * int(subpixel_scale);
         }
 
         for (unsigned i=0; i < Length; i++) {
