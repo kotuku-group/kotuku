@@ -1,4 +1,5 @@
 #include <kotuku/modules/svg.h>
+#include "oklab.h"
 
 static constexpr auto HASH_URL   = kt::strhash("url");
 static constexpr auto HASH_RGB   = kt::strhash("rgb");
@@ -117,22 +118,8 @@ static float parse_css_alpha(std::string_view &IRI)
 
 static void oklab_to_painter(double L, double OKA, double OKB, float Alpha, VectorPainter *Painter)
 {
-   L = std::clamp(L, 0.0, 1.0);
-
-   // OKLAB to linear sRGB via the intermediate LMS cube-root space
-   const double l_ = L + 0.3963377774 * OKA + 0.2158037573 * OKB;
-   const double m_ = L - 0.1055613458 * OKA - 0.0638541728 * OKB;
-   const double s_ = L - 0.0894841775 * OKA - 1.2914855480 * OKB;
-
-   const double ll = l_ * l_ * l_;
-   const double mm = m_ * m_ * m_;
-   const double ss = s_ * s_ * s_;
-
-   double lr = +4.0767416621 * ll - 3.3077115913 * mm + 0.2309699292 * ss;
-   double lg = -1.2684380046 * ll + 2.6097574011 * mm - 0.3413193965 * ss;
-   double lb = -0.0041960863 * ll - 0.7034186147 * mm + 1.7076147010 * ss;
-
-   linear_rgb_to_painter(lr, lg, lb, Alpha, Painter);
+   const auto rgb = oklab::to_linear_rgb({ std::clamp(L, 0.0, 1.0), OKA, OKB });
+   linear_rgb_to_painter(rgb.r, rgb.g, rgb.b, Alpha, Painter);
 }
 
 // Convert CIE Lab (L, a, b) to CIE XYZ (D65) and linear sRGB, then store in the painter.

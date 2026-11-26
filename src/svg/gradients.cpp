@@ -2,6 +2,49 @@
 //   It is possible to reference in-built colourmaps via 'href'
 //   The fx,fy values can be placed outside of the radial gradient if 'focal="unbound"' is used
 //   The resolution value can be defined to lower the rate of colour sampling.
+//   Gradient color-interpolation accepts oklab and oklch, with optional shorter, longer, increasing or decreasing hue
+//   after oklch.  These modes apply to stop-based colour ramps.
+
+static ERR parse_gradient_interpolation(objGradient *Gradient, std::string_view Value)
+{
+   auto next_word = [&Value]() {
+      constexpr std::string_view whitespace = " \t\r\n";
+      Value.remove_prefix(std::min(Value.find_first_not_of(whitespace), Value.size()));
+      const auto word = Value.substr(0, Value.find_first_of(whitespace));
+      Value.remove_prefix(word.size());
+      return word;
+   };
+
+   const auto space = next_word();
+   const auto method = next_word();
+   if (iequals(space, "oklch")) {
+      auto hue_method = GHM::SHORTER;
+      if (not method.empty()) {
+         if ((not iequals(next_word(), "hue")) or (not next_word().empty())) return ERR::InvalidValue;
+         if (iequals(method, "longer"))          hue_method = GHM::LONGER;
+         else if (iequals(method, "increasing")) hue_method = GHM::INCREASING;
+         else if (iequals(method, "decreasing")) hue_method = GHM::DECREASING;
+         else if (not iequals(method, "shorter")) return ERR::InvalidValue;
+      }
+      if (auto error = Gradient->setHueMethod(hue_method); error != ERR::Okay) return error;
+      return Gradient->setInterpolation(GCI::OKLCH);
+   }
+   if (not method.empty()) return ERR::InvalidValue;
+   if (iequals(space, "oklab")) {
+      if (auto error = Gradient->setInterpolation(GCI::OKLAB); error != ERR::Okay) return error;
+      return Gradient->setHueMethod(GHM::SHORTER);
+   }
+
+   const auto old_space = Gradient->ColourSpace;
+   if (iequals(space, "auto") or iequals(space, "linearRGB")) Gradient->ColourSpace = VCS::LINEAR_RGB;
+   else if (iequals(space, "sRGB"))                           Gradient->ColourSpace = VCS::SRGB;
+   else if (iequals(space, "inherit"))                        Gradient->ColourSpace = VCS::INHERIT;
+   else return ERR::InvalidValue;
+
+   const auto error = Gradient->setInterpolation(GCI::DEFAULT);
+   if (error != ERR::Okay) Gradient->ColourSpace = old_space;
+   return error;
+}
 
 static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attrib, const std::string &Value)
 {
@@ -11,11 +54,7 @@ static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attri
          return ERR::Okay;
 
       case SVF_color_interpolation:
-         if (iequals("auto", Value))           Gradient->ColourSpace = VCS::LINEAR_RGB;
-         else if (iequals("sRGB", Value))      Gradient->ColourSpace = VCS::SRGB;
-         else if (iequals("linearRGB", Value)) Gradient->ColourSpace = VCS::LINEAR_RGB;
-         else if (iequals("inherit", Value))   Gradient->ColourSpace = VCS::INHERIT;
-         return ERR::Okay;
+         return parse_gradient_interpolation(Gradient, Value);
 
       case SVF_easing:
          switch (strhash(Value)) {
@@ -167,12 +206,11 @@ const kt::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag)
       else log.warning("Unknown element in gradient, '%s'", scan.name());
    }
 
-   // SVG: If one stop is defined, then paint with the solid color fill using the color defined for that gradient stop.
+   // SVG single-stop gradients paint a solid colour.  Coincident stops avoid a full OKLCH longer-hue sweep.
 
    if (stops.size() IS 1) {
       stops[0].Offset = 0;
       stops.emplace_back(stops[0]);
-      stops[1].Offset = 1;
    }
 
    return stops;
@@ -198,29 +236,49 @@ bool svgState::parse_gradient_href(const std::string &Value, objGradient *Gradie
       ParamGuard param_guard(Self, *other, paint_scope ? &*paint_scope : nullptr);
       std::string dummy;
 
-      if (svg_tag_is(*other, SVF_radialGradient)) {
+      const auto tag = svg_tag_hash(*other);
+      const auto type = Gradient->classID();
+
+      // Parse matching gradients into the destination before applying its local overrides.
+      if ((tag IS SVF_radialGradient) and (type IS CLASSID::GRADIENTRADIAL)) {
          parse_radialgradient(*other, (objGradientRadial *)Gradient, dummy);
       }
-      else if (svg_tag_is(*other, SVF_linearGradient)) {
+      else if ((tag IS SVF_linearGradient) and (type IS CLASSID::GRADIENTLINEAR)) {
          parse_lineargradient(*other, (objGradientLinear *)Gradient, dummy);
       }
-      else if (svg_tag_is(*other, SVF_diamondGradient)) {
+      else if ((tag IS SVF_diamondGradient) and (type IS CLASSID::GRADIENTDIAMOND)) {
          parse_diamondgradient(*other, (objGradientDiamond *)Gradient, dummy);
       }
-      else if (svg_tag_is(*other, SVF_contourGradient)) {
+      else if ((tag IS SVF_contourGradient) and (type IS CLASSID::GRADIENTCONTOUR)) {
          parse_contourgradient(*other, (objGradientContour *)Gradient, dummy);
       }
-      else if (svg_tag_is(*other, SVF_distalGradient)) {
+      else if ((tag IS SVF_distalGradient) and (type IS CLASSID::GRADIENTDISTAL)) {
          parse_distalgradient(*other, (objGradientDistal *)Gradient, dummy);
       }
-      else if (svg_tag_is(*other, SVF_conicGradient)) {
+      else if ((tag IS SVF_conicGradient) and (type IS CLASSID::GRADIENTCONIC)) {
          parse_conicgradient(*other, (objGradientConic *)Gradient, dummy);
       }
-      else if ((svg_tag_is(*other, SVF_meshgradient)) and (Gradient->classID() IS CLASSID::GRADIENTMESH)) {
+      else if ((tag IS SVF_meshgradient) and (type IS CLASSID::GRADIENTMESH)) {
          parse_meshgradient(*other, (objGradientMesh *)Gradient, dummy);
       }
-      else if ((svg_tag_is(*other, SVF_diffusionGradient)) and (Gradient->classID() IS CLASSID::GRADIENTDIFFUSION)) {
+      else if ((tag IS SVF_diffusionGradient) and (type IS CLASSID::GRADIENTDIFFUSION)) {
          parse_diffusiongradient(*other, (objGradientDiffusion *)Gradient, dummy);
+      }
+      else if ((tag IS SVF_radialGradient) or (tag IS SVF_linearGradient) or (tag IS SVF_diamondGradient) or
+               (tag IS SVF_contourGradient) or (tag IS SVF_distalGradient) or (tag IS SVF_conicGradient)) {
+         // Different shapes share ramp settings and stops.  Geometry setters use shape-specific field dictionaries.
+         bool process_stops = true;
+         parse_gradient_hrefs(*other, Gradient, process_stops);
+         set_gradient_units(*other, Gradient);
+         for (size_t a=1; a < other->Attribs.size(); a++) {
+            const auto &attr = other->Attribs[a];
+            if (attr.Value.empty()) continue;
+            const auto hash = strhash(attr.Name);
+            if (hash IS SVF_gradientTransform) Gradient->setTransform(attr.Value);
+            else if (hash IS SVF_spreadMethod) set_gradient_spread_method(Gradient, attr.Value);
+            else gradient_defaults(Self, Gradient, hash, attr.Value);
+         }
+         set_gradient_stops(*other, Gradient, process_stops);
       }
    }
 

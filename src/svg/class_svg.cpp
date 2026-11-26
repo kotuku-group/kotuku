@@ -29,6 +29,12 @@ SVG content is composited in sRGB, as in web browsers.  The top-level @VectorVie
 descendants into gamma-correct blending.  Symbols instantiated with #ParseSymbol() inherit the colour space of the
 target viewport instead, as does a document parsed into a #Target scene that already has a viewport.
 
+On gradients defined by stops, Kōtuku extends `color-interpolation` with `oklab` and `oklch`.  The `oklch` value
+also accepts `shorter hue`, `longer hue`, `increasing hue` or `decreasing hue` after the colour space.
+The default hue arc is `shorter hue`.  Setting one of the standard values (`sRGB`, `linearRGB`, `auto` or
+`inherit`) on a gradient restores the default interpolation.  The extended values are ignored with a warning on
+elements other than gradients.  See @Gradient.Interpolation and @Gradient.HueMethod.
+
 <header>Parameters</header>
 
 SVG documents can be parameterised, allowing a client to alter colours, text and other values without editing the

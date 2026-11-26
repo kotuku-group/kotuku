@@ -49,7 +49,8 @@
       <access read="R" write="I">Read/Init</access>
       <type lookup="VCS">VCS</type>
       <description>
-<p>By default, gradients are rendered using the standard RGB colour space and alpha blending rules.  Changing the colour space to <code>LINEAR_RGB</code> will force the renderer to automatically convert sRGB values to linear RGB when blending.</p>
+<p>By default, gradient colours are interpolated in sRGB.  Setting <code>LINEAR_RGB</code> converts the sRGB stop colours to linear RGB before interpolation and converts the result back to sRGB.  In both cases, alpha is interpolated separately from the colour channels (straight alpha).</p>
+<p>When <fl>Interpolation</fl> is set to a value other than <code>GCI::DEFAULT</code>, it takes precedence over this field for gradients defined by <fl>Stops</fl>.  Gouraud, mesh and diffusion gradients always use this field.</p>
 <types lookup="VCS"/>
       </description>
     </field>
@@ -72,6 +73,31 @@
       <type>DOUBLE</type>
       <description>
 <p>Gamma remaps the completed colour ramp before <fl>Resolution</fl> is applied.  Values greater than <code>1.0</code> bias the ramp toward the first colour, while values between <code>0.0</code> and <code>1.0</code> bias it toward the last colour.  A value of <code>1.0</code> leaves the gradient unchanged.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>HueMethod</name>
+      <comment>Selects the hue arc for OKLCH stop interpolation.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="GHM">GHM</type>
+      <description>
+<p>Determines the direction taken around the hue circle when interpolating between two <fl>Stops</fl> in OKLCH, following the CSS Color 4 hue interpolation rules.  The default is <code>SHORTER</code>.  If one of the two stops is achromatic (grey, black or white) or fully transparent, its hue is undefined and the hue of the other stop is used, so this field has no effect on that segment.</p>
+<p>This field is only used when <fl>Interpolation</fl> is <code>GCI::OKLCH</code> and the gradient is defined by <fl>Stops</fl>.  Gouraud, mesh and diffusion gradients ignore it.</p>
+<types lookup="GHM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Interpolation</name>
+      <comment>Selects the colour space for interpolation between gradient stops.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="GCI">GCI</type>
+      <description>
+<p>The default <code>DEFAULT</code> setting uses the colour space specified in <fl>ColourSpace</fl> with straight alpha.  <code>OKLAB</code> and <code>OKLCH</code> take precedence over <fl>ColourSpace</fl> and interpolate in a perceptually uniform colour space, which avoids the grey midpoint that sRGB produces between colours of distant hue.  <code>OKLAB</code> is the recommended choice for general use. <code>OKLCH</code> retains more chroma in the midpoint, and the hue path between stops is selected by <fl>HueMethod</fl>.</p>
+<p>The OKLab and OKLCH modes follow CSS Color 4.  Colour components are premultiplied by alpha during interpolation, so a fade from a colour to transparent keeps its colour instead of darkening.  Interpolated colours that fall outside the sRGB gamut are mapped back into it by reducing chroma while preserving lightness and hue.</p>
+<p><fl>Easing</fl> and <fl>Gamma</fl> continue to apply in every mode.  Gradients sourced from <fl>ColourMap</fl>, and Gouraud, mesh and diffusion gradients, ignore this field.</p>
+<types lookup="GCI"/>
       </description>
     </field>
 
@@ -173,6 +199,12 @@
 
   </fields>
   <types>
+    <constants lookup="GCI" comment="Colour interpolation for gradient stops.">
+      <const name="DEFAULT">Follow the gradient's ColourSpace.</const>
+      <const name="OKLAB">Interpolate in OKLab.</const>
+      <const name="OKLCH">Interpolate in OKLCH.</const>
+    </constants>
+
     <constants lookup="GEZ" comment="Gradient easing functions.">
       <const name="CUBIC_IN">Cubic ease-in.</const>
       <const name="CUBIC_IN_OUT">Cubic ease-in and ease-out.</const>
@@ -181,6 +213,13 @@
       <const name="IN_OUT">Smoothstep-style ease-in and ease-out.</const>
       <const name="LINEAR">Linear interpolation (no easing) - the default.</const>
       <const name="OUT">Ease-out (slow end).</const>
+    </constants>
+
+    <constants lookup="GHM" comment="Hue interpolation for OKLCH gradients.">
+      <const name="DECREASING">Follow decreasing hue angles.</const>
+      <const name="INCREASING">Follow increasing hue angles.</const>
+      <const name="LONGER">Follow the longer hue arc.</const>
+      <const name="SHORTER">Follow the shorter hue arc.</const>
     </constants>
 
     <constants lookup="VCS" comment="Colour space options.">

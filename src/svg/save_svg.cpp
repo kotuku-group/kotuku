@@ -35,14 +35,34 @@ static void set_dimension(XTag *Tag, const std::string Attrib, Unit &Value)
 
 static void set_gradient_colour_space(XTag *Tag, objGradient *Gradient, ERR &Error)
 {
-   VCS colour_space;
-   if ((!Error) and (!Gradient->getColourSpace(colour_space))) {
-      switch(colour_space) {
-         case VCS::SRGB:       xml::NewAttrib(Tag, "color-interpolation", "sRGB"); break;
-         case VCS::LINEAR_RGB: xml::NewAttrib(Tag, "color-interpolation", "linearRGB"); break;
-         default: break;
-      }
+   if (Error != ERR::Okay) return;
+
+   const auto type = Gradient->classID();
+   const auto interpolation = ((type IS CLASSID::GRADIENTMESH) or (type IS CLASSID::GRADIENTDIFFUSION)) ?
+      GCI::DEFAULT : Gradient->Interpolation;
+
+   const char *value = nullptr;
+   switch (interpolation) {
+      case GCI::OKLAB:
+         value = "oklab";
+         break;
+      case GCI::OKLCH:
+         switch (Gradient->HueMethod) {
+            case GHM::SHORTER:    value = "oklch"; break;
+            case GHM::LONGER:     value = "oklch longer hue"; break;
+            case GHM::INCREASING: value = "oklch increasing hue"; break;
+            case GHM::DECREASING: value = "oklch decreasing hue"; break;
+         }
+         break;
+      case GCI::DEFAULT:
+         switch (Gradient->ColourSpace) {
+            case VCS::SRGB:       value = "sRGB"; break;
+            case VCS::LINEAR_RGB: value = "linearRGB"; break;
+            default: break;
+         }
+         break;
    }
+   if (value) xml::NewAttrib(Tag, "color-interpolation", value);
 }
 
 //*********************************************************************************************************************

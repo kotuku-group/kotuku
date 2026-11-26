@@ -22,6 +22,17 @@
     "CUBIC_OUT:    Cubic ease-out.",
     "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
 
+  enums("GCI", { type="int", start=0, comment="Colour interpolation for gradient stops." },
+    "DEFAULT: Follow the gradient's ColourSpace.",
+    "OKLAB: Interpolate in OKLab.",
+    "OKLCH: Interpolate in OKLCH.")
+
+  enums("GHM", { type="int", start=0, comment="Hue interpolation for OKLCH gradients." },
+    "SHORTER: Follow the shorter hue arc.",
+    "LONGER: Follow the longer hue arc.",
+    "INCREASING: Follow increasing hue angles.",
+    "DECREASING: Follow decreasing hue angles.")
+
   enums("WLF", { type="int", start=0, comment="Worley field modes." },
     "F1: Distance to nearest point.",
     "F2_F1: Distance between the nearest and second-nearest points.",
@@ -117,6 +128,8 @@
     int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
     int(GEZ) Easing              # Easing function applied between gradient stops.
+    int(GCI) Interpolation       # Colour interpolation method for gradient stops.
+    int(GHM) HueMethod           # Hue arc used for OKLCH interpolation.
     int   NumericID
   ]],
   [[
@@ -127,6 +140,8 @@
    objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       Gamma        = 1.0;
       Easing       = GEZ::LINEAR;
+      Interpolation = GCI::DEFAULT;
+      HueMethod    = GHM::SHORTER;
       SpreadMethod = VSPREAD::PAD;
       Units        = VUNIT::BOUNDING_BOX;
       Resolution   = 1;

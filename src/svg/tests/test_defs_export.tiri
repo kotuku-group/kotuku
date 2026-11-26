@@ -74,6 +74,128 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function GradientInterpolationSurvivesInheritanceAndExport()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=[[
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <defs>
+    <linearGradient id="base" color-interpolation="OkLcH  LoNgEr  HuE">
+      <stop offset="0" stop-color="red"/>
+      <stop offset="1" stop-color="blue"/>
+    </linearGradient>
+    <linearGradient id="inherited" href="#base"/>
+    <linearGradient id="shorter" href="#base" color-interpolation="oklch shorter hue"/>
+    <linearGradient id="increasing" href="#base" color-interpolation="oklch increasing hue"/>
+    <linearGradient id="decreasing" href="#base" color-interpolation="oklch decreasing hue"/>
+    <linearGradient id="lab" href="#base" color-interpolation="oklab"/>
+    <linearGradient id="linear" href="#base" color-interpolation="linearRGB"/>
+    <radialGradient id="radial" r="40%" color-interpolation="oklch">
+      <stop offset="0" stop-color="red"/>
+      <stop offset="1" stop-color="blue"/>
+    </radialGradient>
+    <linearGradient id="from_radial" href="#radial"/>
+  </defs>
+  <rect width="100" height="100" fill="url(#inherited)"/>
+</svg>
+]] })
+
+   local saved = saveScene(scene, 'temp:svg_defs_gradient_interpolation.svg')
+   assertContains(saved, 'color-interpolation="oklch"', 'The shorter hue arc should use bare oklch')
+   assert(not saved.find('oklch shorter hue'), 'The shorter hue suffix should be omitted')
+
+   local loaded = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   loaded.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=loaded, statement=saved })
+   local cases = {
+      { id='base', mode=GCI_OKLCH, hue=GHM_LONGER },
+      { id='inherited', mode=GCI_OKLCH, hue=GHM_LONGER },
+      { id='shorter', mode=GCI_OKLCH, hue=GHM_SHORTER },
+      { id='increasing', mode=GCI_OKLCH, hue=GHM_INCREASING },
+      { id='decreasing', mode=GCI_OKLCH, hue=GHM_DECREASING },
+      { id='lab', mode=GCI_OKLAB, hue=GHM_SHORTER },
+      { id='radial', mode=GCI_OKLCH, hue=GHM_SHORTER },
+      { id='from_radial', mode=GCI_OKLCH, hue=GHM_SHORTER }
+   }
+   for target in values({ scene, loaded }) do
+      for sample in values(cases) do
+         local _, gradient = check target.mtFindDef(sample.id)
+         assert(gradient.interpolation is sample.mode and gradient.hueMethod is sample.hue,
+            f'Interpolation or hue arc lost on {sample.id}')
+         assert(#gradient.stops is 2, f'Stops lost on {sample.id}')
+      end
+      local _, gradient = check target.mtFindDef('linear')
+      assert(gradient.interpolation is GCI_DEFAULT and gradient.colourSpace is VCS_LINEAR_RGB,
+         'Explicit linearRGB should override inherited OKLCH')
+   end
+end
+
+@Test function SingleStopStaysSolidWithLongerHue()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=20 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=[[
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20">
+  <defs>
+    <linearGradient id="single" color-interpolation="oklch longer hue">
+      <stop offset="50%" stop-color="red"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="20" fill="url(#single)"/>
+</svg>
+]] })
+
+   local saved = saveScene(scene, 'temp:svg_defs_single_stop.svg')
+   local loaded = obj.new('VectorScene', { pageWidth=100, pageHeight=20 })
+   loaded.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=loaded, statement=saved })
+
+   local bitmap = obj.new('bitmap', { width=100, height=20, bitsPerPixel=32 })
+   for target in values({ scene, loaded }) do
+      bitmap.acClear()
+      target.bitmap = bitmap
+      check target.acDraw()
+      for x in values({ 0, 50, 99 }) do
+         local pixel = mGfx.ReadRGBPixel(bitmap, x, 10)
+         assert(pixel.red is 255 and pixel.green is 0 and pixel.blue is 0, f'Expected solid red at x={x}')
+      end
+   end
+end
+
+@Test function MeshAndDiffusionExportTheirRenderingColourSpace()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=[[
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <defs>
+    <meshgradient id="mesh" color-interpolation="linearRGB" style="color-interpolation: oklab">
+      <meshrow><meshpatch>
+        <stop path="l 1 0" stop-color="red"/>
+        <stop path="l 0 1" stop-color="blue"/>
+        <stop path="l -1 0" stop-color="red"/>
+        <stop path="z" stop-color="blue"/>
+      </meshpatch></meshrow>
+    </meshgradient>
+    <diffusionGradient id="diffusion" color-interpolation="linearRGB" style="color-interpolation: oklch longer hue">
+      <curve d="M 0.5,0 L 0.5,1" left-start="red" right-start="blue"/>
+    </diffusionGradient>
+  </defs>
+  <rect width="100" height="100" fill="url(#mesh)"/>
+</svg>
+]] })
+
+   local saved = saveScene(scene, 'temp:svg_defs_surface_colour_space.svg')
+   local loaded = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   loaded.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=loaded, statement=saved })
+
+   for id in values({ 'mesh', 'diffusion' }) do
+      local _, original = check scene.mtFindDef(id)
+      assert(original.colourSpace is VCS_LINEAR_RGB, f'Expected linear RGB on the original {id} gradient')
+      local _, gradient = check loaded.mtFindDef(id)
+      assert(gradient.colourSpace is original.colourSpace, f'Export changed the rendering colour space of {id}')
+   end
+end
+
 @Test function SavesClipDefWithMapKeyId()
    local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
