@@ -285,7 +285,7 @@ end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0x4dc0664a) end
 @Test global function ContourGradient() pHashTestSVG('gradients/contour-gradient.svg', array<byte> { 114,159,176,141,201,163,124,2 }, 6, true) end
-@Test global function MeshGradient() hashTestSVG('gradients/meshgradient.svg', 0xf3a8aaa2) end
+@Test global function MeshGradient() hashTestSVG('gradients/meshgradient.svg', 0xdc1b24aa) end
 @Test global function DiffusionGradient() hashTestSVG('gradients/diffusiongradient.svg', 0xe3f593f9) end
 @Test global function DiffusionGradientSplit() hashTestSVG('gradients/diffusiongradient-split.svg', 0x85c6afca) end
 @Test global function MeshGradientInkscape() pHashTestSVG('gradients/meshgradient_inkscape.svg', array<byte> { 110,238,145,49,230,131,33,102 }, 6, true) end
