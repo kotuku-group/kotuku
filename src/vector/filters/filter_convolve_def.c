@@ -7,6 +7,19 @@ static const struct FieldDef clConvolveFXEM[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clConvolveFXCDM[] = {
+   { "Auto", 0x00000000 },
+   { "Manual", 0x00000001 },
+   { nullptr, 0 }
+};
+
+FDEF maSetKernel[] = { { "Columns", FD_INT }, { "Rows", FD_INT }, { "Matrix", FDF_VECTOR|FD_DOUBLE }, { "Divisor", FD_DOUBLE }, { "TargetX", FD_INT }, { "TargetY", FD_INT }, { 0, 0 } };
+
+static const struct MethodEntry clConvolveFXMethods[] = {
+   { AC(-10), (APTR)CONVOLVEFX_SetKernel, "SetKernel", maSetKernel, sizeof(struct cvx::SetKernel) },
+   { AC::NIL, 0, 0, 0, 0 }
+};
+
 static ERR CONVOLVEFX_New(extConvolveFX *Self) {
    new (Self) extConvolveFX(Self->Class, Self->UID);
    return ERR::Okay;

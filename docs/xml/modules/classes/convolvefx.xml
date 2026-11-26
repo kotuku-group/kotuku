@@ -25,7 +25,7 @@
 </pre>
 <p>Colour values are premultiplied by alpha.  <code>ALPHA(x,y)</code> is the result alpha of the pixel.  When <fl>PreserveAlpha</fl> is FALSE, the alpha channel is computed with the same formula, adding Bias in place of <code>Bias * ALPHA(x,y)</code>.  When <fl>PreserveAlpha</fl> is TRUE, the result alpha is the source alpha, and the kernel is applied to unpremultiplied colour values that are premultiplied again afterwards.</p>
 <p>Note in the above formula that the values in the kernel matrix are applied such that the kernel matrix is rotated 180 degrees relative to the source and destination images in order to match convolution theory as described in many computer graphics textbooks.</p>
-<p>Convolution uses the device-pixel grid by default.  Set <fl>UnitX</fl> and <fl>UnitY</fl> to specify the kernel spacing in primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution and then resamples the result back to device pixels.</p></description>
+<p>Convolution uses the device-pixel grid by default.  Set <fl>UnitX</fl> and <fl>UnitY</fl> to specify the kernel spacing in primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution and then resamples the result back to device pixels.  Use <method>SetKernel</method> to change the kernel dimensions at runtime.</p></description>
     <source>
       <file path="filters/">filter_convolve.cpp</file>
     </source>
@@ -47,11 +47,40 @@
 
   </actions>
 
+  <methods>
+    <method>
+      <name>SetKernel</name>
+      <comment>Replaces the complete convolution kernel.</comment>
+      <prototype>ERR cvx::SetKernel(OBJECTPTR Object, INT Columns, INT Rows, kt::vector&lt;double&gt; Matrix, DOUBLE Divisor, INT TargetX, INT TargetY)</prototype>
+      <tiriPrototype>err = SetKernel(Columns:num, Rows:num, Matrix:array, Divisor:num, TargetX:num, TargetY:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Columns">Number of columns.</param>
+        <param type="INT" name="Rows">Number of rows.</param>
+        <param type="kt::vector&lt;double&gt;" name="Matrix">One finite coefficient per cell, in row-major order.</param>
+        <param type="DOUBLE" name="Divisor">A finite non-zero manual divisor, or zero for automatic normalisation.</param>
+        <param type="INT" name="TargetX">Zero-based anchor column, or -1 for the centre.</param>
+        <param type="INT" name="TargetY">Zero-based anchor row, or -1 for the centre.</param>
+      </input>
+      <description>
+<p>Replaces the dimensions, coefficients, divisor policy and anchor together.  The kernel may contain up to 81 coefficients.  If validation fails, the previous kernel remains active.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="Mismatch">A mis-match has been detected that prevents further processing</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A value has not passed validation</error>
+      </result>
+    </method>
+
+  </methods>
+
   <fields>
     <field>
       <name>Bias</name>
       <comment>Used to adjust the final result of each computed RGB value.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>After applying the <fl>Matrix</fl> to the input image to yield a number and applying the <fl>Divisor</fl>, the Bias value is added to each component.  One application of Bias is when it is desirable to have .5 grey value be the zero response of the filter.  The Bias value shifts the range of the filter.  This allows representation of values that would otherwise be clamped to 0 or 1.  The default is 0.</p>
@@ -62,17 +91,28 @@
     <field>
       <name>Divisor</name>
       <comment>Defines the divisor value in the convolution algorithm.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>After applying the <fl>Matrix</fl> to the input image to yield a number, that number is divided by <fl>Divisor</fl> to yield the final destination colour value.  A divisor that is the sum of all the matrix values tends to have an evening effect on the overall colour intensity of the result.  The default value is the sum of all values in <fl>Matrix</fl>, with the exception that if the sum is zero, then the divisor is set to <code>1</code>.</p>
+<p>After applying the <fl>Matrix</fl> to the input image to yield a number, that number is divided by <fl>Divisor</fl> to yield the final destination colour value.  A divisor that is the sum of all the matrix values tends to have an evening effect on the overall colour intensity of the result.  The default value is the sum of all values in <fl>Matrix</fl>, with the exception that if the sum is zero, then the divisor is set to <code>1</code>.  Setting a finite non-zero divisor selects manual mode.  Use <fl>DivisorMode</fl> to restore automatic normalisation.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DivisorMode</name>
+      <comment>Controls how the divisor is updated when the kernel changes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="CDM">CDM</type>
+      <description>
+<p>Switching to AUTO recalculates <fl>Divisor</fl> immediately for an initialised effect.  Switching to MANUAL keeps the current divisor.</p>
+<types lookup="CDM"/>
       </description>
     </field>
 
     <field>
       <name>EdgeMode</name>
       <comment>Defines the behaviour of the convolve algorithm around the edges of the input image.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="EM">EM</type>
       <description>
 <p>The EdgeMode determines how to extend the input image with colour values so that the matrix operations can be applied when the <fl>Matrix</fl> is positioned at or near the edge of the input image.</p>
@@ -83,10 +123,10 @@
     <field>
       <name>Matrix</name>
       <comment>A list of numbers that make up the kernel matrix for the convolution.</comment>
-      <access read="G" write="I">Get/Init</access>
+      <access read="G" write="S">Get/Set</access>
       <type>DOUBLE []</type>
       <description>
-<p>A list of numbers that make up the kernel matrix for the convolution.  The number of entries in the list must equal <code>MatrixColumns * MatrixRows</code>.</p>
+<p>A list of numbers that make up the kernel matrix for the convolution.  The number of entries in the list must equal <code>MatrixColumns * MatrixRows</code>.  An initialised effect accepts replacements of the same size and recomputes the divisor in automatic mode.  Use <method>SetKernel</method> to resize the kernel.</p>
       </description>
     </field>
 
@@ -123,7 +163,7 @@
     <field>
       <name>TargetX</name>
       <comment>The X position of the matrix in relation to the input image.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Determines the positioning in X of the convolution matrix relative to a given target pixel in the input image.  The left-most column of the matrix is column number zero.  The value must be such that <code>0 &lt;= TargetX &lt; MatrixColumns</code>.  By default, the convolution matrix is centered in X over each pixel of the input image, i.e. <code>TargetX = floor(MatrixColumns / 2)</code>.</p>
@@ -133,7 +173,7 @@
     <field>
       <name>TargetY</name>
       <comment>The Y position of the matrix in relation to the input image.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>Determines the positioning in Y of the convolution matrix relative to a given target pixel in the input image.  The left-most column of the matrix is column number zero.  The value must be such that <code>0 &lt;= TargetY &lt; MatrixRows</code>.  By default, the convolution matrix is centered in Y over each pixel of the input image, i.e. <code>TargetY = floor(MatrixRows / 2)</code>.</p>
@@ -143,7 +183,7 @@
     <field>
       <name>UnitX</name>
       <comment>The distance between successive columns of the Matrix.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This spacing uses <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  It lets the kernel scale with the client.  If omitted, spacing on this axis defaults to one device pixel.</p>
@@ -154,7 +194,7 @@
     <field>
       <name>UnitY</name>
       <comment>The distance between successive rows of the Matrix.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This spacing uses <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  It lets the kernel scale with the client.  If omitted, spacing on this axis defaults to one device pixel.</p>
@@ -172,6 +212,11 @@
 
   </fields>
   <types>
+    <constants lookup="CDM" comment="Convolution divisor policy.">
+      <const name="AUTO">Derive the divisor from the sum of the coefficients, using one when the sum is zero.</const>
+      <const name="MANUAL">Keep the current divisor during coefficient edits.</const>
+    </constants>
+
     <constants lookup="EM">
       <const name="DUPLICATE">The input image is extended along its borders by duplicating the color values at its edges.</const>
       <const name="NONE">The input image is extended with colour values of zero.</const>

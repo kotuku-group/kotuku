@@ -2782,10 +2782,125 @@ end
    assert(blend.operator is OP_HARD_LIGHT, 'The standard blend name must restore the operator')
    local colour = obj.find(filter.children('ColourFX')[0])
    assert((colour.mode is CM_BRIGHTNESS) and (#colour.values is 1), 'Colour mode and values must remain inspectable')
-   assert(colour.set('mode', CM_NONE) is ERR_NoFieldAccess, 'Colour mode must be set before initialisation')
    local before = filter.effectXML
    blend.operator = OP_OVER
    assert(filter.effectXML != before, 'The reloaded filter must reflect runtime edits in its next save')
+end
+
+@Test function ColourAdjustmentUpdatesBufferedClients()
+   local scene <close> = obj.new('VectorScene', { pageWidth=64, pageHeight=64 })
+   local view = scene.new('VectorViewport', { width=64, height=64, buffered=true, colourSpace=VCS_SRGB })
+   local filter = scene.new('VectorFilter', {
+      x=0, y=0, width=64, height=64, units=VUNIT_USERSPACE, colourSpace=VCS_SRGB
+   })
+   local colour = filter.new('ColourFX', { mode=CM_BRIGHTNESS, values=array<double> { 0 } })
+   check scene.mtAddDef('f', filter)
+   view.new('VectorRectangle', { width=64, height=64, fill='#204060', filter='url(#f)' })
+   local bmp <close> = obj.new('Bitmap', { width=64, height=64, bitsPerPixel=32,
+      flags=BMF_ALPHA_CHANNEL, blendMode=BLM_NONE, bkgd='0,0,0,0' })
+   scene.bitmap = bmp
+
+   local function red():num
+      bmp.acClear()
+      check scene.acDraw()
+      return mGfx.ReadRGBPixel(bmp, 20, 20).red
+   end
+
+   assert(red() is 32, 'The initial adjustment must preserve the input red channel')
+   colour.values = array<double> { 16 }
+   assert((colour.values[0] is 16) and (red() is 48), 'A values write must redraw the buffered client')
+   assert(colour.set('mode', CM_MATRIX) is ERR_Mismatch, 'A mode write must validate the current parameter count')
+   assert(colour.mtSetAdjustment(CM_COLOURISE, array<double> { 1 }) is ERR_Mismatch,
+      'An incomplete colourise adjustment must fail')
+   assert((colour.mode is CM_BRIGHTNESS) and (red() is 48), 'Failed writes must preserve the previous adjustment')
+
+   local matrix = array<double> { 1,0,0,0,0.25, 0,1,0,0,0, 0,0,1,0,0, 0,0,0,1,0 }
+   check colour.mtSetAdjustment(CM_MATRIX, matrix)
+   assert((colour.mode is CM_MATRIX) and (#colour.values is 20) and (red() is 96),
+      'SetAdjustment must publish the mode and rebuilt matrix together')
+
+   local loaded <close> = document(filter.effectXML,
+      '<rect width="64" height="64" fill="#204060" filter="url(#f)"/>', 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local reloaded <close> = draw(loaded, 64)
+   local difference = imageDifference(bmp, reloaded)
+   assert(difference is 0, f'The live colour adjustment must match the reloaded matrix (max difference {difference})')
+   colour.mode = CM_NONE
+   assert(red() is 32, 'A compatible mode write must rebuild the matrix')
+end
+
+@Test function TurbulenceSettingsUpdateTheExistingEffect()
+   local svg <close> = document('<feTurbulence type="fractalNoise" baseFrequency=".06 .09" seed="4"/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local noise = obj.find(filter.children('TurbulenceFX')[0])
+   local original <close> = draw(svg, 64)
+
+   noise.seed = -19
+   local reseeded <close> = draw(svg, 64)
+   local seeded_svg <close> = document('<feTurbulence type="fractalNoise" baseFrequency=".06 .09" seed="-19"/>',
+      nil, 64)
+   local fresh <close> = draw(seeded_svg, 64)
+   assert((noise.seed is -19) and (imageDifference(original, reseeded) > 0),
+      'Changing only the seed must replace the cached noise')
+   assert(imageDifference(reseeded, fresh) is 0, 'The rebuilt lattice must match a freshly initialised effect')
+
+   noise.{ fx=0.13, fy=0.1, octaves=3, type=TB_TURBULENCE, stitch=1 }
+   local updated <close> = draw(svg, 64)
+   assert(imageDifference(reseeded, updated) > 0, 'Generator setting changes must invalidate the cached output')
+   local settings = filter.effectXML
+   assert(noise.set('fx', -1) is ERR_InvalidValue, 'Negative frequencies must be rejected')
+   assert(noise.set('octaves', 31) is ERR_OutOfRange, 'Octaves must be bounded')
+   assert(noise.set('type', 99) is ERR_InvalidValue, 'Unknown generator types must be rejected')
+   assert(filter.effectXML is settings, 'Failed writes must preserve the generator settings')
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local reloaded <close> = draw(loaded, 64)
+   assert(imageDifference(updated, reloaded) is 0, 'Live turbulence settings must survive SVG export')
+end
+
+@Test function ConvolutionKernelReplacementIsTransactional()
+   local svg <close> = document('<feConvolveMatrix order="1" kernelMatrix="1" preserveAlpha="true"/>',
+      '<rect width="32" height="64" fill="#646464" filter="url(#f)"/>', 64, nil, 'filterUnits="userSpaceOnUse"')
+   local _, filter = check svg.scene.mtFindDef('f')
+   local convolve = obj.find(filter.children('ConvolveFX')[0])
+
+   local function red():num
+      local bmp <close> = draw(svg, 64)
+      return mGfx.ReadRGBPixel(bmp, 20, 20).red
+   end
+
+   assert(red() is 100, 'The initial kernel must act as the identity')
+   convolve.matrix = array<double> { 2 }
+   assert((convolve.divisor is 2) and (red() is 100), 'An automatic divisor must follow a coefficient edit')
+   convolve.divisor = 4
+   convolve.matrix = array<double> { 3 }
+   assert((convolve.divisorMode is CDM_MANUAL) and (convolve.divisor is 4) and (red() is 75),
+      'An explicit divisor must survive a coefficient edit')
+   convolve.divisorMode = CDM_AUTO
+   assert((convolve.divisor is 3) and (red() is 100), 'Switching to auto must renormalise the current kernel')
+
+   local kernel = array<double> { 1, 0, 2 }
+   check convolve.mtSetKernel(3, 1, kernel, 0, -1, 0)
+   assert((convolve.matrixColumns is 3) and (convolve.matrixRows is 1) and (convolve.divisor is 3) and
+      (convolve.targetX is 1) and (convolve.targetY is 0), 'The replacement must publish dimensions, divisor and anchor')
+   convolve.{ bias=0.125, unitX=2, unitY=1.5, edgeMode=EM_WRAP, targetX=0 }
+   local settings = filter.effectXML
+   assert(convolve.mtSetKernel(2, 2, kernel, 0, 0, 0) is ERR_Mismatch, 'A mismatched kernel must be rejected')
+   assert(convolve.mtSetKernel(3, 1, kernel, 7, 3, 0) is ERR_OutOfRange, 'An invalid anchor must reject the kernel')
+   try
+      convolve.matrix = array<double> { 1 }
+   except e when ERR_Mismatch
+   success
+      raise 'A coefficient write must keep the shape'
+   end
+   assert(convolve.set('unitX', 0) is ERR_InvalidValue, 'Kernel spacing must be positive')
+   assert(filter.effectXML is settings, 'Failed writes must preserve the serialised configuration')
+
+   local updated <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(updated, 20, 20).red is 132, 'Updated bias must affect the rendered pixel')
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local _, loaded_filter = check loaded.scene.mtFindDef('f')
+   assert(loaded_filter.effectXML is settings, 'The kernel configuration must survive a save and reload')
+   local reloaded <close> = draw(loaded, 64)
+   assert(imageDifference(updated, reloaded) is 0, 'The reloaded kernel must render the same pixels')
 end
 
 @Test function WaveAndVectorSourcesSurviveSaveAndReload()

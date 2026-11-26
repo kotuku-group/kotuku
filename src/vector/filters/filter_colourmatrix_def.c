@@ -14,6 +14,13 @@ static const struct FieldDef clColourFXCM[] = {
    { nullptr, 0 }
 };
 
+FDEF maSetAdjustment[] = { { "Mode", FD_INT }, { "Values", FDF_VECTOR|FD_DOUBLE }, { 0, 0 } };
+
+static const struct MethodEntry clColourFXMethods[] = {
+   { AC(-10), (APTR)COLOURFX_SetAdjustment, "SetAdjustment", maSetAdjustment, sizeof(struct cfx::SetAdjustment) },
+   { AC::NIL, 0, 0, 0, 0 }
+};
+
 static ERR COLOURFX_New(extColourFX *Self) {
    new (Self) extColourFX(Self->Class, Self->UID);
    return ERR::Okay;

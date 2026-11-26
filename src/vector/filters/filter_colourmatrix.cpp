@@ -32,7 +32,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 ColourFX: Support for applying colour transformation effects.
 
 Use ColourFX to perform colour transformations on an input source.  A #Mode must be selected and any required #Values
-defined before initialisation.
+defined before initialisation.  Use #SetAdjustment() to replace the mode and values together at runtime.
 
 SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists
 of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for
@@ -63,33 +63,7 @@ static const MATRIX IDENTITY = { 1,0,0,0,0,   0,1,0,0,0,   0,0,1,0,0,   0,0,0,1,
 class ColourMatrix {
 public:
    MATRIX matrix;
-   ColourMatrix *preHue;
-   ColourMatrix *postHue;
-
-   ColourMatrix(const ColourMatrix &Copy) : preHue(0), postHue(0) {
-      matrix = Copy.matrix;
-   }
-
-   ColourMatrix(const MATRIX Matrix) : preHue(0), postHue(0) {
-      matrix = Matrix;
-   }
-
-   ColourMatrix(const double *Values) : preHue(0), postHue(0) {
-      for (auto i=0; i < CM_SIZE; i++) matrix[i] = Values[i];
-   }
-
-   ColourMatrix() : preHue(nullptr), postHue(nullptr) {
-      reset();
-   }
-
-   ~ColourMatrix() {
-      delete preHue;
-      delete postHue;
-   }
-
-   void reset() {
-      matrix = IDENTITY;
-   }
+   ColourMatrix() : matrix(IDENTITY) { }
 
    double & operator[] (int x) {
       return matrix[x];
@@ -177,12 +151,25 @@ public:
        });
    }
 
-   void rotateHue(double degrees) {
-      if (!initHue()) {
-         apply(preHue->matrix);
-         rotateBlue(degrees);
-         apply(postHue->matrix);
-      }
+   void rotateHue(double Degrees) {
+      constexpr double green_rotation = 39.182655;
+      ColourMatrix pre_hue, post_hue;
+      pre_hue.rotateRed(45);
+      pre_hue.rotateGreen(-green_rotation);
+
+      std::array<double, 4> lum = { LUMA_R, LUMA_G, LUMA_B, 1.0 };
+      pre_hue.transformVector(lum);
+      const double red = lum[0] / lum[2];
+      const double green = lum[1] / lum[2];
+      pre_hue.shearBlue(red, green);
+
+      post_hue.shearBlue(-red, -green);
+      post_hue.rotateGreen(green_rotation);
+      post_hue.rotateRed(-45.0);
+
+      apply(pre_hue.matrix);
+      rotateBlue(Degrees);
+      apply(post_hue.matrix);
    }
 
    void luminance2Alpha() {
@@ -290,35 +277,6 @@ public:
       values[2] = b;
       values[3] = a;
    }
-
-   ERR initHue() {
-      const double greenRotation = 39.182655;
-      uint8_t init = false;
-
-      if (!init) {
-         preHue = new (std::nothrow) ColourMatrix();
-         postHue = new (std::nothrow) ColourMatrix();
-         if ((!preHue) or (!postHue)) return ERR::AllocMemory;
-
-         preHue->rotateRed(45);
-         preHue->rotateGreen(-greenRotation);
-
-         std::array<double, 4> lum = { LUMA_R, LUMA_G, LUMA_B, 1.0 };
-         preHue->transformVector(lum);
-
-         double red = lum[0] / lum[2];
-         double green = lum[1] / lum[2];
-
-         preHue->shearBlue(red, green);
-
-         postHue->shearBlue(-red, -green);
-         postHue->rotateGreen(greenRotation);
-         postHue->rotateRed(-45.0);
-
-         init = true;
-      }
-      return ERR::Okay;
-   }
 };
 
 //********************************************************************************************************************
@@ -331,7 +289,7 @@ class extColourFX : public extFilterEffect {
 
    CM Mode = CM::NONE;
    std::array<double,CM_SIZE> Values = {};
-   ColourMatrix *Matrix = nullptr;
+   MATRIX Matrix = IDENTITY;
    int TotalValues;
 
    extColourFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
@@ -341,10 +299,6 @@ class extColourFX : public extFilterEffect {
       Values[12]  = 1;
       Values[18]  = 1;
       TotalValues = CM_SIZE;
-   }
-
-   ~extColourFX() {
-      if (Matrix) delete Matrix;
    }
 };
 
@@ -357,14 +311,15 @@ Draw: Render the effect to the target bitmap.
 static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
 {
    if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
-   if (!Self->Matrix) return ERR::FieldNotSet;
+
+   if (not Self->initialised()) return ERR::FieldNotSet;
 
    const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
    const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
    const uint8_t G = Self->Target->ColourFormat->GreenPos>>3;
    const uint8_t B = Self->Target->ColourFormat->BluePos>>3;
 
-   ColourMatrix &matrix = *Self->Matrix;
+   const auto &matrix = Self->Matrix;
 
    // The matrix is applied in the colour space defined by the parent filter; LINEAR_RGB is the SVG default and
    // requires sRGB values to be converted to linear before transformation, then inverted on output.
@@ -391,6 +346,7 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
       col_ba[c] = _mm_set_pd(matrix[15+c], matrix[10+c]);
    }
    const __m128d half = _mm_set1_pd(0.5);
+   const __m128d byte_max = _mm_set1_pd(255.0);
 
    for (int y=0; y < height; y++) {
       const uint8_t *pixel = in_line;
@@ -417,6 +373,10 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
          ba = _mm_add_pd(ba, _mm_mul_pd(av, col_ba[3]));
          ba = _mm_add_pd(ba, col_ba[4]);
 
+         // Clamp before conversion so that large matrix values still saturate to the byte range.
+         rg = _mm_min_pd(_mm_max_pd(rg, _mm_setzero_pd()), byte_max);
+         ba = _mm_min_pd(_mm_max_pd(ba, _mm_setzero_pd()), byte_max);
+
          // Truncation towards zero matches the scalar double-to-int conversion.
 
          const int r2 = _mm_cvttsd_si32(rg);
@@ -424,17 +384,10 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
          const int b2 = _mm_cvttsd_si32(ba);
          const int a2 = _mm_cvttsd_si32(_mm_unpackhi_pd(ba, ba));
 
-         out[A] = uint8_t(std::clamp(a2, 0, 255));
-         if (linear_rgb) {
-            out[R] = glLinearRGB.invert(uint8_t(std::clamp(r2, 0, 255)));
-            out[G] = glLinearRGB.invert(uint8_t(std::clamp(g2, 0, 255)));
-            out[B] = glLinearRGB.invert(uint8_t(std::clamp(b2, 0, 255)));
-         }
-         else {
-            out[R] = uint8_t(std::clamp(r2, 0, 255));
-            out[G] = uint8_t(std::clamp(g2, 0, 255));
-            out[B] = uint8_t(std::clamp(b2, 0, 255));
-         }
+         out[A] = uint8_t(a2);
+         out[R] = linear_rgb ? glLinearRGB.invert(uint8_t(r2)) : uint8_t(r2);
+         out[G] = linear_rgb ? glLinearRGB.invert(uint8_t(g2)) : uint8_t(g2);
+         out[B] = linear_rgb ? glLinearRGB.invert(uint8_t(b2)) : uint8_t(b2);
       }
       out_line += Self->Target->LineWidth;
       in_line += in_bmp->LineWidth;
@@ -452,33 +405,18 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
          double g = linear_rgb ? glLinearRGB.convert(green) : green;
          double b = linear_rgb ? glLinearRGB.convert(blue) : blue;
 
-         int r2 = 0.5 + (r * matrix[0]) + (g * matrix[1]) + (b * matrix[2]) + (a * matrix[3]) + matrix[4];
-         int g2 = 0.5 + (r * matrix[5]) + (g * matrix[6]) + (b * matrix[7]) + (a * matrix[8]) + matrix[9];
-         int b2 = 0.5 + (r * matrix[10]) + (g * matrix[11]) + (b * matrix[12]) + (a * matrix[13]) + matrix[14];
-         int a2 = 0.5 + (r * matrix[15]) + (g * matrix[16]) + (b * matrix[17]) + (a * matrix[18]) + matrix[19];
+         double r2 = 0.5 + (r * matrix[0]) + (g * matrix[1]) + (b * matrix[2]) + (a * matrix[3]) + matrix[4];
+         double g2 = 0.5 + (r * matrix[5]) + (g * matrix[6]) + (b * matrix[7]) + (a * matrix[8]) + matrix[9];
+         double b2 = 0.5 + (r * matrix[10]) + (g * matrix[11]) + (b * matrix[12]) + (a * matrix[13]) + matrix[14];
+         double a2 = 0.5 + (r * matrix[15]) + (g * matrix[16]) + (b * matrix[17]) + (a * matrix[18]) + matrix[19];
 
-         if (a2 < 0) out[A] = 0;
-         else if (a2 > 255) out[A] = 255;
-         else out[A] = a2;
-
-         if (linear_rgb) {
-            if (r2 < 0)   out[R] = 0;
-            else if (r2 > 255) out[R] = glLinearRGB.invert(255);
-            else out[R] = glLinearRGB.invert(r2);
-
-            if (g2 < 0) out[G] = 0;
-            else if (g2 > 255) out[G] = glLinearRGB.invert(255);
-            else out[G] = glLinearRGB.invert(g2);
-
-            if (b2 < 0) out[B] = 0;
-            else if (b2 > 255) out[B] = glLinearRGB.invert(255);
-            else out[B] = glLinearRGB.invert(b2);
-         }
-         else {
-            out[R] = uint8_t(std::clamp(r2, 0, 255));
-            out[G] = uint8_t(std::clamp(g2, 0, 255));
-            out[B] = uint8_t(std::clamp(b2, 0, 255));
-         }
+         const auto red_byte = uint8_t(std::clamp(r2, 0.0, 255.0));
+         const auto green_byte = uint8_t(std::clamp(g2, 0.0, 255.0));
+         const auto blue_byte = uint8_t(std::clamp(b2, 0.0, 255.0));
+         out[A] = uint8_t(std::clamp(a2, 0.0, 255.0));
+         out[R] = linear_rgb ? glLinearRGB.invert(red_byte) : red_byte;
+         out[G] = linear_rgb ? glLinearRGB.invert(green_byte) : green_byte;
+         out[B] = linear_rgb ? glLinearRGB.invert(blue_byte) : blue_byte;
       }
       out_line += Self->Target->LineWidth;
       in_line += in_bmp->LineWidth;
@@ -490,74 +428,117 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR COLOURFX_Init(extColourFX *Self)
+static ERR build_colour_matrix(CM Mode, const MATRIX &Values, MATRIX &Result)
 {
-   kt::Log log;
+   ColourMatrix matrix;
 
-   if (Self->SourceType IS VSF::NIL) return log.warning(ERR::FieldNotSet);
-
-   // If a special colour mode was selected, convert the provided value(s) to the matrix format.
-
-   ColourMatrix *matrix;
-
-   switch (Self->Mode) {
-      case CM::SATURATE:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->adjustSaturation(Self->Values[0]);
-         break;
-
-      case CM::HUE_ROTATE:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->rotateHue(Self->Values[0]);
-         break;
-
-      case CM::LUMINANCE_ALPHA:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->luminance2Alpha();
-         break;
-
-      case CM::CONTRAST:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->adjustContrast(Self->Values[0]);
-         break;
-
-      case CM::BRIGHTNESS:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->adjustBrightness(Self->Values[0]);
-         break;
-
-      case CM::HUE:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->adjustHue(Self->Values[0]);
-         break;
-
+   switch (Mode) {
+      case CM::SATURATE:        matrix.adjustSaturation(Values[0]); break;
+      case CM::HUE_ROTATE:      matrix.rotateHue(Values[0]); break;
+      case CM::LUMINANCE_ALPHA: matrix.luminance2Alpha(); break;
+      case CM::CONTRAST:        matrix.adjustContrast(Values[0]); break;
+      case CM::BRIGHTNESS:      matrix.adjustBrightness(Values[0]); break;
+      case CM::HUE:             matrix.adjustHue(Values[0]); break;
+      case CM::DESATURATE:      matrix.adjustSaturation(0); break;
+      case CM::NONE:            break;
       case CM::COLOURISE:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->colourise(Self->Values[0], Self->Values[1], Self->Values[2], Self->Values[3] < 0.001 ? 1.0 : Self->Values[3]);
+         matrix.colourise(Values[0], Values[1], Values[2], Values[3] < 0.001 ? 1.0 : Values[3]);
          break;
-
-      case CM::DESATURATE:
-         matrix = new (std::nothrow) ColourMatrix();
-         if (matrix) matrix->adjustSaturation(0);
+      case CM::MATRIX:
+         matrix.matrix = Values;
+         // User matrices use normalised offsets; internal presets already use byte units.
+         for (int i=4; i < CM_SIZE; i += 5) matrix[i] *= 255.0;
          break;
-
-      case CM::NONE: // Accept default of identity matrix
-         matrix = new (std::nothrow) ColourMatrix();
-         break;
-
-      default:
-         matrix = new (std::nothrow) ColourMatrix(Self->Values);
-         if (matrix) {
-            // User matrices use normalised offsets; internal presets already use byte units.
-            for (int i=4; i < CM_SIZE; i += 5) (*matrix)[i] *= 255.0;
-         }
-         break;
+      default: return ERR::InvalidValue;
    }
 
-   if (!matrix) return log.warning(ERR::AllocMemory);
-   else Self->Matrix = matrix;
-
+   // Keep the sum of four byte products and the offset within the range of a double.
+   constexpr double max_coefficient = std::numeric_limits<double>::max() / 2048.0;
+   for (double coefficient : matrix.matrix) {
+      if (not (std::abs(coefficient) <= max_coefficient)) return ERR::OutOfRange;
+   }
+   Result = matrix.matrix;
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR COLOURFX_Init(extColourFX *Self)
+{
+   if (Self->SourceType IS VSF::NIL) return ERR::FieldNotSet;
+   return build_colour_matrix(Self->Mode, Self->Values, Self->Matrix);
+}
+
+//********************************************************************************************************************
+
+static ERR set_colour_adjustment(extColourFX *Self, CM Mode, std::span<const double> Values, bool ValidateCount)
+{
+   if (Values.size() > CM_SIZE) return ERR::BufferOverflow;
+
+   if (ValidateCount) {
+      switch (Mode) {
+         case CM::MATRIX:
+            if (Values.size() != CM_SIZE) return ERR::Mismatch;
+            break;
+         case CM::SATURATE:
+         case CM::HUE_ROTATE:
+         case CM::CONTRAST:
+         case CM::BRIGHTNESS:
+         case CM::HUE:
+            if (Values.size() != 1) return ERR::Mismatch;
+            break;
+         case CM::COLOURISE:
+            if ((Values.size() != 3) and (Values.size() != 4)) return ERR::Mismatch;
+            break;
+         default: break;
+      }
+   }
+
+   MATRIX values {};
+   for (size_t i=0; i < Values.size(); i++) {
+      if (not std::isfinite(Values[i])) return ERR::InvalidValue;
+      values[i] = Values[i];
+   }
+
+   if (ValidateCount) {
+      auto error = build_colour_matrix(Mode, values, Self->Matrix);
+      if (error != ERR::Okay) return error;
+   }
+   Self->Mode = Mode;
+   Self->Values = values;
+   Self->TotalValues = Values.size();
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+SetAdjustment: Replaces the mode and values together.
+
+The supplied values must match the selected mode as described in #Values.  If validation fails, the previous
+adjustment remains active.
+
+-INPUT-
+int(CM) Mode: The colour adjustment to apply.
+vector(double) Values: The parameters for the adjustment.
+
+-ERRORS-
+Okay
+NullArgs
+InvalidValue
+BufferOverflow
+Mismatch
+OutOfRange
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR COLOURFX_SetAdjustment(extColourFX *Self, struct cfx::SetAdjustment *Args)
+{
+   if ((not Args) or (not Args->Values)) return ERR::NullArgs;
+   return set_colour_adjustment(Self, Args->Mode, *Args->Values, true);
 }
 
 /*********************************************************************************************************************
@@ -566,13 +547,15 @@ static ERR COLOURFX_Init(extColourFX *Self)
 Mode: Defines the algorithm that will process the input source.
 Lookup: CM
 
+After initialisation, changing Mode requires the current #Values to match the new mode.  #SetAdjustment() changes
+both fields in one call.
+
 -FIELD-
 Values: A list of input values for the algorithm defined by #Mode.
 
-The meaning of the input values is dependent on the selected #Mode.  Each mode documents the total number of values
-that must be defined for them to work properly.
-
-When values are not defined, they default to 0.
+At runtime, MATRIX requires 20 finite values in row-major RGBA order, with normalised offsets.  SATURATE,
+HUE_ROTATE, CONTRAST, BRIGHTNESS and HUE each take one finite value.  COLOURISE takes three colour values with
+an optional fourth strength value.  NONE, DESATURATE and LUMINANCE_ALPHA ignore the values.
 
 *********************************************************************************************************************/
 
@@ -584,12 +567,19 @@ static ERR COLOURFX_GET_Values(extColourFX *Self, std::span<double> &Array)
 
 static ERR COLOURFX_SET_Values(extColourFX *Self, std::span<const double> &Array)
 {
-   const auto max_values = std::size(Self->Values);
+   return set_colour_adjustment(Self, Self->Mode, Array, Self->initialised());
+}
 
-   if (Array.size() > max_values) return ERR::BufferOverflow;
-   if (Array.data()) copymem(Array.data(), Self->Values.data(), Array.size() * sizeof(double));
-   clearmem(Self->Values.data() + Array.size(), (max_values - Array.size()) * sizeof(double));
-   Self->TotalValues = Array.size();
+//********************************************************************************************************************
+
+static ERR COLOURFX_SET_Mode(extColourFX *Self, CM Value)
+{
+   if ((Value < CM::NONE) or (Value > CM::COLOURISE)) return ERR::InvalidValue;
+   if (Self->Mode IS Value) return ERR::Okay;
+   if (Self->initialised()) {
+      return set_colour_adjustment(Self, Value, std::span(Self->Values.data(), size_t(Self->TotalValues)), true);
+   }
+   Self->Mode = Value;
    return ERR::Okay;
 }
 
@@ -633,8 +623,8 @@ static ERR colour_xml(const extColourFX &Effect, filter_xml_element &Element)
 #include "filter_colourmatrix_def.c"
 
 static const FieldArray clColourFXFields[] = {
-   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, nullptr, &clColourFXCM },
-   { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
+   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RW,  nullptr, COLOURFX_SET_Mode, &clColourFXCM },
+   { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RW|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
    { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
@@ -649,6 +639,7 @@ ERR init_colourfx(void)
       fl::Name("ColourFX"),
       fl::Category(CCF::GRAPHICS),
       fl::Actions(clColourFXActions),
+      fl::Methods(clColourFXMethods),
       fl::Fields(clColourFXFields),
       fl::Size(sizeof(extColourFX)),
       fl::Path(MOD_PATH));
