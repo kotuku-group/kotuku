@@ -361,41 +361,6 @@ static ERR blur_axis(extBlurFX *Effect, const uint8_t *InData, uint8_t *OutData,
 }
 
 //********************************************************************************************************************
-
-static TClipRectangle<int> blur_input_region(const extBlurFX *Self, const filter_surface_view &Source,
-   const filter_step *Producer)
-{
-   const auto &clip = Source.Valid;
-   if ((Self->EdgeMode IS FEM::TRANSPARENT) or (not Producer)) {
-      return clip;
-   }
-
-   const auto &sub = Producer->Subregion;
-   const TClipRectangle<int> empty = { clip.left, clip.top, clip.left, clip.top };
-   if (not sub.valid()) return empty;
-
-   const auto &transform = Self->Filter->Render->Transform;
-   auto path = sub.as_path(transform);
-   const auto bounds = get_bounds(path);
-   if (not bounds.valid()) return empty;
-
-   // Primitive clipping includes the left and top edges in user space.  Reflection can put those edges on the
-   // far side of the bitmap, so account for which bounds include a pixel centre that falls exactly on the edge.
-   auto limit = [](double Coordinate, bool RoundPastCentre, int Low, int High) {
-      const auto centre = Coordinate - 0.5;
-      const auto index = RoundPastCentre ? std::floor(centre) + 1 : std::ceil(centre);
-      return int(std::clamp(index, double(Low), double(High)));
-   };
-   const TClipRectangle<int> region = {
-      limit(bounds.left, (transform.sx < 0) or (transform.shx < 0), clip.left, clip.right),
-      limit(bounds.top, (transform.shy < 0) or (transform.sy < 0), clip.top, clip.bottom),
-      limit(bounds.right, (transform.sx <= 0) and (transform.shx <= 0), clip.left, clip.right),
-      limit(bounds.bottom, (transform.shy <= 0) and (transform.sy <= 0), clip.top, clip.bottom)
-   };
-   return region.valid() ? region : empty;
-}
-
-//********************************************************************************************************************
 // The scalar stack kernel uses the sums of the two halves of the triangle to advance one sample at a time.
 // Accumulate in double precision to keep rounding error bounded over long rows and columns.
 
@@ -493,7 +458,7 @@ static ERR draw_height_blur(extBlurFX *Self, const filter_surface_view &Source, 
       return ERR::Okay;
    }
 
-   const auto region = blur_input_region(Self, Source, Producer);
+   const auto region = filter_input_region(Self, Source, Producer, Self->EdgeMode);
    const blur_edge edge_x = { region.left - x_shift, region.right - x_shift, Self->EdgeMode };
    const blur_edge edge_y = { region.top - y_shift, region.bottom - y_shift, Self->EdgeMode };
 
@@ -550,7 +515,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    const auto encoding = linear ? CS::LINEAR_RGB : CS::SRGB;
    if (auto error = premultiplied_input(Self, source, encoding, input); error != ERR::Okay) return error;
 
-   const auto region = blur_input_region(Self, source, producer);
+   const auto region = filter_input_region(Self, source, producer, Self->EdgeMode);
    const auto &clip = outBmp->Clip;
    const int w = clip.Right - clip.Left;
    const int h = clip.Bottom - clip.Top;

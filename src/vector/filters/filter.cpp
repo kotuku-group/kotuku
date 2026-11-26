@@ -139,6 +139,7 @@ struct filter_input_contract {
    filter_sampling Sampling = {}; // Reach of the input, added to the pipeline's processing margin
    filter_bitmap_conversion BitmapConversion = filter_bitmap_conversion::NONE; // Numerical-to-RGBA8 adapter for images
    bool TransparentFallback = false; // Colour channels of RGBA8 map pixels with zero alpha read as the Fallback
+   bool NativeOnly = false; // A numerical input requires a native producer rather than RGBA8 map channels
 };
 
 //********************************************************************************************************************
@@ -431,6 +432,7 @@ static void clear_filter_references(extFilterEffect *, objFilterEffect * = nullp
 static void update_filter_links(extVectorFilter *);
 static ERR check_filter_reference(extFilterEffect *, objFilterEffect *, filter_input_role, size_t = 0,
    const filter_positions * = nullptr);
+static ERR validate_native_filter_input(const extFilterEffect *, const filter_named_input &, objFilterEffect *);
 static ERR set_named_filter_input(extFilterEffect *, std::string_view, VSF, objFilterEffect * = nullptr);
 static ERR get_filter_map(extFilterEffect *, std::string_view, filter_map_view &);
 
@@ -903,6 +905,43 @@ static VCS effect_colour_space(const extFilterEffect *Effect)
    return (Effect->ColourSpace != VCS::INHERIT) ? Effect->ColourSpace : Effect->Filter->ColourSpace;
 }
 
+// Resolve the addressing domain of a referenced image from its primitive bounds and the available pixels.
+
+static TClipRectangle<int> filter_input_region(const extFilterEffect *Effect, const filter_surface_view &Source,
+   const filter_step *Producer, FEM Edge)
+{
+   const auto &clip = Source.Valid;
+   if ((Edge IS FEM::TRANSPARENT) or (not Producer)) {
+      return clip;
+   }
+
+   const auto &sub = Producer->Subregion;
+   const TClipRectangle<int> empty = { clip.left, clip.top, clip.left, clip.top };
+   if (not sub.valid()) return empty;
+
+   const auto &transform = Effect->Filter->Render->Transform;
+   auto path = sub.as_path(transform);
+   const auto bounds = get_bounds(path);
+   if (not bounds.valid()) return empty;
+
+   // Primitive clipping includes the left and top edges in user space.  Reflection can put those edges on the
+   // far side of the bitmap, so account for which bounds include a pixel centre that falls exactly on the edge.
+   auto limit = [](double Coordinate, bool RoundPastCentre, int Low, int High) {
+      const auto centre = Coordinate - 0.5;
+      const auto index = RoundPastCentre ? std::floor(centre) + 1 : std::ceil(centre);
+      return int(std::clamp(index, double(Low), double(High)));
+   };
+   const TClipRectangle<int> region = {
+      limit(bounds.left, (transform.sx < 0) or (transform.shx < 0), clip.left, clip.right),
+      limit(bounds.top, (transform.shy < 0) or (transform.sy < 0), clip.top, clip.bottom),
+      limit(bounds.right, (transform.sx <= 0) and (transform.shx <= 0), clip.left, clip.right),
+      limit(bounds.bottom, (transform.shy <= 0) and (transform.sy <= 0), clip.top, clip.bottom)
+   };
+   return region.valid() ? region : empty;
+}
+
+//********************************************************************************************************************
+
 #include "filter_effect.cpp"
 #include "filter_blur.cpp"
 #include "filter_colourmatrix.cpp"
@@ -984,6 +1023,9 @@ static ERR set_named_filter_input(extFilterEffect *Effect, std::string_view Name
    if (Source IS VSF::REFERENCE) {
       if (auto error = check_filter_reference(Effect, Reference, filter_input_role::NAMED, slot - inputs.begin());
           error != ERR::Okay) return error;
+      if (slot->Contract.NativeOnly) {
+         if (auto error = validate_native_filter_input(Effect, *slot, Reference); error != ERR::Okay) return error;
+      }
    }
    else if ((Source < VSF::GRAPHIC) or (Source > VSF::BKGD_ALPHA)) {
       if (Source != VSF::NONE) return ERR::NoSupport;
@@ -1094,7 +1136,9 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
       case CLASSID::COLOURFX:       return { SINGLE };
       case CLASSID::COMPOSITEFX:    return { DUAL };
       case CLASSID::CONVOLVEFX:     return { SINGLE, effect_sampling<extConvolveFX> };
-      case CLASSID::DISPLACEMENTFX: return { DUAL, effect_sampling<extDisplacementFX> };
+      case CLASSID::DISPLACEMENTFX:
+         return { ((const extDisplacementFX *)Effect)->VectorMap.Reference ? SINGLE : DUAL,
+            effect_sampling<extDisplacementFX> };
       case CLASSID::FLOODFX:        return { GENERATOR };
       case CLASSID::IMAGEFX:
          return { .Inputs = GENERATOR, .Format = ((const extImageFX *)Effect)->OutputMode IS FOM::HEIGHT ?
@@ -1150,10 +1194,32 @@ static bool supports_filter_input(filter_surface_format Format, const filter_inp
    using enum filter_surface_format;
    switch (Contract.Kind) {
       case IMAGE: return (Format IS RGBA8) or (Contract.BitmapConversion IS filter_bitmap_conversion::UNIT_CHANNELS);
-      case SCALAR_MAP: return (Format IS RGBA8) or (Format IS SCALAR_F32);
-      case VECTOR_MAP: return (Format IS RGBA8) or (Format IS VECTOR_F32);
+      case SCALAR_MAP: return (Format IS SCALAR_F32) or ((not Contract.NativeOnly) and (Format IS RGBA8));
+      case VECTOR_MAP: return (Format IS VECTOR_F32) or ((not Contract.NativeOnly) and (Format IS RGBA8));
    }
    return false;
+}
+
+//********************************************************************************************************************
+// Validate native-only assignments before replacing the existing binding.  Format-preserving effects take their
+// format from an earlier producer, so a single backwards scan resolves their input chain.
+
+static ERR validate_native_filter_input(const extFilterEffect *Effect, const filter_named_input &Slot,
+   objFilterEffect *Reference)
+{
+   const auto &effects = Effect->Filter->Effects;
+   for (auto pos = std::ranges::find(effects, Effect); pos != effects.begin();) {
+      const auto producer = *--pos;
+      if (producer != Reference) continue;
+      const auto operation = describe_filter_operation(producer);
+      if (not operation.InputFormat) {
+         const auto format = producer->FilterExtension ? producer->FilterExtension->Format : operation.Format;
+         return supports_filter_input(format, Slot.Contract) ? ERR::Okay : ERR::NoSupport;
+      }
+      if (producer->SourceType != VSF::REFERENCE) return ERR::NoSupport;
+      Reference = producer->Input;
+   }
+   return ERR::InvalidValue;
 }
 
 //********************************************************************************************************************
@@ -1338,9 +1404,10 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
             }
          }
 
-         if (producer and (not supports_filter_input(producer->Format, Contract))) {
+         if ((Type != VSF::NONE) and
+             (not supports_filter_input(producer ? producer->Format : filter_surface_format::RGBA8, Contract))) {
             return filter_input_error(effect, Role, Slot, ERR::NoSupport, "incompatible producer format",
-               Reference->UID);
+               Reference ? Reference->UID : 0);
          }
 
          const auto &input = Plan.Inputs.emplace_back(Type, Role, Slot, producer, Contract);
@@ -2890,7 +2957,10 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
          if (auto error = bind_merge_xml(*(extMergeFX *)effect, element, positions, i, Elements);
              error != ERR::Okay) return error;
       }
-      if (effect->FilterExtension) {
+      if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
+         if (((const extDisplacementFX *)effect)->VectorMap.Reference) return ERR::NoSupport;
+      }
+      else if (effect->FilterExtension) {
          if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;
          constexpr CSTRING attributes[] = { "kotuku:normalMap", "kotuku:occlusionMap", "kotuku:roughnessMap" };
          const auto inputs = effect->FilterExtension->Inputs;

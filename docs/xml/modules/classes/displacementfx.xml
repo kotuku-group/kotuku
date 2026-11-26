@@ -13,13 +13,9 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>This filter effect uses the pixel values from the image from Mix to spatially displace the image from Input. This is the transformation to be performed:</p>
-<pre>P'(x,y) &lt;- P(x + Scale * (XC(x,y) - 0.5), y + Scale * (YC(x,y) - 0.5))
-</pre>
-<p>where <code>P(x,y)</code> is the Input image, and <code>P'(x,y)</code> is the Target.  <code>XC(x,y)</code> and <code>YC(x,y)</code> are the component values of the channel designated by the <fl>XChannel</fl> and <fl>YChannel</fl>.  For example, to use the red component of Mix to control displacement in <code>X</code> and the green component to control displacement in <code>Y</code>, set <fl>XChannel</fl> to <code>CMP::RED</code> and <fl>YChannel</fl> to <code>CMP::GREEN</code>.</p>
-<p>The displacement map defines the inverse of the mapping performed.</p>
-<p>The Input image is to remain premultiplied for this filter effect.  The calculations using the pixel values from Mix are performed using non-premultiplied colour values.  If the image from Mix consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values before performing this operation.</p>
-<p>A normal map supplied directly by <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code> uses its stored RGB values in either filter colour space.  Select red for X and green for Y.  A component of 128, or a pixel outside the normal map's subregion, gives zero displacement along that axis.  To read a normal map from any other source, such as an image loaded by <class name="ImageFX">ImageFX</class>, set <fl>NormalConvention</fl> to the map's convention.  Refraction then reads the map in the same way as <class name="LightingFX" field="NormalMap">LightingFX.NormalMap</class>.</p></description>
+<p>Each output pixel samples <class name="FilterEffect" field="Input">FilterEffect.Input</class> at its own position plus a displacement taken from <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> or <fl>VectorMap</fl>. For a colour map, the X and Y components are the selected channels in the range 0 to 1, minus <fl>NeutralX</fl> and <fl>NeutralY</fl> respectively.  Multiply the components by <fl>ScaleX</fl> and <fl>ScaleY</fl>, transform the resulting vector with the client, and add it to the output position to obtain the input sample position.</p>
+<p>The filter colour space applies to the RGB components of <class name="FilterEffect" field="Mix">FilterEffect.Mix</class>.  Alpha is read unchanged and colour channels are read in straight-alpha form.  The source image is sampled in its own colour space with alpha-weighted bilinear interpolation by default.</p>
+<p>A normal map supplied directly by <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code> is read as signed data.  Select red for X and green for Y.  A component of 128, or a transparent normal-map pixel, gives zero displacement along that axis.  Set <fl>NormalConvention</fl> to read normal maps from other sources, such as <class name="ImageFX">ImageFX</class>.</p></description>
     <source>
       <file path="filters/">filter_displacement.cpp</file>
     </source>
@@ -43,13 +39,44 @@
 
   <fields>
     <field>
+      <name>EdgeMode</name>
+      <comment>Controls how <class name="FilterEffect" field="Input">FilterEffect.Input</class> is sampled outside its image region.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FEM">FEM</type>
+      <description>
+<p><code>TRANSPARENT</code> is the default.  The SVG extension <code>kotuku:edgeMode</code> accepts <code>transparent</code>, <code>clamp</code>, <code>repeat</code> and <code>mirror</code>.</p>
+<types lookup="FEM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>NeutralX</name>
+      <comment>The X channel value that gives zero displacement in a colour map.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 1, with a default of 0.5.  The value is in the filter colour space for RGB and in unit coverage for alpha.  The SVG attribute is <code>kotuku:neutralX</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>NeutralY</name>
+      <comment>The Y channel value that gives zero displacement in a colour map.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 1, with a default of 0.5.  The value is in the filter colour space for RGB and in unit coverage for alpha.  The SVG attribute is <code>kotuku:neutralY</code>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>NormalConvention</name>
       <comment>Reads the Mix input as a normal map in the given axis convention.</comment>
       <access read="G" write="S">Get/Set</access>
       <type lookup="NMC">NMC</type>
       <description>
-<p>The default, <code>AUTO</code>, reads the Mix input as a normal map only if it is the result of <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code>, and as colour otherwise.  <code>Y_DOWN</code> and <code>Y_UP</code> read any Mix input as a normal map: the red, green and blue channels are signed components centred on 128, read as data in either filter colour space, and transparent pixels give zero displacement.  <code>Y_UP</code> negates the green component, for maps whose Y increases upwards, as in OpenGL.  Use the same value as <class name="LightingFX" field="NormalConvention">LightingFX.NormalConvention</class> so that refraction and shading agree.  The alpha channel, if selected, is always read as colour.</p>
-<p>In normal map mode a component of 127 displaces by half of <fl>Scale</fl>, as a colour component of 255 does in colour mode.</p>
+<p>The default, <code>AUTO</code>, reads the Mix input as a normal map only if it is the result of <class name="LightingFX">LightingFX</class> with type <code>NORMAL</code>, and as colour otherwise.  <code>Y_DOWN</code> and <code>Y_UP</code> read any Mix input as a normal map: the red, green and blue channels are signed components centred on 128, read as data in either filter colour space, and transparent pixels give zero displacement.  <code>Y_UP</code> negates the green component, for maps whose Y increases upwards, as in OpenGL.  Use the same value as <class name="LightingFX" field="NormalConvention">LightingFX.NormalConvention</class> so that refraction and shading agree.  The alpha channel, if selected, is always read as colour.  RGB normal components ignore the neutral fields.</p>
+<p>In normal map mode a signed component of +127 displaces by half the effective scale for its axis.</p>
 <p>The SVG attribute is <code>kotuku:normalConvention</code>, with the values <code>auto</code>, <code>y-down</code> and <code>y-up</code>.</p>
 <types lookup="NMC"/>
       </description>
@@ -61,7 +88,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="VSM">VSM</type>
       <description>
-<p>Currently <code>NEIGHBOUR</code> and <code>BILINEAR</code> are supported.  Other resample methods fall back to bilinear filtering.</p>
+<p>Use <code>NEIGHBOUR</code> for nearest-neighbour sampling or <code>BILINEAR</code> for alpha-weighted bilinear sampling. The default is <code>BILINEAR</code>, also selected by <code>AUTO</code>.  Other values return <code>ERR::NoSupport</code>.</p>
 <types lookup="VSM"/>
       </description>
     </field>
@@ -72,7 +99,37 @@
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The amount is expressed in the coordinate system established by <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> on the parent <class name="VectorFilter">VectorFilter</class>.  In user space units, a map component of 255 displaces by half of Scale in user units, and a component of 0 by half of Scale in the opposite direction.  In bounding box units, Scale is a fraction of the width of the client's bounding box on the X axis and of its height on the Y axis.  The displacement is transformed with the client, so it scales and rotates with it.  When the value of this field is 0, this operation has no effect on the source image.</p>
+<p>This is the fallback for both axis overrides.  The scale is expressed in <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>. In bounding box units, it is a fraction of the client's bounding box width for X or height for Y. The client's linear transform applies to the displacement, including rotation and shear.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ScaleX</name>
+      <comment>Overrides <fl>Scale</fl> on the X axis.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Accepts any finite signed value.  A zero override disables horizontal displacement in primitive coordinates. Read or write NaN for inheritance from <fl>Scale</fl>.  An explicit override serialises as <code>kotuku:scaleX</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ScaleY</name>
+      <comment>Overrides <fl>Scale</fl> on the Y axis.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Accepts any finite signed value.  A zero override disables vertical displacement in primitive coordinates. Read or write NaN for inheritance from <fl>Scale</fl>.  An explicit override serialises as <code>kotuku:scaleY</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>VectorMap</name>
+      <comment>Optional earlier filter result containing two signed floating-point components per pixel.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>While bound, this input takes precedence over <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> and contributes to the default primitive subregion. The first and second components multiply the effective X and Y scales directly.  A component of +1 thus displaces by one effective scale along its axis in primitive units.  Invalid or missing samples give zero displacement.  Channel selectors, colour transfer, normal conventions and colour neutral values apply only to <class name="FilterEffect" field="Mix">FilterEffect.Mix</class>.  Clearing this field reactivates the colour map on the live effect.  SVG serialises the active map binding, using <code>kotuku:vectorMap</code> for a numerical map.</p>
       </description>
     </field>
 
@@ -112,6 +169,13 @@
       <const name="BLUE">The blue colour channel.</const>
       <const name="GREEN">The green colour channel.</const>
       <const name="RED">The red colour channel.</const>
+    </constants>
+
+    <constants lookup="FEM" comment="Filter input edge addressing modes.">
+      <const name="CLAMP">Extend the nearest edge sample.</const>
+      <const name="MIRROR">Reflect alternating copies of the input, repeating the edge sample at each join.</const>
+      <const name="REPEAT">Wrap samples to the opposite edge.</const>
+      <const name="TRANSPARENT">Sample transparent black outside the input.</const>
     </constants>
 
     <constants lookup="NMC" comment="Axis conventions for normal maps read by LightingFX and DisplacementFX.">
