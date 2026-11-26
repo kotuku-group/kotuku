@@ -3113,28 +3113,58 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getResampleMethod(VSM &Value) noexcept {
-      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
+      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 40));
       return ERR::Okay;
    }
 
    inline ERR getXChannel(CMP &Value) noexcept {
-      Value = *((CMP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 12));
+      Value = *((CMP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 44));
       return ERR::Okay;
    }
 
    inline ERR getYChannel(CMP &Value) noexcept {
-      Value = *((CMP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
+      Value = *((CMP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 48));
       return ERR::Okay;
    }
 
    inline ERR getNormalConvention(NMC &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[26];
       return field->GetValue(this, &Value);
+   }
+
+   inline ERR getEdgeMode(FEM &Value) noexcept {
+      Value = *((FEM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 52));
+      return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
+   }
+
+   inline ERR getScaleX(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
+      return ERR::Okay;
+   }
+
+   inline ERR getScaleY(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
+      return ERR::Okay;
+   }
+
+   inline ERR getNeutralX(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
+      return ERR::Okay;
+   }
+
+   inline ERR getNeutralY(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
+      return ERR::Okay;
+   }
+
+   inline ERR getVectorMap(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
@@ -3161,13 +3191,43 @@ class objDisplacementFX : public objFilterEffect {
    }
 
    inline ERR setNormalConvention(const NMC Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setEdgeMode(const FEM Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setScale(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setScaleX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setScaleY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setNeutralX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setNeutralY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setVectorMap(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, 0x08100309, Value);
    }
 
 };

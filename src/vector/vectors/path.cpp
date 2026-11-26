@@ -998,7 +998,7 @@ XOffset follows the @VectorRectangle conventions and is combined with #X and #Wi
 </list>
 
 When XOffset is set, reading it returns the stored value.  Otherwise it returns the distance between the right edge of
-the placed path, or of its box (see #Sequence), and the right edge of the parent viewport.  To remove the offset, set 
+the placed path, or of its box (see #Sequence), and the right edge of the parent viewport.  To remove the offset, set
 an undefined value (NaN).
 -END-
 *********************************************************************************************************************/

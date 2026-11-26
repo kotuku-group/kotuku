@@ -40,9 +40,9 @@ struct filter_rgba_sampler {
       return Data + std::ptrdiff_t(y) * Stride + std::ptrdiff_t(x) * 4;
    }
 
-   // Interpolate the stored channels in their existing colour and alpha representations.
+   // A straight-alpha channel index opts into alpha-weighted colour interpolation.
    template<filter_interpolation Interpolation, FEM Edge = FEM::TRANSPARENT>
-   void sample(uint8_t *Output, double X, double Y) const {
+   void sample(uint8_t *Output, double X, double Y, FEM Mode = Edge, int StraightAlpha = -1) const {
       constexpr double LIMIT = 0x1p52; // Keep the adjacent sample index representable.
       if (not ((X > -LIMIT) and (X < LIMIT) and (Y > -LIMIT) and (Y < LIMIT))) {
          std::fill_n(Output, 4, uint8_t(0));
@@ -50,15 +50,41 @@ struct filter_rgba_sampler {
       }
 
       if constexpr (Interpolation IS filter_interpolation::NEAREST) {
-         auto p = pixel(int64_t(std::nearbyint(X)), int64_t(std::nearbyint(Y)), Edge);
+         auto p = pixel(int64_t(std::nearbyint(X)), int64_t(std::nearbyint(Y)), Mode);
          if (p) std::copy_n(p, 4, Output);
          else std::fill_n(Output, 4, uint8_t(0));
       }
       else {
          const int64_t x0 = int64_t(std::floor(X)), y0 = int64_t(std::floor(Y));
          const double tx = X - double(x0), ty = Y - double(y0);
-         const auto p00 = pixel(x0, y0, Edge), p10 = pixel(x0 + 1, y0, Edge);
-         const auto p01 = pixel(x0, y0 + 1, Edge), p11 = pixel(x0 + 1, y0 + 1, Edge);
+         const auto p00 = pixel(x0, y0, Mode);
+         if ((StraightAlpha >= 0) and (tx IS 0.0) and (ty IS 0.0)) {
+            if (p00) std::copy_n(p00, 4, Output);
+            else std::fill_n(Output, 4, uint8_t(0));
+            return;
+         }
+
+         const auto p10 = pixel(x0 + 1, y0, Mode);
+         const auto p01 = pixel(x0, y0 + 1, Mode), p11 = pixel(x0 + 1, y0 + 1, Mode);
+         if (StraightAlpha >= 0) {
+            const auto a00 = p00 ? p00[StraightAlpha] : 0, a10 = p10 ? p10[StraightAlpha] : 0;
+            const auto a01 = p01 ? p01[StraightAlpha] : 0, a11 = p11 ? p11[StraightAlpha] : 0;
+            if ((a00 != 255) or (a10 != 255) or (a01 != 255) or (a11 != 255)) {
+               const double w00 = a00 * (1.0 - tx) * (1.0 - ty), w10 = a10 * tx * (1.0 - ty);
+               const double w01 = a01 * (1.0 - tx) * ty, w11 = a11 * tx * ty;
+               const double alpha = w00 + w10 + w01 + w11;
+               const auto coverage = uint8_t(std::lrint(alpha));
+               if (not coverage) std::fill_n(Output, 4, uint8_t(0));
+               else {
+                  for (int i = 0; i < 4; i++) {
+                     const double sum = (p00 ? p00[i] * w00 : 0) + (p10 ? p10[i] * w10 : 0) +
+                        (p01 ? p01[i] * w01 : 0) + (p11 ? p11[i] * w11 : 0);
+                     Output[i] = (i IS StraightAlpha) ? coverage : uint8_t(std::lrint(sum / alpha));
+                  }
+               }
+               return;
+            }
+         }
 
          for (int i=0; i < 4; i++) {
             const double top = ((p00 ? p00[i] : 0) * (1.0 - tx)) + ((p10 ? p10[i] : 0) * tx);

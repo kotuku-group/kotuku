@@ -2426,6 +2426,11 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
    if (NewObject(CLASSID::DISPLACEMENTFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
+   auto set_number = [&](std::string_view Value, auto Setter) {
+      const auto number = kt::font_traits::parse_number(Value);
+      return number and ((fx->*Setter)(*number) IS ERR::Okay);
+   };
+
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
@@ -2450,7 +2455,9 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
             }
             break;
 
-         case SVF_scale: fx->setScale(svtonum<double>(val)); break;
+         case SVF_scale:
+            if (not set_number(val, &objDisplacementFX::setScale)) log.warning("Invalid displacement scale.");
+            break;
 
          case SVF_x:      fx->setX(SVGUnit(val)); break;
          case SVF_y:      fx->setY(SVGUnit(val)); break;
@@ -2459,7 +2466,7 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
 
          case SVF_image_rendering: {
             if ("optimizeSpeed" IS val) fx->setResampleMethod(VSM::NEIGHBOUR);
-            else if ("optimizeQuality" IS val) fx->setResampleMethod(VSM::LANCZOS);
+            else if ("optimizeQuality" IS val) fx->setResampleMethod(VSM::BILINEAR);
             else if ("auto" IS val); // Leave as internal default
             else if ("inherit" IS val);
             else log.warning("Unrecognised image-rendering option '%s'", val.c_str());
@@ -2471,16 +2478,36 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
 
          case SVF_result: result_name = val; break;
 
-         default:
-            if (kotuku_attrib(Self, Tag, Tag.Attribs[a].Name) IS "normalConvention") {
-               if (auto convention = read_normal_convention(val, true)) fx->setNormalConvention(*convention);
-               else log.warning("Invalid normalConvention '%s' on %s.", val.c_str(), Tag.name());
+         default: {
+            const auto local = kotuku_attrib(Self, Tag, Tag.Attribs[a].Name);
+            bool valid = true;
+            if (local IS "scaleX") valid = set_number(val, &objDisplacementFX::setScaleX);
+            else if (local IS "scaleY") valid = set_number(val, &objDisplacementFX::setScaleY);
+            else if (local IS "neutralX") valid = set_number(val, &objDisplacementFX::setNeutralX);
+            else if (local IS "neutralY") valid = set_number(val, &objDisplacementFX::setNeutralY);
+            else if (local IS "edgeMode") {
+               if (iequals("transparent", val)) fx->setEdgeMode(FEM::TRANSPARENT);
+               else if (iequals("clamp", val)) fx->setEdgeMode(FEM::CLAMP);
+               else if (iequals("repeat", val)) fx->setEdgeMode(FEM::REPEAT);
+               else if (iequals("mirror", val)) fx->setEdgeMode(FEM::MIRROR);
+               else valid = false;
             }
+            else if (local IS "normalConvention") {
+               if (auto convention = read_normal_convention(val, true)) fx->setNormalConvention(*convention);
+               else valid = false;
+            }
+            if (not valid) log.warning("Invalid %s '%s' on %s.", Tag.Attribs[a].Name.c_str(), val.c_str(), Tag.name());
             break;
+         }
       }
    }
 
-   parse_filter_resampling(Self, Tag, fx);
+   if (const auto value = find_kotuku_attrib(Self, Tag, "resampleMethod")) {
+      int method;
+      if ((not read_integer_value(*value, method)) or (fx->setResampleMethod(VSM(method)) != ERR::Okay)) {
+         log.warning("Unsupported displacement resampleMethod.");
+      }
+   }
    apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);

@@ -388,6 +388,53 @@ static bool test_filter_numerical_surfaces()
       "Clear retained numerical surface storage.");
 }
 
+static bool test_filter_displacement_vector_map()
+{
+   constexpr filter_effect_extension vector_operation { {}, filter_surface_format::VECTOR_F32 };
+   auto fixture_class = register_filter_test_class<extFilterSurfaceTest>();
+   filter_test_scene scene;
+   if ((not fixture_class.ok()) or (not scene.ready())) return false;
+
+   const auto owner = fl::Owner(scene.Filter->UID);
+   auto image = extFloodFX::create::local(owner, fl::X(3), fl::Y(2), fl::Width(1), fl::Height(1));
+   auto mix = extFloodFX::create::local(owner);
+   auto field = extFilterSurfaceTest::create::local(owner);
+   auto effect = extDisplacementFX::create::local(owner, fl::Input(image));
+   if ((not image) or (not mix) or (not field) or (not effect)) return false;
+   FRGB red { 1, 0, 0, 1 };
+   if ((FLOODFX_SET_Colour(image, &red) != ERR::Okay) or (FILTEREFFECT_SET_Mix(effect, mix) != ERR::Okay)) {
+      return false;
+   }
+
+   field->FilterExtension = &vector_operation;
+   field->DrawRoutine = [](extFilterEffect *Effect) {
+      filter_surface_view layout;
+      float *data;
+      if (auto error = get_numeric_target(Effect, layout, data); error != ERR::Okay) return error;
+      auto row = (float *)((uint8_t *)data + layout.Stride);
+      const int x = 4 - layout.OriginX;
+      row[x * 2] = -0.5f;
+      row[x * 2 + 1] = 0.5f;
+      return ERR::Okay;
+   };
+   if (DISPLACEMENTFX_SET_VectorMap(effect, field) != ERR::Okay) return false;
+   effect->Scale = 2;
+   effect->NeutralX = effect->NeutralY = 1; // Only the dormant colour map uses these.
+
+   filter_render_result output;
+   if (not filter_test_expect(scene.draw(output) IS ERR::Okay, "Vector displacement failed to draw.")) return false;
+   if ((not filter_test_pixel(output.Bitmap, 4 - output.OriginX, 1, { 255, 0, 0, 255 })) or
+       (not filter_test_pixel(output.Bitmap, 3 - output.OriginX, 2, { 255, 0, 0, 255 }))) {
+      return filter_test_expect(false, "Signed VectorMap or invalid-sample fallback gave the wrong displacement.");
+   }
+
+   if (not filter_test_expect((DISPLACEMENTFX_SET_VectorMap(effect, image) IS ERR::NoSupport) and
+       (effect->VectorMap.Reference IS field), "An RGBA8 producer replaced the native VectorMap.")) return false;
+   return DISPLACEMENTFX_SET_VectorMap(effect, nullptr) IS ERR::Okay and scene.draw(output) IS ERR::Okay and
+      filter_test_pixel(output.Bitmap, 4 - output.OriginX, 1, { 0, 0, 0, 0 }) and
+      filter_test_pixel(output.Bitmap, 3 - output.OriginX, 2, { 255, 0, 0, 255 });
+}
+
 static constexpr filter_effect_extension glHeightTestProducer { {}, filter_surface_format::SCALAR_F32 };
 
 static ERR write_test_height(extFilterEffect *Effect, auto HeightAt)
@@ -828,7 +875,7 @@ void vector_filter_unit_tests(std::string_view Options, int &Passed, int &Total)
    }
    else if (Options IS "filter:numerical") {
       Total++;
-      if (test_filter_numerical_surfaces()) Passed++;
+      if (test_filter_numerical_surfaces() and test_filter_displacement_vector_map()) Passed++;
    }
    else if (Options IS "filter:height") {
       Total += 4;

@@ -155,11 +155,12 @@
     ~int(CDM) DivisorMode
   ]])
 
-  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM', 'NMC' } }, [[
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM', 'NMC', 'FEM' } }, [[
     ~int(VSM) ResampleMethod
     ~int(CMP) XChannel
     ~int(CMP) YChannel
     ~int(NMC) NormalConvention
+    ~int(FEM) EdgeMode
   ]])
 
   klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[

@@ -1785,6 +1785,94 @@ end
    assert((at(40, 26) is 0) and (at(20, 18) is 0), 'The rotated bar must not remain at its undisplaced position')
 end
 
+@Test function DisplacementAxisOverridesAndNeutrals()
+   local effects = [[<feFlood x="20" y="20" width="4" height="4" flood-color="red" result="image"/>
+      <feFlood flood-color="red" result="map"/>
+      <feDisplacementMap in="image" in2="map" scale="8" xChannelSelector="R" yChannelSelector="A"
+         kotuku:scaleX="-2" kotuku:scaleY="0" kotuku:neutralX="0"/>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('DisplacementFX')[0])
+   assert((fx.scaleX is -2) and (fx.scaleY is 0) and (fx.neutralX is 0) and (fx.neutralY is 0.5),
+      'Independent scales and neutrals must be readable')
+   assert((fx.xChannel is CMP_RED) and (fx.yChannel is CMP_ALPHA) and (fx.edgeMode is FEM_TRANSPARENT),
+      'The channel selectors and default edge mode must be readable')
+   local original <close> = draw(svg, 64)
+   assert((mGfx.ReadRGBPixel(original, 25, 23).alpha is 255) and
+      (mGfx.ReadRGBPixel(original, 20, 23).alpha is 0), 'Negative X scale must move the image right without moving Y')
+
+   assert(fx.set('neutralX', 1.01) is ERR_OutOfRange, 'Out-of-range neutrals must fail')
+   assert(fx.set('resampleMethod', VSM_LANCZOS) is ERR_NoSupport, 'Unsupported resampling must fail')
+   assert((fx.neutralX is 0) and (fx.resampleMethod is VSM_BILINEAR), 'Rejected settings must preserve the fields')
+   fx.scaleX = 0.0 / 0.0
+   fx.scaleY = 2
+   fx.neutralY = 0
+   local shifted <close> = draw(svg, 64)
+   assert((mGfx.ReadRGBPixel(shifted, 12, 18).alpha is 255) and
+      (mGfx.ReadRGBPixel(shifted, 12, 23).alpha is 0), 'The Y scale must move the image independently')
+
+   fx.neutralY = 1
+   local edited <close> = draw(svg, 64)
+   assert((mGfx.ReadRGBPixel(edited, 12, 23).alpha is 255) and
+      (mGfx.ReadRGBPixel(edited, 23, 23).alpha is 0), 'Cleared X must inherit Scale and neutral alpha must give zero Y')
+
+   local xml = filter.effectXML
+   assert((xml.find('scaleX', 0, true) is nil) and xml.find('kotuku:scaleY="2"', 0, true),
+      f'Serialisation must preserve an inherited X and explicit Y: {xml}')
+   local loaded <close> = document(xml, nil, 64, KOTUKU_NS)
+   local restored <close> = draw(loaded, 64)
+   assert(imageDifference(edited, restored) is 0, 'Axis scales and neutrals must survive reload')
+end
+
+@Test function DisplacementAddressesTheInputRegion()
+   local effects = [[<feFlood x="10" y="10" width="1" height="1" flood-color="red" result="red"/>
+      <feFlood x="11" y="10" width="1" height="1" flood-color="blue" result="blue"/>
+      <feMerge result="image"><feMergeNode in="red"/><feMergeNode in="blue"/></feMerge>
+      <feFlood result="map"/>
+      <feDisplacementMap in="image" in2="map" scale="-2" kotuku:scaleY="0" image-rendering="optimizeSpeed"/>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('DisplacementFX')[0])
+   local transparent <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(transparent, 10, 10).alpha is 0, 'Transparent addressing must clear an outside tap')
+   for mode in values(array<int> { FEM_CLAMP, FEM_REPEAT, FEM_MIRROR }) do
+      fx.edgeMode = mode
+      assert((fx.edgeMode is mode) and (fx.xChannel is CMP_ALPHA) and (fx.yChannel is CMP_ALPHA),
+         'Changing the edge mode must preserve both channel selectors')
+      local bmp <close> = draw(svg, 64)
+      local left = mGfx.ReadRGBPixel(bmp, 9, 10)
+      local left_blue, left_alpha = left.blue, left.alpha
+      local right = mGfx.ReadRGBPixel(bmp, 10, 10)
+      assert((left_alpha is 255) and (right.alpha is 255), 'Addressing must use the two-pixel input subregion')
+      assert((left_blue is (mode is FEM_MIRROR ? 255 : 0)) and (right.blue is (mode is FEM_REPEAT ? 255 : 0)),
+         f'Unexpected blue values for edge mode {mode}: {left_blue}, {right.blue}')
+      local loaded <close> = document(filter.effectXML, nil, 64, KOTUKU_NS)
+      local restored <close> = draw(loaded, 64)
+      assert(imageDifference(bmp, restored) is 0, f'Edge mode {mode} must survive reload')
+   end
+
+   fx.edgeMode = FEM_REPEAT
+   fx.scale = -1
+   fx.resampleMethod = VSM_BILINEAR
+   local wrapped <close> = draw(svg, 64)
+   local seam = mGfx.ReadRGBPixel(wrapped, 10, 10)
+   assert((seam.red is 128) and (seam.blue is 128) and (seam.alpha is 255),
+      'Bilinear repeat must blend the last and first pixels at the seam')
+end
+
+@Test function DisplacementBilinearWeightsColourByCoverage()
+   local effects = [[<feFlood x="10" y="10" width="1" height="1" flood-color="red" result="image"/>
+      <feFlood result="map"/>
+      <feDisplacementMap in="image" in2="map" scale="1" kotuku:scaleY="0"/>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS)
+   local bmp <close> = draw(svg, 64)
+   for x in {9 into 10} do
+      local sample = mGfx.ReadRGBPixel(bmp, x, 10)
+      assert((sample.red is 255) and (sample.green is 0) and (sample.blue is 0) and (sample.alpha is 128),
+         f'Half coverage at x={x} must preserve straight red')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Ambient occlusion maps.  The content is a horizontal ramp from black to white, published as 'ao'.  It is opaque,
 -- so the surface is flat, and the albedo is a flood.  Without direct light the result is albedo x ambient x ao.

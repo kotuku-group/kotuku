@@ -376,7 +376,7 @@ end
 -- renders the bias=1 rect as opaque white, as Chrome does.
 @Test global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x1acd0e59) end
 @Test global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0x817f535d) end
-@Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x799f9c48) end
+@Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x30b4b007) end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0xc4393607) end
 @Test global function W3Transfer2()        pHashTestSVG('filters/w3-filters-color-02-b.svg', array<byte> { 121,185,134,7,233,135,134,84 }, 6, true) end
 @Test global function W3Filters()          hashTestSVG('filters/w3-filters.svg', 0xe95708f3) end
