@@ -719,6 +719,14 @@ enum class OP : int {
    OVERLAY = 21,
 };
 
+// Convolution divisor policy.
+
+enum class CDM : int {
+   NIL = 0,
+   AUTO = 0,
+   MANUAL = 1,
+};
+
 struct KeyValue;
 
 struct Transition {
@@ -2770,6 +2778,13 @@ class objBlurFX : public objFilterEffect {
 
 #define VER_COLOURFX (1.000000)
 
+// ColourFX methods
+
+namespace cfx {
+struct SetAdjustment { CM Mode; kt::vector<double> *Values; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
 class objColourFX : public objFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::COLOURFX;
@@ -2786,6 +2801,11 @@ class objColourFX : public objFilterEffect {
       return Action(AC::Draw, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR setAdjustment(CM Mode, kt::vector<double> &Values) noexcept {
+      struct cfx::SetAdjustment args = { Mode, &Values };
+      ERR error = Action(AC(-10), this, &args);
+      return error;
+   }
 
    // Customised field getting
 
@@ -2808,15 +2828,13 @@ class objColourFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setMode(const CM Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setValues(std::span<const double> Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, 0x80101508, &Value);
+      return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
 };
@@ -2908,6 +2926,13 @@ class objCompositeFX : public objFilterEffect {
 
 #define VER_CONVOLVEFX (1.000000)
 
+// ConvolveFX methods
+
+namespace cvx {
+struct SetKernel { int Columns; int Rows; kt::vector<double> *Matrix; double Divisor; int TargetX; int TargetY; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
 class objConvolveFX : public objFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::CONVOLVEFX;
@@ -2924,11 +2949,21 @@ class objConvolveFX : public objFilterEffect {
       return Action(AC::Draw, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR setKernel(int Columns, int Rows, kt::vector<double> &Matrix, double Divisor, int TargetX, int TargetY) noexcept {
+      struct cvx::SetKernel args = { Columns, Rows, &Matrix, Divisor, TargetX, TargetY };
+      ERR error = Action(AC(-10), this, &args);
+      return error;
+   }
 
    // Customised field getting
 
    inline ERR getEdgeMode(EM &Value) noexcept {
       Value = *((EM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
+      return ERR::Okay;
+   }
+
+   inline ERR getDivisorMode(CDM &Value) noexcept {
+      Value = *((CDM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 56));
       return ERR::Okay;
    }
 
@@ -2953,7 +2988,7 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR getMatrix(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->GetValue(this, &Value);
    }
 
@@ -2991,39 +3026,40 @@ class objConvolveFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setEdgeMode(const EM Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setDivisorMode(const CDM Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBias(const double Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setDivisor(const double Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMatrixRows(const int Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMatrixColumns(const int Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMatrix(std::span<const double> Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(this, field, 0x80101508, &Value);
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
    inline ERR setPreserveAlpha(const int Value) noexcept {
@@ -3032,25 +3068,21 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR setTargetX(const int Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setTargetY(const int Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setUnitX(const double Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setUnitY(const double Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
@@ -3885,7 +3917,6 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setType(const TB Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -3896,31 +3927,26 @@ class objTurbulenceFX : public objFilterEffect {
    }
 
    inline ERR setFX(const double Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFY(const double Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setOctaves(const int Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSeed(const int Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStitch(const int Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }

@@ -348,7 +348,7 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
+static void build_turbulence_lattice(extTurbulenceFX *Self)
 {
    int lSeed = setup_seed(Self->Seed);
    auto &gradient = Self->Gradient;
@@ -384,8 +384,22 @@ static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
          }
       }
    }
+}
 
+//********************************************************************************************************************
+
+static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
+{
+   build_turbulence_lattice(Self);
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static void turbulence_modified(extTurbulenceFX *Self)
+{
+   Self->Dirty = true;
+   effect_modified(Self);
 }
 
 /*********************************************************************************************************************
@@ -393,18 +407,16 @@ static ERR TURBULENCEFX_Init(extTurbulenceFX *Self)
 -FIELD-
 FX: The base frequency for noise on the X axis.
 
-A negative value for base frequency is an error.  The default value is zero.
+The frequency must be finite and non-negative.  The default value is zero.
 
 *********************************************************************************************************************/
 
 static ERR TURBULENCEFX_SET_FX(extTurbulenceFX *Self, double Value)
 {
-   if (Value >= 0) {
-      Self->FX = Value;
-      Self->Dirty = true;
-      return ERR::Okay;
-   }
-   else return ERR::InvalidValue;
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::InvalidValue;
+   Self->FX = Value;
+   turbulence_modified(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -412,18 +424,16 @@ static ERR TURBULENCEFX_SET_FX(extTurbulenceFX *Self, double Value)
 -FIELD-
 FY: The base frequency for noise on the Y axis.
 
-A negative value for base frequency is an error.  The default value is zero.
+The frequency must be finite and non-negative.  The default value is zero.
 
 *********************************************************************************************************************/
 
 static ERR TURBULENCEFX_SET_FY(extTurbulenceFX *Self, double Value)
 {
-   if (Value >= 0) {
-      Self->FY = Value;
-      Self->Dirty = true;
-      return ERR::Okay;
-   }
-   else return ERR::InvalidValue;
+   if ((not std::isfinite(Value)) or (Value < 0)) return ERR::InvalidValue;
+   Self->FY = Value;
+   turbulence_modified(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -431,14 +441,15 @@ static ERR TURBULENCEFX_SET_FY(extTurbulenceFX *Self, double Value)
 -FIELD-
 Octaves: The numOctaves parameter for the noise function.
 
-Defaults to `1` if not specified.
+Defaults to 1.  Runtime writes accept values from 0 to 30.
 
 *********************************************************************************************************************/
 
 static ERR TURBULENCEFX_SET_Octaves(extTurbulenceFX *Self, int Value)
 {
+   if (Self->initialised() and ((Value < 0) or (Value > 30))) return ERR::OutOfRange;
    Self->Octaves = Value;
-   Self->Dirty = true;
+   turbulence_modified(Self);
    return ERR::Okay;
 }
 
@@ -448,14 +459,17 @@ static ERR TURBULENCEFX_SET_Octaves(extTurbulenceFX *Self, int Value)
 Seed: The starting number for the pseudo random number generator.
 
 If the value is undefined, the effect is as if a value of `0` were specified.  When the seed number is handed over to
-the algorithm it must first be truncated, i.e. rounded to the closest integer value towards zero.
+the algorithm it must first be truncated, i.e. rounded to the closest integer value towards zero.  Changing
+Seed rebuilds the noise lattice and invalidates the cached result.
 
 *********************************************************************************************************************/
 
 static ERR TURBULENCEFX_SET_Seed(extTurbulenceFX *Self, int Value)
 {
+   if (Self->Seed IS Value) return ERR::Okay;
    Self->Seed = Value;
-   Self->Dirty = true;
+   if (Self->initialised()) build_turbulence_lattice(Self);
+   turbulence_modified(Self);
    return ERR::Okay;
 }
 
@@ -481,7 +495,7 @@ cases, copy the lattice vector from the opposite edge of the active area.
 static ERR TURBULENCEFX_SET_Stitch(extTurbulenceFX *Self, int Value)
 {
    Self->Stitch = Value;
-   Self->Dirty = true;
+   turbulence_modified(Self);
    return ERR::Okay;
 }
 
@@ -495,8 +509,9 @@ Type: Can be set to 'noise' or 'turbulence'.
 
 static ERR TURBULENCEFX_SET_Type(extTurbulenceFX *Self, TB Value)
 {
+   if ((Value != TB::NOISE) and (Value != TB::TURBULENCE)) return ERR::InvalidValue;
    Self->Type = Value;
-   Self->Dirty = true;
+   turbulence_modified(Self);
    return ERR::Okay;
 }
 
@@ -548,12 +563,12 @@ static ERR turbulence_xml(const extTurbulenceFX &Effect, filter_xml_element &Ele
 #include "filter_turbulence_def.c"
 
 static const FieldArray clTurbulenceFXFields[] = {
-   { "FX",      FDF_DOUBLE|FDF_RI,         nullptr, TURBULENCEFX_SET_FX },
-   { "FY",      FDF_DOUBLE|FDF_RI,         nullptr, TURBULENCEFX_SET_FY },
-   { "Octaves", FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Octaves },
-   { "Seed",    FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Seed },
-   { "Stitch",  FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Stitch },
-   { "Type",    FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, TURBULENCEFX_SET_Type, &clTurbulenceFXTB },
+   { "FX",      FDF_DOUBLE|FDF_RW,         nullptr, TURBULENCEFX_SET_FX },
+   { "FY",      FDF_DOUBLE|FDF_RW,         nullptr, TURBULENCEFX_SET_FY },
+   { "Octaves", FDF_INT|FDF_RW,            nullptr, TURBULENCEFX_SET_Octaves },
+   { "Seed",    FDF_INT|FDF_RW,            nullptr, TURBULENCEFX_SET_Seed },
+   { "Stitch",  FDF_INT|FDF_RW,            nullptr, TURBULENCEFX_SET_Stitch },
+   { "Type",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, TURBULENCEFX_SET_Type, &clTurbulenceFXTB },
    { "OutputMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, TURBULENCEFX_SET_OutputMode, &clTurbulenceFXFOM },
    { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,      FILTEREFFECT_GET_XMLDef },
    END_FIELD

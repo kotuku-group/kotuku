@@ -518,9 +518,10 @@
     <field>
       <name>Flags</name>
       <comment>Optional flags that affect object behaviour.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="DCF">DCF</type>
       <description>
+<p>After initialisation, writes preserve the <code>UNRESTRICTED</code> and <code>DISABLED</code> flags.</p>
 <types lookup="DCF"/>
       </description>
     </field>

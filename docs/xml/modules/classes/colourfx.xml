@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>Use ColourFX to perform colour transformations on an input source.  A <fl>Mode</fl> must be selected and any required <fl>Values</fl> defined before initialisation.</p>
+<p>Use ColourFX to perform colour transformations on an input source.  A <fl>Mode</fl> must be selected and any required <fl>Values</fl> defined before initialisation.  Use <method>SetAdjustment</method> to replace the mode and values together at runtime.</p>
 <p>SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for this operation.</p>
 <p>The matrix is applied in the effect's colour space, which is the parent <class name="VectorFilter">VectorFilter</class>'s ColourSpace unless <class name="FilterEffect" field="ColourSpace">FilterEffect.ColourSpace</class> overrides it.  If set to <code>LINEAR_RGB</code> (the SVG default) then pixel values are converted to linear RGB prior to transformation and back to sRGB on output, otherwise the transformation is performed directly on the sRGB values.</p></description>
     <source>
@@ -37,13 +37,39 @@
 
   </actions>
 
+  <methods>
+    <method>
+      <name>SetAdjustment</name>
+      <comment>Replaces the mode and values together.</comment>
+      <prototype>ERR cfx::SetAdjustment(OBJECTPTR Object, CM Mode, kt::vector&lt;double&gt; Values)</prototype>
+      <tiriPrototype>err = SetAdjustment(Mode:num, Values:array)</tiriPrototype>
+      <input>
+        <param type="CM" name="Mode" lookup="CM">The colour adjustment to apply.</param>
+        <param type="kt::vector&lt;double&gt;" name="Values">The parameters for the adjustment.</param>
+      </input>
+      <description>
+<p>The supplied values must match the selected mode as described in <fl>Values</fl>.  If validation fails, the previous adjustment remains active.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="Mismatch">A mis-match has been detected that prevents further processing</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A value has not passed validation</error>
+      </result>
+    </method>
+
+  </methods>
+
   <fields>
     <field>
       <name>Mode</name>
       <comment>Defines the algorithm that will process the input source.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="CM">CM</type>
       <description>
+<p>After initialisation, changing Mode requires the current <fl>Values</fl> to match the new mode.  <method>SetAdjustment</method> changes both fields in one call.</p>
 <types lookup="CM"/>
       </description>
     </field>
@@ -51,11 +77,10 @@
     <field>
       <name>Values</name>
       <comment>A list of input values for the algorithm defined by <fl>Mode</fl>.</comment>
-      <access read="G" write="I">Get/Init</access>
+      <access read="G" write="S">Get/Set</access>
       <type>DOUBLE []</type>
       <description>
-<p>The meaning of the input values is dependent on the selected <fl>Mode</fl>.  Each mode documents the total number of values that must be defined for them to work properly.</p>
-<p>When values are not defined, they default to 0.</p>
+<p>At runtime, MATRIX requires 20 finite values in row-major RGBA order, with normalised offsets.  SATURATE, HUE_ROTATE, CONTRAST, BRIGHTNESS and HUE each take one finite value.  COLOURISE takes three colour values with an optional fourth strength value.  NONE, DESATURATE and LUMINANCE_ALPHA ignore the values.</p>
       </description>
     </field>
 

@@ -33,7 +33,7 @@ computer graphics textbooks.
 
 Convolution uses the device-pixel grid by default.  Set #UnitX and #UnitY to specify the kernel spacing in
 primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution
-and then resamples the result back to device pixels.
+and then resamples the result back to device pixels.  Use #SetKernel() to change the kernel dimensions at runtime.
 
 -END-
 
@@ -67,8 +67,9 @@ class extConvolveFX : public extFilterEffect {
    int    PreserveAlpha = false;
    int    TargetX = -1, TargetY = -1; // If -ve, the target will be computed as the centre of the matrix.
    double UnitX = 1, UnitY = 1;
+   CDM    DivisorMode = CDM::AUTO;
    int    MatrixSize = 0;
-   bool   MatrixProvided = false, DivisorProvided = false, TargetXProvided = false, TargetYProvided = false;
+   bool   TargetXProvided = false, TargetYProvided = false;
    bool   UnitXProvided = false, UnitYProvided = false;
    double Matrix[MAX_DIM * MAX_DIM] = {};
 
@@ -109,6 +110,9 @@ class extConvolveFX : public extFilterEffect {
    static void writePixel(uint8_t *Out, const uint8_t R, const uint8_t G, const uint8_t B, const uint8_t A,
       const double Factor, const double Bias, const bool PreserveAlpha, const double Red, const double Green,
       const double Blue, const double Alpha, const uint8_t SourceAlpha) {
+      const auto to_byte = [](double Value, double Limit) {
+         return uint8_t(std::lrint(std::min(std::max(0.0, Value), Limit)));
+      };
       if (PreserveAlpha) {
          if (not SourceAlpha) {
             Out[R] = Out[G] = Out[B] = Out[A] = 0;
@@ -116,18 +120,18 @@ class extConvolveFX : public extFilterEffect {
          }
 
          const double rgb_bias = Bias * 255.0;
-         Out[R] = std::clamp(int(std::lrint((Factor * Red) + rgb_bias)), 0, 255);
-         Out[G] = std::clamp(int(std::lrint((Factor * Green) + rgb_bias)), 0, 255);
-         Out[B] = std::clamp(int(std::lrint((Factor * Blue) + rgb_bias)), 0, 255);
+         Out[R] = to_byte((Factor * Red) + rgb_bias, 255);
+         Out[G] = to_byte((Factor * Green) + rgb_bias, 255);
+         Out[B] = to_byte((Factor * Blue) + rgb_bias, 255);
          Out[A] = SourceAlpha;
          return;
       }
 
-      const int alpha = std::clamp(int(std::lrint((Factor * Alpha) + (Bias * 255.0))), 0, 255);
+      const auto alpha = to_byte((Factor * Alpha) + (Bias * 255.0), 255);
       const double rgb_bias = Bias * double(alpha);
-      Out[R] = std::clamp(int(std::lrint((Factor * Red) + rgb_bias)), 0, alpha);
-      Out[G] = std::clamp(int(std::lrint((Factor * Green) + rgb_bias)), 0, alpha);
-      Out[B] = std::clamp(int(std::lrint((Factor * Blue) + rgb_bias)), 0, alpha);
+      Out[R] = to_byte((Factor * Red) + rgb_bias, alpha);
+      Out[G] = to_byte((Factor * Green) + rgb_bias, alpha);
+      Out[B] = to_byte((Factor * Blue) + rgb_bias, alpha);
       Out[A] = alpha;
    }
 
@@ -470,62 +474,97 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
+static ERR convolution_divisor(std::span<const double> Matrix, double Requested, double &Result)
+{
+   double divisor = Requested;
+   if (not divisor) {
+      for (double value : Matrix) divisor += value;
+      if (not divisor) divisor = 1;
+   }
+   if ((not std::isfinite(divisor)) or (not std::isfinite(1.0 / divisor))) return ERR::OutOfRange;
+   Result = divisor;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR set_convolution_kernel(extConvolveFX *Self, int Columns, int Rows, std::span<const double> Matrix,
+   double Divisor, int TargetX, int TargetY)
+{
+   constexpr int max_size = MAX_DIM * MAX_DIM;
+   if ((Columns <= 0) or (Rows <= 0)) return ERR::InvalidValue;
+   if (Columns > max_size / Rows) return ERR::BufferOverflow;
+   if (Matrix.size() != size_t(Columns * Rows)) return ERR::Mismatch;
+   if ((TargetX < -1) or (TargetX >= Columns) or (TargetY < -1) or (TargetY >= Rows)) return ERR::OutOfRange;
+
+   // Bound the coefficients so that a sum of byte samples multiplied by the kernel cannot overflow.
+   constexpr double max_coefficient = std::numeric_limits<double>::max() / (max_size * 256.0);
+   for (double value : Matrix) {
+      if (not (std::abs(value) <= max_coefficient)) return ERR::OutOfRange;
+   }
+   double effective_divisor;
+   if (auto error = convolution_divisor(Matrix, Divisor, effective_divisor); error != ERR::Okay) return error;
+
+   if (Matrix.data() != Self->Matrix) std::copy(Matrix.begin(), Matrix.end(), Self->Matrix);
+   Self->MatrixSize = Matrix.size();
+   Self->MatrixColumns = Columns;
+   Self->MatrixRows = Rows;
+   Self->Divisor = effective_divisor;
+   Self->DivisorMode = Divisor ? CDM::MANUAL : CDM::AUTO;
+   Self->TargetXProvided = TargetX >= 0;
+   Self->TargetYProvided = TargetY >= 0;
+   Self->TargetX = Self->TargetXProvided ? TargetX : Columns / 2;
+   Self->TargetY = Self->TargetYProvided ? TargetY : Rows / 2;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static ERR CONVOLVEFX_Init(extConvolveFX *Self)
 {
-   kt::Log log;
+   if (not Self->MatrixSize) return ERR::FieldNotSet;
+   if ((Self->TargetXProvided and (Self->TargetX < 0)) or
+       (Self->TargetYProvided and (Self->TargetY < 0))) return ERR::OutOfRange;
 
-   if ((Self->UnitX <= 0.0) or (Self->UnitY <= 0.0)) {
-      log.warning("UnitX and UnitY must be positive values.");
-      return ERR::InvalidValue;
-   }
+   return set_convolution_kernel(Self, Self->MatrixColumns, Self->MatrixRows,
+      std::span(Self->Matrix, size_t(Self->MatrixSize)), Self->DivisorMode IS CDM::AUTO ? 0.0 : Self->Divisor,
+      Self->TargetXProvided ? Self->TargetX : -1, Self->TargetYProvided ? Self->TargetY : -1);
+}
 
-   if (!Self->MatrixProvided) {
-      log.warning("The Matrix field must be set before initialising ConvolveFX.");
-      return ERR::FieldNotSet;
-   }
+/*********************************************************************************************************************
 
-   if (Self->MatrixColumns * Self->MatrixRows > MAX_DIM * MAX_DIM) {
-      log.warning("Size of matrix exceeds internally imposed limits.");
-      return ERR::BufferOverflow;
-   }
+-METHOD-
+SetKernel: Replaces the complete convolution kernel.
 
-   const int filter_size = Self->MatrixColumns * Self->MatrixRows;
+Replaces the dimensions, coefficients, divisor policy and anchor together.  The kernel may contain up to 81
+coefficients.  If validation fails, the previous kernel remains active.
 
-   if (Self->MatrixSize != filter_size) {
-      log.warning("Matrix size of %d does not match the filter size of %dx%d", Self->MatrixSize, Self->MatrixColumns, Self->MatrixRows);
-      return ERR::Mismatch;
-   }
+-INPUT-
+int Columns: Number of columns.
+int Rows: Number of rows.
+vector(double) Matrix: One finite coefficient per cell, in row-major order.
+double Divisor: A finite non-zero manual divisor, or zero for automatic normalisation.
+int TargetX: Zero-based anchor column, or -1 for the centre.
+int TargetY: Zero-based anchor row, or -1 for the centre.
 
-   // Use client-provided tx/ty values, otherwise default according to the SVG standard.
+-ERRORS-
+Okay
+NullArgs
+InvalidValue
+BufferOverflow
+Mismatch
+OutOfRange
 
-   if (Self->TargetXProvided and ((Self->TargetX < 0) or (Self->TargetX >= Self->MatrixColumns))) {
-      log.warning("TargetX value of %d is outside the matrix width of %d.", Self->TargetX, Self->MatrixColumns);
-      return ERR::OutOfRange;
-   }
+-END-
 
-   if (!Self->TargetXProvided) {
-      Self->TargetX = Self->MatrixColumns>>1;
-   }
+*********************************************************************************************************************/
 
-   if (Self->TargetYProvided and ((Self->TargetY < 0) or (Self->TargetY >= Self->MatrixRows))) {
-      log.warning("TargetY value of %d is outside the matrix height of %d.", Self->TargetY, Self->MatrixRows);
-      return ERR::OutOfRange;
-   }
-
-   if (!Self->TargetYProvided) {
-      Self->TargetY = Self->MatrixRows>>1;
-   }
-
-   if (!Self->Divisor) {
-      double divisor = 0;
-      for (int i=0; i < filter_size; i++) divisor += Self->Matrix[i];
-      if (!divisor) divisor = 1;
-      Self->Divisor = divisor;
-   }
-
-   log.trace("Convolve Size: (%d,%d), Divisor: %g, Bias: %g", Self->MatrixColumns, Self->MatrixRows, Self->Divisor, Self->Bias);
-
-   return ERR::Okay;
+static ERR CONVOLVEFX_SetKernel(extConvolveFX *Self, struct cvx::SetKernel *Args)
+{
+   if ((not Args) or (not Args->Matrix)) return ERR::NullArgs;
+   return set_convolution_kernel(Self, Args->Columns, Args->Rows, *Args->Matrix,
+      Args->Divisor, Args->TargetX, Args->TargetY);
 }
 
 /*********************************************************************************************************************
@@ -542,22 +581,60 @@ Bias is added to the alpha channel unless #PreserveAlpha is TRUE.  The colour ch
 result alpha, which is equivalent to adding Bias to the straight colour values.  For example, a Bias of 1 with
 #PreserveAlpha disabled produces opaque white wherever the convolved alpha is not negative.
 
+*********************************************************************************************************************/
+
+static ERR CONVOLVEFX_SET_Bias(extConvolveFX *Self, double Value)
+{
+   if (not std::isfinite(Value * 255.0)) return ERR::InvalidValue;
+   Self->Bias = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 Divisor: Defines the divisor value in the convolution algorithm.
 
 After applying the #Matrix to the input image to yield a number, that number is divided by #Divisor to yield the
 final destination colour value.  A divisor that is the sum of all the matrix values tends to have an evening effect
 on the overall colour intensity of the result.  The default value is the sum of all values in #Matrix, with the
-exception that if the sum is zero, then the divisor is set to `1`.
+exception that if the sum is zero, then the divisor is set to `1`.  Setting a finite non-zero divisor selects
+manual mode.  Use #DivisorMode to restore automatic normalisation.
+
+-FIELD-
+DivisorMode: Controls how the divisor is updated when the kernel changes.
+Lookup: CDM
+
+Switching to AUTO recalculates #Divisor immediately for an initialised effect.  Switching to MANUAL keeps the
+current divisor.
 
 *********************************************************************************************************************/
 
 static ERR CONVOLVEFX_SET_Divisor(extConvolveFX *Self, double Value)
 {
-   kt::Log log;
-   if (!Value) return log.warning(ERR::InvalidValue);
+   if ((not Value) or (not std::isfinite(Value)) or (not std::isfinite(1.0 / Value))) return ERR::InvalidValue;
    Self->Divisor = Value;
-   Self->DivisorProvided = true;
+   Self->DivisorMode = CDM::MANUAL;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR CONVOLVEFX_SET_DivisorMode(extConvolveFX *Self, CDM Value)
+{
+   if ((Value != CDM::AUTO) and (Value != CDM::MANUAL)) return ERR::InvalidValue;
+   if (Value IS Self->DivisorMode) return ERR::Okay;
+
+   if (Value IS CDM::AUTO) {
+      const auto matrix = std::span(Self->Matrix, size_t(Self->MatrixSize));
+      if (auto error = convolution_divisor(matrix, 0.0, Self->Divisor); error != ERR::Okay) return error;
+   }
+   else if (not Self->Divisor) Self->Divisor = 1.0;
+
+   Self->DivisorMode = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -569,11 +646,24 @@ EdgeMode: Defines the behaviour of the convolve algorithm around the edges of th
 The EdgeMode determines how to extend the input image with colour values so that the matrix operations can be applied
 when the #Matrix is positioned at or near the edge of the input image.
 
+*********************************************************************************************************************/
+
+static ERR CONVOLVEFX_SET_EdgeMode(extConvolveFX *Self, EM Value)
+{
+   if ((Value != EM::DUPLICATE) and (Value != EM::WRAP) and (Value != EM::NONE)) return ERR::InvalidValue;
+   Self->EdgeMode = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 Matrix: A list of numbers that make up the kernel matrix for the convolution.
 
 A list of numbers that make up the kernel matrix for the convolution.  The number of entries in the list must equal
-`MatrixColumns * MatrixRows`.
+`MatrixColumns * MatrixRows`.  An initialised effect accepts replacements of the same size and recomputes
+the divisor in automatic mode.  Use #SetKernel() to resize the kernel.
 
 *********************************************************************************************************************/
 
@@ -585,30 +675,18 @@ static ERR CONVOLVEFX_GET_Matrix(extConvolveFX *Self, std::span<double> &Array)
 
 static ERR CONVOLVEFX_SET_Matrix(extConvolveFX *Self, std::span<const double> &Array)
 {
-   if ((Array.size() > 0) and (std::ssize(Array) <= std::ssize(Self->Matrix))) {
-      Self->MatrixSize = Array.size();
-      Self->MatrixProvided = true;
-      copymem(Array.data(), Self->Matrix, sizeof(double) * Array.size());
-      return ERR::Okay;
+   if (Self->initialised()) {
+      return set_convolution_kernel(Self, Self->MatrixColumns, Self->MatrixRows, Array,
+         Self->DivisorMode IS CDM::AUTO ? 0.0 : Self->Divisor, Self->TargetXProvided ? Self->TargetX : -1,
+         Self->TargetYProvided ? Self->TargetY : -1);
    }
-   else return kt::Log().warning(ERR::InvalidValue);
-}
 
-/*********************************************************************************************************************
-
--FIELD-
-MatrixRows: The number of rows in the Matrix.
-
-Indicates the number of rows represented in #Matrix.  A typical value is `3`.  It is recommended that only small
-values are used; higher values may result in very high CPU overhead and usually do not produce results that justify
-the impact on performance.  The default value is 3.
-
-*********************************************************************************************************************/
-
-static ERR CONVOLVEFX_SET_MatrixRows(extConvolveFX *Self, int Value)
-{
-   if (Value <= 0) return ERR::InvalidValue;
-   Self->MatrixRows = Value;
+   if (Array.empty() or (Array.size() > std::size(Self->Matrix))) return ERR::InvalidValue;
+   for (double value : Array) {
+      if (not std::isfinite(value)) return ERR::InvalidValue;
+   }
+   if (Array.data() != Self->Matrix) std::copy(Array.begin(), Array.end(), Self->Matrix);
+   Self->MatrixSize = Array.size();
    return ERR::Okay;
 }
 
@@ -633,12 +711,41 @@ static ERR CONVOLVEFX_SET_MatrixColumns(extConvolveFX *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+MatrixRows: The number of rows in the Matrix.
+
+Indicates the number of rows represented in #Matrix.  A typical value is `3`.  It is recommended that only small
+values are used; higher values may result in very high CPU overhead and usually do not produce results that justify
+the impact on performance.  The default value is 3.
+
+*********************************************************************************************************************/
+
+static ERR CONVOLVEFX_SET_MatrixRows(extConvolveFX *Self, int Value)
+{
+   if (Value <= 0) return ERR::InvalidValue;
+   Self->MatrixRows = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 PreserveAlpha: If TRUE, the alpha channel is protected from the effects of the convolve algorithm.
 
 When PreserveAlpha is TRUE, the kernel is applied only to the colour channels.  The colour values are unpremultiplied
 before the kernel is applied, so translucent pixels contribute their full colour, and Bias is added to the
 unpremultiplied colour.  The result alpha is the source alpha.  When FALSE, the default, all four channels are
 convolved as premultiplied values.
+
+*********************************************************************************************************************/
+
+static ERR CONVOLVEFX_SET_PreserveAlpha(extConvolveFX *Self, int Value)
+{
+   Self->PreserveAlpha = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 TargetX: The X position of the matrix in relation to the input image.
@@ -658,6 +765,7 @@ static ERR CONVOLVEFX_SET_TargetX(extConvolveFX *Self, int Value)
 
    Self->TargetX = Value;
    Self->TargetXProvided = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -681,6 +789,7 @@ static ERR CONVOLVEFX_SET_TargetY(extConvolveFX *Self, int Value)
 
    Self->TargetY = Value;
    Self->TargetYProvided = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -699,10 +808,11 @@ aligns with the pixel grid of the kernel.
 
 static ERR CONVOLVEFX_SET_UnitX(extConvolveFX *Self, double Value)
 {
-   if (Value <= 0.0) return ERR::InvalidValue;
+   if ((not std::isfinite(Value)) or (Value <= 0.0)) return ERR::InvalidValue;
 
    Self->UnitX = Value;
    Self->UnitXProvided = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -721,10 +831,11 @@ aligns with the pixel grid of the kernel.
 
 static ERR CONVOLVEFX_SET_UnitY(extConvolveFX *Self, double Value)
 {
-   if (Value <= 0.0) return ERR::InvalidValue;
+   if ((not std::isfinite(Value)) or (Value <= 0.0)) return ERR::InvalidValue;
 
    Self->UnitY = Value;
    Self->UnitYProvided = true;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -738,13 +849,13 @@ XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 
 static ERR convolve_xml(const extConvolveFX &Effect, filter_xml_element &Element)
 {
-   if (not Effect.MatrixProvided) return ERR::FieldNotSet;
+   if (not Effect.MatrixSize) return ERR::FieldNotSet;
    Element.Name = "feConvolveMatrix";
    if ((Effect.MatrixColumns != 3) or (Effect.MatrixRows != 3)) {
       Element.attribute("order", Element.number(Effect.MatrixColumns) + ' ' + Element.number(Effect.MatrixRows));
    }
    Element.list("kernelMatrix", std::span(Effect.Matrix, size_t(Effect.MatrixSize)));
-   if (Effect.DivisorProvided) Element.attribute("divisor", Effect.Divisor);
+   if (Effect.DivisorMode IS CDM::MANUAL) Element.attribute("divisor", Effect.Divisor);
    if (Effect.Bias != 0) Element.attribute("bias", Effect.Bias);
    if (Effect.TargetXProvided) Element.attribute("targetX", Effect.TargetX);
    if (Effect.TargetYProvided) Element.attribute("targetY", Effect.TargetY);
@@ -770,31 +881,19 @@ static ERR convolve_xml(const extConvolveFX &Effect, filter_xml_element &Element
 
 #include "filter_convolve_def.c"
 
-//********************************************************************************************************************
-// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
-// the filter's clients.
-
-static ERR CONVOLVEFX_SET_PreserveAlpha(extConvolveFX *Self, int Value)
-{
-   Self->PreserveAlpha = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static const FieldArray clConvolveFXFields[] = {
-   { "Bias",          FDF_DOUBLE|FDF_RI },
-   { "Divisor",       FDF_DOUBLE|FDF_RI,         nullptr, CONVOLVEFX_SET_Divisor },
-   { "EdgeMode",      FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clConvolveFXEM },
+   { "Bias",          FDF_DOUBLE|FDF_RW,         nullptr, CONVOLVEFX_SET_Bias },
+   { "Divisor",       FDF_DOUBLE|FDF_RW,         nullptr, CONVOLVEFX_SET_Divisor },
+   { "EdgeMode",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, CONVOLVEFX_SET_EdgeMode, &clConvolveFXEM },
    { "MatrixRows",    FDF_INT|FDF_RI,            nullptr, CONVOLVEFX_SET_MatrixRows },
    { "MatrixColumns", FDF_INT|FDF_RI,            nullptr, CONVOLVEFX_SET_MatrixColumns },
-   { "Matrix",        FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, CONVOLVEFX_GET_Matrix, CONVOLVEFX_SET_Matrix },
-   { "PreserveAlpha", FDF_INT|FDF_RW, nullptr, CONVOLVEFX_SET_PreserveAlpha },
-   { "TargetX",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetX },
-   { "TargetY",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetY },
-   { "UnitX",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitX },
-   { "UnitY",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitY },
+   { "PreserveAlpha", FDF_INT|FDF_RW,    nullptr, CONVOLVEFX_SET_PreserveAlpha },
+   { "TargetX",       FDF_INT|FDF_RW,    nullptr, CONVOLVEFX_SET_TargetX },
+   { "TargetY",       FDF_INT|FDF_RW,    nullptr, CONVOLVEFX_SET_TargetY },
+   { "UnitX",         FDF_DOUBLE|FDF_RW, nullptr, CONVOLVEFX_SET_UnitX },
+   { "UnitY",         FDF_DOUBLE|FDF_RW, nullptr, CONVOLVEFX_SET_UnitY },
+   { "DivisorMode",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, CONVOLVEFX_SET_DivisorMode, &clConvolveFXCDM },
+   { "Matrix",        FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RW|FDF_PURE, CONVOLVEFX_GET_Matrix, CONVOLVEFX_SET_Matrix },
    { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
@@ -809,6 +908,7 @@ ERR init_convolvefx(void)
       fl::Name("ConvolveFX"),
       fl::Category(CCF::GRAPHICS),
       fl::Actions(clConvolveFXActions),
+      fl::Methods(clConvolveFXMethods),
       fl::Fields(clConvolveFXFields),
       fl::Size(sizeof(extConvolveFX)),
       fl::Path(MOD_PATH));
