@@ -161,6 +161,34 @@ function placementArea(Parent:obj, Anchor:obj, X:num!, Y:num!):table
    return area
 end
 
+-- Desktop menus anchored to each host window, keyed by the host surface's UID.  A host is subscribed to once, however
+-- many menus are created and freed over its lifetime (e.g. when a menubar is restyled).  Menus are weak keys so that a
+-- collected menu leaves its set, and the entry is removed when the host is freed.
+
+glHostMenus = { }
+
+function watchHost(Host:obj!, Menu:table!):table
+   host_id = Host.id
+   menus = glHostMenus[host_id]
+   if not menus then
+      menus = setmetatable({ }, { __mode='k' })
+      glHostMenus[host_id] = menus
+
+      Host.subscribe('redimension', function()
+         for menu in pairs(menus) do
+            if menu.visible then menu.hide() end
+         end
+      end)
+
+      Host.subscribe('free', function()
+         glHostMenus[host_id] = nil
+      end)
+   end
+
+   menus[Menu] = true
+   return menus
+end
+
 gui.menu = function(Options:table!)
    -- The menu adopts the theme of the window that it is opened from.  The global theme is the fallback for popups
    -- that have no reference to a window.
@@ -871,6 +899,7 @@ gui.menu = function(Options:table!)
          &currentMenu   = nil
          &_keyboardMenu = nil
          &surface       = nil
+         if &_hostMenus then &_hostMenus[&&] = nil end
       end)
 
       if &popup then
@@ -917,6 +946,16 @@ gui.menu = function(Options:table!)
             end
          end
       end)
+
+      -- A desktop menu that is anchored to a window is a separate host window, so it would be left behind if the user
+      -- moves or resizes the window that it belongs to (on X11 the window manager does this without the menu losing
+      -- focus).  The menu is hidden when the window's top-level surface is redimensioned.
+
+      if &relative and not &parentMenu and (not Options.target or Options.target is 0) then
+         host = &relative.scene?.surface
+         while host?.parent do host = host.parent end
+         if host then &_hostMenus = watchHost(host, &&) end
+      end
 
       &viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport:obj!, Events)
          -- The inset can change both the view box scale and its alignment within the receiving viewport.

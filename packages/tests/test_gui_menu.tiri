@@ -47,8 +47,8 @@ end
          'Menubar highlight and focus overrides must reach the vectors')
       assert(menu._rows[0].text.fill is '#fedcba' and menu.content.child.fill is '#202e40',
          'A standalone menu must read the menu section of the same table')
-      assert(menu.highlight.fill is '#654321' and menu.highlight.next.stroke is '#7994ad' and
-         menu.highlight.next.opacity is 0.75, 'Menu highlight and border overrides must reach the vectors')
+      assert(menu.highlight.fill is '#654321' and menu._itemView.next.stroke is '#7994ad' and
+         menu._itemView.next.opacity is 0.75, 'Menu highlight and border overrides must reach the vectors')
       assert(icon_item.iconView, 'Custom menu icons must render')
       local spacing = gui.getFontHeight(gui.fonts.menu)
       local icon_size = math.floor(math.floor(spacing * 1.5) * 0.8)
@@ -1105,6 +1105,34 @@ end
       'Reopening must apply updated enabled and checked state')
 end
 
+@Test function MenuThemePathUsesCurrentViewportSize()
+   local surface <close>, target = newTarget()
+   local path_width:num, path_height:num
+   local menu = gui.menu({ target=surface, relative=target, items=array<table> { { label='Open' } },
+      theme={ menu={ path=function(Viewport:obj!):table
+         path_width, path_height = Viewport.width, Viewport.height
+         return gui.paths.ellipse(Viewport)
+      end } },
+      prepare=function(Items)
+         Items[0].label = 'Open a document from the current workspace'
+      end
+   })
+   defer menu.surface?.free() end
+   assert(path_width is menu.viewport.width and path_height is menu.viewport.height,
+      'The initial path must use the measured viewport size')
+
+   local initial_width = path_width
+   surface.acShow()
+   menu.show()
+   assert(path_width > initial_width and path_width is menu.viewport.width and path_height is menu.viewport.height,
+      'The rebuilt path must use the new viewport size')
+
+   local prepared_width = path_width
+   menu.hide()
+   menu.show()
+   assert(path_width is prepared_width, 'Rebuilding the same rows must preserve the measured viewport width')
+end
+
 @Test function SubmenusPrepareWhenOpenedAndReleaseRebuiltChildren()
    local surface <close>, target = newTarget()
    local calls = 0
@@ -1429,6 +1457,33 @@ end
    local submenu = menu.currentMenu
    assert(submenu?.visible and submenu.scale is menu.scale, 'Submenus must inherit the scale of their parent')
    assert(submenu.surface.width is math.ceil(submenu.width * submenu.scale), 'The submenu surface must be scaled')
+end
+
+@Test function ScaledMenuPointerMatchesInsetRows()
+   local surface <close>, target = newTarget()
+   local activated:str
+   local menu = gui.menu({ target=surface, relative=target, scale=0.5,
+      theme={ menu={ border={ stroke='red', strokeWidth=8 } } },
+      items=array<table> {
+         { label='One' },
+         { label='Two', onActivate=function() activated = 'Two' end },
+         { label='Three', onActivate=function() activated = 'Three' end }
+      }
+   })
+   defer menu.surface?.free() end
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+
+   menu.selectItem('Three')
+   local _, _, row_top = menu.highlight.mtGetBoundary(0)
+   assert(menu.selectItem('Two'), 'The pointer test must start with a different row highlighted')
+   feed(JET_ABS_XY, menu.surface.absX + 20, math.ceil(menu.surface.absY + row_top + 1))
+   assert(menu.hItem?.config.label is 'Three', 'Pointer movement must highlight the rendered row')
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(activated is 'Three', 'Clicking the rendered row must activate its item')
 end
 
 @Test function ScaledMenusOpenAboveAnchorWithoutOverlap()
