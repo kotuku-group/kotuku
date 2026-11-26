@@ -468,29 +468,25 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
 
       found = true;
    }
-   else if (auto map_lookup = glColourMaps.find(lookup); map_lookup != glColourMaps.end()) {
+   else if (glColourMaps.contains(lookup)) {
       // Referencing a pre-defined colour map results in it being added to the Scene's definitions as a linear gradient.
       // It is then accessible permanently under that name.
 
-      extGradientLinear *gradient;
-      if (!NewObject(CLASSID::GRADIENTLINEAR, &gradient)) {
-         SetOwner(gradient, Scene);
-         gradient->setName(lookup);
-         gradient->setUnits(VUNIT::BOUNDING_BOX);
-         gradient->X1 = Unit(0.0);
-         gradient->Y1 = Unit(0.0);
-         gradient->X2 = Unit(1.0, FD_SCALED);
-         gradient->Y2 = Unit(0.0);
+      extGradientLinear::create gradient;
+      if (not gradient.ok()) return gradient.error;
+      if (auto error = SetOwner(gradient.get(), Scene); error != ERR::Okay) return error;
+      if (auto error = gradient->setName(lookup); error != ERR::Okay) return error;
 
-         if (gradient->Colours) delete gradient->Colours;
-         gradient->Colours = new (std::nothrow) GradientColours(map_lookup->second, 0);
+      gradient->X1 = Unit(0.0);
+      gradient->Y1 = Unit(0.0);
+      gradient->X2 = Unit(1.0, FD_SCALED);
+      gradient->Y2 = Unit(0.0);
 
-         if (!InitObject(gradient)) {
-            Scene->addDef(lookup.c_str(), gradient);
-            Painter->Gradient = gradient;
-         }
-      }
+      if (auto error = gradient->setColourMap(lookup); error != ERR::Okay) return error;
+      if (auto error = InitObject(gradient.get()); error != ERR::Okay) return error;
+      if (auto error = Scene->addDef(lookup, gradient.get()); error != ERR::Okay) return error;
 
+      Painter->Gradient = gradient.detach();
       found = true;
    }
 

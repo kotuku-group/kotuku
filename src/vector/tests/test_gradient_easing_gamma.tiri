@@ -230,3 +230,38 @@ end
    assert(eased_hash != linear_hash,
       'Changing Easing after initialisation should rebuild ColourMap-backed gradients')
 end
+
+@Test function ResolutionChangesRebuildFromOriginalStops()
+   local scene, gradient = newLinearScene({ }, { opacity=0.5 })
+   local fresh = newLinearScene({ resolution=0.75 }, { opacity=0.5 })
+   local bmp = newBitmap(100, 20)
+   local full_hash = drawHash(scene, bmp)
+
+   gradient.resolution = 0.25
+   local coarse_hash = drawHash(scene, bmp)
+   assert(coarse_hash != full_hash, 'Reducing Resolution should change the ramp')
+
+   gradient.resolution = 0.75
+   local updated_hash = drawHash(scene, bmp)
+   assert(updated_hash != coarse_hash, 'Changing Resolution from 0.25 to 0.75 should regenerate the ramp')
+   assert(updated_hash is drawHash(fresh, bmp), 'The rebuilt ramp should match a fresh gradient at the same Resolution')
+
+   gradient.resolution = 1.0
+   assert(drawHash(scene, bmp) is full_hash, 'Restoring full Resolution should recover the original ramp')
+end
+
+@Test function ImplicitColourMapRendersAndRetainsPalette()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=20 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#cmap:viridis)' })
+   local bmp = newBitmap(100, 20)
+   local default_hash = drawHash(scene, bmp)
+   local left_red = mGfx.ReadRGBPixel(bmp, 5, 10).red
+   local right_red = mGfx.ReadRGBPixel(bmp, 95, 10).red
+   assert(left_red < 100 and right_red > 200, f'Viridis should render a ramp, got red {left_red} and {right_red}')
+
+   local _, gradient = check scene.mtFindDef('cmap:viridis')
+   assert(gradient.colourMap is 'cmap:viridis', 'The implicit gradient should retain its palette name')
+   gradient.easing = GEZ_CUBIC_IN
+   assert(drawHash(scene, bmp) != default_hash, 'Changing Easing should rebuild the implicit colourmap')
+end
