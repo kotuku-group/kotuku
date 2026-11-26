@@ -281,3 +281,38 @@ end
    assert(read_back[0].leftStart.red <= 1.0, 'Colour components above 1.0 should be clamped at assignment')
    assert(read_back[0].leftStart.green >= 0.0, 'Negative colour components should be clamped at assignment')
 end
+
+@Test function DarkLinearRGBCurveRetainsGreyLevels()
+   local black = { 0, 0, 0, 1 }
+   local dark = 20 / 255
+   local grey = { dark, dark, dark, 1 }
+   local scene = newDiffusionScene({ lineCurve(45, 0, 45, 100, black, grey, black, grey) },
+      { colourSpace=VCS_LINEAR_RGB })
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local levels = { }
+   for y in {0 to 100} do
+      local sample = readPixel(bmp, 44, y).red
+      assert(sample <= 20, f'Linear RGB diffusion exceeded the curve colour at y={y}, got {sample}')
+      levels[sample] = true
+   end
+
+   assert(table.size(levels) >= 19, f'Expected at least 19 shades of grey, got {table.size(levels)}')
+   assert(levels[20], 'Expected the ramp to reach the curve end colour')
+end
+
+@Test function TranslucentDarkLinearRGBCurveRetainsColour()
+   local dark = 20 / 255
+   local grey = { dark, dark, dark, 0.125 }
+   local scene = newDiffusionScene({ lineCurve(45, 0, 45, 100, grey, grey, grey, grey) },
+      { colourSpace=VCS_LINEAR_RGB })
+   local bmp = obj.new('bitmap', {
+      width=100, height=100, bitsPerPixel=32, bkgd='0,0,0,255', blendMode=BLM_SRGB
+   })
+   drawScene(scene, bmp)
+
+   local p = readPixel(bmp, 44, 50)
+   assert(p.red is 3 and p.green is 3 and p.blue is 3,
+      f'Expected sRGB 20 at 12.5% opacity over black to round to 3, got {p.red},{p.green},{p.blue}')
+end

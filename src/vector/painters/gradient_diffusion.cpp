@@ -480,8 +480,8 @@ uint64_t diffusion_fingerprint(const std::vector<DiffusionCurve> &Curves, int Gr
 
 //********************************************************************************************************************
 // Ensure FieldBuffer holds the solved colour field for the given grid dimensions and solve rectangle.  The solve
-// runs in premultiplied float space (linearised for VCS::LINEAR_RGB) and the result is stored as straight-alpha
-// rgba8 texels ready for bilinear sampling by the renderer.
+// runs in premultiplied float space (linearised for VCS::LINEAR_RGB) and the result is stored as premultiplied
+// rgba16 texels ready for bilinear sampling by the renderer.
 
 void extGradientDiffusion::refresh_field(int GridWidth, int GridHeight, const TClipRectangle<double> &SolveRect)
 {
@@ -558,8 +558,8 @@ void extGradientDiffusion::refresh_field(int GridWidth, int GridHeight, const TC
       const float green = std::clamp(solution[i * 4 + 1], 0.0f, alpha);
       const float blue  = std::clamp(solution[i * 4 + 2], 0.0f, alpha);
 
-      FieldBuffer[i] = agg::rgba8(uint8_t((red * 255.0f) + 0.5f), uint8_t((green * 255.0f) + 0.5f),
-         uint8_t((blue * 255.0f) + 0.5f), uint8_t((alpha * 255.0f) + 0.5f));
+      FieldBuffer[i] = agg::rgba16(agg::uround(red * 65535.0), agg::uround(green * 65535.0),
+         agg::uround(blue * 65535.0), agg::uround(alpha * 65535.0));
    }
 
    FieldWidth  = GridWidth;

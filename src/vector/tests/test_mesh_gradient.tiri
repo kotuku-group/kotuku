@@ -400,3 +400,23 @@ end
    end
    assert(rejected, 'GradientMesh should reject inherited ramp fields')
 end
+
+@Test function DarkLinearRGBPatchRetainsGreyLevels()
+   local scene, gradient = newPatchScene(greyColumnPatch(0, 100, 0, 20 / 255), VCS_LINEAR_RGB)
+   gradient.rows = 1
+   local bmp = newBitmap(100, 100)
+
+   for mode in values({ GMT_LINEAR, GMT_BICUBIC }) do
+      gradient.mode = mode
+      drawScene(scene, bmp)
+      local levels = { }
+      for x in {0 to 100} do
+         local sample = readPixel(bmp, x, 10).red
+         assert(sample <= 20, f'Linear RGB patch exceeded the right corner colour at x={x}, got {sample}')
+         levels[sample] = true
+      end
+
+      assert(table.size(levels) >= 19, f'Expected at least 19 shades of grey in mode {mode}, got {table.size(levels)}')
+      assert(levels[20], f'Expected mode {mode} to reach the right corner colour')
+   end
+end

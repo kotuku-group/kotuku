@@ -305,11 +305,22 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
 // the final placement transform and the fill opacity is folded into vertex alpha.  Degenerate (zero-area) triangles
 // are dropped here so the render loop never has to filter them.
 //
-// Colour encoding follows ColourSpace, mirroring how the field gradients treat VCS in GradientColours:
-//   * VCS::SRGB (and INHERIT) -> colours are stored sRGB-encoded.  span_gouraud_rgba interpolates linearly in that
-//     encoding and emits the bytes verbatim, which the pixel format reads as sRGB.  That is correct sRGB blending.
-//   * VCS::LINEAR_RGB -> colours are decoded to linear here, so span_gouraud_rgba_linear interpolates in linear
-//     space and re-encodes each output pixel back to sRGB for storage.
+// The shared triangle cache keeps 16-bit components in the interpolation space. Linear RGB is encoded to sRGB
+// only when emitting the final span.
+
+static unsigned gradient_byte(uint16_t Value)
+{
+   return (unsigned(Value) + 128) / 257;
+}
+
+static agg::rgba16 triangle_colour(const FRGB &Colour, double Opacity)
+{
+   auto component = [](double Value) {
+      return (Value > 0.0) ? agg::uround(std::min(Value, 1.0) * 65535.0) : 0u;
+   };
+   return { component(Colour.Red), component(Colour.Green), component(Colour.Blue),
+      component(Colour.Alpha * Opacity) };
+}
 
 // Positive-area overlap requires ordered source-over compositing, while triangles that only share edges or vertices
 // can use the seamless compound path.  Sweep along the mesh's widest axis to discard most pairs cheaply, then use a
@@ -410,19 +421,15 @@ static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, 
    const auto &verts = Mesh.Vertices;
    const bool linear = (ColourSpace IS VCS::LINEAR_RGB);
 
-   struct PreparedVertex { double x, y; agg::rgba8 colour; };
+   struct PreparedVertex { double x, y; agg::rgba16 colour; };
    std::vector<PreparedVertex> pv;
    pv.reserve(verts.size());
    for (auto &v : verts) {
       double x = v.X, y = v.Y;
       Transform.transform(&x, &y);
-      agg::rgba8 colour(v.Colour, v.Colour.Alpha * Opacity);
-      if (linear) { // Decode RGB to linear space; alpha is unaffected by the transfer function.
-         colour.r = glLinearRGB.convert(colour.r);
-         colour.g = glLinearRGB.convert(colour.g);
-         colour.b = glLinearRGB.convert(colour.b);
-      }
-      pv.push_back({ x, y, colour });
+      FRGB colour = v.Colour;
+      if (linear) glLinearRGB.convert(colour);
+      pv.push_back({ x, y, triangle_colour(colour, Opacity) });
    }
 
    // Triangle connectivity: indexed list when provided, otherwise a flat triangle soup (every 3 vertices).
@@ -454,7 +461,8 @@ static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, 
       tri.x[2] = c.x; tri.y[2] = c.y; tri.colour[2] = c.colour;
       Cache.Triangles.push_back(tri);
 
-      if ((a.colour.a < 0xff) or (b.colour.a < 0xff) or (c.colour.a < 0xff)) Cache.Translucent = true;
+      if ((gradient_byte(a.colour.a) < 255) or (gradient_byte(b.colour.a) < 255) or
+          (gradient_byte(c.colour.a) < 255)) Cache.Translucent = true;
    }
 
    Cache.Overlapping = Cache.Translucent and gouraud_triangles_overlap(Cache.Triangles);
@@ -478,21 +486,36 @@ constexpr size_t GOURAUD_COMPOUND_STYLE_LIMIT = 32000;
 // Generators are constructed with zero dilation: the compound rasteriser partitions coverage exactly along shared
 // edges, so no overlap is needed to seal seams.
 
+template<bool Linear, bool Quantise> class GouraudColourSpan : public agg::span_gouraud_rgba<agg::rgba16> {
+public:
+   GouraudColourSpan(const GouraudTriangle &Triangle, double Dilation, int Levels) :
+      agg::span_gouraud_rgba<agg::rgba16>(Triangle.colour[0], Triangle.colour[1], Triangle.colour[2],
+         Triangle.x[0], Triangle.y[0], Triangle.x[1], Triangle.y[1], Triangle.x[2], Triangle.y[2], Dilation),
+      steps(Levels - 1) { }
+
+   void generate(agg::rgba8 *Span, int X, int Y, unsigned Length) {
+      auto rgb = [this](uint16_t Value) {
+         const unsigned byte = Linear ? glLinearRGB.invert16(Value) : gradient_byte(Value);
+         if constexpr (Quantise) return ((byte * steps + 127) / 255) * 255 / steps;
+         else return byte;
+      };
+
+      agg::span_gouraud_rgba<agg::rgba16>::generate(Span, X, Y, Length,
+         [&](uint16_t Red, uint16_t Green, uint16_t Blue, uint16_t Alpha) {
+            return agg::rgba8(rgb(Red), rgb(Green), rgb(Blue), gradient_byte(Alpha));
+         });
+   }
+
+private:
+   unsigned steps;
+};
+
 template<class SpanGen> class GouraudStyleHandler {
 public:
    GouraudStyleHandler(const std::vector<GouraudTriangle> &Triangles, int Levels) {
       generators.reserve(Triangles.size());
       for (auto &tri : Triangles) {
-         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
-         if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-            tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], 0.0, Levels); }) {
-            generators.emplace_back(tri.colour[0], tri.colour[1], tri.colour[2],
-               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], 0.0, Levels);
-         }
-         else {
-            generators.emplace_back(tri.colour[0], tri.colour[1], tri.colour[2],
-               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], 0.0);
-         }
+         generators.emplace_back(tri, 0.0, Levels);
          generators.back().prepare();
       }
    }
@@ -540,19 +563,7 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
    auto render_triangles = [&]<typename SpanGen>() {
       constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
       for (auto &tri : Cache.Triangles) {
-         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
-         auto make_span = [&] {
-            if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels); }) {
-               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION, levels);
-            }
-            else {
-               return SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
-                  tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], DILATION);
-            }
-         };
-         auto span_gen = make_span();
+         SpanGen span_gen(tri, DILATION, levels);
 
          triangle_raster.reset();
          triangle_raster.add_path(span_gen);
@@ -560,7 +571,7 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
       }
    };
 
-   // Slow (translucent) path: the dilation trick fails when vertex alpha < 255 because the ~1px overlap band is
+   // Slow (translucent) path: the dilation trick fails when vertices are translucent because the ~1px overlap band is
    // source-over blended twice, roughly doubling its opacity and exposing the tessellation grid as dark seams.
    // For a non-overlapping mesh, all triangles are fed into a single compound rasterisation pass as per-triangle
    // styles: coverage at shared edges is partitioned exactly between neighbours and each destination pixel is blended
@@ -606,12 +617,12 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
    };
 
    if (ColourSpace IS VCS::LINEAR_RGB) {
-      if (quantise) dispatch.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
-      else dispatch.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+      if (quantise) dispatch.template operator()<GouraudColourSpan<true, true>>();
+      else dispatch.template operator()<GouraudColourSpan<true, false>>();
    }
    else {
-      if (quantise) dispatch.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
-      else dispatch.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
+      if (quantise) dispatch.template operator()<GouraudColourSpan<false, true>>();
+      else dispatch.template operator()<GouraudColourSpan<false, false>>();
    }
 }
 
@@ -712,7 +723,7 @@ static agg::point_d mesh_coons_eval(const MeshPatch &Patch, double U, double V)
    return mesh_point_sub(boundary, bilinear);
 }
 
-static agg::rgba8 mesh_colour_eval(const MeshPatch &Patch, double U, double V, double Opacity, bool Linear)
+static agg::rgba16 mesh_colour_eval(const MeshPatch &Patch, double U, double V, double Opacity, bool Linear)
 {
    const double w00 = (1.0 - U) * (1.0 - V);
    const double w10 = U * (1.0 - V);
@@ -734,7 +745,7 @@ static agg::rgba8 mesh_colour_eval(const MeshPatch &Patch, double U, double V, d
    colour.Alpha = (corner[0].Alpha * w00) + (corner[1].Alpha * w10) + (corner[2].Alpha * w11) +
       (corner[3].Alpha * w01);
 
-   return agg::rgba8(colour, colour.Alpha * Opacity);
+   return triangle_colour(colour, Opacity);
 }
 
 //********************************************************************************************************************
@@ -809,7 +820,7 @@ static bool build_mesh_colour_grid(const MeshGradient &Mesh, bool Linear, MeshCo
    return true;
 }
 
-static agg::rgba8 mesh_colour_eval_bicubic(const MeshColourGrid &Grid, int Row, int Col, double U, double V,
+static agg::rgba16 mesh_colour_eval_bicubic(const MeshColourGrid &Grid, int Row, int Col, double U, double V,
    double Opacity)
 {
    auto hermite = [](double T, double (&H)[4]) {
@@ -843,12 +854,12 @@ static agg::rgba8 mesh_colour_eval_bicubic(const MeshColourGrid &Grid, int Row, 
    };
 
    FRGB colour(channel(&FRGB::Red), channel(&FRGB::Green), channel(&FRGB::Blue), channel(&FRGB::Alpha));
-   return agg::rgba8(colour, colour.Alpha * Opacity);
+   return triangle_colour(colour, Opacity);
 }
 
 struct MeshPreparedVertex {
    double x, y;
-   agg::rgba8 colour;
+   agg::rgba16 colour;
 };
 
 static void mesh_push_triangle(GouraudCache &Cache, const MeshPreparedVertex &A, const MeshPreparedVertex &B,
@@ -863,7 +874,8 @@ static void mesh_push_triangle(GouraudCache &Cache, const MeshPreparedVertex &A,
    tri.x[2] = C.x; tri.y[2] = C.y; tri.colour[2] = C.colour;
    Cache.Triangles.push_back(tri);
 
-   if ((A.colour.a < 0xff) or (B.colour.a < 0xff) or (C.colour.a < 0xff)) Cache.Translucent = true;
+   if ((gradient_byte(A.colour.a) < 255) or (gradient_byte(B.colour.a) < 255) or
+       (gradient_byte(C.colour.a) < 255)) Cache.Translucent = true;
 }
 
 static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, const agg::trans_affine &Transform,
@@ -986,36 +998,33 @@ static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, 
 // fill_image().  Unlike the scalar span gradients there is no 1D colour ramp; every pixel receives a full RGBA value
 // from the solved field.
 
-class DiffusionSpanConverter {
-   public:
-   explicit DiffusionSpanConverter(bool Linear) : linear(Linear) { }
+using DiffusionSource = agg::image_accessor_clone<agg::pixfmt_rgba64>;
+using DiffusionBilinear = agg::span_image_filter_rgba_bilinear<DiffusionSource, agg::span_interpolator_linear<>>;
 
-   void prepare() { }
+class DiffusionSpan : public DiffusionBilinear {
+public:
+   using color_type = agg::rgba8;
 
-   void generate(agg::rgba8 *Span, int, int, unsigned Length) const {
-      do {
-         const int alpha = Span->a;
-         if (alpha > 0) {
-            Span->r = unpremultiply(Span->r, alpha);
-            Span->g = unpremultiply(Span->g, alpha);
-            Span->b = unpremultiply(Span->b, alpha);
-            if (linear) {
-               Span->r = glLinearRGB.invert(Span->r);
-               Span->g = glLinearRGB.invert(Span->g);
-               Span->b = glLinearRGB.invert(Span->b);
-            }
-         }
-         else Span->r = Span->g = Span->b = 0;
-         Span++;
-      } while (--Length);
+   DiffusionSpan(DiffusionSource &Source, agg::span_interpolator_linear<> &Interpolator, bool Linear) :
+      DiffusionBilinear(Source, Interpolator), linear(Linear) { }
+
+   void generate(agg::rgba8 *Span, int X, int Y, unsigned Length) {
+      DiffusionBilinear::generate(Span, X, Y, Length,
+         [this](uint16_t Red, uint16_t Green, uint16_t Blue, uint16_t Alpha) {
+            const auto alpha = gradient_byte(Alpha);
+            if (alpha IS 0) return agg::rgba8(0, 0, 0, 0);
+
+            // Divide only after filtering, and keep straight RGB in 16-bit precision through the transfer function.
+            auto rgb = [this, Alpha](uint16_t Value) {
+               if (Alpha != 65535) Value = uint16_t((uint32_t(Value) * 65535 + (Alpha / 2)) / Alpha);
+               return linear ? glLinearRGB.invert16(Value) : gradient_byte(Value);
+            };
+            return agg::rgba8(rgb(Red), rgb(Green), rgb(Blue), alpha);
+         });
    }
 
-   private:
+private:
    bool linear;
-
-   static uint8_t unpremultiply(uint8_t Colour, int Alpha) {
-      return uint8_t(std::min(255, ((int(Colour) * 255) + (Alpha / 2)) / Alpha));
-   }
 };
 
 static void fill_diffusion(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth,
@@ -1072,23 +1081,20 @@ static void fill_diffusion(VectorState &State, const TClipRectangle<double> &Bou
    // field edges, so the fill extends the boundary colours rather than darkening toward transparent black.
 
    agg::rendering_buffer field_buffer((agg::int8u *)Gradient.FieldBuffer.data(), grid_width, grid_height,
-      grid_width * 4);
-   agg::pixfmt_rgba32 field_pixels(field_buffer);
-   agg::image_accessor_clone<agg::pixfmt_rgba32> source(field_pixels);
+      grid_width * sizeof(agg::rgba16));
+   agg::pixfmt_rgba64 field_pixels(field_buffer);
+   DiffusionSource source(field_pixels);
    agg::span_interpolator_linear<> interpolator(transform);
-   agg::span_image_filter_rgba_bilinear<agg::image_accessor_clone<agg::pixfmt_rgba32>,
-      agg::span_interpolator_linear<>> span_gen(source, interpolator);
-   DiffusionSpanConverter span_converter(Gradient.ColourSpace IS VCS::LINEAR_RGB);
-   agg::span_converter converted_span(span_gen, span_converter);
+   DiffusionSpan span_gen(source, interpolator, Gradient.ColourSpace IS VCS::LINEAR_RGB);
 
    if ((Render) and (!Render->clip_stack_empty())) {
       auto alpha_mask = Render->clip_stack_top().mask();
       agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
-      drawBitmapRender(masked_scanline, RenderBase, Raster, converted_span, Opacity);
+      drawBitmapRender(masked_scanline, RenderBase, Raster, span_gen, Opacity);
    }
    else {
       agg::scanline_u8 scanline;
-      drawBitmapRender(scanline, RenderBase, Raster, converted_span, Opacity);
+      drawBitmapRender(scanline, RenderBase, Raster, span_gen, Opacity);
    }
 }
 

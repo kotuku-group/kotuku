@@ -265,3 +265,41 @@ end
    gradient.easing = GEZ_CUBIC_IN
    assert(drawHash(scene, bmp) != default_hash, 'Changing Easing should rebuild the implicit colourmap')
 end
+
+@Test function GammaKeepsCoincidentStopsSharp()
+   local scene = newLinearScene({
+      gamma=2.0,
+      colourSpace=VCS_LINEAR_RGB,
+      stops={ stop(0, 0, 0, 0), stop(0.25, 0, 0, 0), stop(0.25, 1, 1, 1), stop(1, 1, 1, 1) }
+   })
+   local bmp = newBitmap(100, 20)
+   drawScene(scene, bmp)
+
+   for x in {0 to 100} do
+      local expected = x < 50 ? 0 : 255
+      local p = mGfx.ReadRGBPixel(bmp, x, 10)
+      assert(p.red is expected, f'Expected a sharp step at x=50, got red {p.red} at x={x}')
+   end
+end
+
+@Test function ColourMapEasingResamplesUnroundedColours()
+   local scene = newColourMapScene(GEZ_CUBIC_IN)
+   local bmp = newBitmap(100, 20)
+   drawScene(scene, bmp)
+
+   -- Cubic easing at this lookup position samples between Viridis entries 1 and 2.
+   local sample = mGfx.ReadRGBPixel(bmp, 16, 10).red
+   assert(sample is 69, f'Expected red 69 from the original Viridis samples, got {sample}')
+end
+
+@Test function ReducedResolutionRoundsAfterAveraging()
+   local t = 128 / 255
+   local scene = newLinearScene({
+      resolution=0,
+      stops={ stop(0, 10 / 255, 0, 0), stop(t, 10 / 255, 0, 0), stop(t, 11 / 255, 0, 0),
+         stop(1, 11 / 255, 0, 0) }
+   })
+
+   local sample = sampleMiddleRed(scene)
+   assert(sample is 11, f'Expected the RMS of red 10 and 11 to round to 11, got {sample}')
+end

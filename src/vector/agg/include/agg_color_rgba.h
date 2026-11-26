@@ -359,8 +359,8 @@ namespace agg {
 
     struct rgba16
     {
-        typedef int16_t value_type;
-        typedef int32_t calc_type;
+        typedef uint16_t value_type;
+        typedef int64_t calc_type;
         typedef int64_t long_type;
         enum base_scale_e
         {

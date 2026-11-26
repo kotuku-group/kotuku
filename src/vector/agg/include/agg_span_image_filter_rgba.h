@@ -89,8 +89,15 @@ namespace agg
          base_type(src, inter, 0)
       {}
 
-      void generate(color_type *span, int x, int y, unsigned len) {
-         base_type::interpolator().begin(x + base_type::filter_dx_dbl(), y + base_type::filter_dy_dbl(), len);
+      void generate(color_type *Span, int X, int Y, unsigned Length) {
+         generate(Span, X, Y, Length, [](value_type Red, value_type Green, value_type Blue, value_type Alpha) {
+            return color_type(Red, Green, Blue, Alpha);
+         });
+      }
+
+      template<class Output, class Convert>
+      void generate(Output *Span, int X, int Y, unsigned Length, Convert ConvertColour) {
+         base_type::interpolator().begin(X + base_type::filter_dx_dbl(), Y + base_type::filter_dy_dbl(), Length);
          calc_type fg[4];
          const value_type *fg_ptr;
 
@@ -142,15 +149,14 @@ namespace agg
             fg[2] += weight * *fg_ptr++;
             fg[3] += weight * *fg_ptr;
 
-            span->r = value_type(fg[order_type::R] >> (image_subpixel_shift * 2));
-            span->g = value_type(fg[order_type::G] >> (image_subpixel_shift * 2));
-            span->b = value_type(fg[order_type::B] >> (image_subpixel_shift * 2));
-            span->a = value_type(fg[order_type::A] >> (image_subpixel_shift * 2));
+            *Span++ = ConvertColour(value_type(fg[order_type::R] >> (image_subpixel_shift * 2)),
+               value_type(fg[order_type::G] >> (image_subpixel_shift * 2)),
+               value_type(fg[order_type::B] >> (image_subpixel_shift * 2)),
+               value_type(fg[order_type::A] >> (image_subpixel_shift * 2)));
 
-            ++span;
             ++base_type::interpolator();
 
-         } while(--len);
+         } while(--Length);
       }
    };
 
