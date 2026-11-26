@@ -377,11 +377,11 @@ gui.input = function(Options)
          end
       end
 
-      edge = ((input_theme.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
+      edge = ((input_theme.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-aligned stroke
 
       &bkgd = &inputViewport.new('VectorPath', table.merge({
          x = edge, y = edge, xOffset = edge, yOffset = edge,
-         resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height) -- Reports the input viewport
+         resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
             reshape()
          end
       }, input_theme.bkgd))
@@ -401,7 +401,7 @@ gui.input = function(Options)
          name = 'InputClip', units = 'UserSpace', flags = VCLF_APPLY_FILLS | VCLF_APPLY_STROKES
       })
       &_clipPath = &_clipMask.viewport.new('VectorPath', {
-         x = edge, y = edge, xOffset = edge, yOffset = edge, fill = 'rgb(255,255,255)', stroke = 'rgb(0,0,0)'
+         x = edge, y = edge, xOffset = edge, yOffset = edge, fill = 'white', stroke = 'black'
       })
 
       refreshStyle() -- Copies the border's stroke settings to the mask

@@ -1246,8 +1246,9 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          -- 'menu' item reference is inserted post-construction
       },
       menu = {
-         bkgd      = { fill = Palette.bkgd }, -- VectorRectangle
-         border    = { stroke = Palette.inverse, opacity = 0.5 }, -- VectorRectangle
+         path      = gui.paths.rectangle,
+         bkgd      = { fill = Palette.bkgd },
+         border    = { stroke = Palette.inverse, opacity = 0.5, strokeWidth = 1.5 },
          highlight = { fill = Palette.contrast }, -- VectorRectangle
          text      = table.merge({ fill = Palette.text }, gui.fonts.menu), -- VectorText
          icon      = Icon('fill(pearl)')
@@ -1391,8 +1392,9 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          -- 'menu' item reference is inserted post-construction
       },
       menu = {
+         path      = gui.paths.rectangle,
          bkgd      = { fill = Palette.inverse },
-         border    = { stroke  = Palette.neutral, opacity = 0.5 },
+         border    = { stroke = Palette.neutral, opacity = 0.5, strokeWidth = 1.5 },
          highlight = { fill = Palette.contrast },
          text      = table.merge({ fill = Palette.altText }, gui.fonts.menu),
          icon      = Icon('fill(pearl)')

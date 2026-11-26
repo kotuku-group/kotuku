@@ -120,6 +120,47 @@ end
 
 gui.findMenuShortcut = findMenuShortcut
 
+-- Returns the area that a menu must remain within, as left, top, right and bottom edges in the coordinate space of the
+-- menu's Parent surface, together with the absolute position of that space.  A menu with a parent surface is kept
+-- inside it.  A desktop menu is kept on the monitor that hosts the Anchor surface's display, or the primary monitor if
+-- the display cannot be resolved.  If the desktop point X, Y is outside of that monitor (e.g. the window spans several
+-- monitors) then the complete virtual desktop is used.
+
+function placementArea(Parent:obj, Anchor:obj, X:num!, Y:num!):table
+   area = { left = 0, top = 0, right = 4096, bottom = 4096, absX = 0, absY = 0 }
+
+   if Parent then
+      err, info = mGfx.GetSurfaceInfo(Parent)
+      if err is ERR_Okay then
+         area.{ right = info.width, bottom = info.height, absX = info.absX, absY = info.absY }
+      end
+      return area
+   end
+
+   err, info = mGfx.GetDisplayInfo(Anchor?.display ?? 0)
+   if (err != ERR_Okay) or ((info.monitorWidth ?? 0) <= 0) then
+      err, info = mGfx.GetDisplayInfo(0)
+      if err != ERR_Okay then return area end
+   end
+
+   area.left   = info.monitorX
+   area.top    = info.monitorY
+   area.right  = area.left + ((info.monitorWidth > 0) ? info.monitorWidth : info.width)
+   area.bottom = area.top + ((info.monitorHeight > 0) ? info.monitorHeight : info.height)
+
+   if ((X < area.left) or (X >= area.right) or (Y < area.top) or (Y >= area.bottom)) and
+         (info.virtualWidth > 0) then
+      area.{
+         left   = info.virtualX,
+         top    = info.virtualY,
+         right  = info.virtualX + info.virtualWidth,
+         bottom = info.virtualY + info.virtualHeight
+      }
+   end
+
+   return area
+end
+
 gui.menu = function(Options:table!)
    -- The menu adopts the theme of the window that it is opened from.  The global theme is the fallback for popups
    -- that have no reference to a window.
@@ -130,6 +171,7 @@ gui.menu = function(Options:table!)
    MARGIN <const> = gui.sizing.widget.margin
 
    theme = table.merge(gui.themes[theme_name].menu, Options.theme?.menu, true, true)
+   theme.path ?= gui.paths.rectangle
 
    LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight(theme.text)
    ITEM_HEIGHT <const>  = math.floor(LINE_SPACING * 1.1)
@@ -197,6 +239,7 @@ gui.menu = function(Options:table!)
    end
 
    local highlightItem:func, openSubmenu:func
+   local reshape:func
 
    -- The content is laid out at 1:1 and the view box scales it to fit the surface.
 
@@ -205,15 +248,17 @@ gui.menu = function(Options:table!)
          scale = &scale > 0 ? &scale : 1
          &surface.{ width = math.ceil(&width * scale), height = math.ceil(&height * scale) }
          &viewport.{ viewWidth = &surface.width / scale, viewHeight = &surface.height / scale }
+         reshape()
       end
    end
 
    function initVectorScene()
       using self do
-         &content = &viewport.new('VectorGroup')
-         showIcons = Options.showIcons is nil ? true : Options.showIcons
+         -- Put all vp content into a group, allows it to be destroyed without affecting the vp
+         &content       = &viewport.new('VectorGroup')
+         showIcons      = Options.showIcons is nil ? true : Options.showIcons
          checks_present = false
-         icons_present = false
+         icons_present  = false
          for source in values(&items) do
             item = source.menu ?? source
             if item.checkable and not item.items then checks_present = true end
@@ -225,22 +270,52 @@ gui.menu = function(Options:table!)
 
          -- Clients can use the hostScene option to gain access to external fills via url()
 
-         -- Offsets fit the background and border to the view box, whereas a resizeEvent would report the scaled
-         -- surface dimensions.
-
-         &content.new('VectorRectangle', table.merge({ -- Background fill
+         bkgd = &content.new('VectorPath', table.merge({ -- Background fill
             x = 0, y = 0, xOffset = 0, yOffset = 0
          }, theme.bkgd))
 
-         &highlight = &content.new('VectorRectangle', table.merge({ -- Item highlighting
-            x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT,
+         -- Item content is drawn in a viewport that is clipped to the inner edge of the border.  The mask is a
+         -- luminance copy of the background path: a white fill, less a black stroke of the border's width.  The
+         -- mask's user space is the parent viewport, so the mask path is placed as the background is.
+
+         clip = &viewport.scene.new('VectorClip', {
+            name = 'MenuClip', units = 'UserSpace', flags = VCLF_APPLY_FILLS | VCLF_APPLY_STROKES
+         })
+
+         clip_path = clip.viewport.new('VectorPath', {
+            x = 0, y = 0, xOffset = 0, yOffset = 0, fill = 'white', stroke = 'black',
+            strokeWidth = theme.border.strokeWidth ?? 0,
+            lineJoin    = theme.border.lineJoin,
+            miterLimit  = theme.border.miterLimit
+         })
+
+         &_itemView = &content.new('VectorViewport', {
+            name = 'vp_menu_items', x = 0, y = 0, xOffset = 0, yOffset = 0, mask = clip
+         })
+
+         -- The scene owns the mask, so it is freed with the item view when the content is rebuilt.
+
+         &_itemView.subscribe('Free', function() clip?.free() end)
+
+         &highlight = &_itemView.new('VectorRectangle', table.merge({ -- Item highlighting
+            x = 0, y = 0, xOffset = 0, height = ITEM_HEIGHT,
             fill = theme.highlight, visibility = 'hidden'
          }, theme.highlight))
 
-         &content.new('VectorRectangle', table.merge({ -- Foreground border
-            stroke = 'none', strokeWidth = 1.5,
-            x = 1, y = 1, xOffset = 1, yOffset = 1
+         border = &content.new('VectorPath', table.merge({ -- Foreground stroke
+            x = 0, y = 0, xOffset = 0, yOffset = 0
          }, theme.border))
+
+         local shape_width:num, shape_height:num
+         reshape = function()
+            w, h = &viewport.width, &viewport.height
+            if w is shape_width and h is shape_height then return end
+            path = theme.path(&viewport).path
+            bkgd.sequence      = path
+            border.sequence    = path
+            clip_path.sequence = path
+            shape_width, shape_height = w, h
+         end
 
          &_rows = array<table>
          widestItem = 0
@@ -253,7 +328,7 @@ gui.menu = function(Options:table!)
             if item.label then
                mi = { y=y, config=item, source=source, submenuConfig=item.items }
 
-               vText = &content.new('VectorText', {
+               vText = &_itemView.new('VectorText', {
                   name      = 'MenuItemLabel',
                   x         = TEXT_X,
                   fontStyle = gui.fontStyle(theme.text),
@@ -261,7 +336,7 @@ gui.menu = function(Options:table!)
                   string    = item.label
                })
 
-               err, bx, by, bw, bh = vText.mtGetBoundary(0)
+               err, bx, by, bw, bh = vText.mtGetBoundary(VBF_NO_TRANSFORM)
 
                mi.text = vText
                mi.textY = y + itemY()
@@ -272,7 +347,7 @@ gui.menu = function(Options:table!)
                   try
                      info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, ICON_SIZE, theme.icon)
 
-                     item.iconView = &content.new('VectorRectangle', {
+                     item.iconView = &_itemView.new('VectorRectangle', {
                         x      = icon_x - info.margin,
                         y      = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5) - info.margin,
                         width  = ICON_SIZE + (info.margin * 2),
@@ -290,7 +365,7 @@ gui.menu = function(Options:table!)
                      key = item['qualifier'] .. ' + ' .. key
                   end
 
-                  kb_highlight = &content.new('VectorRectangle', {
+                  kb_highlight = &_itemView.new('VectorRectangle', {
                      fill    = KB_HIGHLIGHT,
                      xOffset = HMARGIN,
                      y       = y + 2,
@@ -300,7 +375,7 @@ gui.menu = function(Options:table!)
                      cornerY  = ITEM_HEIGHT * 0.5
                   })
 
-                  vKey = &content.new('VectorText', {
+                  vKey = &_itemView.new('VectorText', {
                      name      = 'MenuItemKeyCombo',
                      x         = &surface.width,
                      fontStyle = gui.fontStyle(theme.text),
@@ -308,7 +383,7 @@ gui.menu = function(Options:table!)
                      string    = key
                   })
 
-                  err, bx, by, bw, bh = vKey.mtGetBoundary(0)
+                  err, bx, by, bw, bh = vKey.mtGetBoundary(VBF_NO_TRANSFORM)
 
                   vKey.y = y + itemY()
 
@@ -317,7 +392,7 @@ gui.menu = function(Options:table!)
                   mi.keyText = vKey
                   kb_highlight.width = keyWidth + HMARGIN + HMARGIN
                elseif mi.submenuConfig then
-                  vKey = &content.new('VectorText', {
+                  vKey = &_itemView.new('VectorText', {
                      name      = 'MenuItemExt',
                      x         = &surface.width,
                      fontStyle = gui.fontStyle(theme.text),
@@ -325,7 +400,7 @@ gui.menu = function(Options:table!)
                      string    = '>'
                   })
 
-                  _, _, _, bw = vKey.mtGetBoundary(0)
+                  _, _, _, bw = vKey.mtGetBoundary(VBF_NO_TRANSFORM)
                   vKey.y = mi.textY
                   widestKey = math.max(widestKey, bw)
                   mi.keyText = vKey
@@ -341,7 +416,7 @@ gui.menu = function(Options:table!)
 
                style = table.clone(theme.text)
                style.size = gui.pixel(tostring(style.size), 96) * 0.8 -- A theme override can give the size in text form
-               group_text = &content.new('VectorText', {
+               group_text = &_itemView.new('VectorText', {
                   name      = 'MenuGroupText',
                   x         = 0,
                   y         = 0,
@@ -350,7 +425,7 @@ gui.menu = function(Options:table!)
                   string    = source.group
                })
 
-               _, bx, by, bw, bh = group_text.mtGetBoundary(0)
+               _, bx, by, bw, bh = group_text.mtGetBoundary(VBF_NO_TRANSFORM)
 
                group_text.y = y + itemY(nil, .85)
                mi.text = group_text
@@ -374,7 +449,7 @@ gui.menu = function(Options:table!)
                check_y = item.y + (ITEM_HEIGHT - ICON_SIZE) * 0.5
 
                -- Checkmark icon
-               item.checkmark = &content.new('VectorPath', {
+               item.checkmark = &_itemView.new('VectorPath', {
                   stroke = theme.text?.fill ?? 'white', strokeWidth = 2, fill = 'none',
                   visibility = item.config.checked ? 'visible' : 'hidden',
                   sequence = string.format('M%f,%f L%f,%f L%f,%f',
@@ -388,7 +463,7 @@ gui.menu = function(Options:table!)
                item.text.x = width * 0.5
                line_y      = math.floor(item.y + ITEM_HEIGHT * 0.5) + 0.5
                line_end    = (width - item.textWidth) * 0.5 - HMARGIN
-               &content.new('VectorPath', {
+               &_itemView.new('VectorPath', {
                   stroke = theme.text?.fill ?? 'white', strokeWidth = 1, opacity = 0.35,
                   sequence = string.format('M%f,%f H%f M%f,%f H%f',
                      HMARGIN * 2, line_y, line_end, width - line_end, line_y, width - HMARGIN * 2)
@@ -463,19 +538,18 @@ gui.menu = function(Options:table!)
          &_preparing = true
          defer &_preparing = false end
          &prepare(&items)
-
-         if not &surface then return end
-
-         if &parentItem then
-            &parentItem.config.items = &items
-            &parentItem.submenuConfig = &items
-         end
+         &surface ?! return
+         &parentItem?.config.items  = &items
+         &parentItem?.submenuConfig = &items
 
          &currentMenu?.hide()
-         for item in values(&_rows) do item.submenu?.surface?.free() end
-         &currentMenu = nil
+         for item in values(&_rows) do
+            item.submenu?.surface?.free()
+         end
+
+         &currentMenu   = nil
          &_keyboardMenu = nil
-         &hItem = nil
+         &hItem         = nil
          &content.free()
          initVectorScene()
       end
@@ -485,6 +559,11 @@ gui.menu = function(Options:table!)
       if &parentMenu then &scale = &parentMenu.scale end
       applyScale()
       scale = &scale > 0 ? &scale : 1
+
+      -- Desktop menus are kept on the monitor of the surface that opened them.
+
+      anchor = &parentMenu?.surface ?? Options.relative?.scene?.surface ?? Options.hostScene?.surface ??
+               Options.client?.scene?.surface
 
       if &popup and not &relative then
          -- Popups open at the pointer unless the client has set display coordinates in popupX and popupY.
@@ -497,76 +576,49 @@ gui.menu = function(Options:table!)
          end
 
          if err is ERR_Okay then
-            parent = { }
+            -- Determine the position at which the pop-up menu will open at, relative to the parent surface.  Notice
+            -- that we don't want the menu to appear off the edge of the area if we can help it.
 
-            sp = surface.parent
-            if sp then
-               _, info = check mGfx.GetSurfaceInfo(sp)
-               parent.{ width = info.width, height = info.height, absX = info.absX, absY = info.absY }
+            area = placementArea(surface.parent, anchor, cursor_x, cursor_y)
+
+            local x:num
+            if &reverseX then
+               x = cursor_x - area.absX - 1 - surface.width + MARGIN
+               if x < area.left then
+                  x = area.left
+                  &reverseX = false
+               end
             else
-               err, scrInfo = mGfx.GetDisplayInfo(0)
-               if err is ERR_Okay then
-                  parent.{ width = scrInfo.width, height = scrInfo.height, absX = 0, absY = 0 }
-               else
-                  parent.{ absX = 0, absY = 0, width = 0, height = 0 }
+               x = cursor_x - area.absX - 1
+               if x + surface.width > area.right - 2 then
+                  x -= surface.width + MARGIN
+                  &reverseX = true
                end
             end
 
-            if parent.width and parent.height then
-               -- Determine the position at which the pop-up menu will open at, relative to the parent surface.
-               -- Notice that we don't want the menu to appear off the edge of the parent if we can help it.
-
-               local x:num
-               if &reverseX then
-                  x = cursor_x - parent.absX - 1 - surface.width + MARGIN
-                  if x < 0 then
-                     x = 0
-                     &reverseX = false
-                  end
-               else
-                  x = cursor_x - parent.absX - 1
-                  if x + surface.width > parent.width - 2 then
-                     x -= surface.width + MARGIN
-                     &reverseX = true
-                  end
-               end
-
-               y = cursor_y - parent.absY - 1
-               if y + surface.height > parent.height - 2 then
-                  y -= surface.height
-               end
-
-               surface.acMoveToPoint(x, y, 0, MTF_X | MTF_Y)
+            y = cursor_y - area.absY - 1
+            if y + surface.height > area.bottom - 2 then
+               y -= surface.height
             end
+
+            surface.acMoveToPoint(x, y, 0, MTF_X | MTF_Y)
          end
       elseif &parentMenu then -- Display this menu alongside its highlighted parent item.
          err, parent = mGfx.GetSurfaceInfo(&parentMenu.surface)
          if err is ERR_Okay then
-            target = { absX=0, absY=0, width=4096, height=4096 }
-            if Options.target then
-               local err, info = mGfx.GetSurfaceInfo(Options.target)
-               if err is ERR_Okay then
-                  target.absX = info.absX; target.absY = info.absY
-                  target.width = info.width; target.height = info.height
-               end
-            else
-               local err, info = mGfx.GetDisplayInfo(0)
-               if err is ERR_Okay then
-                  target.width = info.width
-                  target.height = info.height
-               end
-            end
+            px, py = parent.absX, parent.absY
+            area = placementArea(surface.parent, anchor, px + parent.width, py)
 
-            x = parent.absX - target.absX + parent.width - MARGIN * scale
+            x = px - area.absX + parent.width - MARGIN * scale
             parent_item = &parentItem
-            y = parent.absY - target.absY + ((parent_item?.y ?? 0) - VMARGIN) * scale
-            if x + surface.width > target.width then
-               x = parent.absX - target.absX - surface.width + MARGIN * scale
+            y = py - area.absY + ((parent_item?.y ?? 0) - VMARGIN) * scale
+            if x + surface.width > area.right then
+               x = px - area.absX - surface.width + MARGIN * scale
                &reverseX = true
             end
 
-            if y + surface.height > target.height then y = target.height - surface.height end
-            if y < 0 then y = 0 end
+            if y + surface.height > area.bottom then y = area.bottom - surface.height end
+            if y < area.top then y = area.top end
             surface.acMoveToPoint(x, y, 0, MTF_X | MTF_Y)
          end
       elseif &relative then
@@ -578,31 +630,20 @@ gui.menu = function(Options:table!)
                absX = relative_info.absX + &relative.absX,
                absY = relative_info.absY + &relative.absY
             }
-            target = { absX = 0, absY = 0, width = 4096, height = 4096 }
 
-            if Options.target then
-               err, info = mGfx.GetSurfaceInfo(Options.target)
-               if err is ERR_Okay then
-                  target.{ absX = info.absX, absY = info.absY, width = info.width, height = info.height }
-               end
-            else
-               err, display = mGfx.GetDisplayInfo(0)
-               if err is ERR_Okay then
-                  target.{ width = display.width, height = display.height }
-               end
-            end
+            area = placementArea(surface.parent, anchor, rel.absX + &x, rel.absY + &y)
 
-            x = rel.absX + &x - target.absX
-            y = rel.absY + &y - target.absY
+            x = rel.absX + &x - area.absX
+            y = rel.absY + &y - area.absY
 
-            -- Keep anchored menus inside the target; oversized menus start at its left edge.
-            x = math.max(0, math.min(x, target.width - surface.width))
+            -- Keep anchored menus inside the area; oversized menus start at its left edge.
+            x = math.max(area.left, math.min(x, area.right - surface.width))
 
             if &reverseY then
-               y = rel.absY + (Options.y ?? 0) - target.absY - surface.height
+               y = rel.absY + (Options.y ?? 0) - area.absY - surface.height
             end
 
-            if y + surface.height > target.height then
+            if y + surface.height > area.bottom then
                if &parentMenu then -- Child menu
                   y -= surface.height
                else
@@ -796,16 +837,25 @@ gui.menu = function(Options:table!)
 
       &surface.init()
 
-      &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=Options.hostScene })
+      &scene = &surface.new('VectorScene', { surface=&surface, hostScene=Options.hostScene })
       gui.setTheme(&scene, theme_name)
-      &viewport = &scene.new('VectorViewport', { })
+
+      inset = (theme.border.strokeWidth ?? 0) * .5
+      &host_viewport = &scene.new('VectorViewport', { })
+      if inset is 0 then
+         &viewport = &host_viewport
+      else
+         &viewport = &host_viewport.new('VectorViewport', {
+            x = inset, y = inset, xOffset = inset, yOffset = inset
+         })
+      end
 
       -- A popup takes surface focus, so its own viewport must receive keys rather than the invoking widget.
       -- Register before focusing the surface so the scene can choose this viewport as its keyboard target.
 
       if &popup and not &parentMenu then
          &viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
-            if not &visible then return end
+            &visible ?! return
             path = findMenuShortcut(&items, Qualifiers, Code, Unicode)
             if path then &activateShortcut(path)
             else &handleKey(Qualifiers, Code)
@@ -869,10 +919,13 @@ gui.menu = function(Options:table!)
       end)
 
       &viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport:obj!, Events)
+         -- The inset can change both the view box scale and its alignment within the receiving viewport.
+         _, _, item_top, _, drawn_height = &_itemView.mtGetBoundary(0)
+         drawn_height > 0 ?! return
+         row_units_per_pixel = &_itemView.height / drawn_height
          ev = Events
-         scale = &scale > 0 ? &scale : 1
          while ev do
-            ev_y = ev.y / scale -- Input is reported in surface units rather than those of the view box
+            ev_y = (ev.absY - item_top) * row_units_per_pixel
             if ev.type is JET_BUTTON_1 then
                if ev.value is 1 then
                   for item in values(&_rows) do
@@ -891,7 +944,7 @@ gui.menu = function(Options:table!)
                   end
                end
             elseif ev.type is JET_ABS_XY then
-               if not &visible then return end
+               &visible ?! return
                highlightFound = false
                for item in values(&_rows) do
                   if selectable(item) then
