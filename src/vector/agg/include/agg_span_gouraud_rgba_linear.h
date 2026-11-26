@@ -3,8 +3,7 @@
 // Linear-RGB variant of span_gouraud_rgba.  The base generator interpolates colours linearly in whatever byte
 // encoding it is handed and emits those bytes verbatim.  For a perceptually-correct linearRGB gradient the
 // interpolation must happen in linear space and the result re-encoded to sRGB for storage (the pixel format treats
-// stored bytes as sRGB).  This is the same convert -> interpolate -> invert sequence that rgba8::linear_gradient()
-// performs per gradient-table entry, applied here per output pixel.
+// stored bytes as sRGB).  This conversion is applied per output pixel.
 //
 // Usage: construct exactly like span_gouraud_rgba, but supply vertex colours already decoded to linear space (via
 // glLinearRGB.convert).  generate() then interpolates in linear space and inverts each output pixel back to sRGB.

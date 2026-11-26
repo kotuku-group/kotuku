@@ -136,6 +136,44 @@ static void invalidate_gradient_tables(extGradient *Self)
 }
 
 //********************************************************************************************************************
+// IEC 61966-2-1 transfer functions, mirrored for negative components in extended sRGB.
+
+static agg::rgba gradient_stop_colour(const FRGB &Colour, bool Linear)
+{
+   if (not Linear) return { Colour.Red, Colour.Green, Colour.Blue, Colour.Alpha };
+
+   auto decode = [](double Value) {
+      const double magnitude = std::abs(Value);
+      if (magnitude <= 0.04045) return Value / 12.92;
+      return std::copysign(std::pow((magnitude + 0.055) / 1.055, 2.4), Value);
+   };
+
+   return { decode(Colour.Red), decode(Colour.Green), decode(Colour.Blue), Colour.Alpha };
+}
+
+static agg::rgba8 gradient_table_colour(agg::rgba Colour, bool Linear, double Alpha)
+{
+   auto encode = [](double Value) {
+      const double magnitude = std::abs(Value);
+      if (magnitude <= 0.0031308) return 12.92 * Value;
+      return std::copysign(1.055 * std::pow(magnitude, 1.0 / 2.4) - 0.055, Value);
+   };
+
+   if (Linear) {
+      Colour.r = encode(Colour.r);
+      Colour.g = encode(Colour.g);
+      Colour.b = encode(Colour.b);
+   }
+
+   auto to_byte = [](double Value) -> unsigned {
+      if (not (Value > 0.0)) return 0;
+      return agg::uround(std::min(Value, 1.0) * 255.0);
+   };
+
+   return { to_byte(Colour.r), to_byte(Colour.g), to_byte(Colour.b), to_byte(Colour.a * Alpha) };
+}
+
+//********************************************************************************************************************
 // Constructor for the GradientColours class.  This expects to be called whenever the Gradient class updates the
 // Stops array.
 
@@ -145,6 +183,7 @@ GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS Colo
    resolution = 1.0;
    gamma = 1.0;
 
+   const bool linear = ColourSpace IS VCS::LINEAR_RGB;
    int stop, i1, i2, i;
 
    for (stop=0; stop < std::ssize(Stops)-1; stop++) {
@@ -156,27 +195,31 @@ GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS Colo
       if (i2 < 0) i2 = 0;
       else if (i2 > 255) i2 = 255;
 
-      agg::rgba8 begin(Stops[stop].RGB.Red * 255, Stops[stop].RGB.Green * 255,
-         Stops[stop].RGB.Blue * 255, Stops[stop].RGB.Alpha * Alpha * 255);
-      agg::rgba8 end(Stops[stop+1].RGB.Red * 255, Stops[stop+1].RGB.Green * 255,
-         Stops[stop+1].RGB.Blue * 255, Stops[stop+1].RGB.Alpha * Alpha * 255);
+      const auto begin = gradient_stop_colour(Stops[stop].RGB, linear);
+      const auto end = gradient_stop_colour(Stops[stop+1].RGB, linear);
 
       if ((stop IS 0) and (i1 > 0)) {
-         for (i=0; i < i1; i++) table[i] = begin;
+         const auto colour = gradient_table_colour(begin, linear, Alpha);
+         for (i=0; i < i1; i++) table[i] = colour;
       }
 
       if (i1 < i2) {
          for (i=i1; i <= i2; i++) {
-            double j = double(i - i1) / double(i2 - i1);
-            j = GradientColours::ease(Easing, j);
-            if (ColourSpace IS VCS::LINEAR_RGB) table[i] = begin.linear_gradient(end, j);
-            else table[i] = begin.gradient(end, j);
+            const double blend = ease(Easing, double(i - i1) / double(i2 - i1));
+            // SVG gradients interpolate straight RGB and alpha independently.
+            table[i] = gradient_table_colour({
+               std::lerp(begin.r, end.r, blend),
+               std::lerp(begin.g, end.g, blend),
+               std::lerp(begin.b, end.b, blend),
+               std::lerp(begin.a, end.a, blend)
+            }, linear, Alpha);
          }
       }
-      else if (i1 IS i2) table[i1] = end;
+      else if (i1 IS i2) table[i1] = gradient_table_colour(end, linear, Alpha);
 
       if ((stop IS std::ssize(Stops)-2) and (i2 < 255)) {
-         for (i=i2; i <= 255; i++) table[i] = end;
+         const auto colour = gradient_table_colour(end, linear, Alpha);
+         for (i=i2; i <= 255; i++) table[i] = colour;
       }
    }
 
