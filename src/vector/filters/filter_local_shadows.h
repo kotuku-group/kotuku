@@ -322,10 +322,12 @@ static inline void project4(const float *const *U0, const float *W, float Inv, c
 class sweep {
    static constexpr int TILE = 32; // X-major lines are gathered and scattered in tiles, as in the distant sweep
 
+   // A unit's buffers lie in the sweep's storage
+
    struct unit {
       int region, band, lo, hi;
-      std::vector<float> prev, cur;    // (hi - lo + 1) * LEVELS
-      std::vector<float> tile_h, tile_o; // X-major only: TILE lines of (hi - lo + 1)
+      float *prev, *cur;      // (hi - lo + 1) * LEVELS
+      float *tile_h, *tile_o; // X-major only: TILE lines of (hi - lo + 1)
       std::array<int, TILE> tile_c0{}, tile_c1{};
       int tile_lines = 0, next = 0;
    };
@@ -336,7 +338,12 @@ class sweep {
    std::array<std::vector<int>, 4> band_of;  // Band of each cross position
    std::array<std::vector<int>, 4> band_lo;  // Lowest cross position of each band
    std::array<int, 4> bands { 0, 0, 0, 0 };
-   std::array<std::vector<float>, 4> published; // Per line and band: the envelopes of the two span ends
+   std::array<float *, 4> published { };     // Per line and band: the envelopes of the two span ends
+
+   // One uninitialised block for every buffer of the sweep.  Each element is written before it is read, and zeroing
+   // the block, or allocating each buffer separately, took longer than planning the sweep on the calling thread.
+
+   std::unique_ptr<float[]> storage;
    std::array<std::unique_ptr<std::atomic<double>[]>, 4> progress; // Per band: distance of the next line
    std::vector<unit> units;
    std::vector<std::vector<int>> tasks; // Units of each task
@@ -378,6 +385,9 @@ class sweep {
 
       if (Workers < 1) Workers = 1;
       std::vector<double> work;
+      size_t storage_size = 0;
+      std::array<size_t, 4> published_offset { };
+      std::vector<size_t> unit_offset;
       for (int i=0; i < 4; ++i) {
          if (pixels[i] <= 0) continue;
          const auto &r = regions[i];
@@ -391,7 +401,8 @@ class sweep {
          bands[i] = share;
          band_of[i].assign(r.cross_n, 0);
          band_lo[i].resize(share);
-         published[i].assign(size_t(line_count(r)) * share * 2 * LEVELS, 0.0f);
+         published_offset[i] = storage_size;
+         storage_size += size_t(line_count(r)) * share * 2 * LEVELS;
          progress[i].reset(new (std::nothrow) std::atomic<double>[share]);
          if (not progress[i]) return false;
 
@@ -409,22 +420,33 @@ class sweep {
             for (int x=b_lo; x <= b_hi; ++x) band_of[i][x] = b;
             progress[i][b].store(r.distance(r.first), std::memory_order_relaxed);
 
-            unit u;
+            unit u{};
             u.region = i;
             u.band = b;
             u.lo = b_lo;
             u.hi = b_hi;
             const size_t n = size_t(b_hi - b_lo + 1);
-            u.prev.resize(n * LEVELS);
-            u.cur.resize(n * LEVELS);
-            if (r.x_major) {
-               u.tile_h.resize(n * TILE);
-               u.tile_o.resize(n * TILE);
-            }
+            unit_offset.push_back(storage_size);
+            storage_size += n * LEVELS * 2;
+            if (r.x_major) storage_size += n * TILE * 2;
             u.next = r.first;
-            units.push_back(std::move(u));
+            units.push_back(u);
             work.push_back(band_pixels);
          }
+      }
+
+      storage.reset(new (std::nothrow) float[storage_size]);
+      if (not storage) return false;
+      for (int i=0; i < 4; ++i) {
+         if (bands[i] > 0) published[i] = storage.get() + published_offset[i];
+      }
+      for (size_t k=0; k < units.size(); ++k) {
+         auto &u = units[k];
+         const size_t n = size_t(u.hi - u.lo + 1);
+         u.prev = storage.get() + unit_offset[k];
+         u.cur = u.prev + (n * LEVELS);
+         u.tile_h = regions[u.region].x_major ? u.cur + (n * LEVELS) : nullptr;
+         u.tile_o = regions[u.region].x_major ? u.tile_h + (n * TILE) : nullptr;
       }
 
       // Longest processing time first
@@ -483,7 +505,7 @@ class sweep {
       const int lo = band_lo[i][b], hi = (b + 1 < bands[i]) ? band_lo[i][b + 1] - 1 : r.cross_n - 1;
       r.span(a, lo, hi, c0, c1);
       const int side = (c IS c0) ? 0 : 1;
-      return published[i].data() + ((size_t(r.line_index(a)) * bands[i] + b) * 2 + side) * LEVELS;
+      return published[i] + ((size_t(r.line_index(a)) * bands[i] + b) * 2 + side) * LEVELS;
    }
 
    void step(unit &U) {
@@ -499,8 +521,8 @@ class sweep {
       float *output;
       if (r.x_major) {
          const int n = U.hi - U.lo + 1;
-         heights = U.tile_h.data() + (t * n);
-         output = U.tile_o.data() + (t * n);
+         heights = U.tile_h + (t * n);
+         output = U.tile_o + (t * n);
       }
       else {
          heights = F.heights + (a * F.stride) + U.lo;
@@ -516,9 +538,9 @@ class sweep {
 
       if (any) {
          line(U, a, c0, c1, heights, output);
-         float *pub = published[U.region].data() + ((size_t(r.line_index(a)) * bands[U.region] + U.band) * 2) * LEVELS;
-         std::copy_n(U.cur.data() + (c0 - U.lo) * LEVELS, LEVELS, pub);
-         std::copy_n(U.cur.data() + (c1 - U.lo) * LEVELS, LEVELS, pub + LEVELS);
+         float *pub = published[U.region] + ((size_t(r.line_index(a)) * bands[U.region] + U.band) * 2) * LEVELS;
+         std::copy_n(U.cur + (c0 - U.lo) * LEVELS, LEVELS, pub);
+         std::copy_n(U.cur + (c1 - U.lo) * LEVELS, LEVELS, pub + LEVELS);
       }
       std::swap(U.prev, U.cur);
 
@@ -538,29 +560,96 @@ class sweep {
       const int n = U.hi - U.lo + 1;
       int c0, c1;
       if (not r.span(A + (r.sign * (count - 1)), U.lo, U.hi, c0, c1)) return;
-      for (int c=c0; c <= c1; ++c) {
+      int c = c0;
+#ifdef LOCAL_SHADOWS_SSE
+      // Blocks of four positions by four lines are transposed in registers
+      const int count4 = count & ~3;
+      for (; c + 3 <= c1; c += 4) {
+         const float *src = F.heights + (c * F.stride) + A;
+         float *dest = U.tile_h + (c - U.lo);
+         for (int t=0; t < count4; t += 4) {
+            const int at = t * r.sign;
+            __m128 v0 = load_lines(src + at, r.sign), v1 = load_lines(src + F.stride + at, r.sign);
+            __m128 v2 = load_lines(src + (2 * F.stride) + at, r.sign);
+            __m128 v3 = load_lines(src + (3 * F.stride) + at, r.sign);
+            _MM_TRANSPOSE4_PS(v0, v1, v2, v3);
+            _mm_storeu_ps(dest + (t * n), v0);
+            _mm_storeu_ps(dest + ((t + 1) * n), v1);
+            _mm_storeu_ps(dest + ((t + 2) * n), v2);
+            _mm_storeu_ps(dest + ((t + 3) * n), v3);
+         }
+         for (int t=count4; t < count; ++t) {
+            for (int j=0; j < 4; ++j) dest[(t * n) + j] = src[(j * F.stride) + (t * r.sign)];
+         }
+      }
+#endif
+      for (; c <= c1; ++c) {
          const float *src = F.heights + (c * F.stride);
-         float *dest = U.tile_h.data() + (c - U.lo);
+         float *dest = U.tile_h + (c - U.lo);
          for (int t=0; t < count; ++t) dest[t * n] = src[A + (t * r.sign)];
       }
    }
 
    // Writes the output of the Count lines of the tile that ends at line A.  As spans widen with distance, the lines
-   // of the tile that hold position C are the last ones.
+   // of the tile that hold position C are the last ones, and every line holds the positions of the first line's span.
 
    void scatter(unit &U, int A, int Count) {
       const auto &r = regions[U.region];
       const int first = A - (r.sign * (Count - 1));
       const int n = U.hi - U.lo + 1;
       const int c_lo = U.tile_c0[Count - 1], c_hi = U.tile_c1[Count - 1];
-      for (int c=c_lo; c <= c_hi; ++c) {
+
+      auto position = [&](int C) {
          int t0 = 0;
-         while ((c < U.tile_c0[t0]) or (c > U.tile_c1[t0])) t0++;
-         float *dest = F.output + (std::ptrdiff_t(c) * F.width) + first;
-         const float *src = U.tile_o.data() + (c - U.lo);
+         while ((C < U.tile_c0[t0]) or (C > U.tile_c1[t0])) t0++;
+         float *dest = F.output + (std::ptrdiff_t(C) * F.width) + first;
+         const float *src = U.tile_o + (C - U.lo);
          for (int t=t0; t < Count; ++t) dest[t * r.sign] = src[t * n];
+      };
+
+      int c = c_lo;
+#ifdef LOCAL_SHADOWS_SSE
+      // Blocks of four positions by four lines within the first line's span are transposed in registers
+      const int full_lo = U.tile_c0[0], full_hi = U.tile_c1[0];
+      if (full_lo + 3 <= full_hi) {
+         for (; c < full_lo; ++c) position(c);
+         const int count4 = Count & ~3;
+         for (; c + 3 <= full_hi; c += 4) {
+            const float *src = U.tile_o + (c - U.lo);
+            float *dest = F.output + (std::ptrdiff_t(c) * F.width) + first;
+            for (int t=0; t < count4; t += 4) {
+               __m128 v0 = _mm_loadu_ps(src + (t * n)), v1 = _mm_loadu_ps(src + ((t + 1) * n));
+               __m128 v2 = _mm_loadu_ps(src + ((t + 2) * n)), v3 = _mm_loadu_ps(src + ((t + 3) * n));
+               _MM_TRANSPOSE4_PS(v0, v1, v2, v3);
+               const int at = t * r.sign;
+               store_lines(dest + at, r.sign, v0);
+               store_lines(dest + F.width + at, r.sign, v1);
+               store_lines(dest + (2 * F.width) + at, r.sign, v2);
+               store_lines(dest + (3 * F.width) + at, r.sign, v3);
+            }
+            for (int t=count4; t < Count; ++t) {
+               for (int j=0; j < 4; ++j) dest[(j * F.width) + (t * r.sign)] = src[(t * n) + j];
+            }
+         }
       }
+#endif
+      for (; c <= c_hi; ++c) position(c);
    }
+
+#ifdef LOCAL_SHADOWS_SSE
+   // Four consecutive lines from P, in the direction of Sign
+
+   static __m128 load_lines(const float *P, int Sign) {
+      if (Sign > 0) return _mm_loadu_ps(P);
+      const __m128 v = _mm_loadu_ps(P - 3);
+      return _mm_shuffle_ps(v, v, _MM_SHUFFLE(0, 1, 2, 3));
+   }
+
+   static void store_lines(float *P, int Sign, __m128 V) {
+      if (Sign > 0) _mm_storeu_ps(P, V);
+      else _mm_storeu_ps(P - 3, _mm_shuffle_ps(V, V, _MM_SHUFFLE(0, 1, 2, 3)));
+   }
+#endif
 
    // Processes cross positions C0 to C1 of line A.
 
@@ -568,7 +657,7 @@ class sweep {
       const auto &r = regions[U.region];
       const double d = r.distance(A);
       const int up = A - r.sign;
-      float *cur = U.cur.data();
+      float *cur = U.cur;
 
       // Seed: the upstream line lies at or beyond the light, or outside the field
 
@@ -585,7 +674,7 @@ class sweep {
 
       int p0, p1;
       if (not r.span(up, U.lo, U.hi, p0, p1)) { p0 = 1; p1 = 0; }
-      const float *prev = U.prev.data();
+      const float *prev = U.prev;
       const double inv_d = 1.0 / d;
       const float inv = float(1.0 / (d - 1.0));
       const double edge_hi = r.cross_n - 0.5;
