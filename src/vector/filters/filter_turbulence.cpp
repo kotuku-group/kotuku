@@ -526,23 +526,20 @@ static ERR TURBULENCEFX_SET_OutputMode(extTurbulenceFX *Self, FOM Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, std::string &Value)
+static ERR turbulence_xml(const extTurbulenceFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-
-   stream.precision(std::numeric_limits<double>::max_digits10);
-   stream << "feTurbulence baseFrequency=\"" << Self->FX << ' ' << Self->FY
-      << "\" numOctaves=\"" << Self->Octaves << "\" seed=\"" << Self->Seed
-      << "\" stitchTiles=\"" << (Self->Stitch ? "stitch" : "noStitch")
-      << "\" type=\"" << ((Self->Type IS TB::NOISE) ? "fractalNoise" : "turbulence") << '"';
-   if (Self->OutputMode IS FOM::HEIGHT) stream << " kotuku:outputMode=\"height\"";
-
-   Value = stream.str();
+   Element.Name = "feTurbulence";
+   Element.attribute("baseFrequency", Element.number(Effect.FX) + ' ' + Element.number(Effect.FY));
+   Element.attribute("numOctaves", Effect.Octaves);
+   Element.attribute("seed", Effect.Seed);
+   Element.attribute("stitchTiles", Effect.Stitch ? "stitch" : "noStitch");
+   Element.attribute("type", Effect.Type IS TB::NOISE ? "fractalNoise" : "turbulence");
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
    return ERR::Okay;
 }
 
@@ -558,7 +555,7 @@ static const FieldArray clTurbulenceFXFields[] = {
    { "Stitch",  FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Stitch },
    { "Type",    FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, TURBULENCEFX_SET_Type, &clTurbulenceFXTB },
    { "OutputMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, TURBULENCEFX_SET_OutputMode, &clTurbulenceFXFOM },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,      TURBULENCEFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,      FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

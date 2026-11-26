@@ -87,6 +87,7 @@ class objLZMAStream : public objCompressedStream {
    // Customised field setting
 
    inline ERR setSize(const int64_t Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[1];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }

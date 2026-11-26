@@ -571,6 +571,7 @@ class objAudio : public Object {
    // Customised field setting
 
    inline ERR setOutputRate(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -587,6 +588,7 @@ class objAudio : public Object {
    }
 
    inline ERR setFlags(const ADF Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -597,16 +599,19 @@ class objAudio : public Object {
    }
 
    inline ERR setBitDepth(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPeriods(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPeriodSize(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -1765,6 +1770,7 @@ class objAudioSplitter : public objAudioEffect {
    // Customised field setting
 
    inline ERR setLatencyBudget(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
@@ -2270,6 +2276,7 @@ class objSound : public Object {
    // Customised field setting
 
    inline ERR setSourceFormat(struct AudioFormat * Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, 0x08100518, Value);
    }

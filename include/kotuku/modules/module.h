@@ -190,6 +190,7 @@ class objModule : public Object {
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[5];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }

@@ -434,7 +434,7 @@ the surface area first).</li>
     <field>
       <name>BitsPerPixel</name>
       <comment>Defines the pixel depth used by the surface buffer.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>INT</type>
       <description>
 <p>Set <code>BitsPerPixel</code> before initialisation to request a fixed pixel depth for the surface buffer.  If the requested depth differs from the display or parent buffer, the graphics system converts pixels when the surface is drawn, which is usually slower than using the native display depth.</p>
@@ -625,7 +625,7 @@ the surface area first).</li>
     <field>
       <name>PopOver</name>
       <comment>Keeps a surface in front of another surface in the Z order.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>Set <code>PopOver</code> before initialisation to the object ID of a sibling <class name="Surface">Surface</class> that this surface should stay in front of. A descendant of the sibling is also accepted; it is resolved to the sibling that contains it on initialisation. Pop-over surfaces share the scope of the surface that they pop over when a <fl>Modal</fl> surface is active.</p>

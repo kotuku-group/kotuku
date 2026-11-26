@@ -156,7 +156,7 @@ check splitter.mtSetBranch(1, struct.new('AudioBranch', { gain=-6, mute=0 }))
     <field>
       <name>LatencyBudget</name>
       <comment>The fixed delay, in milliseconds, within which the latencies of all branches are aligned.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>DOUBLE</type>
       <description>
 <p>Every branch is delayed so that its output emerges exactly LatencyBudget milliseconds after its input, rounded up to whole frames at the output rate, regardless of the latency of the effects in the branch.  This keeps the branches aligned when they are summed, and is reported as the splitter's <class name="AudioEffect" field="Latency">AudioEffect.Latency</class>.</p>

@@ -111,7 +111,7 @@
     <field>
       <name>Backlog</name>
       <comment>The maximum number of connections that can be queued against the socket.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>Incoming TCP connections to NetServer objects are queued until they are accepted by the object.  Setting the Backlog adjusts the maximum number of connections on the queue, which otherwise defaults to 10.</p>
@@ -149,7 +149,7 @@
     <field>
       <name>SSLCertificate</name>
       <comment>SSL certificate file to use for SSL NetServer listeners.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>Set SSLCertificate to the path of an SSL certificate file to use when the NetServer is initialised with SSL enabled. The certificate file must be in a supported format such as PEM, CRT, or P12.  If no certificate is defined, the NetServer will either self-sign or use a localhost certificate, if available.</p>

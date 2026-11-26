@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>Use ColourFX to perform colour transformations on an input source.  A <fl>Mode</fl> must be selected and any required <fl>Values</fl> defined prior to rendering.</p>
+<p>Use ColourFX to perform colour transformations on an input source.  A <fl>Mode</fl> must be selected and any required <fl>Values</fl> defined before initialisation.</p>
 <p>SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for this operation.</p>
 <p>The matrix is applied in the effect's colour space, which is the parent <class name="VectorFilter">VectorFilter</class>'s ColourSpace unless <class name="FilterEffect" field="ColourSpace">FilterEffect.ColourSpace</class> overrides it.  If set to <code>LINEAR_RGB</code> (the SVG default) then pixel values are converted to linear RGB prior to transformation and back to sRGB on output, otherwise the transformation is performed directly on the sRGB values.</p></description>
     <source>
@@ -51,7 +51,7 @@
     <field>
       <name>Values</name>
       <comment>A list of input values for the algorithm defined by <fl>Mode</fl>.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>DOUBLE []</type>
       <description>
 <p>The meaning of the input values is dependent on the selected <fl>Mode</fl>.  Each mode documents the total number of values that must be defined for them to work properly.</p>
@@ -61,7 +61,7 @@
 
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <tags>caller-owns-result</tags>

@@ -224,16 +224,21 @@ The (X,Y) field values define the offset of the effect within the target clippin
 -END-
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes an individual filter primitive in SVG syntax.
+
+For most primitives the string contains the element name and attributes, without angle brackets.  Lighting
+and component transfer return complete elements.  Merge and wave function also return complete elements
+when they have child nodes.  Use @VectorFilter.EffectXML for a complete pipeline with input and result
+attributes.  A merge node's input names refer to the result names in that fragment.
+
+Expressions specific to Kōtuku use the Kōtuku XML namespace.  Declare the `kotuku` prefix and, for image
+references, the `xlink` prefix on the enclosing document.  Unsupported effects and resources return
+`ERR::NoSupport`.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR FILTEREFFECT_GET_XMLDef(extFilterEffect *Self, std::string &Value)
-{
-   // Derived classes are expected to override this field
-   return ERR::NoSupport;
-}
+static ERR FILTEREFFECT_GET_XMLDef(extFilterEffect *Self, std::string &Value);
 
 #include "filter_effect_def.c"
 

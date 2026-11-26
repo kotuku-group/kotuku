@@ -884,14 +884,49 @@ Operators that mix colour components use @FilterEffect.ColourSpace.  They inheri
 space by default.  The `IN` and `OUT` operators only modify the alpha channel.
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the filter.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, std::string &Value)
+static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Element)
 {
-   Value = std::string("feComposite");
+   constexpr std::string_view operators[] = { "over", "in", "out", "atop", "xor", "arithmetic" };
+   const auto op = size_t(Effect.Operator);
+   const bool arithmetic = Effect.Operator IS OP::ARITHMETIC;
+   const std::pair<CSTRING, double> coefficients[] = {
+      { "k1", Effect.K1 }, { "k2", Effect.K2 }, { "k3", Effect.K3 }, { "k4", Effect.K4 }
+   };
+   for (const auto &[name, value] : coefficients) {
+      if (arithmetic) Element.attribute(name, value);
+      else if (value != 0) Element.attribute(std::string("kotuku:") + name, value);
+   }
+   if (op < std::size(operators)) {
+      Element.Name = "feComposite";
+      Element.attribute("operator", operators[op]);
+      return ERR::Okay;
+   }
+
+   Element.Name = "feBlend";
+   switch (Effect.Operator) {
+      case OP::SCREEN: Element.attribute("mode", "screen"); break;
+      case OP::MULTIPLY: Element.attribute("mode", "multiply"); break;
+      case OP::LIGHTEN: Element.attribute("mode", "lighten"); break;
+      case OP::DARKEN: Element.attribute("mode", "darken"); break;
+      case OP::OVERLAY: Element.attribute("mode", "overlay"); break;
+      case OP::HARD_LIGHT: Element.attribute("mode", "hard-light"); break;
+      case OP::SOFT_LIGHT: Element.attribute("mode", "soft-light"); break;
+      case OP::DODGE: Element.attribute("mode", "color-dodge"); break;
+      case OP::BURN: Element.attribute("mode", "color-burn"); break;
+      case OP::DIFFERENCE: Element.attribute("mode", "difference"); break;
+      case OP::EXCLUSION: Element.attribute("mode", "exclusion"); break;
+      case OP::INVERT_RGB: Element.attribute("kotuku:mode", "invertRGB"); break;
+      case OP::INVERT: Element.attribute("kotuku:mode", "invert"); break;
+      case OP::CONTRAST: Element.attribute("kotuku:mode", "contrast"); break;
+      case OP::PLUS: Element.attribute("kotuku:mode", "plus"); break;
+      case OP::MINUS: Element.attribute("kotuku:mode", "minus"); break;
+      default: return ERR::InvalidValue;
+   }
    return ERR::Okay;
 }
 
@@ -954,7 +989,7 @@ static const FieldArray clCompositeFXFields[] = {
    { "K3",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K3 },
    { "K4",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K4 },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, COMPOSITEFX_SET_Operator, &clCompositeFXOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, COMPOSITEFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

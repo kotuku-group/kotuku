@@ -111,16 +111,12 @@ static ERR MERGEFX_GET_SourceList(extMergeFX *Self, std::span<MergeSource> &Valu
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the filter.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, std::string &Value)
-{
-   Value = std::string("feMerge");
-   return ERR::Okay;
-}
+
 
 //********************************************************************************************************************
 
@@ -128,7 +124,7 @@ static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, std::string &Value)
 
 static const FieldArray clMergeFXFields[] = {
    { "SourceList", FDF_VIRTUAL|FDF_STRUCT|FDF_ARRAY|FDF_RW|FDF_PURE, MERGEFX_GET_SourceList, MERGEFX_SET_SourceList, "MergeSource" },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, MERGEFX_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

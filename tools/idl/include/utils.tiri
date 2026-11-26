@@ -199,11 +199,10 @@ global function getMetaFieldDefinition(Field:table):table
       fl.read = 'Read'
    end
 
-   if Field.setField?? then
-      fl.write = 'Set'
-      fl.set = Field.setField
-   elseif Field.flags has FD_WRITE then
-      fl.write = 'Write'
+   if Field.setField?? then fl.setField = true end
+
+   if Field.flags has FD_WRITE then
+      fl.write = fl.setField ? 'Set' : 'Write'
    elseif Field.flags has FD_INIT then
       fl.write = 'Init'
    end

@@ -633,7 +633,7 @@ The (SX,SY) field values define the standard deviation of the gaussian blur alon
 If either value is 0 or less, the effect is disabled on that axis.
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
@@ -657,19 +657,18 @@ static ERR BLURFX_SET_OutputMode(extBlurFX *Self, FOM Value)
    return ERR::Okay;
 }
 
-static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
+static ERR blur_xml(const extBlurFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-   if (Self->OutputMode IS FOM::HEIGHT) stream.precision(std::numeric_limits<double>::max_digits10);
-   stream << "feGaussianBlur stdDeviation=\"" << Self->SX << " " << Self->SY << "\"";
-   switch (Self->EdgeMode) {
-      case FEM::CLAMP:  stream << " edgeMode=\"duplicate\""; break;
-      case FEM::REPEAT: stream << " edgeMode=\"wrap\""; break;
-      case FEM::MIRROR: stream << " kotuku:edgeMode=\"mirror\""; break;
+   Element.Name = "feGaussianBlur";
+   Element.attribute("stdDeviation", Element.number(Effect.SX) + ' ' + Element.number(Effect.SY));
+   switch (Effect.EdgeMode) {
+      case FEM::CLAMP: Element.attribute("edgeMode", "duplicate"); break;
+      case FEM::REPEAT: Element.attribute("edgeMode", "wrap"); break;
+      case FEM::MIRROR: Element.attribute("kotuku:edgeMode", "mirror"); break;
       case FEM::TRANSPARENT: break;
+      default: return ERR::InvalidValue;
    }
-   if (Self->OutputMode IS FOM::HEIGHT) stream << " kotuku:outputMode=\"height\"";
-   Value = stream.str();
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
    return ERR::Okay;
 }
 
@@ -702,7 +701,7 @@ static const FieldArray clBlurFXFields[] = {
    { "SY",         FDF_DOUBLE|FDF_RW, nullptr, BLURFX_SET_SY },
    { "EdgeMode",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_EdgeMode, &clBlurFXFEM },
    { "OutputMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, BLURFX_SET_OutputMode, &clBlurFXFOM },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

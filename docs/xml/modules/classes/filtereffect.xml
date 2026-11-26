@@ -149,9 +149,13 @@
 
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <comment>Describes an individual filter primitive in SVG syntax.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <description>
+<p>For most primitives the string contains the element name and attributes, without angle brackets.  Lighting and component transfer return complete elements.  Merge and wave function also return complete elements when they have child nodes.  Use <class name="VectorFilter" field="EffectXML">VectorFilter.EffectXML</class> for a complete pipeline with input and result attributes.  A merge node's input names refer to the result names in that fragment.</p>
+<p>Expressions specific to Kōtuku use the Kōtuku XML namespace.  Declare the <code>kotuku</code> prefix and, for image references, the <code>xlink</code> prefix on the enclosing document.  Unsupported effects and resources return <code>ERR::NoSupport</code>.</p>
+      </description>
       <tags>caller-owns-result</tags>
     </field>
 

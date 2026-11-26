@@ -122,7 +122,7 @@ if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
     <field>
       <name>Name</name>
       <comment>The name of the module.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>This string specifies the name of the module, which doubles as its location when loaded from the <code>system:modules/</code> folder.  It is permissible to specify sub-directories before the module name itself - this could become more common in module loading in future.</p>

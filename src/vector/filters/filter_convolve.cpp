@@ -731,72 +731,38 @@ static ERR CONVOLVEFX_SET_UnitY(extConvolveFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, std::string &Value)
+static ERR convolve_xml(const extConvolveFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
+   if (not Effect.MatrixProvided) return ERR::FieldNotSet;
+   Element.Name = "feConvolveMatrix";
+   if ((Effect.MatrixColumns != 3) or (Effect.MatrixRows != 3)) {
+      Element.attribute("order", Element.number(Effect.MatrixColumns) + ' ' + Element.number(Effect.MatrixRows));
+   }
+   Element.list("kernelMatrix", std::span(Effect.Matrix, size_t(Effect.MatrixSize)));
+   if (Effect.DivisorProvided) Element.attribute("divisor", Effect.Divisor);
+   if (Effect.Bias != 0) Element.attribute("bias", Effect.Bias);
+   if (Effect.TargetXProvided) Element.attribute("targetX", Effect.TargetX);
+   if (Effect.TargetYProvided) Element.attribute("targetY", Effect.TargetY);
 
-   stream << "feConvolveMatrix";
-
-   if ((Self->MatrixColumns != 3) or (Self->MatrixRows != 3)) {
-      stream << " order=\"";
-      if (Self->MatrixColumns IS Self->MatrixRows) stream << Self->MatrixColumns;
-      else stream << Self->MatrixColumns << " " << Self->MatrixRows;
-      stream << "\"";
+   switch (Effect.EdgeMode) {
+      case EM::WRAP: Element.attribute("edgeMode", "wrap"); break;
+      case EM::NONE: Element.attribute("edgeMode", "none"); break;
+      case EM::DUPLICATE: break;
+      default: return ERR::InvalidValue;
    }
 
-   if (Self->MatrixProvided) {
-      stream << " kernelMatrix=\"";
-      for (int i=0; i < Self->MatrixSize; i++) {
-         if (i) stream << " ";
-         stream << Self->Matrix[i];
-      }
-      stream << "\"";
+   if (Effect.UnitXProvided and Effect.UnitYProvided) {
+      Element.attribute("kernelUnitLength", Element.number(Effect.UnitX) + ' ' + Element.number(Effect.UnitY));
    }
+   else if (Effect.UnitXProvided) Element.attribute("kotuku:kernelUnitX", Effect.UnitX);
+   else if (Effect.UnitYProvided) Element.attribute("kotuku:kernelUnitY", Effect.UnitY);
 
-   double default_divisor = 0.0;
-   for (int i=0; i < Self->MatrixSize; i++) default_divisor += Self->Matrix[i];
-   if (!default_divisor) default_divisor = 1.0;
-
-   if (Self->DivisorProvided and (std::abs(Self->Divisor - default_divisor) > 1e-12)) {
-      stream << " divisor=\"" << Self->Divisor << "\"";
-   }
-
-   if (Self->Bias != 0.0) stream << " bias=\"" << Self->Bias << "\"";
-   if (Self->TargetXProvided and (Self->TargetX != (Self->MatrixColumns>>1))) {
-      stream << " targetX=\"" << Self->TargetX << "\"";
-   }
-
-   if (Self->TargetYProvided and (Self->TargetY != (Self->MatrixRows>>1))) {
-      stream << " targetY=\"" << Self->TargetY << "\"";
-   }
-
-   switch (Self->EdgeMode) {
-      case EM::WRAP:
-         stream << " edgeMode=\"wrap\"";
-         break;
-
-      case EM::NONE:
-         stream << " edgeMode=\"none\"";
-         break;
-
-      default:
-         break;
-   }
-
-   if (Self->UnitXProvided or Self->UnitYProvided) {
-      stream << " kernelUnitLength=\"" << Self->UnitX;
-      if (Self->UnitX != Self->UnitY) stream << " " << Self->UnitY;
-      stream << "\"";
-   }
-
-   if (Self->PreserveAlpha) stream << " preserveAlpha=\"true\"";
-
-   Value = stream.str();
+   if (Effect.PreserveAlpha) Element.attribute("preserveAlpha", "true");
    return ERR::Okay;
 }
 
@@ -829,7 +795,7 @@ static const FieldArray clConvolveFXFields[] = {
    { "TargetY",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetY },
    { "UnitX",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitX },
    { "UnitY",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitY },
-   { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  CONVOLVEFX_GET_XMLDef },
+   { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

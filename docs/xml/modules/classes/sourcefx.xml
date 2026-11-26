@@ -53,27 +53,27 @@
     <field>
       <name>Source</name>
       <comment>The source <class name="Vector">Vector</class> that will be rendered.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>OBJECTPTR</type>
       <description>
-<p>The Source field must refer to a <class name="Vector">Vector</class> that will be rendered in the filter pipeline.  The vector must be under the ownership of the same <class name="VectorScene">VectorScene</class> that the filter pipeline belongs.</p>
+<p>Set Source before initialisation to select the <class name="Vector">Vector</class> to render in the filter pipeline.  The vector must belong to the same <class name="VectorScene">VectorScene</class> as the filter.</p>
       </description>
     </field>
 
     <field>
       <name>SourceName</name>
       <comment>Name of a source definition to be rendered.</comment>
-      <access write="S">Set</access>
+      <access write="I">Init</access>
       <type>STRING</type>
       <description>
-<p>Setting Def to the name of a pre-registered scene definition will reference that object in <fl>Source</fl>.  If the name is not registered then <code>ERR::Search</code> is returned.  The named object must be derived from the <class name="Vector">Vector</class> class.</p>
+<p>Set SourceName before initialisation to select a registered scene definition for <fl>Source</fl>.  An unregistered name returns <code>ERR::Search</code>.  The named object must be derived from the <class name="Vector">Vector</class> class.</p>
 <p>Vectors are registered via the <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> method.</p>
       </description>
     </field>
 
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the filter.</comment>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <tags>caller-owns-result</tags>

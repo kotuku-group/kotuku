@@ -1514,6 +1514,18 @@ static void apply_primitive_colour_space(objFilterEffect *Effect, const XTag &Ta
    }
 }
 
+static void parse_filter_resampling(extSVG *Self, const XTag &Tag, auto *Effect)
+{
+   if (const auto value = find_kotuku_attrib(Self, Tag, "resampleMethod")) {
+      int method = 0;
+      if (read_integer_value(*value, method) and (method >= int(VSM::AUTO)) and (method <= int(VSM::BLACKMAN))) {
+         Effect->setResampleMethod(VSM(method));
+      }
+   }
+}
+
+//********************************************************************************************************************
+
 ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    kt::Log log(__FUNCTION__);
@@ -1676,6 +1688,16 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
    std::vector<MergeSource> list;
    for (auto &child : Tag.Children) {
       if (svg_tag_hash(child) IS SVF_feMergeNode) {
+         const auto source = find_kotuku_attrib(Self, child, "source");
+         if (source and (*source IS "none")) {
+            list.emplace_back(VSF::NONE);
+            continue;
+         }
+         if (not child.attrib("in")) {
+            if (fx->Prev) list.emplace_back(VSF::REFERENCE, fx->Prev);
+            else list.emplace_back(VSF::GRAPHIC);
+            continue;
+         }
          for (int a=1; a < std::ssize(child.Attribs); a++) {
             if (iequals("in", child.Attribs[a].Name)) {
                switch (strhash(child.Attribs[a].Value)) {
@@ -1748,12 +1770,19 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcep
    SetOwner(fx, Filter);
    fx->setMode(CM::MATRIX); // SVG's default type.  Without values the matrix is the identity.
 
+   const auto extension_type = find_kotuku_attrib(Self, Tag, "type");
+   const auto extension_values = find_kotuku_attrib(Self, Tag, "values");
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
-      if (val.empty()) continue;
+      const auto &name = Tag.Attribs[a].Name;
+      const auto local = kotuku_attrib(Self, Tag, name);
+      if (val.empty() and (local != "values")) continue;
+      if (extension_type and (name IS "type")) continue;
+      if (extension_values and (name IS "values")) continue;
 
-      switch(strhash(Tag.Attribs[a].Name)) {
+      const auto hash = ((local IS "type") or (local IS "values")) ? strhash(local) : strhash(name);
+      switch (hash) {
          case SVF_type: {
             const std::array<double, 20> *m = nullptr;
             CM mode = CM::NIL;
@@ -1905,6 +1934,16 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
          case SVF_in:     parse_input_source(Self, fx, val); break;
          case SVF_result: result_name = val; break;
+         default: {
+            const auto local = kotuku_attrib(Self, Tag, Tag.Attribs[a].Name);
+            if ((local IS "kernelUnitX") or (local IS "kernelUnitY")) {
+               const auto unit = kt::font_traits::parse_number(val);
+               if ((not unit) or (not std::isfinite(*unit))) return fail(ERR::InvalidValue);
+               const auto error = (local IS "kernelUnitX") ? fx->setUnitX(*unit) : fx->setUnitY(*unit);
+               if (error != ERR::Okay) return fail(error);
+            }
+            break;
+         }
       }
    }
 
@@ -1980,22 +2019,6 @@ static LFX read_lighting_features(std::string_view Value) noexcept
       pos = end;
    }
    return result;
-}
-
-// Filter resource references must be relative and cannot contain parent folder components.
-
-static bool safe_filter_path(std::string_view Path)
-{
-   if (Path.empty() or Path.starts_with('/') or Path.starts_with('\\') or
-       (Path.find(':') != std::string_view::npos) or (Path.find('\0') != std::string_view::npos)) return false;
-
-   while (not Path.empty()) {
-      const auto separator = Path.find_first_of("/\\");
-      if (Path.substr(0, separator) IS "..") return false;
-      if (separator IS std::string_view::npos) break;
-      Path.remove_prefix(separator + 1);
-   }
-   return true;
 }
 
 // Resolve existing native paths before checking containment so that symlinks are followed.
@@ -2120,10 +2143,10 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
                if (auto channel = read_map_channel(val)) fx->setRoughnessChannel(*channel);
                else log.warning("Invalid roughnessChannel '%s' on %s.", val.c_str(), Tag.name());
             }
-            else if (normal_map and (local IS "kernelUnitX")) {
+            else if (local IS "kernelUnitX") {
                set_light_number("kernelUnitX", val, &objLightingFX::setUnitX);
             }
-            else if (normal_map and (local IS "kernelUnitY")) {
+            else if (local IS "kernelUnitY") {
                set_light_number("kernelUnitY", val, &objLightingFX::setUnitY);
             }
             else if (local IS "features") fx->setFeatures(read_lighting_features(val));
@@ -2137,12 +2160,22 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             else if (local IS "normalStrength") {
                set_light_number("normalStrength", val, &objLightingFX::setNormalStrength);
             }
-            else if ((combined) and (local IS "metalness")) {
+            else if (local IS "constant") set_light_number("constant", val, &objLightingFX::setConstant);
+            else if (local IS "combinedSpecularConstant") {
+               set_light_number("combinedSpecularConstant", val, &objLightingFX::setSpecularConstant);
+            }
+            else if (local IS "exponent") set_light_number("exponent", val, &objLightingFX::setExponent);
+            else if ((combined and (local IS "metalness")) or (local IS "combinedMetalness")) {
                set_light_number("metalness", val, &objLightingFX::setMetalness);
             }
-            else if ((combined) and (local IS "fresnel")) set_light_number("fresnel", val, &objLightingFX::setFresnel);
-            else if ((combined) and (local IS "wrap")) set_light_number("wrap", val, &objLightingFX::setWrap);
-            else if ((combined) and (local IS "matcap")) {
+            else if ((combined and (local IS "fresnel")) or (local IS "combinedFresnel")) {
+               set_light_number("fresnel", val, &objLightingFX::setFresnel);
+            }
+            else if ((combined and (local IS "wrap")) or (local IS "combinedWrap")) {
+               set_light_number("wrap", val, &objLightingFX::setWrap);
+            }
+            else if (local IS "albedo") parse_input_mix(Self, fx, val);
+            else if ((combined and (local IS "matcap")) or (local IS "combinedMatcap")) {
                std::string path;
                auto error = resolve_matcap_path(Self, val, path);
                if (error IS ERR::Okay) error = fx->setMatcapPath(path);
@@ -2306,7 +2339,11 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
          else log.warning("Unrecognised %s child node '%s'", Tag.name(), child.name());
       }
    }
-   else if ((not normal_map) and (not Tag.Children.empty())) light_error = parse_light(Tag.Children[0], false);
+   else if (not Tag.Children.empty()) {
+      auto &child = Tag.Children.front();
+      if ((not normal_map) or svg_tag_is(child, SVF_fePointLight) or svg_tag_is(child, SVF_feSpotLight) or
+          svg_tag_is(child, SVF_feDistantLight)) light_error = parse_light(child, false);
+   }
 
    if (light_error != ERR::Okay) {
       FreeResource(fx);
@@ -2443,6 +2480,7 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
       }
    }
 
+   parse_filter_resampling(Self, Tag, fx);
    apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
@@ -2554,12 +2592,21 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
                case SVF_offset:      read_numseq(child.Attribs[a].Value, { &offset }); break;
                case SVF_mask:        svtonum(child.Attribs[a].Value, mask); break;
                case SVF_tableValues: {
-                  values = read_array<double>(child.Attribs[a].Value, 64);
+                  values = read_array<double>(child.Attribs[a].Value);
                   break;
                }
-               default: log.warning("Unknown %s attribute %s", child.name(), child.Attribs[a].Name.c_str()); break;
+               default: {
+                  const auto local = kotuku_attrib(Self, child, child.Attribs[a].Name);
+                  if (local IS "mask") svtonum(child.Attribs[a].Value, mask);
+                  else if (local != "type") {
+                     log.warning("Unknown %s attribute %s", child.name(), child.Attribs[a].Name.c_str());
+                  }
+                  break;
+               }
             }
          }
+
+         if (const auto extension = find_kotuku_attrib(Self, child, "type")) type = strhash(*extension);
 
          if (type) {
             // An empty tableValues list is equivalent to the identity function for table and discrete types.
@@ -2614,12 +2661,25 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
    if (NewObject(CLASSID::COMPOSITEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
+   const auto extension_mode = find_kotuku_attrib(Self, Tag, "mode");
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
 
-      switch(strhash(Tag.Attribs[a].Name)) {
+      const auto &name = Tag.Attribs[a].Name;
+      if (extension_mode and (name IS "mode")) continue;
+      auto hash = strhash(name);
+      if (const auto local = kotuku_attrib(Self, Tag, name); not local.empty()) {
+         switch (strhash(local)) {
+            case SVF_mode:
+            case SVF_k1:
+            case SVF_k2:
+            case SVF_k3:
+            case SVF_k4: hash = strhash(local); break;
+         }
+      }
+      switch (hash) {
          case SVF_mode:
          case SVF_operator: {
             switch (strhash(val)) {
@@ -2640,9 +2700,13 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
                case SVF_invertRGB:  fx->setOperator(OP::INVERT_RGB); break;
                case SVF_invert:     fx->setOperator(OP::INVERT); break;
                case SVF_contrast:   fx->setOperator(OP::CONTRAST); break;
+               case strhash("color-dodge"):
                case SVF_dodge:      fx->setOperator(OP::DODGE); break;
+               case strhash("color-burn"):
                case SVF_burn:       fx->setOperator(OP::BURN); break;
+               case strhash("hard-light"):
                case SVF_hardLight:  fx->setOperator(OP::HARD_LIGHT); break;
+               case strhash("soft-light"):
                case SVF_softLight:  fx->setOperator(OP::SOFT_LIGHT); break;
                case SVF_difference: fx->setOperator(OP::DIFFERENCE); break;
                case SVF_exclusion:  fx->setOperator(OP::EXCLUSION); break;
@@ -3025,6 +3089,7 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   parse_filter_resampling(Self, Tag, fx);
    if (error IS ERR::Okay) apply_primitive_colour_space(fx, Tag);
    if (error IS ERR::Okay) error = fx->init();
    if (error != ERR::Okay) {
@@ -3059,7 +3124,12 @@ void svgState::proc_filter(XTag &Tag) noexcept
 
          int j;
          for (j=0; Tag.Attribs[a].Name[j] and (Tag.Attribs[a].Name[j] != ':'); j++);
-         if (Tag.Attribs[a].Name[j] IS ':') continue;
+         if (Tag.Attribs[a].Name[j] IS ':') {
+            const auto local = kotuku_attrib(Self, Tag, Tag.Attribs[a].Name);
+            if (local IS "opacity") filter->setOpacity(svtonum<double>(val));
+            else if ((local IS "aspectRatio") and (val IS "none")) filter->setAspectRatio(VFA::NONE);
+            continue;
+         }
 
          switch(strhash(Tag.Attribs[a].Name)) {
             case SVF_filterUnits:
@@ -4595,7 +4665,8 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
 
          default: {
             // Print a warning unless this was a reference to some other namespace.
-            if (val.find(':') IS std::string::npos) {
+            if ((val.find(':') IS std::string::npos) and
+                (kotuku_attrib(Self, Tag, Tag.Attribs[a].Name) != "compliance")) {
                log.warning("Failed to parse attrib '%s' in <svg/> tag @ line %d", Tag.Attribs[a].Name.c_str(), Tag.LineNo);
             }
          }

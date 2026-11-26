@@ -46,6 +46,7 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 
 #include <bs_thread_pool.h>
 #include "filter_sampling.h"
+#include "../../link/filter_resource.h"
 
 //#define EXPORT_FILTER_BITMAP
 
@@ -745,44 +746,114 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
 
 //********************************************************************************************************************
 
-static void write_filter_xml_attribute(std::ostream &Stream, std::string_view Name, std::string_view Value)
-{
-   Stream << ' ' << Name << "=\"";
-   for (char c : Value) {
-      if (c IS '&') Stream << "&amp;";
-      else if (c IS '<') Stream << "&lt;";
-      else if (c IS '"') Stream << "&quot;";
-      else Stream << c;
+struct filter_xml_element {
+   std::string_view Name;
+   std::string Result;
+   std::vector<std::pair<std::string, std::string>> Attributes;
+   std::vector<filter_xml_element> Children;
+   bool Complete = false; // XMLDef historically includes brackets for lighting and transfer functions.
+   bool Valid = true;
+
+   void attribute(std::string_view Attribute, std::string_view Value) {
+      Attributes.emplace_back(Attribute, Value);
    }
-   Stream << '"';
-}
 
-// Writes a colour in CSS rgb() notation.  An integer channel is used when reading it back recovers the original float.
+   template<class T> requires std::is_arithmetic_v<T>
+   void attribute(std::string_view Attribute, T Value) {
+      attribute(Attribute, number(Value));
+   }
 
-static void write_rgb(std::ostream &Stream, const FRGB &Colour)
+   template<class T> std::string number(T Value) {
+      if constexpr (std::is_floating_point_v<T>) {
+         if (not std::isfinite(Value)) {
+            Valid = false;
+            return {};
+         }
+      }
+      char buffer[64];
+      auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value);
+      if (error != std::errc()) Valid = false;
+      return std::string(buffer, end);
+   }
+
+   template<class T> void list(std::string_view Attribute, std::span<const T> Values) {
+      std::string value;
+      for (auto item : Values) {
+         if (not value.empty()) value += ' ';
+         value += number(item);
+      }
+      attribute(Attribute, value);
+   }
+
+   filter_xml_element & child(std::string_view TagName) {
+      auto &child = Children.emplace_back();
+      child.Name = TagName;
+      return child;
+   }
+
+   ERR write(std::string &Output, bool Fragment = false) const {
+      if (not Valid) return ERR::InvalidValue;
+      if (not Fragment) Output += '<';
+      Output += Name;
+      for (const auto &[name, value] : Attributes) {
+         Output += ' ';
+         Output += name;
+         Output += "=\"";
+         for (char c : value) {
+            switch (c) {
+               case '&': Output += "&amp;"; break;
+               case '<': Output += "&lt;"; break;
+               case '"': Output += "&quot;"; break;
+               case '\t': Output += "&#9;"; break;
+               case '\n': Output += "&#10;"; break;
+               case '\r': Output += "&#13;"; break;
+               default:
+                  if (uint8_t(c) < 0x20) return ERR::InvalidValue;
+                  Output += c;
+            }
+         }
+         Output += '"';
+      }
+      if (Fragment) return ERR::Okay;
+      if (Children.empty()) Output += "/>";
+      else {
+         Output += '>';
+         for (const auto &child : Children) {
+            if (auto error = child.write(Output); error != ERR::Okay) return error;
+         }
+         Output += "</";
+         Output += Name;
+         Output += '>';
+      }
+      return ERR::Okay;
+   }
+};
+
+//********************************************************************************************************************
+
+static void write_filter_xml_colour(filter_xml_element &Element, std::string_view Name, const FRGB &Colour)
 {
-   auto channel = [](float Value) {
+   auto channel = [&](float Value) {
       const double level = Value * 255.0;
       const double integer = std::round(level);
-      return (float(integer * (1.0 / 255.0)) IS Value) ? integer : level;
+      return Element.number((float(integer * (1.0 / 255.0)) IS Value) ? integer : level);
    };
 
-   const auto precision = Stream.precision(std::numeric_limits<double>::max_digits10);
-   Stream << "rgb(" << channel(Colour.Red) << ' ' << channel(Colour.Green) << ' ' << channel(Colour.Blue);
-   if (Colour.Alpha != 1.0f) Stream << " / " << Colour.Alpha;
-   Stream << ')';
-   Stream.precision(precision);
+   auto value = "rgb(" + channel(Colour.Red) + " " + channel(Colour.Green) + " " + channel(Colour.Blue);
+   if (Colour.Alpha != 1.0f) value += " / " + Element.number(double(Colour.Alpha));
+   value += ')';
+   Element.attribute(Name, value);
 }
 
-static void write_filter_xml_subregion(std::ostream &Stream, const objFilterEffect &Effect)
+//********************************************************************************************************************
+
+static void write_filter_xml_subregion(filter_xml_element &Element, const objFilterEffect &Effect)
 {
    auto write_unit = [&](std::string_view Name, const Unit &Length) {
       if (not Length.defined()) return;
-      Stream << ' ' << Name << "=\"";
       // Invert the percentage conversion in Unit::read() to preserve pixel boundaries on reload.
-      if (Length.scaled()) Stream << Length.Value / 0.01 << '%';
-      else Stream << Length.Value;
-      Stream << '"';
+      if (Length.scaled()) Element.attribute(Name, Element.number(Length.Value / 0.01) + '%');
+      else Element.attribute(Name, Length.Value);
    };
    write_unit("x", Effect.X);
    write_unit("y", Effect.Y);
@@ -790,15 +861,38 @@ static void write_filter_xml_subregion(std::ostream &Stream, const objFilterEffe
    write_unit("height", Effect.Height);
 }
 
-static void write_map_channel(std::ostream &Stream, CSTRING Prefix, CSTRING Name, MCH Channel)
+//********************************************************************************************************************
+
+static void write_filter_xml_aspect(filter_xml_element &Element, ARF Ratio)
 {
-   static constexpr CSTRING channels[] = { "R", "G", "B", "A", "luminance" };
-   if ((Channel > MCH::RED) and (Channel <= MCH::LUMINANCE)) {
-      Stream << ' ' << Prefix << Name << "=\"" << channels[int(Channel)] << '"';
+   if (Ratio IS (ARF::X_MID|ARF::Y_MID|ARF::MEET)) return;
+   if (((Ratio & ARF::NONE) != ARF::NIL) or ((Ratio & (ARF::MEET|ARF::SLICE)) IS ARF::NIL)) {
+      Element.attribute("preserveAspectRatio", "none");
+      return;
    }
+
+   std::string value((Ratio & ARF::X_MIN) != ARF::NIL ? "xMin" :
+      (Ratio & ARF::X_MAX) != ARF::NIL ? "xMax" : "xMid");
+   value += (Ratio & ARF::Y_MIN) != ARF::NIL ? "YMin" : (Ratio & ARF::Y_MAX) != ARF::NIL ? "YMax" : "YMid";
+   value += (Ratio & ARF::SLICE) != ARF::NIL ? " slice" : " meet";
+   Element.attribute("preserveAspectRatio", value);
 }
 
 //********************************************************************************************************************
+
+static void write_filter_xml_channel(filter_xml_element &Element, std::string_view Name, MCH Channel)
+{
+   static constexpr CSTRING channels[] = { "R", "G", "B", "A", "luminance" };
+   if ((Channel > MCH::RED) and (Channel <= MCH::LUMINANCE)) Element.attribute(Name, channels[int(Channel)]);
+}
+
+//********************************************************************************************************************
+
+static void write_filter_xml_resampling(filter_xml_element &Element, VSM Method)
+{
+   // Keep the selected API method, including methods which share one implementation in DisplacementFX.
+   if (Method != VSM::BILINEAR) Element.attribute("kotuku:resampleMethod", int(Method));
+}
 
 //********************************************************************************************************************
 // The colour space in which an effect processes its inputs: its own ColourSpace, or the filter's if it inherits.
@@ -2691,94 +2785,179 @@ static ERR VECTORFILTER_SET_ColourSpace(extVectorFilter *Self, VCS Value)
    return ERR::Okay;
 }
 
+static ERR describe_filter_xml(extFilterEffect *Effect, filter_xml_element &Element)
+{
+   ERR error = ERR::Okay;
+   switch (Effect->classID()) {
+      case CLASSID::BLURFX:         error = blur_xml(*(extBlurFX *)Effect, Element); break;
+      case CLASSID::COLOURFX:       error = colour_xml(*(extColourFX *)Effect, Element); break;
+      case CLASSID::COMPOSITEFX:    error = composite_xml(*(extCompositeFX *)Effect, Element); break;
+      case CLASSID::CONVOLVEFX:     error = convolve_xml(*(extConvolveFX *)Effect, Element); break;
+      case CLASSID::DISPLACEMENTFX: error = displacement_xml(*(extDisplacementFX *)Effect, Element); break;
+      case CLASSID::FLOODFX:        error = flood_xml(*(extFloodFX *)Effect, Element); break;
+      case CLASSID::IMAGEFX:        error = image_xml(*(extImageFX *)Effect, Element); break;
+      case CLASSID::LIGHTINGFX:     error = lighting_xml(*(extLightingFX *)Effect, Element); break;
+      case CLASSID::MERGEFX:        Element.Name = "feMerge"; break;
+      case CLASSID::MORPHOLOGYFX:   error = morphology_xml(*(extMorphologyFX *)Effect, Element); break;
+      case CLASSID::OFFSETFX:       error = offset_xml(*(extOffsetFX *)Effect, Element); break;
+      case CLASSID::REMAPFX:        error = remap_xml(*(extRemapFX *)Effect, Element); break;
+      case CLASSID::SOURCEFX:       error = source_xml(*(extSourceFX *)Effect, Element); break;
+      case CLASSID::TILEFX:         Element.Name = "feTile"; break;
+      case CLASSID::TURBULENCEFX:   error = turbulence_xml(*(extTurbulenceFX *)Effect, Element); break;
+      case CLASSID::WAVEFUNCTIONFX: error = wavefunction_xml(*(extWaveFunctionFX *)Effect, Element); break;
+      default: return ERR::NoSupport;
+   }
+   if (error != ERR::Okay) return error;
+
+   write_filter_xml_subregion(Element, *Effect);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static filter_positions filter_xml_positions(std::span<extFilterEffect * const> Effects)
+{
+   filter_positions positions;
+   for (size_t i = 0; i < Effects.size(); i++) positions.emplace(Effects[i], i);
+   return positions;
+}
+
+//********************************************************************************************************************
+
+static ERR bind_filter_xml_input(filter_xml_element &Element, CSTRING Attribute, VSF Source, objFilterEffect *Producer,
+   const filter_positions &Positions, size_t Consumer, std::span<filter_xml_element> Graph)
+{
+   switch (Source) {
+      case VSF::GRAPHIC: Element.attribute(Attribute, "SourceGraphic"); break;
+      case VSF::ALPHA: Element.attribute(Attribute, "SourceAlpha"); break;
+      case VSF::BKGD: Element.attribute(Attribute, "BackgroundImage"); break;
+      case VSF::BKGD_ALPHA: Element.attribute(Attribute, "BackgroundAlpha"); break;
+      case VSF::FILL: Element.attribute(Attribute, "FillPaint"); break;
+      case VSF::STROKE: Element.attribute(Attribute, "StrokePaint"); break;
+      case VSF::REFERENCE: {
+         if (not Producer) return ERR::FieldNotSet;
+         const auto position = Positions.find(Producer);
+         if ((position IS Positions.end()) or (position->second >= Consumer)) return ERR::InvalidValue;
+         const auto name = "effect" + std::to_string(position->second);
+         if (not Graph.empty()) Graph[position->second].Result = name;
+         Element.attribute(Attribute, name);
+         break;
+      }
+      case VSF::NONE: return ERR::FieldNotSet;
+      default: return ERR::NoSupport;
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR bind_merge_xml(const extMergeFX &Effect, filter_xml_element &Element, const filter_positions &Positions,
+   size_t Consumer, std::span<filter_xml_element> Graph = {})
+{
+   for (const auto &source : Effect.List) {
+      auto &node = Element.child("feMergeNode");
+      if (source.SourceType IS VSF::NONE) node.attribute("kotuku:source", "none");
+      else if (auto error = bind_filter_xml_input(node, "in", source.SourceType, source.Effect, Positions,
+          Consumer, Graph); error != ERR::Okay) return error;
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span<filter_xml_element> Elements)
+{
+   const auto positions = filter_xml_positions(Effects);
+   for (size_t i = 0; i < Effects.size(); i++) {
+      auto effect = Effects[i];
+      auto &element = Elements[i];
+
+      auto bind = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer) {
+         return bind_filter_xml_input(element, Attribute, Source, Producer, positions, i, Elements);
+      };
+
+      const auto operation = describe_filter_operation(effect);
+      if ((operation.Inputs IS filter_inputs::SINGLE) or (operation.Inputs IS filter_inputs::DUAL)) {
+         if (auto error = bind("in", effect->SourceType, effect->Input); error != ERR::Okay) return error;
+      }
+      if (operation.Inputs IS filter_inputs::DUAL) {
+         if (auto error = bind("in2", effect->MixType, effect->Mix); error != ERR::Okay) return error;
+      }
+      else if ((effect->classID() IS CLASSID::LIGHTINGFX) and (effect->MixType != VSF::NONE)) {
+         if (auto error = bind("kotuku:albedo", effect->MixType, effect->Mix); error != ERR::Okay) return error;
+      }
+      if (operation.Inputs IS filter_inputs::MERGE) {
+         if (auto error = bind_merge_xml(*(extMergeFX *)effect, element, positions, i, Elements);
+             error != ERR::Okay) return error;
+      }
+      if (effect->FilterExtension) {
+         if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;
+         constexpr CSTRING attributes[] = { "kotuku:normalMap", "kotuku:occlusionMap", "kotuku:roughnessMap" };
+         const auto inputs = effect->FilterExtension->Inputs;
+         if (inputs.size() != std::size(attributes)) return ERR::NoSupport;
+         for (size_t slot = 0; slot < inputs.size(); slot++) {
+            const auto &input = inputs[slot];
+            if (input.Source IS VSF::NONE) continue;
+            if (input.Source != VSF::REFERENCE) return ERR::NoSupport;
+            if (auto error = bind(attributes[slot], input.Source, input.Reference); error != ERR::Okay) return error;
+         }
+      }
+      if (effect->ColourSpace IS VCS::SRGB) element.attribute("color-interpolation-filters", "sRGB");
+      else if (effect->ColourSpace IS VCS::LINEAR_RGB) element.attribute("color-interpolation-filters", "linearRGB");
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR FILTEREFFECT_GET_XMLDef(extFilterEffect *Self, std::string &Value)
+{
+   filter_xml_element element;
+   if (Self->classID() IS CLASSID::MERGEFX) {
+      if (not Self->Filter) return ERR::InvalidState;
+      const auto positions = filter_xml_positions(Self->Filter->Effects);
+      const auto position = positions.find(Self);
+      if (position IS positions.end()) return ERR::InvalidState;
+      if (auto error = bind_merge_xml(*(extMergeFX *)Self, element, positions, position->second);
+          error != ERR::Okay) return error;
+   }
+   if (auto error = describe_filter_xml(Self, element); error != ERR::Okay) return error;
+   std::string xml;
+   const bool fragment = (not element.Complete) and element.Children.empty();
+   if (auto error = element.write(xml, fragment); error != ERR::Okay) return error;
+   Value = std::move(xml);
+   return ERR::Okay;
+}
+
 /*********************************************************************************************************************
 
 -FIELD-
-EffectXML: Returns a SVG XML string that defines the filter's effects.
+EffectXML: Serialises the filter's primitives as an XML fragment.
 
-This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.
+The fragment contains complete elements in pipeline order, including primitive bounds, input references and any
+required Kōtuku extensions.  Embed it in an SVG filter element with the required Kōtuku and XLink namespace
+declarations.  Result names are derived from the authored pipeline order and are local to this fragment.
+
+An unsupported effect or resource returns `ERR::NoSupport`.  File-backed resources must have a document-relative
+reference.  A vector source must be a named definition in the filter's scene.  A broken input binding returns an
+error.  An empty filter produces an empty fragment.
+-END-
 
 *********************************************************************************************************************/
 
 static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
 {
-   std::stringstream ss;
-   filter_positions results;
+   std::vector<filter_xml_element> elements(Self->Effects.size());
+   if (auto error = bind_filter_xml(Self->Effects, elements); error != ERR::Okay) return error;
 
-   // Assign result names before serialising the primitives referenced by lighting, displacement and tiling.
-
-   auto name_reference = [&](VSF Source, objFilterEffect *Producer) {
-      if ((Source IS VSF::REFERENCE) and Producer) results.try_emplace(Producer, results.size());
-   };
-   for (auto effect : Self->Effects) {
-      if (effect->classID() IS CLASSID::LIGHTINGFX) {
-         const auto lighting = (const extLightingFX *)effect;
-         name_reference(effect->SourceType, effect->Input);
-         if (lighting->reads_albedo()) name_reference(effect->MixType, effect->Mix);
-         name_reference(lighting->NormalMap.Source, lighting->NormalMap.Reference);
-         name_reference(lighting->OcclusionMap.Source, lighting->OcclusionMap.Reference);
-         name_reference(lighting->RoughnessMap.Source, lighting->RoughnessMap.Reference);
-      }
-      else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
-         name_reference(effect->SourceType, effect->Input);
-         name_reference(effect->MixType, effect->Mix);
-      }
-      else if (effect->classID() IS CLASSID::TILEFX) name_reference(effect->SourceType, effect->Input);
+   std::string xml;
+   for (size_t i = 0; i < elements.size(); i++) {
+      auto &element = elements[i];
+      if (not element.Result.empty()) element.attribute("result", element.Result);
+      if (auto error = describe_filter_xml(Self->Effects[i], element); error != ERR::Okay) return error;
+      if (auto error = element.write(xml); error != ERR::Okay) return error;
    }
-
-   auto write_input = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer) {
-      CSTRING name;
-      switch (Source) {
-         case VSF::GRAPHIC:    name = "SourceGraphic"; break;
-         case VSF::ALPHA:      name = "SourceAlpha"; break;
-         case VSF::BKGD:       name = "BackgroundImage"; break;
-         case VSF::BKGD_ALPHA: name = "BackgroundAlpha"; break;
-         case VSF::FILL:       name = "FillPaint"; break;
-         case VSF::STROKE:     name = "StrokePaint"; break;
-         case VSF::REFERENCE: {
-            if (auto result = results.find(Producer); result != results.end()) {
-               ss << ' ' << Attribute << "=\"effect" << result->second << '"';
-            }
-            return;
-         }
-         default: return;
-      }
-      ss << ' ' << Attribute << "=\"" << name << '"';
-   };
-
-   // An effect's XMLDef is either the content of an empty element, or a complete element if it has children.
-
-   for (auto effect : Self->Effects) {
-      std::string def;
-      if (effect->getXMLDef(def) != ERR::Okay) def.clear();
-      const bool complete = def.starts_with('<');
-      const auto element_end = std::min(def.size(), def.find_first_of(" \t\r\n/>"));
-
-      if (not complete) ss << '<';
-      ss << std::string_view(def).substr(0, element_end);
-      if (effect->classID() IS CLASSID::LIGHTINGFX) {
-         const auto lighting = (const extLightingFX *)effect;
-         write_input("in", effect->SourceType, effect->Input);
-         if (lighting->reads_albedo()) write_input("in2", effect->MixType, effect->Mix);
-         write_input("kotuku:normalMap", lighting->NormalMap.Source, lighting->NormalMap.Reference);
-         write_input("kotuku:occlusionMap", lighting->OcclusionMap.Source, lighting->OcclusionMap.Reference);
-         write_input("kotuku:roughnessMap", lighting->RoughnessMap.Source, lighting->RoughnessMap.Reference);
-      }
-      else if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
-         write_input("in", effect->SourceType, effect->Input);
-         write_input("in2", effect->MixType, effect->Mix);
-      }
-      else if (effect->classID() IS CLASSID::TILEFX) write_input("in", effect->SourceType, effect->Input);
-      if (effect->ColourSpace IS VCS::SRGB) ss << " color-interpolation-filters=\"sRGB\"";
-      else if (effect->ColourSpace IS VCS::LINEAR_RGB) ss << " color-interpolation-filters=\"linearRGB\"";
-      if (auto result = results.find(effect); result != results.end()) {
-         ss << " result=\"effect" << result->second << '"';
-      }
-      ss << std::string_view(def).substr(element_end);
-      if (not complete) ss << "/>";
-   }
-
-   Value = ss.str();
+   Value = std::move(xml);
    return ERR::Okay;
 }
 

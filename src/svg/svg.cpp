@@ -39,6 +39,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include "svg_def.c"
 #include <katana.h>
 #include "../link/base64.h"
+#include "../link/filter_resource.h"
 #include "../xml/uri_utils.h"
 
 using namespace kt;
@@ -833,6 +834,7 @@ static uint32_t svg_tag_hash(const XTag &Tag) noexcept
       switch (strhash(svg_local_name(Tag))) {
          case SVF_feLighting:     return SVF_kotuku_feLighting;
          case SVF_feNormalMap:    return SVF_kotuku_feNormalMap;
+         case SVF_feWaveFunction: return SVF_feWaveFunction;
          case SVF_guidePath:      return SVF_kotuku_guidePath;
          case SVF_pathTransition: return SVF_kotuku_pathTransition;
          case SVF_shape:          return SVF_kotuku_shape;

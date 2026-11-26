@@ -321,11 +321,13 @@ class objFont : public Object {
    }
 
    inline ERR setStyle(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
    inline ERR setFace(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }

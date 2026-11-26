@@ -349,7 +349,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <field>
       <name>Handle</name>
       <comment>Platform specific reference to the network socket handle.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>APTR</type>
     </field>
 

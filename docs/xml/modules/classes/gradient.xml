@@ -94,7 +94,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="GCI">GCI</type>
       <description>
-<p>The default <code>DEFAULT</code> setting uses the colour space specified in <fl>ColourSpace</fl> with straight alpha.  <code>OKLAB</code> and <code>OKLCH</code> take precedence over <fl>ColourSpace</fl> and interpolate in a perceptually uniform colour space, which avoids the grey midpoint that sRGB produces between colours of distant hue.  <code>OKLAB</code> is the recommended choice for general use. <code>OKLCH</code> retains more chroma in the midpoint, and the hue path between stops is selected by <fl>HueMethod</fl>.</p>
+<p><code>DEFAULT</code> interpolates in the colour space set by <fl>ColourSpace</fl>, with straight alpha.  <code>OKLAB</code> and <code>OKLCH</code> take precedence over <fl>ColourSpace</fl> and interpolate in a perceptually uniform colour space, which avoids the grey midpoint that sRGB produces between colours of distant hue.  <code>OKLAB</code> is the recommended choice for general use. <code>OKLCH</code> retains more chroma in the midpoint, and the hue path between stops is selected by <fl>HueMethod</fl>.</p>
 <p>The OKLab and OKLCH modes follow CSS Color 4.  Colour components are premultiplied by alpha during interpolation, so a fade from a colour to transparent keeps its colour instead of darkening.  Interpolated colours that fall outside the sRGB gamut are mapped back into it by reducing chroma while preserving lightness and hue.</p>
 <p><fl>Easing</fl> and <fl>Gamma</fl> continue to apply in every mode.  Gradients sourced from <fl>ColourMap</fl>, and Gouraud, mesh and diffusion gradients, ignore this field.</p>
 <types lookup="GCI"/>

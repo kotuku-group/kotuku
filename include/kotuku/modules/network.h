@@ -810,6 +810,7 @@ class objNetSocket : public Object {
    }
 
    inline ERR setHandle(APTR Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x08000508, Value);
    }
@@ -944,6 +945,7 @@ class objNetServer : public objNetSocket {
    // Customised field setting
 
    inline ERR setSSLCertificate(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }
@@ -955,6 +957,7 @@ class objNetServer : public objNetSocket {
    }
 
    inline ERR setBacklog(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }

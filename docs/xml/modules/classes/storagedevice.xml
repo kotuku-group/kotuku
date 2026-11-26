@@ -75,7 +75,7 @@
     <field>
       <name>Volume</name>
       <comment>The volume name of the device to query.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>Set the Volume field prior to initialisation so that the object can query the selected volume.  The standard volume string format is <code>name:</code>, but omitting the colon or defining complete file system paths when writing this field is also acceptable.  Any characters following a colon are stripped automatically, and the stored value is normalised to include the trailing colon.</p>

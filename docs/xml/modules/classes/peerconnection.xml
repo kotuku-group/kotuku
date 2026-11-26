@@ -306,7 +306,7 @@ remote peer to <method>AddIceCandidate</method>.</li>
     <field>
       <name>IceServers</name>
       <comment>A JSON array that configures the STUN and TURN servers.</comment>
-      <access write="S">Set</access>
+      <access write="I">Init</access>
       <type>STRING</type>
       <description>
 <p>IceServers defines the STUN and TURN servers that are used for candidate gathering.  It can only be set prior to initialisation and cannot be read.  The value is a JSON array of up to eight server objects, with a total length of no more than 16384 bytes.  Each object contains a <code>url</code> string, and TURN servers additionally require non-empty <code>username</code> and <code>credential</code> strings.  For example:</p>

@@ -2615,6 +2615,7 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR setOutputMode(const FOM Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -2625,6 +2626,7 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00804508, &Value);
    }
@@ -2678,13 +2680,15 @@ class objSourceFX : public objFilterEffect {
    }
 
    inline ERR setSourceName(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00804408, &Value);
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, 0x08100109, Value);
+      return field->WriteValue(this, field, 0x08100509, Value);
    }
 
 };
@@ -2810,6 +2814,7 @@ class objColourFX : public objFilterEffect {
    }
 
    inline ERR setValues(std::span<const double> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x80101508, &Value);
    }
@@ -2998,21 +3003,25 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR setDivisor(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMatrixRows(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMatrixColumns(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMatrix(std::span<const double> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, 0x80101508, &Value);
    }
@@ -3023,21 +3032,25 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR setTargetX(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setTargetY(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setUnitX(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setUnitY(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
@@ -3872,6 +3885,7 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setType(const TB Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -3882,26 +3896,31 @@ class objTurbulenceFX : public objFilterEffect {
    }
 
    inline ERR setFX(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFY(const double Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setOctaves(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSeed(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStitch(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -5371,6 +5390,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setFont(OBJECTPTR Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[63];
       return field->WriteValue(this, field, 0x08000409, Value);
    }
@@ -5386,6 +5406,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setFocus(OBJECTID Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -6590,6 +6611,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR setBuffered(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[65];
       return field->WriteValue(this, field, FD_INT, &Value);
    }

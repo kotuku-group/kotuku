@@ -263,7 +263,7 @@ http.acActivate()
     <field>
       <name>Host</name>
       <comment>The targeted HTTP server is specified here, either by name or IP address.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>The HTTP server to target for HTTP requests is defined here.  To change the host post-initialisation, set the <fl>Location</fl>.</p>

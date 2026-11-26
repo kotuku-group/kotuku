@@ -90,18 +90,16 @@ static ERR OFFSETFX_SET_YOffset(extOffsetFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string &Value)
+static ERR offset_xml(const extOffsetFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-   stream << "feOffset dx=\"" << Self->XOffset << "\" dy=\"" << Self->YOffset << "\"";
-   write_filter_xml_subregion(stream, *Self);
-
-   Value = stream.str();
+   Element.Name = "feOffset";
+   Element.attribute("dx", Effect.XOffset);
+   Element.attribute("dy", Effect.YOffset);
    return ERR::Okay;
 }
 
@@ -112,7 +110,7 @@ static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string &Value)
 static const FieldArray clOffsetFXFields[] = {
    { "XOffset", FDF_DOUBLE|FDF_RW, nullptr, OFFSETFX_SET_XOffset },
    { "YOffset", FDF_DOUBLE|FDF_RW, nullptr, OFFSETFX_SET_YOffset },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, OFFSETFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 
