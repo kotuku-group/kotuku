@@ -145,6 +145,71 @@ end
    end
 end
 
+@Test function PerceptualMidpointsMatchCSSGamutMapping()
+   -- Color.js 0.7.1, toGamut({ space: "srgb", method: "css" }) at table entry 128 of 255.
+   local cases = {
+      { mode=GCI_OKLAB, first=stop(0, 0, 0, 1), last=stop(1, 1, 1, 0), r=108, g=172, b=199 },
+      { mode=GCI_OKLAB, first=stop(0, 1, 0, 0), last=stop(1, 0, 1, 1), r=210, g=169, b=148 },
+      { mode=GCI_OKLCH, first=stop(0, 0, 0, 1), last=stop(1, 1, 1, 0), r=0, g=190, b=176 },
+      { mode=GCI_OKLCH, first=stop(0, 0, 128 / 255, 0), last=stop(1, 1, 0, 1), r=207, g=95, b=0 }
+   }
+   local bmp = newBitmap(100, 20)
+   for sample in values(cases) do
+      local scene = newLinearScene({
+         x2=101, colourSpace=VCS_LINEAR_RGB, interpolation=sample.mode, stops={ sample.first, sample.last }
+      })
+      drawScene(scene, bmp)
+      local p = mGfx.ReadRGBPixel(bmp, 50, 10)
+      assert(math.abs(p.red - sample.r) <= 1 and math.abs(p.green - sample.g) <= 1 and
+         math.abs(p.blue - sample.b) <= 1,
+         f'Expected {sample.r},{sample.g},{sample.b}, got {p.red},{p.green},{p.blue}')
+   end
+end
+
+@Test function PerceptualRampsPremultiplyAlphaAndBorrowHue()
+   local bmp = obj.new('bitmap', {
+      width=100, height=20, bitsPerPixel=32, bkgd='255,255,255,255', blendMode=BLM_SRGB
+   })
+   for mode in values({ GCI_OKLAB, GCI_OKLCH }) do
+      local scene = newLinearScene({
+         interpolation=mode, hueMethod=GHM_LONGER, stops={ stop(0, 1, 0, 0), stop(1, 0, 0, 1, 0) }
+      })
+      drawScene(scene, bmp)
+      local p = mGfx.ReadRGBPixel(bmp, 50, 10)
+      assert(p.red is 255 and math.abs(p.green - 128) <= 3 and p.green is p.blue,
+         f'Expected a red midpoint at half opacity, got {p.red},{p.green},{p.blue}')
+   end
+
+   local scene, gradient = newLinearScene({
+      interpolation=GCI_OKLCH, stops={ stop(0, 0, 0, 1), stop(1, 1, 1, 1) }
+   })
+   local shorter = drawHash(scene, bmp)
+   gradient.hueMethod = GHM_LONGER
+   assert(drawHash(scene, bmp) is shorter, 'White should borrow blue’s hue without a hue sweep')
+end
+
+@Test function PerceptualFieldsRebuildOpacityAdjustedTables()
+   local scene, gradient = newLinearScene({
+      stops={ stop(0, 1, 0, 0), stop(1, 0, 0, 1) }
+   }, { fillOpacity=0.5 })
+   local bmp = newBitmap(100, 20)
+   local default_hash = drawHash(scene, bmp)
+
+   gradient.interpolation = GCI_OKLCH
+   local shorter = drawHash(scene, bmp)
+   assert(shorter != default_hash, 'Changing interpolation should replace the cached fill ramp')
+   gradient.hueMethod = GHM_LONGER
+   local longer = drawHash(scene, bmp)
+   assert(longer != shorter, 'Changing the hue arc should replace the cached fill ramp')
+   gradient.hueMethod = GHM_INCREASING
+   assert(drawHash(scene, bmp) is longer, 'Increasing hue should match the longer arc from red to blue')
+   gradient.hueMethod = GHM_DECREASING
+   assert(drawHash(scene, bmp) is shorter, 'Decreasing hue should match the shorter arc from red to blue')
+
+   gradient.interpolation = GCI_DEFAULT
+   assert(drawHash(scene, bmp) is default_hash, 'Restoring default interpolation should restore the original ramp')
+end
+
 @Test function LinearEasingMatchesDefault()
    local default_scene = newLinearScene({ })
    local linear_scene = newLinearScene({ easing=GEZ_LINEAR })

@@ -1141,7 +1141,7 @@ class extVectorRectangle : public extVector {
 
 class GradientColours {
    public:
-      GradientColours(const kt::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
+      GradientColours(const kt::vector<GradientStop> &, VCS, GCI, GHM, double, double, double = 1.0, GEZ = GEZ::LINEAR);
       GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
 

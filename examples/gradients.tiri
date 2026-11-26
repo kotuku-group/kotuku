@@ -10,14 +10,16 @@ local win, viewport, gradientVP, rect
 local focalEllipse, contourShape, distalShape, uiEvent
 -- Keep the controls alive after buildScene() returns; slider callbacks hold only weak widget references.
 local slResolution, slRadius, slGamma
+local cmbInterpolation, cmbHue
 
 radiusChanged  = function() end
-glColourMap    = 'cmap:magma'
 glSpreadMethod = VSPREAD_REFLECT
 glRadius       = 100
 glResolution   = 1.0
 glEasing       = GEZ_LINEAR
 glGamma        = 1.0
+glInterpolation = GCI_DEFAULT
+glHueMethod    = GHM_SHORTER
 glActiveGradient = nil
 MIN_RADIUS <const> = 2
 MAX_RADIUS <const> = 400
@@ -33,6 +35,56 @@ gouraudColours = array<array<double>> {
    array<double> { 0.0, 0.0, 1.0 }, -- blue
    array<double> { 1.0, 1.0, 0.0 }  -- yellow
 }
+
+----------------------------------------------------------------------------------------------------------------------
+-- Stop presets for demonstrating Interpolation and HueMethod.  Colour maps are pre-sampled and ignore both fields,
+-- so these pairs are chosen to show the most visible differences between sRGB, OKLab and OKLCH.
+
+function stop(Offset:num!, R:num!, G:num!, B:num!, Alpha:num):any
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = Alpha is nil ? 1.0 : Alpha
+   return s
+end
+
+glStopPresets = {
+   ['Blue to Yellow']       = { stop(0, 0, 0, 1), stop(1, 1, 1, 0) },
+   ['Red to Cyan']          = { stop(0, 1, 0, 0), stop(1, 0, 1, 1) },
+   ['Red to Blue']          = { stop(0, 1, 0, 0), stop(1, 0, 0, 1) },
+   ['Green to Magenta']     = { stop(0, 0, 0.5, 0), stop(1, 1, 0, 1) },
+   ['Blue to White']        = { stop(0, 0, 0, 1), stop(1, 1, 1, 1) },
+   ['Red to Transparent']   = { stop(0, 1, 0, 0), stop(1, 1, 0, 0, 0) }
+}
+
+-- glColours holds either a 'cmap:' name or a key of glStopPresets.
+
+glColours = 'cmap:magma'
+
+function applyColours(Gradient)
+   Gradient ?! return
+   local stops = glStopPresets[glColours]
+   if stops then
+      Gradient.stops = stops
+   else
+      Gradient.colourMap = glColours
+   end
+end
+
+-- The interpolation controls only affect gradients that are defined by stops.
+
+function refreshInterpolationControls()
+   cmbInterpolation ?! return
+   if glStopPresets[glColours] then
+      cmbInterpolation.enable()
+      if glInterpolation is GCI_OKLCH then cmbHue.enable() else cmbHue.disable() end
+   else
+      cmbInterpolation.disable()
+      cmbHue.disable()
+   end
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -104,7 +156,7 @@ function selectGradient(Text):obj
 
    if Text is 'Radial' then
       gradient = createGradient('GradientRadial', {
-         colourMap = glColourMap, units='userSpace', spreadMethod=glSpreadMethod,
+         units='userSpace', spreadMethod=glSpreadMethod,
          cx = '50%', cy = '50%', fx = '50%', fy = '50%', focalRadius = glRadius, radius = glRadius
       })
 
@@ -123,7 +175,7 @@ function selectGradient(Text):obj
       focalEllipse.visibility = 'visible'
    elseif (Text is 'Conic') then
       gradient = createGradient('GradientConic', {
-         colourMap = glColourMap, units='userSpace', radius=glRadius,
+         units='userSpace', radius=glRadius,
          spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
       })
 
@@ -137,7 +189,7 @@ function selectGradient(Text):obj
       end
    elseif (Text is 'Diamond') then
       gradient = createGradient('GradientDiamond', {
-         colourMap = glColourMap, units='userSpace', radius=glRadius,
+         units='userSpace', radius=glRadius,
          spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
       })
 
@@ -151,7 +203,7 @@ function selectGradient(Text):obj
       end
    elseif Text is 'Contour' then
       gradient = createGradient('GradientContour', {
-         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+         units='boundingBox', spreadMethod=glSpreadMethod,
          floor = 0, multiplier = 2.0
       })
 
@@ -162,7 +214,7 @@ function selectGradient(Text):obj
       end
    elseif Text is 'Contour Path' then
       gradient = createGradient('GradientContour', {
-         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+         units='boundingBox', spreadMethod=glSpreadMethod,
          floor = 0.9, multiplier = 1.0
       })
 
@@ -183,7 +235,6 @@ function selectGradient(Text):obj
       end
    elseif Text is 'Distal' then
       gradient = createGradient('GradientDistal', {
-         colourMap    = glColourMap,
          units        = 'boundingBox',
          spreadMethod = glSpreadMethod,
          radius       = glRadius,
@@ -220,7 +271,7 @@ function selectGradient(Text):obj
       end
    elseif Text is 'Voronoi' then
       gradient = createGradient('GradientVoronoi', {
-         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+         units='boundingBox', spreadMethod=glSpreadMethod,
          seed = 20260615,
          pointCount = 32,
          worleyMode = WLF_F2_F1,
@@ -249,7 +300,7 @@ function selectGradient(Text):obj
       end
    elseif Text is 'Linear' then
       gradient = createGradient('GradientLinear', {
-         colourMap = glColourMap, units='boundingBox', spreadMethod=glSpreadMethod,
+         units='boundingBox', spreadMethod=glSpreadMethod,
          x1 = '50%', y1 = '50%', x2 = '100%', y2 = '100%'
       })
 
@@ -279,9 +330,12 @@ function selectGradient(Text):obj
       end
    end
 
-   gradient.gamma      = glGamma
-   gradient.easing     = glEasing
-   gradient.resolution = glResolution
+   gradient.gamma         = glGamma
+   gradient.easing        = glEasing
+   gradient.resolution    = glResolution
+   gradient.interpolation = glInterpolation
+   gradient.hueMethod     = glHueMethod
+   if Text != 'Gouraud' then applyColours(gradient) end
    gradientVP.scene.surface.mtScheduleRedraw()
    return gradient
 end
@@ -344,18 +398,21 @@ function buildScene()
 
    cmbColours = gui.combobox({
       target = viewport,
-      label  = 'Colour Map:',
+      label  = 'Colours:',
       text   = 'Magma',
       x      = cmbSpread.viewport.x + cmbSpread.viewport.width + 10,
       y      = 10,
       items  = array<table> {
          { label='Magma' }, { label='Rocket' }, { label='Mako' }, { label='IceFire' },
-         { label='Flare' }, { label='Crest' }, { label='Viridis' }, { label='Plasma' }, { label='Inferno' }
+         { label='Flare' }, { label='Crest' }, { label='Viridis' }, { label='Plasma' }, { label='Inferno' },
+         { label='Blue to Yellow' }, { label='Red to Cyan' }, { label='Red to Blue' },
+         { label='Green to Magenta' }, { label='Blue to White' }, { label='Red to Transparent' }
       },
       events = {
          activate = function(Item:table!)
-            glColourMap = 'cmap:' .. Item.label.lower()
-            glActiveGradient.colourMap = glColourMap
+            glColours = glStopPresets[Item.label] ? Item.label : 'cmap:' .. Item.label.lower()
+            applyColours(glActiveGradient)
+            refreshInterpolationControls()
             gradientVP.scene.surface.mtScheduleRedraw()
          end
       }
@@ -389,9 +446,59 @@ function buildScene()
       }
    })
 
-   -- Sliders occupy a second row, so that both rows fit the window.
+   -- Interpolation and hue controls apply to the stop presets in the Colours list.
 
-   slider_y = cmbGradient.viewport.y + cmbGradient.viewport.height + 8
+   row2_y = cmbGradient.viewport.y + cmbGradient.viewport.height + 8
+
+   cmbInterpolation = gui.combobox({
+      target = viewport,
+      label  = 'Interpolation:',
+      text   = 'Default',
+      x      = win.margins.left,
+      y      = row2_y,
+      items  = array<table> { { label='Default' }, { label='OKLab' }, { label='OKLCH' } },
+      events = {
+         activate = function(Item:table!)
+            glInterpolation = choose Item.label from
+               'OKLab' -> GCI_OKLAB
+               'OKLCH' -> GCI_OKLCH
+               else    -> GCI_DEFAULT
+            end
+            glActiveGradient.interpolation = glInterpolation
+            refreshInterpolationControls()
+            gradientVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   cmbHue = gui.combobox({
+      target = viewport,
+      label  = 'Hue:',
+      text   = 'Shorter',
+      x      = cmbInterpolation.viewport.x + cmbInterpolation.viewport.width + 10,
+      y      = row2_y,
+      items  = array<table> {
+         { label='Shorter' }, { label='Longer' }, { label='Increasing' }, { label='Decreasing' }
+      },
+      events = {
+         activate = function(Item:table!)
+            glHueMethod = choose Item.label from
+               'Longer'     -> GHM_LONGER
+               'Increasing' -> GHM_INCREASING
+               'Decreasing' -> GHM_DECREASING
+               else         -> GHM_SHORTER
+            end
+            glActiveGradient.hueMethod = glHueMethod
+            gradientVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   refreshInterpolationControls()
+
+   -- Sliders occupy a third row, so that every row fits the window.
+
+   slider_y = cmbInterpolation.viewport.y + cmbInterpolation.viewport.height + 8
 
    slResolution = gui.slider({
       target = viewport,

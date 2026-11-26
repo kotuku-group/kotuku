@@ -27,6 +27,6 @@ inline constexpr int32_t CLASS_OFFSET_NETSOCKET = 376;
 
 // Vector module start
 inline constexpr int32_t CLASS_OFFSET_FILTEREFFECT = 224;
-inline constexpr int32_t CLASS_OFFSET_GRADIENT = 288;
+inline constexpr int32_t CLASS_OFFSET_GRADIENT = 296;
 inline constexpr int32_t CLASS_OFFSET_VECTOR = 944;
 // Vector module end

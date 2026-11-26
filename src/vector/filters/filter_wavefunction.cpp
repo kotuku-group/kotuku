@@ -325,7 +325,7 @@ static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const Gra
 
    if (Value.size() >= 2) {
       Self->Stops.assign(Value.begin(), Value.end());
-      Self->Colours.reset(new (std::nothrow) GradientColours(Self->Stops, /*Self->Filter->ColourSpace*/ VCS::SRGB, 1.0, 1));
+      Self->Colours.reset(new (std::nothrow) GradientColours(Self->Stops, VCS::SRGB, GCI::DEFAULT, GHM::SHORTER, 1.0, 1));
       if (!Self->Colours) return ERR::AllocMemory;
       effect_modified(Self);
       return ERR::Okay;

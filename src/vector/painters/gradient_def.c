@@ -36,6 +36,21 @@ static const struct FieldDef clGradientEasing[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clGradientInterpolation[] = {
+   { "Default", 0x00000000 },
+   { "Oklab", 0x00000001 },
+   { "Oklch", 0x00000002 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clGradientHueMethod[] = {
+   { "Shorter", 0x00000000 },
+   { "Longer", 0x00000001 },
+   { "Increasing", 0x00000002 },
+   { "Decreasing", 0x00000003 },
+   { nullptr, 0 }
+};
+
 static ERR GRADIENT_New(extGradient *Self) {
    new (Self) extGradient(Self->Class, Self->UID);
    return ERR::Okay;

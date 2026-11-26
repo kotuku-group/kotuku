@@ -15,6 +15,9 @@ Gradient objects are definition objects and should normally be registered with a
 
 *********************************************************************************************************************/
 
+#include "../oklab.h"
+#include <numeric>
+
 static ERR GRADIENT_SET_Stops(extGradient *, std::span<const GradientStop> *);
 
 static ERR rebuild_gradient_colours(extGradient *);
@@ -157,6 +160,135 @@ static agg::rgba interpolate_ramp_colour(const agg::rgba &Start, const agg::rgba
       std::lerp(Start.b, End.b, Blend), std::lerp(Start.a, End.a, Blend) };
 }
 
+// CSS Color 4, Binary Search Gamut Mapping with Local MINDE.
+// https://www.w3.org/TR/css-color-4/#binsearch
+
+static agg::rgba map_oklab_to_linear_rgb(const oklab::Lab &Colour, double Alpha)
+{
+   constexpr double jnd = 0.02;
+   constexpr double epsilon = 0.0001;
+
+   if (Colour.l >= 1.0) return { 1.0, 1.0, 1.0, Alpha };
+   if (Colour.l <= 0.0) return { 0.0, 0.0, 0.0, Alpha };
+
+   auto in_gamut = [](const oklab::LinearRGB &RGB) {
+      constexpr double tolerance = 1e-7;
+      return (RGB.r >= -tolerance) and (RGB.r <= 1.0 + tolerance) and
+             (RGB.g >= -tolerance) and (RGB.g <= 1.0 + tolerance) and
+             (RGB.b >= -tolerance) and (RGB.b <= 1.0 + tolerance);
+   };
+   auto clip = [Alpha](const oklab::LinearRGB &RGB) -> agg::rgba {
+      return { std::clamp(RGB.r, 0.0, 1.0), std::clamp(RGB.g, 0.0, 1.0),
+         std::clamp(RGB.b, 0.0, 1.0), Alpha };
+   };
+   auto delta = [](const oklab::Lab &Current, const agg::rgba &Clipped) {
+      const auto lab = oklab::from_linear_rgb(Clipped.r, Clipped.g, Clipped.b);
+      return std::hypot(Current.l - lab.l, Current.a - lab.a, Current.b - lab.b);
+   };
+
+   const auto rgb = oklab::to_linear_rgb(Colour);
+   if (in_gamut(rgb)) return { rgb.r, rgb.g, rgb.b, Alpha };
+
+   auto clipped = clip(rgb);
+   if (delta(Colour, clipped) < jnd) return clipped;
+
+   const double chroma = std::hypot(Colour.a, Colour.b);
+   if (not std::isfinite(chroma)) return clipped;
+   double min_chroma = 0.0;
+   double max_chroma = chroma;
+   bool min_in_gamut = true;
+   while (max_chroma - min_chroma > epsilon) {
+      const double mid = std::midpoint(min_chroma, max_chroma);
+      const double scale = mid / chroma;
+      const oklab::Lab current { Colour.l, Colour.a * scale, Colour.b * scale };
+      const auto candidate = oklab::to_linear_rgb(current);
+      if (min_in_gamut and in_gamut(candidate)) {
+         min_chroma = mid;
+         continue;
+      }
+
+      clipped = clip(candidate);
+      const double difference = delta(current, clipped);
+      if (difference < jnd) {
+         if (jnd - difference < epsilon) return clipped;
+         min_in_gamut = false;
+         min_chroma = mid;
+      }
+      else max_chroma = mid;
+   }
+   return clipped;
+}
+
+// Prepare an OKLCH segment once, borrowing powerless hues before applying the CSS hue-arc rules.
+
+struct GradientOKSegment {
+   oklab::Lab Start, End;
+   double StartAlpha, EndAlpha;
+   double StartChroma = 0.0, EndChroma = 0.0;
+   double StartHue = 0.0, EndHue = 0.0;
+   bool Polar;
+
+   GradientOKSegment(const oklab::Lab &First, const oklab::Lab &Last, double FirstAlpha, double LastAlpha,
+      GCI Interpolation, GHM HueMethod) :
+      Start(First), End(Last), StartAlpha(FirstAlpha), EndAlpha(LastAlpha), Polar(Interpolation IS GCI::OKLCH)
+   {
+      if (not Polar) return;
+
+      constexpr double half_turn = std::numbers::pi;
+      constexpr double turn = half_turn * 2.0;
+      constexpr double epsilon = 0.000004; // CSS Color 4 powerless hue threshold for OKLCH.
+      auto hue = [turn](const oklab::Lab &Colour) {
+         const double angle = std::atan2(Colour.b, Colour.a);
+         return (angle < 0.0) ? angle + turn : angle;
+      };
+      StartChroma = std::hypot(First.a, First.b);
+      EndChroma = std::hypot(Last.a, Last.b);
+      if ((StartChroma <= epsilon) and (EndChroma <= epsilon)) {
+         StartChroma = EndChroma = 0.0;
+         return;
+      }
+
+      StartHue = hue(First);
+      EndHue = hue(Last);
+      if ((StartChroma <= epsilon) or (StartAlpha IS 0.0)) StartHue = EndHue;
+      else if ((EndChroma <= epsilon) or (EndAlpha IS 0.0)) EndHue = StartHue;
+      else {
+         const double arc = EndHue - StartHue;
+         switch (HueMethod) {
+            case GHM::SHORTER:
+               if (arc > half_turn) StartHue += turn;
+               else if (arc < -half_turn) EndHue += turn;
+               break;
+            case GHM::LONGER:
+               if ((arc > 0.0) and (arc < half_turn)) StartHue += turn;
+               else if ((arc <= 0.0) and (arc > -half_turn)) EndHue += turn;
+               break;
+            case GHM::INCREASING:
+               if (arc < 0.0) EndHue += turn;
+               break;
+            case GHM::DECREASING:
+               if (arc > 0.0) StartHue += turn;
+               break;
+         }
+      }
+   }
+
+   agg::rgba sample(double Blend) const
+   {
+      const double alpha = std::lerp(StartAlpha, EndAlpha, Blend);
+      // The alpha-weighted fraction interpolates premultiplied components and divides by the resulting alpha.
+      const double weight = (alpha IS 0.0) ? Blend : Blend * EndAlpha / alpha;
+      const double lightness = std::lerp(Start.l, End.l, weight);
+      if (Polar) {
+         const double hue = std::lerp(StartHue, EndHue, Blend);
+         const double chroma = std::lerp(StartChroma, EndChroma, weight);
+         return map_oklab_to_linear_rgb({ lightness, chroma * std::cos(hue), chroma * std::sin(hue) }, alpha);
+      }
+      return map_oklab_to_linear_rgb(
+         { lightness, std::lerp(Start.a, End.a, weight), std::lerp(Start.b, End.b, weight) }, alpha);
+   }
+};
+
 static void store_colour_ramp(GRADIENT_TABLE &Table, std::array<agg::rgba, 256> &Ramp, bool Linear, double Alpha,
    double Resolution)
 {
@@ -201,10 +333,11 @@ static void store_colour_ramp(GRADIENT_TABLE &Table, std::array<agg::rgba, 256> 
 
 //********************************************************************************************************************
 
-GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
-   double Gamma, GEZ Easing)
+GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS ColourSpace, GCI Interpolation,
+   GHM HueMethod, double Alpha, double Resolution, double Gamma, GEZ Easing)
 {
-   const bool linear = ColourSpace IS VCS::LINEAR_RGB;
+   const bool use_oklab = Interpolation != GCI::DEFAULT;
+   const bool linear = use_oklab or (ColourSpace IS VCS::LINEAR_RGB);
    std::array<agg::rgba, 256> ramp;
    ramp.fill(agg::rgba(0, 0, 0, 0));
 
@@ -221,10 +354,22 @@ GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS Colo
    // would blend across a hard stop and apply the sRGB transfer function before interpolation.
    auto first = positions.begin();
    auto begin = gradient_stop_colour(Stops.front().RGB, linear);
+   oklab::Lab begin_lab {};
+   if (use_oklab) {
+      begin_lab = oklab::from_linear_rgb(begin.r, begin.g, begin.b);
+      begin = map_oklab_to_linear_rgb(begin_lab, begin.a);
+   }
    for (int stop=0; stop < std::ssize(Stops)-1; stop++) {
       const int i1 = stop_index(Stops[stop].Offset);
       const int i2 = stop_index(Stops[stop + 1].Offset);
-      const auto end = gradient_stop_colour(Stops[stop + 1].RGB, linear);
+      auto end = gradient_stop_colour(Stops[stop + 1].RGB, linear);
+      std::optional<GradientOKSegment> segment;
+      if (use_oklab) {
+         const auto end_lab = oklab::from_linear_rgb(end.r, end.g, end.b);
+         segment.emplace(begin_lab, end_lab, begin.a, end.a, Interpolation, HueMethod);
+         end = map_oklab_to_linear_rgb(end_lab, end.a);
+         begin_lab = end_lab;
+      }
       auto start = std::lower_bound(first, positions.end(), double(i1));
       if (stop IS 0) std::fill(ramp.begin(), ramp.begin() + (start - first), begin);
 
@@ -232,7 +377,7 @@ GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS Colo
          const auto finish = std::upper_bound(start, positions.end(), double(i2));
          for (auto pos=start; pos != finish; ++pos) {
             const double blend = ease(Easing, (*pos - i1) / (i2 - i1));
-            ramp[pos - first] = interpolate_ramp_colour(begin, end, blend);
+            ramp[pos - first] = segment ? segment->sample(blend) : interpolate_ramp_colour(begin, end, blend);
          }
       }
       else if (i1 IS i2) {
@@ -270,8 +415,8 @@ static ERR rebuild_gradient_colours(extGradient *Self)
    std::unique_ptr<GradientColours> colours;
 
    if (not Self->Stops.empty()) {
-      colours.reset(new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, 1.0, Self->Resolution,
-         Self->Gamma, Self->Easing));
+      colours.reset(new (std::nothrow) GradientColours(Self->Stops, Self->ColourSpace, Self->Interpolation,
+         Self->HueMethod, 1.0, Self->Resolution, Self->Gamma, Self->Easing));
    }
    else if (not Self->ColourMap.empty()) {
       if (auto it = glColourMaps.find(Self->ColourMap); it != glColourMaps.end()) {
@@ -377,8 +522,12 @@ static ERR GRADIENT_SET_ColourMap(extGradient *Self, const std::string_view &Val
 ColourSpace: Defines the colour space to use when interpolating gradient colours.
 Lookup: VCS
 
-By default, gradients are rendered using the standard RGB colour space and alpha blending rules.  Changing the colour
-space to `LINEAR_RGB` will force the renderer to automatically convert sRGB values to linear RGB when blending.
+By default, gradient colours are interpolated in sRGB.  Setting `LINEAR_RGB` converts the sRGB stop colours to
+linear RGB before interpolation and converts the result back to sRGB.  In both cases, alpha is interpolated
+separately from the colour channels (straight alpha).
+
+When #Interpolation is set to a value other than `GCI::DEFAULT`, it takes precedence over this field for gradients
+defined by #Stops.  Gouraud, mesh and diffusion gradients always use this field.
 
 -FIELD-
 Easing: Selects the easing function for interpolation between gradient stops.
@@ -399,6 +548,78 @@ static ERR GRADIENT_SET_Easing(extGradient *Self, GEZ Value)
    if (Self->Colours) {
       if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
          Self->Easing = old_easing;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+HueMethod: Selects the hue arc for OKLCH stop interpolation.
+Lookup: GHM
+
+Determines the direction taken around the hue circle when interpolating between two #Stops in OKLCH, following the
+CSS Color 4 hue interpolation rules.  The default is `SHORTER`.  If one of the two stops is achromatic (grey, black
+or white) or fully transparent, its hue is undefined and the hue of the other stop is used, so this field has no
+effect on that segment.
+
+This field is only used when #Interpolation is `GCI::OKLCH` and the gradient is defined by #Stops.  Gouraud, mesh and
+diffusion gradients ignore it.
+
+*********************************************************************************************************************/
+
+static ERR GRADIENT_SET_HueMethod(extGradient *Self, GHM Value)
+{
+   if ((Value < GHM::SHORTER) or (Value > GHM::DECREASING)) return ERR::OutOfRange;
+   const auto old_method = Self->HueMethod;
+   if (old_method IS Value) return ERR::Okay;
+
+   Self->HueMethod = Value;
+   if (not Self->Stops.empty()) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->HueMethod = old_method;
+         return error;
+      }
+   }
+
+   if (Self->initialised()) Self->modified();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Interpolation: Selects the colour space for interpolation between gradient stops.
+Lookup: GCI
+
+`DEFAULT` interpolates in the colour space set by #ColourSpace, with straight alpha.  `OKLAB` and `OKLCH` take
+precedence over #ColourSpace and interpolate in a perceptually uniform colour space, which avoids the grey midpoint
+that sRGB produces between colours of distant hue.  `OKLAB` is the recommended choice for general use.
+`OKLCH` retains more chroma in the midpoint, and the hue path between stops is selected by #HueMethod.
+
+The OKLab and OKLCH modes follow CSS Color 4.  Colour components are premultiplied by alpha during interpolation, so
+a fade from a colour to transparent keeps its colour instead of darkening.  Interpolated colours that fall outside
+the sRGB gamut are mapped back into it by reducing chroma while preserving lightness and hue.
+
+#Easing and #Gamma continue to apply in every mode.  Gradients sourced from #ColourMap, and Gouraud, mesh and
+diffusion gradients, ignore this field.
+
+*********************************************************************************************************************/
+
+static ERR GRADIENT_SET_Interpolation(extGradient *Self, GCI Value)
+{
+   if ((Value < GCI::DEFAULT) or (Value > GCI::OKLCH)) return ERR::OutOfRange;
+   const auto old_interpolation = Self->Interpolation;
+   if (old_interpolation IS Value) return ERR::Okay;
+
+   Self->Interpolation = Value;
+   if (not Self->Stops.empty()) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Interpolation = old_interpolation;
          return error;
       }
    }
@@ -575,7 +796,8 @@ static ERR GRADIENT_SET_Stops(extGradient *Self, std::span<const GradientStop> *
    if ((Value) and (Value->size() >= 2)) {
       auto stops = kt::vector<GradientStop>(Value->begin(), Value->end());
       auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(
-         stops, Self->ColourSpace, 1.0, Self->Resolution, Self->Gamma, Self->Easing));
+         stops, Self->ColourSpace, Self->Interpolation, Self->HueMethod, 1.0, Self->Resolution, Self->Gamma,
+         Self->Easing));
       if (not colours) return ERR::AllocMemory;
 
       Self->Stops = std::move(stops);
@@ -686,6 +908,8 @@ static const FieldArray clGradientFields[] = {
    { "Units",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clGradientUnits },
    { "ColourSpace",  FDF_INT|FDF_RI,            nullptr, nullptr, &clGradientColourSpace },
    { "Easing",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Easing, &clGradientEasing },
+   { "Interpolation", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_Interpolation, &clGradientInterpolation },
+   { "HueMethod",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENT_SET_HueMethod, &clGradientHueMethod },
    { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
