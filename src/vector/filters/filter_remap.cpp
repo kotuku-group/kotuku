@@ -498,24 +498,45 @@ static ERR REMAPFX_SelectTable(extRemapFX *Self, struct rf::SelectTable *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the filter.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, std::string &Value)
+static ERR remap_xml(const extRemapFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-
-   // TODO
-   stream << "<feComponentTransfer>";
-   stream << "<feFuncR/>";
-   stream << "<feFuncG/>";
-   stream << "<feFuncB/>";
-   stream << "<feFuncA/>";
-   stream << "</feComponentTransfer>";
-
-   Value = stream.str();
+   Element.Name = "feComponentTransfer";
+   Element.Complete = true;
+   const std::pair<std::string_view, const Component *> channels[] = {
+      { "feFuncR", &Effect.Red }, { "feFuncG", &Effect.Green },
+      { "feFuncB", &Effect.Blue }, { "feFuncA", &Effect.Alpha }
+   };
+   for (const auto &[name, component] : channels) {
+      auto &child = Element.child(name);
+      switch (component->Type) {
+         case RFT_IDENTITY: child.attribute("type", "identity"); break;
+         case RFT_DISCRETE:
+         case RFT_TABLE:
+            child.attribute("type", component->Type IS RFT_TABLE ? "table" : "discrete");
+            child.list("tableValues", std::span(component->Table));
+            break;
+         case RFT_LINEAR:
+            child.attribute("type", "linear");
+            child.attribute("slope", component->Slope);
+            child.attribute("intercept", component->Intercept);
+            break;
+         case RFT_GAMMA:
+            child.attribute("type", "gamma");
+            child.attribute("amplitude", component->Amplitude);
+            child.attribute("exponent", component->Exponent);
+            child.attribute("offset", component->Offset);
+            break;
+         case RFT_INVERT: child.attribute("type", "linear"); child.attribute("slope", -1);
+            child.attribute("intercept", 1); child.attribute("kotuku:type", "invert"); break;
+         case RFT_MASK: child.attribute("kotuku:type", "mask");
+            child.attribute("kotuku:mask", int(component->Lookup[255])); break;
+      }
+   }
    return ERR::Okay;
 }
 
@@ -524,7 +545,7 @@ static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, std::string &Value)
 #include "filter_remap_def.c"
 
 static const FieldArray clRemapFXFields[] = {
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, REMAPFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

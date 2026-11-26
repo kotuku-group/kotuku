@@ -75,7 +75,7 @@
     <field>
       <name>OutputMode</name>
       <comment>Selects image or floating-point height output.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type lookup="FOM">FOM</type>
       <description>
 <types lookup="FOM"/>
@@ -85,8 +85,11 @@
     <field>
       <name>Path</name>
       <comment>Path to an image file supported by the <class name="Image">Image</class> class.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>STRING</type>
+      <description>
+<p>Set this field before initialisation.  SVG export requires a path relative to the document folder.</p>
+      </description>
     </field>
 
     <field>
@@ -101,7 +104,7 @@
 
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the filter.</comment>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <tags>caller-owns-result</tags>

@@ -184,6 +184,7 @@ class objSVG : public Object {
    // Customised field setting
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, 0x08000501, Value);
    }

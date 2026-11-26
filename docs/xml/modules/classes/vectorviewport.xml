@@ -125,7 +125,7 @@
     <field>
       <name>Buffered</name>
       <comment>Set to true if the viewport should buffer its content.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>INT</type>
       <description>
 <p>Viewport buffering is enabled by setting this field to <code>true</code> prior to initialisation.  A <class name="Bitmap">Bitmap</class> buffer will be created at the first drawing operation, and is available for the client to read from the <fl>Buffer</fl> field.</p>

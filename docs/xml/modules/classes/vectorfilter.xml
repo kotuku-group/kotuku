@@ -69,11 +69,12 @@
 
     <field>
       <name>EffectXML</name>
-      <comment>Returns a SVG XML string that defines the filter's effects.</comment>
+      <comment>Serialises the filter's primitives as an XML fragment.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.</p>
+<p>The fragment contains complete elements in pipeline order, including primitive bounds, input references and any required Kōtuku extensions.  Embed it in an SVG filter element with the required Kōtuku and XLink namespace declarations.  Result names are derived from the authored pipeline order and are local to this fragment.</p>
+<p>An unsupported effect or resource returns <code>ERR::NoSupport</code>.  File-backed resources must have a document-relative reference.  A vector source must be a named definition in the filter's scene.  A broken input binding returns an error.  An empty filter produces an empty fragment.</p>
       </description>
       <tags>caller-owns-result</tags>
     </field>

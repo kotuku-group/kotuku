@@ -238,6 +238,7 @@ class objImage : public Object {
    }
 
    inline ERR setHeader(std::span<const int8_t> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, 0x01101508, &Value);
    }

@@ -258,7 +258,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Path</name>
       <comment>The location of a script file to be loaded.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>A script file can be loaded by setting the Path to its location.  The path must be defined prior to the initialisation process, or alternatively the client can define the <fl>Statement</fl> field.</p>

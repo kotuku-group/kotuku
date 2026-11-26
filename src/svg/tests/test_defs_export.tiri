@@ -247,6 +247,22 @@ end
    assertContains(saved, '<rect', 'Generic vector defs should preserve child vectors')
 end
 
+@Test function GuidePathUsesExportedDefinitionID()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { width=100, height=100 })
+   local guide = scene.new('VectorPath', { sequence='M 10 60 L 90 30', sid='original_guide' })
+   check scene.mtAddDef('guide_alias', guide)
+   viewport.new('VectorText', { sid='guided_text', string='Guide', fontSize=20, guidePath=guide })
+
+   local saved = saveScene(scene, 'temp:svg_defs_guide_alias.svg')
+   assertContains(saved, 'id="guide_alias"', 'The definition should use its registered key')
+   assertContains(saved, 'url(#guide_alias)', 'The guide reference should use the exported ID')
+
+   local restored <close> = obj.new('svg', { statement=saved })
+   local _, text = check restored.scene.mtFindDef('guided_text')
+   assert(text.guidePath, 'The guide path should be available after reload')
+end
+
 @Test function SavesTransitionDefFromXMLDef()
    local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
    scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })

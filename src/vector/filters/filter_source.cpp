@@ -175,8 +175,8 @@ static ERR SOURCEFX_SET_AspectRatio(extSourceFX *Self, ARF Value)
 -FIELD-
 Source: The source @Vector that will be rendered.
 
-The Source field must refer to a @Vector that will be rendered in the filter pipeline.  The vector must be under the
-ownership of the same @VectorScene that the filter pipeline belongs.
+Set Source before initialisation to select the @Vector to render in the filter pipeline.  The vector must belong to
+the same @VectorScene as the filter.
 
 *********************************************************************************************************************/
 
@@ -205,8 +205,8 @@ static ERR SOURCEFX_GET_Source(extSourceFX *Self, objVector **Value)
 -FIELD-
 SourceName: Name of a source definition to be rendered.
 
-Setting Def to the name of a pre-registered scene definition will reference that object in #Source.  If the name is
-not registered then `ERR::Search` is returned.  The named object must be derived from the @Vector class.
+Set SourceName before initialisation to select a registered scene definition for #Source.  An unregistered name
+returns `ERR::Search`.  The named object must be derived from the @Vector class.
 
 Vectors are registered via the @VectorScene.AddDef() method.
 
@@ -218,33 +218,35 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Va
 
    if ((not Self->Filter) or (not Self->Filter->Scene)) return log.warning(ERR::FieldNotSet);
 
-   if (Self->Source) {
-      Self->Source->unpinWeak();
-      Self->Source = nullptr;
-   }
-
    OBJECTPTR def;
-   if (!Self->Filter->Scene->findDef(Value.data(), &def)) {
-      auto src = (objVector *)def;
-      if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
-      src->pinWeak();
-      Self->Source = src;
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Search);
+   if (auto error = Self->Filter->Scene->findDef(Value, &def); error != ERR::Okay) return error;
+   return SOURCEFX_SET_Source(Self, (objVector *)def);
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the filter.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string &Value)
+static ERR source_xml(const extSourceFX &Effect, filter_xml_element &Element)
 {
-   Value = std::string("feImage");
+   if ((not Effect.Source) or Effect.Source->collecting() or
+       (not Effect.Filter) or (not Effect.Filter->Scene)) return ERR::NoSupport;
+
+   // Select a stable ID when the source has multiple aliases in the scene.
+   std::string_view reference;
+   for (const auto &[name, def] : Effect.Filter->Scene->Defs) {
+      if ((def IS Effect.Source) and (not name.empty()) and (reference.empty() or (name < reference))) {
+         reference = name;
+      }
+   }
+   if (reference.empty()) return ERR::NoSupport;
+   Element.Name = "feImage";
+   Element.attribute("xlink:href", "#" + std::string(reference));
+   write_filter_xml_aspect(Element, Effect.AspectRatio);
    return ERR::Okay;
 }
 
@@ -255,8 +257,8 @@ static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string &Value)
 static const FieldArray clSourceFXFields[] = {
    { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SOURCEFX_SET_AspectRatio, &clAspectRatio },
    { "SourceName",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
-   { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, SOURCEFX_GET_Source, SOURCEFX_SET_Source, CLASSID::VECTOR },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, SOURCEFX_GET_XMLDef },
+   { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_RI|FDF_PURE, SOURCEFX_GET_Source, SOURCEFX_SET_Source, CLASSID::VECTOR },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

@@ -562,7 +562,7 @@
     <field>
       <name>Gamma</name>
       <comment>Contains red, green and blue values for the display's gamma setting.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>DOUBLE []</type>
       <description>
 <p>The gamma settings for the display are stored in this field.  The settings are stored in an array of 3 floating point values that represent the red, green and blue colour components.  The default gamma value for each component is 1.0.</p>

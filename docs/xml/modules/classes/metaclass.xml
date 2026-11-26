@@ -159,7 +159,7 @@
     <field>
       <name>Fields</name>
       <comment>Points to a <st>FieldArray</st> that describes the class' object structure.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>const struct FieldArray[]</type>
       <description>
 <p>This field points to an array that describes the structure of objects that will be generated for this class.  It is compulsory that base classes define this array.  Sub-classes will inherit the structure of their base, but they may set Fields with additional virtual fields if desired.</p>
@@ -235,7 +235,7 @@
     <field>
       <name>Methods</name>
       <comment>Set this field to define the methods supported by the class.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>MethodEntry[]</type>
       <description>
 <p>If a class design will include support for methods, create a MethodEntry list and set this field prior to initialisation.  The array must provide information on each method's ID, name, parameters, and structure size.</p>

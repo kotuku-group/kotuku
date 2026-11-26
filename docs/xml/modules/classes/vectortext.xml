@@ -259,7 +259,7 @@
     <field>
       <name>Focus</name>
       <comment>Refers to the object that will be monitored for user focussing.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>A VectorText object with <code>VTXF::EDITABLE</code> or <code>VTXF::SELECTABLE</code> becomes active when its nearest viewport receives the focus.  Setting the Focus field to a different vector in the scene graph redirects monitoring to it.</p>
@@ -270,7 +270,7 @@
     <field>
       <name>Font</name>
       <comment>Copies key meta information from a Font or other VectorText to create a matching text object.</comment>
-      <access write="S">Set</access>
+      <access write="I">Init</access>
       <type>OBJECTPTR</type>
       <description>
 <p>To create a VectorText object that uses a matching typeset from another <class name="Font">Font</class> or VectorText object, set this field with a reference to that object.  This can only be done prior to initialisation and the other object must have been initialised.</p>

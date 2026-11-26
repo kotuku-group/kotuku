@@ -389,26 +389,19 @@ static ERR TILEFX_Draw(extTileFX *Self, struct acDraw *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR TILEFX_GET_XMLDef(extTileFX *Self, std::string &Value)
-{
-   std::stringstream stream;
-   stream << "feTile";
-   write_filter_xml_subregion(stream, *Self);
-   Value = stream.str();
-   return ERR::Okay;
-}
+
 
 //********************************************************************************************************************
 
 #include "filter_tile_def.c"
 
 static const FieldArray clTileFXFields[] = {
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, TILEFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

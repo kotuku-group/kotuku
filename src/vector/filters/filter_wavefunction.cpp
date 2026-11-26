@@ -198,9 +198,12 @@ static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::stri
    if (Value.empty()) return ERR::NoData;
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
-      Self->Colours.reset(new (std::nothrow) GradientColours(it->second, 1));
-      if (not Self->Colours) return ERR::AllocMemory;
+      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, 1));
+      if (not colours) return ERR::AllocMemory;
+      Self->Colours = std::move(colours);
       Self->ColourMap = Value;
+      Self->Stops.clear();
+      Self->Dirty = true;
       effect_modified(Self);
       return ERR::Okay;
    }
@@ -321,37 +324,50 @@ If no stops are defined, the wave function will be drawn in greyscale.
 
 static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const GradientStop> &Value)
 {
-   Self->Stops.clear();
+   if (Value.size() < 2) return ERR::InvalidValue;
 
-   if (Value.size() >= 2) {
-      Self->Stops.assign(Value.begin(), Value.end());
-      Self->Colours.reset(new (std::nothrow) GradientColours(Self->Stops, VCS::SRGB, GCI::DEFAULT, GHM::SHORTER, 1.0, 1));
-      if (!Self->Colours) return ERR::AllocMemory;
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else {
-      kt::Log log;
-      log.warning("Array size %d < 2", int(Value.size()));
-      return ERR::InvalidValue;
-   }
+   kt::vector<GradientStop> stops;
+   stops.assign(Value.begin(), Value.end());
+   auto colours = std::unique_ptr<GradientColours>(new (std::nothrow)
+      GradientColours(stops, VCS::SRGB, GCI::DEFAULT, GHM::SHORTER, 1.0, 1));
+   if (not colours) return ERR::AllocMemory;
+
+   Self->Stops = std::move(stops);
+   Self->Colours = std::move(colours);
+   Self->ColourMap.clear();
+   Self->Dirty = true;
+   effect_modified(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, std::string &Value)
+static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-
-   stream << "feWaveFunction";
-
-   Value = stream.str();
+   Element.Name = "kotuku:feWaveFunction";
+   Element.attribute("n", Effect.N);
+   Element.attribute("l", Effect.L);
+   Element.attribute("m", Effect.M);
+   Element.attribute("scale", Effect.Scale);
+   Element.attribute("resolution", Effect.Resolution);
+   write_filter_xml_aspect(Element, Effect.AspectRatio);
+   if (not Effect.ColourMap.empty()) Element.attribute("colormap", Effect.ColourMap);
+   else {
+      double last_offset = 0;
+      for (const auto &stop : Effect.Stops) {
+         if ((stop.Offset < last_offset) or (stop.Offset > 1.0)) return ERR::NoSupport;
+         auto &child = Element.child("stop");
+         child.attribute("offset", stop.Offset);
+         write_filter_xml_colour(child, "stop-color", stop.RGB);
+         last_offset = stop.Offset;
+      }
+   }
    return ERR::Okay;
 }
 
@@ -368,7 +384,7 @@ static const FieldArray clWaveFunctionFXFields[] = {
    { "L",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_L },
    { "M",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_M },
    { "Resolution",  FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_Resolution },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, WAVEFUNCTIONFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

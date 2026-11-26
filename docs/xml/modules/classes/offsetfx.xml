@@ -39,7 +39,7 @@
   <fields>
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <tags>caller-owns-result</tags>

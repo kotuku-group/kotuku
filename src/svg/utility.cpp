@@ -509,6 +509,17 @@ static std::string_view kotuku_attrib(extSVG *Self, const XTag &Tag, std::string
    return Name.substr(colon + 1);
 }
 
+static const std::string * find_kotuku_attrib(extSVG *Self, const XTag &Tag, std::string_view Name)
+{
+   for (size_t i = 1; i < Tag.Attribs.size(); i++) {
+      const auto &attribute = Tag.Attribs[i];
+      if (kotuku_attrib(Self, Tag, attribute.Name) IS Name) return &attribute.Value;
+   }
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
 static bool is_required_params_attrib(std::string_view Name) noexcept
 {
    return Name.ends_with(":requiredParams") and (Name.size() > std::string_view(":requiredParams").size());
@@ -1429,6 +1440,20 @@ static bool declares_kotuku_namespace(const kt::vector<XTag> &Tags)
 }
 
 //********************************************************************************************************************
+static VSC document_compliance(extSVG *Self, const kt::vector<XTag> &Tags)
+{
+   for (const auto &tag : Tags) {
+      if (not svg_tag_is(tag, SVF_svg)) continue;
+      if (const auto compliance = find_kotuku_attrib(Self, tag, "compliance")) {
+         if (*compliance IS "svg1") return VSC::SVG1;
+         if (*compliance IS "svg2") return VSC::SVG2;
+      }
+      break;
+   }
+   return declares_kotuku_namespace(Tags) ? VSC::NONE : VSC::SVG2;
+}
+
+//********************************************************************************************************************
 // Parse SVG from a file or string buffer.
 
 static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffer)
@@ -1508,12 +1533,9 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
          Self->XML = xml;
 
-         // A document that declares a Kotuku namespace is asking for features beyond the SVG standard, so SVG
-         // compliance is dropped.  This applies only to a scene that the SVG object owns; a target's scene belongs to
-         // the client.
-
+         // Only change the compliance of a scene owned by this document.
          if ((Self->Scene) and (Self->Scene->ownerID() IS Self->UID)) {
-            Self->Scene->setCompliance(declares_kotuku_namespace(xml->Tags) ? VSC::NONE : VSC::SVG2);
+            Self->Scene->setCompliance(document_compliance(Self, xml->Tags));
          }
 
          prepare_styles(Self, xml->Tags);

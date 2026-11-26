@@ -268,29 +268,26 @@ YChannel: Y axis channel selection.
 Lookup: CMP
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR DISPLACEMENTFX_GET_XMLDef(extDisplacementFX *Self, std::string &Value)
+static ERR displacement_xml(const extDisplacementFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-
    constexpr std::string_view channels = "RGBA";
-   if ((size_t(Self->XChannel) >= channels.size()) or (size_t(Self->YChannel) >= channels.size())) {
+   if ((size_t(Effect.XChannel) >= channels.size()) or (size_t(Effect.YChannel) >= channels.size())) {
       return ERR::InvalidValue;
    }
-   stream.precision(std::numeric_limits<double>::max_digits10);
-   stream << "feDisplacementMap scale=\"" << Self->Scale << "\" xChannelSelector=\""
-      << channels[int(Self->XChannel)] << "\" yChannelSelector=\"" << channels[int(Self->YChannel)] << '"';
-   write_filter_xml_subregion(stream, *Self);
-   if (Self->ResampleMethod IS VSM::NEIGHBOUR) stream << " image-rendering=\"optimizeSpeed\"";
-   else if (Self->ResampleMethod IS VSM::LANCZOS) stream << " image-rendering=\"optimizeQuality\"";
-   if (Self->NormalConvention IS NMC::Y_DOWN) stream << " kotuku:normalConvention=\"y-down\"";
-   else if (Self->NormalConvention IS NMC::Y_UP) stream << " kotuku:normalConvention=\"y-up\"";
-
-   Value = stream.str();
+   Element.Name = "feDisplacementMap";
+   Element.attribute("scale", Effect.Scale);
+   Element.attribute("xChannelSelector", channels.substr(int(Effect.XChannel), 1));
+   Element.attribute("yChannelSelector", channels.substr(int(Effect.YChannel), 1));
+   if (Effect.ResampleMethod IS VSM::NEIGHBOUR) Element.attribute("image-rendering", "optimizeSpeed");
+   else if (Effect.ResampleMethod IS VSM::LANCZOS) Element.attribute("image-rendering", "optimizeQuality");
+   else write_filter_xml_resampling(Element, Effect.ResampleMethod);
+   if (Effect.NormalConvention IS NMC::Y_DOWN) Element.attribute("kotuku:normalConvention", "y-down");
+   else if (Effect.NormalConvention IS NMC::Y_UP) Element.attribute("kotuku:normalConvention", "y-up");
    return ERR::Okay;
 }
 
@@ -342,7 +339,7 @@ static const FieldArray clDisplacementFXFields[] = {
    { "XChannel",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_XChannel, &clDisplacementFXCMP },
    { "YChannel",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, DISPLACEMENTFX_SET_YChannel, &clDisplacementFXCMP },
    { "NormalConvention", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, DISPLACEMENTFX_GET_NormalConvention, DISPLACEMENTFX_SET_NormalConvention, &clDisplacementFXNMC },
-   { "XMLDef",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, DISPLACEMENTFX_GET_XMLDef },
+   { "XMLDef",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

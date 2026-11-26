@@ -449,6 +449,7 @@ global function parseClassFields(Class:table, ClientSpec:str)
                if f then
                   f.arg     = def.arg
                   f.write   = def.write
+                  f.setField = def.setField
                   f.read    = def.read
                   f.flags   = def.flags
                   f.access  ?= def.access

@@ -288,6 +288,7 @@ class objTask : public Object {
    }
 
    inline ERR setErrorCallback(const FUNCTION Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
@@ -303,6 +304,7 @@ class objTask : public Object {
    }
 
    inline ERR setOutputCallback(const FUNCTION Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }

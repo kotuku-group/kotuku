@@ -400,7 +400,7 @@
     <field>
       <name>BitDepth</name>
       <comment>The bit depth affects the overall quality of audio input and output.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>Windows uses a 32-bit float mixer and converts to the endpoint format at the output boundary. ALSA supports <code>8</code>, <code>16</code> and <code>32</code> (floating point) output.  The recommended value for CD quality playback is <code>16</code>.</p>
@@ -432,7 +432,7 @@
     <field>
       <name>Flags</name>
       <comment>Special audio flags can be set here.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type lookup="ADF">ADF</type>
       <description>
 <p>Flags can be selected before initialisation.  Source resampling is controlled by <fl>Quality</fl>.</p>
@@ -511,7 +511,7 @@ audio = obj.new('Audio', { outputLayout=layout })
     <field>
       <name>OutputRate</name>
       <comment>Determines the frequency to use for the output of audio data.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>The OutputRate determines the frequency of the audio data that will be output to the audio speakers.  In most cases, this value should be set to <code>44100</code> for CD quality audio.</p>
@@ -522,7 +522,7 @@ audio = obj.new('Audio', { outputLayout=layout })
     <field>
       <name>PeriodSize</name>
       <comment>Defines the number of frames in each ALSA period.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>A frame contains one sample for every output channel.  Period duration is <code>PeriodSize / OutputRate</code> seconds, independent of bit depth and channel count.  The default ALSA request is 256 frames in three periods. Values are clamped to 32–16384 frames before activation; ALSA may negotiate a different value. After activation this field reports the negotiated period size.</p>
@@ -532,7 +532,7 @@ audio = obj.new('Audio', { outputLayout=layout })
     <field>
       <name>Periods</name>
       <comment>Defines the number of periods that make up the internal audio buffer.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>The Periods field controls the segmentation of the internal audio buffer, directly affecting latency, performance, and audio continuity. This setting is particularly relevant for ALSA-based systems where period-based buffering is fundamental to audio driver operation.</p>

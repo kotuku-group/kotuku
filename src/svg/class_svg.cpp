@@ -229,9 +229,9 @@ are resampled.
 
 <header>Lighting Extensions</header>
 
-A document that declares a Kōtuku namespace is rendered with a @VectorScene.Compliance of `NONE` (see #Init), which
-enables the enhanced lighting of @LightingFX.  The following attributes of `feDiffuseLighting` and
-`feSpecularLighting` configure it, using any prefix that is bound to the Kōtuku namespace:
+Declaring a Kōtuku namespace enables the enhanced lighting of @LightingFX by default (see #Init).
+The attributes below configure `feDiffuseLighting` and `feSpecularLighting`.  Any prefix bound to the Kōtuku
+namespace can be used.
 
 <list type="bullet">
 <li>`kotuku:features`: `all`, `none`, or a space-separated list of `dequantise`, `sharpen`, `cavity`, `detail`,
@@ -588,8 +588,9 @@ a #Path has been configured, the referenced SVG file will be loaded and parsed i
 The default behaviour creates a local @VectorScene object to contain the generated scene graph.  Its
 @VectorScene.Compliance is set to `SVG2` so that the document is rendered to the SVG standard.  If the document
 declares a Kōtuku namespace, for instance `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`, it is asking for
-features beyond the standard and the Compliance is set to `NONE` instead.  The declaration is sufficient; the prefix
-does not need to be used.
+features beyond the standard and Compliance defaults to `NONE`.  The namespace declaration alone enables this
+behaviour.  Set the root `kotuku:compliance` attribute to `svg1` or `svg2` to select standard rendering in a
+document that uses Kōtuku markup.
 
 The local scene can be overridden by setting the #Target field to redirect content into an existing scene graph
 structure, enabling integration with existing UI components.  The @VectorScene.Compliance of a target's scene is not
@@ -917,6 +918,10 @@ static ERR SVG_SaveImage(extSVG *Self, struct acSaveImage *Args)
 /*********************************************************************************************************************
 -ACTION-
 SaveToObject: Saves the SVG document to a data object.
+
+Filters are saved with their input graph, primitive settings and Kōtuku extensions.  File-backed filter resources
+use references relative to the document folder.  Keep those resources available at the same relative paths when
+moving the document.  If a filter cannot be serialised, the action returns an error before writing to the destination.
 -END-
 *********************************************************************************************************************/
 
@@ -977,8 +982,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                      save_svg_scan(Self, *xml, scan, index);
                   }
 
-                  error = embed_collection_paints(Self, *xml, index);
-                  if (!error) error = xml->saveToObject(Args->Dest);
+                  error = save_svg_document(Self, *xml, index, Args->Dest);
                }
             }
             else {
@@ -1018,8 +1022,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
                         save_svg_scan(Self, *xml, scan, index);
                      }
 
-                     error = embed_collection_paints(Self, *xml, index);
-                     if (!error) error = xml->saveToObject(Args->Dest);
+                     error = save_svg_document(Self, *xml, index, Args->Dest);
                   }
                }
             }

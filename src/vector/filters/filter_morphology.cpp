@@ -480,24 +480,16 @@ static ERR MORPHOLOGYFX_SET_RadiusY(extMorphologyFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string &Value)
+static ERR morphology_xml(const extMorphologyFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-   stream.precision(std::numeric_limits<double>::max_digits10);
-
-   stream << "feMorphology operator=\"";
-
-   if (Self->Operator IS MOP::ERODE) stream << "erode\"";
-   else stream << "dilate\"";
-
-   stream << " radius=\"" << Self->RadiusX << " " << Self->RadiusY << "\"";
-
-   Value = stream.str();
+   Element.Name = "feMorphology";
+   Element.attribute("operator", Effect.Operator IS MOP::ERODE ? "erode" : "dilate");
+   Element.attribute("radius", Element.number(Effect.RadiusX) + ' ' + Element.number(Effect.RadiusY));
    return ERR::Okay;
 }
 
@@ -509,7 +501,7 @@ static const FieldArray clMorphologyFXFields[] = {
    { "RadiusX",  FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
    { "RadiusY",  FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, MORPHOLOGYFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

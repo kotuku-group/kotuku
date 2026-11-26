@@ -374,6 +374,7 @@ class objDocument : public Object {
    }
 
    inline ERR setFlags(const DCF Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[1];
       return field->WriteValue(this, field, FD_INT, &Value);
    }

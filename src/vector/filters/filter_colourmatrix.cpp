@@ -32,7 +32,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 ColourFX: Support for applying colour transformation effects.
 
 Use ColourFX to perform colour transformations on an input source.  A #Mode must be selected and any required #Values
-defined prior to rendering.
+defined before initialisation.
 
 SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists
 of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for
@@ -596,41 +596,35 @@ static ERR COLOURFX_SET_Values(extColourFX *Self, std::span<const double> &Array
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string &Value)
+static ERR colour_xml(const extColourFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-
-   stream << "feColorMatrix";
-
-   CSTRING type = nullptr;
-   int total_values = 0;
-   switch (Self->Mode) {
-      case CM::MATRIX:          type = "matrix"; total_values = CM_SIZE; break;
-      case CM::SATURATE:        type = "saturate"; total_values = 1; break;
-      case CM::HUE_ROTATE:      type = "hueRotate"; total_values = 1; break;
-      case CM::LUMINANCE_ALPHA: type = "luminanceToAlpha"; break;
-      case CM::CONTRAST:        type = "contrast"; total_values = 1; break;
-      case CM::BRIGHTNESS:      type = "brightness"; total_values = 1; break;
-      case CM::HUE:             type = "hue"; total_values = 1; break;
-      case CM::DESATURATE:      type = "desaturate"; break;
-      case CM::COLOURISE:       type = "colourise"; total_values = 4; break;
-      default:                  break; // An identity matrix needs no attributes
+   Element.Name = "feColorMatrix";
+   int standard_count = 0;
+   bool extension = false;
+   switch (Effect.Mode) {
+      case CM::MATRIX: Element.attribute("type", "matrix"); standard_count = CM_SIZE; break;
+      case CM::SATURATE: Element.attribute("type", "saturate"); standard_count = 1; break;
+      case CM::HUE_ROTATE: Element.attribute("type", "hueRotate"); standard_count = 1; break;
+      case CM::LUMINANCE_ALPHA: Element.attribute("type", "luminanceToAlpha"); break;
+      case CM::CONTRAST: Element.attribute("kotuku:type", "contrast"); extension = true; break;
+      case CM::BRIGHTNESS: Element.attribute("kotuku:type", "brightness"); extension = true; break;
+      case CM::HUE: Element.attribute("kotuku:type", "hue"); extension = true; break;
+      case CM::DESATURATE: Element.attribute("kotuku:type", "desaturate"); extension = true; break;
+      case CM::COLOURISE: Element.attribute("kotuku:type", "colourise"); extension = true; break;
+      case CM::NONE: Element.attribute("kotuku:type", "none"); extension = true; break;
+      default: return ERR::InvalidValue;
    }
 
-   if (type) stream << " type=\"" << type << "\"";
-
-   if (total_values) {
-      stream << " values=\"";
-      for (int i=0; i < total_values; i++) stream << (i ? " " : "") << Self->Values[i];
-      stream << "\"";
+   if (standard_count) Element.list("values", std::span(Effect.Values.data(), size_t(standard_count)));
+   if (extension or (Effect.TotalValues != standard_count)) {
+      // Preserve the authored array length, including entries unused by the selected mode.
+      Element.list("kotuku:values", std::span(Effect.Values.data(), size_t(Effect.TotalValues)));
    }
-
-   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -641,7 +635,7 @@ static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string &Value)
 static const FieldArray clColourFXFields[] = {
    { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, nullptr, &clColourFXCM },
    { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  COLOURFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

@@ -82,20 +82,6 @@ static void set_vector_colour_space(XTag *Tag, objVector *Vector)
 
 //*********************************************************************************************************************
 
-static bool has_attrib(const XTag *Tag, std::string_view Name) noexcept
-{
-   return Tag->attrib(Name) != nullptr;
-}
-
-//*********************************************************************************************************************
-
-static void set_missing_attrib(XTag *Tag, std::string_view Name, std::string_view Value)
-{
-   if ((not Value.empty()) and (not has_attrib(Tag, Name))) xml::NewAttrib(Tag, Name, Value);
-}
-
-//*********************************************************************************************************************
-
 static ERR save_svg_scan_def(extSVG *Self, objXML *XML, objVector *Vector, int Parent, std::string_view DefID)
 {
    XTag *parent_tag;
@@ -109,10 +95,34 @@ static ERR save_svg_scan_def(extSVG *Self, objXML *XML, objVector *Vector, int P
 
    error = XML->getTag(Parent, &parent_tag);
    if ((error IS ERR::Okay) and (parent_tag->Children.size() > child_count)) {
-      set_missing_attrib(&parent_tag->Children[child_count], "id", DefID);
+      auto &tag = parent_tag->Children[child_count];
+      const auto id = std::ranges::find_if(tag.Attribs, [](const auto &Attribute) {
+         return Attribute.Name IS "id";
+      });
+      if (id != tag.Attribs.end()) id->Value = DefID;
+      else xml::NewAttrib(tag, "id", DefID);
    }
 
    return error;
+}
+
+//*********************************************************************************************************************
+
+static std::string_view vector_reference_id(objVector *Vector)
+{
+   std::string_view sid;
+   Vector->getSID(sid);
+
+   ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
+   if ((not Vector->Scene) or (Vector->Scene->get(strhash("defs"), defs) != ERR::Okay)) return sid;
+
+   std::string_view alias;
+   for (const auto &[name, def] : *defs) {
+      if ((def != Vector) or name.empty()) continue;
+      if (name IS sid) return name;
+      if (alias.empty() or (name < alias)) alias = name;
+   }
+   return alias.empty() ? sid : alias;
 }
 
 //*********************************************************************************************************************
@@ -650,6 +660,10 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
          else if (def->classID() IS CLASSID::VECTORFILTER) {
             objVectorFilter *filter = (objVectorFilter *)def;
 
+            if (filter->Inherit) return ERR::NoSupport;
+            std::string effect_xml;
+            if (auto result = filter->getEffectXML(effect_xml); result != ERR::Okay) return result;
+
             XTag *tag;
             error = XML->insertStatement(def_index, XMI::CHILD_END, "<filter/>", &tag);
 
@@ -687,10 +701,13 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
-            std::string effect_xml;
-            if ((!error) and (!filter->getEffectXML(effect_xml))) {
-               XTag *effect;
-               error = XML->insertStatement(tag->ID, XMI::CHILD, effect_xml, &effect);
+            if (!error) {
+               if (filter->Opacity != 1.0) xml::NewAttrib(tag, "kotuku:opacity", filter->Opacity);
+               if (filter->AspectRatio IS VFA::NONE) xml::NewAttrib(tag, "kotuku:aspectRatio", "none");
+               if (filter->ResX or filter->ResY) {
+                  xml::NewAttrib(tag, "filterRes", std::to_string(filter->ResX) + ' ' + std::to_string(filter->ResY));
+               }
+               if (not effect_xml.empty()) error = XML->insertXML(tag->ID, XMI::CHILD, effect_xml, nullptr);
             }
          }
          else if (def->classID() IS CLASSID::VECTORTRANSITION) {
@@ -713,6 +730,8 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             error = save_svg_scan_def(Self, XML, (objVector *)def, def_index, key);
          }
          else log.warning("Unrecognised definition class %x", uint32_t(def->classID()));
+
+         if (error != ERR::Okay) return error;
       }
 
       return error;
@@ -847,6 +866,39 @@ static ERR embed_collection_paints(extSVG *Self, objXML *XML, int Root)
    }
 
    return ERR::Okay;
+}
+
+//*********************************************************************************************************************
+
+static bool uses_kotuku_markup(const XTag &Tag)
+{
+   for (const auto &attribute : Tag.Attribs) {
+      if (attribute.Name.starts_with("kotuku:")) return true;
+   }
+   return std::ranges::any_of(Tag.Children, uses_kotuku_markup);
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_document(extSVG *Self, objXML *XML, int Root, OBJECTPTR Dest)
+{
+   if (auto error = embed_collection_paints(Self, XML, Root); error != ERR::Okay) return error;
+
+   XTag *root;
+   if (auto error = XML->getTag(Root, &root); error != ERR::Okay) return error;
+
+   if (Self->Scene->Compliance IS VSC::SVG1) xml::NewAttrib(root, "kotuku:compliance", "svg1");
+   else if (Self->Scene->Compliance IS VSC::SVG2) {
+      if (uses_kotuku_markup(*root)) xml::NewAttrib(root, "kotuku:compliance", "svg2");
+      else {
+         const auto declaration = std::ranges::find_if(root->Attribs, [](const auto &Attribute) {
+            return Attribute.Name IS "xmlns:kotuku";
+         });
+         if (declaration != root->Attribs.end()) root->Attribs.erase(declaration);
+      }
+   }
+
+   return XML->saveToObject(Dest);
 }
 
 //*********************************************************************************************************************
@@ -1028,9 +1080,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       XTag *guide_tag;
       error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:guidePath/>", &guide_tag);
 
-      std::string_view shape_id;
-      if ((!error) and (!shape->getSID(shape_id)) and not shape_id.empty()) {
-         // NB: It is required that the shape has previously been registered as a definition, otherwise the url will refer to a dud tag.
+      if (const auto shape_id = vector_reference_id(shape); (!error) and (not shape_id.empty())) {
          auto shape_ref = std::format("url(#{})", shape_id);
          xml::NewAttrib(guide_tag, "xlink:href", shape_ref);
       }

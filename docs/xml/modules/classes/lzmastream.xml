@@ -79,7 +79,7 @@ err, len = lz.acRead(buffer)
     <field>
       <name>Size</name>
       <comment>The exact number of bytes expected from the decompressed stream.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>INT64</type>
       <description>
 <p>This field is required prior to initialisation.  Raw LZMA1 streams may not carry a reliable end marker, so the value is used to bound decoding: the stream completes when exactly this many bytes have been produced, and an end marker or exhausted input encountered beforehand is reported as a decompression error.</p>

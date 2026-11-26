@@ -621,7 +621,7 @@ unpackGrey(Sample)         // 16-bit sample to 8-bit grey: Sample &gt;&gt; 8
     <field>
       <name>Data</name>
       <comment>Provides direct access to the bitmap's data area.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>UINT8[]</type>
       <description>
 <p>Data points to the first byte of the bitmap's pixel buffer when CPU-visible memory is available.  Caller-supplied memory can be used for data-backed bitmaps, but most callers should let <action>Init</action> allocate the correctly sized buffer.</p>

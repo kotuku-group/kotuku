@@ -113,27 +113,16 @@ static ERR FLOODFX_SET_Opacity(extFloodFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the effect.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string &Value)
+static ERR flood_xml(const extFloodFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-   stream.precision(std::numeric_limits<double>::max_digits10);
-
-   stream << "feFlood flood-color=\"";
-   write_rgb(stream, Self->Colour);
-   stream << '"';
-   if (Self->Opacity != 1.0) {
-      char buffer[32];
-      auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Self->Opacity);
-      if (error IS std::errc()) stream << " flood-opacity=\"" << std::string_view(buffer, end - buffer) << '"';
-   }
-   write_filter_xml_subregion(stream, *Self);
-
-   Value = stream.str();
+   Element.Name = "feFlood";
+   write_filter_xml_colour(Element, "flood-color", Effect.Colour);
+   if (Effect.Opacity != 1.0) Element.attribute("flood-opacity", Effect.Opacity);
    return ERR::Okay;
 }
 
@@ -144,7 +133,7 @@ static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string &Value)
 static const FieldArray clFloodFXFields[] = {
    { "Colour",  FDF_STRUCT|FDF_RW, nullptr, FLOODFX_SET_Colour, "FRGB" },
    { "Opacity", FDF_DOUBLE|FDF_RW, nullptr, FLOODFX_SET_Opacity },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FLOODFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

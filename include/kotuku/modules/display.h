@@ -950,6 +950,7 @@ class objBitmap : public Object {
    }
 
    inline ERR setData(std::span<const uint8_t> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, 0x01001500, &Value);
    }
@@ -1455,6 +1456,7 @@ class objDisplay : public Object {
    }
 
    inline ERR setGamma(std::span<const double> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, 0x80101508, &Value);
    }
@@ -2291,6 +2293,7 @@ class objSurface : public Object {
    }
 
    inline ERR setPopOver(OBJECTID Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -2351,6 +2354,7 @@ class objSurface : public Object {
    }
 
    inline ERR setBitsPerPixel(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }

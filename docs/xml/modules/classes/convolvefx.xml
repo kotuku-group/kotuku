@@ -62,7 +62,7 @@
     <field>
       <name>Divisor</name>
       <comment>Defines the divisor value in the convolution algorithm.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>DOUBLE</type>
       <description>
 <p>After applying the <fl>Matrix</fl> to the input image to yield a number, that number is divided by <fl>Divisor</fl> to yield the final destination colour value.  A divisor that is the sum of all the matrix values tends to have an evening effect on the overall colour intensity of the result.  The default value is the sum of all values in <fl>Matrix</fl>, with the exception that if the sum is zero, then the divisor is set to <code>1</code>.</p>
@@ -83,7 +83,7 @@
     <field>
       <name>Matrix</name>
       <comment>A list of numbers that make up the kernel matrix for the convolution.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>DOUBLE []</type>
       <description>
 <p>A list of numbers that make up the kernel matrix for the convolution.  The number of entries in the list must equal <code>MatrixColumns * MatrixRows</code>.</p>
@@ -93,7 +93,7 @@
     <field>
       <name>MatrixColumns</name>
       <comment>The number of columns in the Matrix.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>Indicates the number of columns represented in <fl>Matrix</fl>.  A typical value is <code>3</code>.  It is recommended that only small values are used; higher values may result in very high CPU overhead and usually do not produce results that justify the impact on performance.  The default value is <code>3</code>.</p>
@@ -103,7 +103,7 @@
     <field>
       <name>MatrixRows</name>
       <comment>The number of rows in the Matrix.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>Indicates the number of rows represented in <fl>Matrix</fl>.  A typical value is <code>3</code>.  It is recommended that only small values are used; higher values may result in very high CPU overhead and usually do not produce results that justify the impact on performance.  The default value is 3.</p>
@@ -123,7 +123,7 @@
     <field>
       <name>TargetX</name>
       <comment>The X position of the matrix in relation to the input image.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>Determines the positioning in X of the convolution matrix relative to a given target pixel in the input image.  The left-most column of the matrix is column number zero.  The value must be such that <code>0 &lt;= TargetX &lt; MatrixColumns</code>.  By default, the convolution matrix is centered in X over each pixel of the input image, i.e. <code>TargetX = floor(MatrixColumns / 2)</code>.</p>
@@ -133,7 +133,7 @@
     <field>
       <name>TargetY</name>
       <comment>The Y position of the matrix in relation to the input image.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
 <p>Determines the positioning in Y of the convolution matrix relative to a given target pixel in the input image.  The left-most column of the matrix is column number zero.  The value must be such that <code>0 &lt;= TargetY &lt; MatrixRows</code>.  By default, the convolution matrix is centered in Y over each pixel of the input image, i.e. <code>TargetY = floor(MatrixRows / 2)</code>.</p>
@@ -143,7 +143,7 @@
     <field>
       <name>UnitX</name>
       <comment>The distance between successive columns of the Matrix.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>DOUBLE</type>
       <description>
 <p>This spacing uses <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  It lets the kernel scale with the client.  If omitted, spacing on this axis defaults to one device pixel.</p>
@@ -154,7 +154,7 @@
     <field>
       <name>UnitY</name>
       <comment>The distance between successive rows of the Matrix.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>DOUBLE</type>
       <description>
 <p>This spacing uses <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  It lets the kernel scale with the client.  If omitted, spacing on this axis defaults to one device pixel.</p>
@@ -164,7 +164,7 @@
 
     <field>
       <name>XMLDef</name>
-      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <tags>caller-owns-result</tags>

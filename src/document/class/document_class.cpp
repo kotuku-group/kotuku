@@ -2131,7 +2131,7 @@ static const FieldArray clFields[] = {
    { "ClientScript", FDF_OBJECT|FDF_I },
    { "TabFocus",     FDF_OBJECTID|FDF_RW },
    { "EventMask",    FDF_INTFLAGS|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clDocumentEventMask },
-   { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, SET_Flags, &clDocumentFlags },
+   { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clDocumentFlags },
    { "PageHeight",   FDF_INT|FDF_R },
    { "Error",        FDF_INT|FDF_R },
    // Virtual fields

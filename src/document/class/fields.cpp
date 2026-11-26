@@ -92,6 +92,8 @@ indicates the events that need to be received.
 -FIELD-
 Flags: Optional flags that affect object behaviour.
 
+After initialisation, writes preserve the `UNRESTRICTED` and `DISABLED` flags.
+
 <types lookup="DCF"/>
 
 *********************************************************************************************************************/
@@ -99,7 +101,8 @@ Flags: Optional flags that affect object behaviour.
 static ERR SET_Flags(extDocument *Self, DCF Value)
 {
    if (Self->initialised()) {
-      Self->Flags = Value & (~(DCF::UNRESTRICTED|DCF::DISABLED));
+      constexpr auto protected_flags = DCF::UNRESTRICTED|DCF::DISABLED;
+      Self->Flags = (Self->Flags & protected_flags) | (Value & ~protected_flags);
    }
    else Self->Flags = Value & (~(DCF::DISABLED));
    return ERR::Okay;

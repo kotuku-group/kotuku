@@ -100,6 +100,7 @@ class objStorageDevice : public Object {
    // Customised field setting
 
    inline ERR setVolume(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x00904500, &Value);
    }
@@ -363,6 +364,7 @@ class objFile : public Object {
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[5];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }

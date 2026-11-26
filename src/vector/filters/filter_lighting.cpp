@@ -1394,17 +1394,6 @@ static void write_lfx_features(std::ostream &Stream, LFX Features)
 }
 
 //********************************************************************************************************************
-// Writes a light setting as a kotuku: attribute, in the shortest form that reads back as the same value.
-
-static void write_light_number(std::ostream &Stream, CSTRING Name, double Value)
-{
-   char buffer[32];
-   auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value);
-   Stream << " kotuku:" << Name << "=\"" << std::string_view(buffer, (error IS std::errc()) ? end - buffer : 0)
-      << '"';
-}
-
-//********************************************************************************************************************
 // Converts a public channel selection to the channel of a map input contract.
 
 static filter_map_channel map_channel(MCH Channel)
@@ -2911,149 +2900,115 @@ attributes when they differ from their defaults.  These include `kotuku:features
 `kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, `kotuku:roughnessChannel` for
 #RoughnessChannel, and `kotuku:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
-zero, and `matcap` for #MatcapPath when it is set.  An SVG-loaded matcap keeps its original relative reference so the
-image can be reloaded from the same document folder.  For API-loaded images the supplied #MatcapPath is written.  A
-matcap supplied as a #Matcap bitmap is omitted.  The attributes of `kotuku:feLighting` and `kotuku:feNormalMap` are
-written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the
+zero.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same
+document folder.  For API-loaded images #MatcapPath must be document-relative.  A matcap supplied as a #Matcap
+bitmap returns `ERR::NoSupport` during serialisation.  The attributes of `kotuku:feLighting` and `kotuku:feNormalMap`
+are written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the
 prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
 
 Each light is written as a child element, in the order in which the lights were added.  The options of
 #SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
 `kotuku:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
 
-The parent filter writes the `in`, `in2`, `result`, `kotuku:normalMap`, `kotuku:occlusionMap` and
-`kotuku:roughnessMap` attributes separately.
+@VectorFilter.EffectXML includes primary, albedo and named map bindings and assigns result names to referenced effects.
 
 *********************************************************************************************************************/
 
-static void write_normal_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
+static ERR lighting_xml(const extLightingFX &Effect, filter_xml_element &Element)
 {
-   if (Self.NormalConvention IS NMC::Y_UP) Stream << ' ' << Prefix << "normalConvention=\"y-up\"";
-   if (Self.NormalStrength != 1.0) Stream << ' ' << Prefix << "normalStrength=\"" << Self.NormalStrength << '"';
-}
-
-static void write_map_options(std::ostream &Stream, const extLightingFX &Self, CSTRING Prefix)
-{
-   write_map_channel(Stream, Prefix, "occlusionChannel", Self.OcclusionChannel);
-   if (Self.OcclusionStrength != 1.0) {
-      Stream << ' ' << Prefix << "occlusionStrength=\"" << Self.OcclusionStrength << '"';
+   const bool combined = Effect.Type IS LT::COMBINED;
+   const bool normal = Effect.Type IS LT::NORMAL;
+   const std::string prefix = (combined or normal) ? "" : "kotuku:";
+   switch (Effect.Type) {
+      case LT::NORMAL: Element.Name = "kotuku:feNormalMap"; break;
+      case LT::COMBINED: Element.Name = "kotuku:feLighting"; break;
+      case LT::DIFFUSE: Element.Name = "feDiffuseLighting"; break;
+      case LT::SPECULAR: Element.Name = "feSpecularLighting"; break;
+      default: return ERR::InvalidValue;
    }
-   write_map_channel(Stream, Prefix, "roughnessChannel", Self.RoughnessChannel);
-}
+   Element.Complete = true;
+   Element.attribute("surfaceScale", Effect.MapHeight);
 
-static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string &Value)
-{
-   std::stringstream stream;
-   if (Self->Type IS LT::NORMAL) {
-      stream.precision(std::numeric_limits<double>::max_digits10);
-      stream << "<kotuku:feNormalMap surfaceScale=\"" << Self->MapHeight << '"';
-      write_filter_xml_subregion(stream, *Self);
+   if (Effect.UnitXProvided and Effect.UnitYProvided) {
+      Element.attribute("kernelUnitLength", Element.number(Effect.UnitX) + ' ' + Element.number(Effect.UnitY));
+   }
+   else if (Effect.UnitXProvided) Element.attribute(prefix + "kernelUnitX", Effect.UnitX);
+   else if (Effect.UnitYProvided) Element.attribute(prefix + "kernelUnitY", Effect.UnitY);
 
-      if (Self->UnitXProvided and Self->UnitYProvided) {
-         stream << " kernelUnitLength=\"" << Self->UnitX << ' ' << Self->UnitY << '"';
+   if (Effect.Features != LFX::ALL) {
+      std::ostringstream features;
+      write_lfx_features(features, Effect.Features);
+      Element.attribute(prefix + "features", features.str());
+   }
+
+   if (Effect.Detail != DEFAULT_DETAIL) Element.attribute(prefix + "detail", Effect.Detail);
+   if (Effect.NormalConvention IS NMC::Y_UP) Element.attribute(prefix + "normalConvention", "y-up");
+   if (Effect.NormalStrength != 1.0) Element.attribute(prefix + "normalStrength", Effect.NormalStrength);
+   write_filter_xml_channel(Element, prefix + "occlusionChannel", Effect.OcclusionChannel);
+   if (Effect.OcclusionStrength != 1.0) Element.attribute(prefix + "occlusionStrength", Effect.OcclusionStrength);
+   write_filter_xml_channel(Element, prefix + "roughnessChannel", Effect.RoughnessChannel);
+   if (Effect.Cavity != DEFAULT_CAVITY) Element.attribute(prefix + "cavity", Effect.Cavity);
+   if (Effect.Penumbra != DEFAULT_PENUMBRA) Element.attribute(prefix + "penumbra", Effect.Penumbra);
+
+   if ((Effect.Type IS LT::DIFFUSE) or combined) Element.attribute("diffuseConstant", Effect.Constant);
+   else if (Effect.Type IS LT::SPECULAR) Element.attribute("specularConstant", Effect.Constant);
+   else if (Effect.Constant != 1) Element.attribute("constant", Effect.Constant);
+
+   if (combined) Element.attribute("specularConstant", Effect.SpecularConstant);
+   else if (Effect.SpecularConstant != 1) {
+      Element.attribute(prefix + "combinedSpecularConstant", Effect.SpecularConstant);
+   }
+
+   if ((Effect.Type IS LT::SPECULAR) or combined) Element.attribute("specularExponent", Effect.SpecularExponent);
+   else if (Effect.SpecularExponent != 1) Element.attribute(prefix + "exponent", Effect.SpecularExponent);
+
+   const auto &colour = Effect.Colour;
+   if ((colour.Red != 1.0f) or (colour.Green != 1.0f) or (colour.Blue != 1.0f) or (colour.Alpha != 1.0f)) {
+      write_filter_xml_colour(Element, "lighting-color", colour);
+   }
+   const auto &ambient = Effect.Ambient;
+   if ((ambient.Red != 0.0f) or (ambient.Green != 0.0f) or (ambient.Blue != 0.0f) or (ambient.Alpha != 0.0f)) {
+      write_filter_xml_colour(Element, prefix + "ambient", ambient);
+   }
+
+   if (Effect.Metalness != 0) {
+      Element.attribute(combined ? "metalness" : prefix + "combinedMetalness", Effect.Metalness);
+   }
+   if (Effect.Fresnel != 0) Element.attribute(combined ? "fresnel" : prefix + "combinedFresnel", Effect.Fresnel);
+   if (Effect.Wrap != 0) Element.attribute(combined ? "wrap" : prefix + "combinedWrap", Effect.Wrap);
+   if (Effect.Matcap) {
+      const auto &reference = Effect.MatcapRef.empty() ? Effect.MatcapPath : Effect.MatcapRef;
+      if (not safe_filter_path(reference)) return ERR::NoSupport;
+      Element.attribute(combined ? "matcap" : prefix + "combinedMatcap", reference);
+   }
+
+   const auto &first_light = Effect.Lights.front();
+   if (normal and (not Effect.Configured) and (first_light.Intensity IS 1.0) and
+       (not first_light.HasColour) and first_light.Shadows) return ERR::Okay;
+   for (const auto &light : Effect.Lights) {
+      auto &child = Element.child(light.Kind IS LS::SPOT ? "feSpotLight" :
+         light.Kind IS LS::POINT ? "fePointLight" : "feDistantLight");
+      if (light.Kind IS LS::DISTANT) {
+         child.attribute("azimuth", light.Azimuth);
+         child.attribute("elevation", light.Elevation);
       }
-      else if (Self->UnitXProvided) stream << " kernelUnitX=\"" << Self->UnitX << '"';
-      else if (Self->UnitYProvided) stream << " kernelUnitY=\"" << Self->UnitY << '"';
-      if (Self->Features != LFX::ALL) {
-         stream << " features=\"";
-         write_lfx_features(stream, Self->Features);
-         stream << '"';
+      else {
+         child.attribute("x", light.Position.x);
+         child.attribute("y", light.Position.y);
+         child.attribute("z", light.Position.z);
       }
-
-      if (Self->Detail != DEFAULT_DETAIL) stream << " detail=\"" << Self->Detail << '"';
-      write_normal_options(stream, *Self, "");
-      stream << "/>";
-      Value = stream.str();
-      return ERR::Okay;
-   }
-
-   const bool combined = Self->Type IS LT::COMBINED;
-   CSTRING element = combined ? "kotuku:feLighting" : (Self->Type IS LT::DIFFUSE) ? "feDiffuseLighting" : "feSpecularLighting";
-   CSTRING prefix = combined ? "" : "kotuku:"; // Extension attributes of kotuku:feLighting are unprefixed
-
-   stream << '<' << element << " surfaceScale=\"" << Self->MapHeight << '"';
-   if (Self->Type IS LT::DIFFUSE) stream << " diffuseConstant=\"" << Self->Constant << '"';
-   else if (Self->Type IS LT::SPECULAR) stream << " specularConstant=\"" << Self->Constant << '"';
-   else {
-      stream << " diffuseConstant=\"" << Self->Constant << '"';
-      stream << " specularConstant=\"" << Self->SpecularConstant << '"';
-   }
-
-   if (Self->Type != LT::DIFFUSE) stream << " specularExponent=\"" << Self->SpecularExponent << '"';
-
-   if (Self->UnitXProvided or Self->UnitYProvided) {
-      stream << " kernelUnitLength=\"" << Self->UnitX << ' ' << Self->UnitY << '"';
-   }
-
-   const auto &c = Self->Colour;
-   if ((c.Red != 1.0f) or (c.Green != 1.0f) or (c.Blue != 1.0f) or (c.Alpha != 1.0f)) {
-      stream << " lighting-color=\"";
-      write_rgb(stream, c);
-      stream << '"';
-   }
-
-   if (Self->Features != LFX::ALL) {
-      stream << ' ' << prefix << "features=\"";
-      write_lfx_features(stream, Self->Features);
-      stream << '"';
-   }
-
-   if (Self->Cavity != DEFAULT_CAVITY) stream << ' ' << prefix << "cavity=\"" << Self->Cavity << '"';
-   if (Self->Detail != DEFAULT_DETAIL) stream << ' ' << prefix << "detail=\"" << Self->Detail << '"';
-   if (Self->Penumbra != DEFAULT_PENUMBRA) stream << ' ' << prefix << "penumbra=\"" << Self->Penumbra << '"';
-   write_normal_options(stream, *Self, prefix);
-   write_map_options(stream, *Self, prefix);
-
-   const auto &a = Self->Ambient;
-   if ((a.Red != 0.0f) or (a.Green != 0.0f) or (a.Blue != 0.0f) or (a.Alpha != 0.0f)) {
-      stream << ' ' << prefix << "ambient=\"";
-      write_rgb(stream, a);
-      stream << '"';
-   }
-
-   if (combined) {
-      if (Self->Metalness != 0) stream << " metalness=\"" << Self->Metalness << '"';
-      if (Self->Fresnel != 0) stream << " fresnel=\"" << Self->Fresnel << '"';
-      if (Self->Wrap != 0) stream << " wrap=\"" << Self->Wrap << '"';
-      const auto &reference = Self->MatcapRef.empty() ? Self->MatcapPath : Self->MatcapRef;
-      if (not reference.empty()) write_filter_xml_attribute(stream, "matcap", reference);
-   }
-
-   stream << '>';
-
-   for (const auto &light : Self->Lights) {
-      switch (light.Kind) {
-         case LS::POINT:
-            stream << "<fePointLight x=\"" << light.Position.x << "\" y=\"" << light.Position.y << "\" z=\""
-               << light.Position.z << '"';
-            break;
-
-         case LS::SPOT:
-            stream << "<feSpotLight x=\"" << light.Position.x << "\" y=\"" << light.Position.y << "\" z=\""
-               << light.Position.z << '"';
-            stream << " pointsAtX=\"" << light.Target.x << "\" pointsAtY=\"" << light.Target.y;
-            stream << "\" pointsAtZ=\"" << light.Target.z << "\" specularExponent=\"" << light.SpotExponent << '"';
-            if (light.ConeAngle) stream << " limitingConeAngle=\"" << light.ConeAngle << '"';
-            break;
-
-         default:
-            stream << "<feDistantLight azimuth=\"" << light.Azimuth << "\" elevation=\"" << light.Elevation << '"';
-            break;
+      if (light.Kind IS LS::SPOT) {
+         child.attribute("pointsAtX", light.Target.x);
+         child.attribute("pointsAtY", light.Target.y);
+         child.attribute("pointsAtZ", light.Target.z);
+         child.attribute("specularExponent", light.SpotExponent);
+         if (light.ConeAngle) child.attribute("limitingConeAngle", light.ConeAngle);
       }
-
-      if (light.HasColour) {
-         stream << " kotuku:colour=\"";
-         write_rgb(stream, light.Colour);
-         stream << '"';
-      }
-      if (light.Intensity != 1.0) write_light_number(stream, "intensity", light.Intensity);
-      if (light.Range > 0) write_light_number(stream, "range", light.Range);
-      if (not light.Shadows) stream << " kotuku:shadows=\"false\"";
-      stream << "/>";
+      if (light.HasColour) write_filter_xml_colour(child, "kotuku:colour", light.Colour);
+      if (light.Intensity != 1.0) child.attribute("kotuku:intensity", light.Intensity);
+      if (light.Range > 0) child.attribute("kotuku:range", light.Range);
+      if (not light.Shadows) child.attribute("kotuku:shadows", "false");
    }
-
-   stream << "</" << element << '>';
-   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -3101,7 +3056,7 @@ static const FieldArray clLightingFXFields[] = {
    { "UnitX",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitX },
    { "UnitY",      FDF_DOUBLE|FDF_RW, nullptr, LIGHTINGFX_SET_UnitY },
    { "Type",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, LIGHTINGFX_SET_Type, &clLightingFXLT },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, LIGHTINGFX_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

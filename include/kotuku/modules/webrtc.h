@@ -484,6 +484,7 @@ class objPeerConnection : public Object {
    }
 
    inline ERR setIceServers(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x00804408, &Value);
    }

@@ -263,7 +263,7 @@
     <field>
       <name>ErrorCallback</name>
       <comment>This callback returns incoming data from STDERR.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>FUNCTION</type>
       <description>
 <p>The ErrorCallback field can be set with a function reference that will be called when an active process sends data via STDERR.  The callback must follow the prototype <code>Function(*Task, std::span&lt;std::byte&gt; Data)</code></p>
@@ -345,7 +345,7 @@
     <field>
       <name>OutputCallback</name>
       <comment>This callback returns incoming data from STDOUT.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>FUNCTION</type>
       <description>
 <p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, std::span&lt;std::byte&gt; Data)</code>.  In Tiri the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>

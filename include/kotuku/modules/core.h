@@ -2109,6 +2109,7 @@ class objMetaClass : public Object {
    }
 
    inline ERR setFields(std::span<const struct FieldArray> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00101510, &Value);
    }
@@ -2186,6 +2187,7 @@ class objMetaClass : public Object {
    }
 
    inline ERR setMethods(std::span<const struct MethodEntry> Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00101510, &Value);
    }

@@ -421,7 +421,7 @@ processing.sleep()  -- Wait for completion
     <field>
       <name>SourceFormat</name>
       <comment>The decoded PCM format of the sound.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="I">Get/Init</access>
       <type>struct AudioFormat *</type>
       <description>
 <p>SourceFormat describes the sound's decoded PCM data as an !AudioFormat: its nominal sample rate, the representation of each sample, and the ordered channel layout.  For a sound loaded from a file, the format is resolved by the file parser or the decoder of a derived class during initialisation, and any value set beforehand is replaced.  Until then the format is unavailable and reading the field returns <code>ERR::FieldNotSet</code>.  For a new sound created with <code>SDF::NEW</code>, set SourceFormat before initialisation to describe the PCM data that the sound holds.</p>

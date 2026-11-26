@@ -310,6 +310,8 @@ static ERR IMAGEFX_SET_OutputMode(extImageFX *Self, FOM Value)
 -FIELD-
 Path: Path to an image file supported by the @Image class.
 
+Set this field before initialisation.  SVG export requires a path relative to the document folder.
+
 *********************************************************************************************************************/
 
 static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
@@ -349,48 +351,26 @@ static ERR IMAGEFX_SET_ResampleMethod(extImageFX *Self, VSM Value)
 /*********************************************************************************************************************
 
 -FIELD-
-XMLDef: Returns an SVG compliant XML string that describes the filter.
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string &Value)
+static ERR image_xml(extImageFX &Effect, filter_xml_element &Element)
 {
-   std::stringstream stream;
-
-   stream << "feImage";
-   if (not Self->ImageHref.empty()) {
-      write_filter_xml_attribute(stream, "xlink:href", Self->ImageHref);
-
-      stream.precision(std::numeric_limits<double>::max_digits10);
-      write_filter_xml_subregion(stream, *Self);
-
-      const auto ratio = Self->AspectRatio;
-      if (ratio != (ARF::X_MID|ARF::Y_MID|ARF::MEET)) {
-         stream << " preserveAspectRatio=\"";
-         if ((ratio & ARF::NONE) != ARF::NIL or (ratio & (ARF::MEET|ARF::SLICE)) IS ARF::NIL) stream << "none";
-         else {
-            if ((ratio & ARF::X_MIN) != ARF::NIL) stream << "xMin";
-            else if ((ratio & ARF::X_MAX) != ARF::NIL) stream << "xMax";
-            else stream << "xMid";
-
-            if ((ratio & ARF::Y_MIN) != ARF::NIL) stream << "YMin";
-            else if ((ratio & ARF::Y_MAX) != ARF::NIL) stream << "YMax";
-            else stream << "YMid";
-
-            stream << (((ratio & ARF::SLICE) != ARF::NIL) ? " slice" : " meet");
-         }
-         stream << '"';
-      }
-
-      if (Self->ResampleMethod IS VSM::LANCZOS) stream << " image-rendering=\"optimizeQuality\"";
-      if (Self->OutputMode IS FOM::HEIGHT) {
-         stream << " kotuku:outputMode=\"height\"";
-         write_map_channel(stream, "kotuku:", "heightChannel", Self->HeightChannel);
-      }
+   std::string_view reference = Effect.ImageHref;
+   if (reference.empty()) {
+      if (auto error = IMAGEFX_GET_Path(&Effect, reference); error != ERR::Okay) return error;
    }
+   if ((not safe_filter_path(reference)) or reference.starts_with('#')) return ERR::NoSupport;
 
-   Value = stream.str();
+   Element.Name = "feImage";
+   Element.attribute("xlink:href", reference);
+   write_filter_xml_aspect(Element, Effect.AspectRatio);
+   if (Effect.ResampleMethod IS VSM::LANCZOS) Element.attribute("image-rendering", "optimizeQuality");
+   else write_filter_xml_resampling(Element, Effect.ResampleMethod);
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+   write_filter_xml_channel(Element, "kotuku:heightChannel", Effect.HeightChannel);
    return ERR::Okay;
 }
 
@@ -410,7 +390,7 @@ static const FieldArray clImageFXFields[] = {
    { "OutputMode",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, IMAGEFX_SET_OutputMode, &clImageFXFOM },
    { "HeightChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_HeightChannel, &clImageFXMCH },
    { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
-   { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, IMAGEFX_GET_XMLDef },
+   { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    { "ImageHref",      FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, IMAGEFX_SET_ImageHref },
    END_FIELD
 };

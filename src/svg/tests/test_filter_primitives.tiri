@@ -417,7 +417,8 @@ end
       { input='edgeMode="wrap"', output='edgeMode="wrap"', alpha=85 },
       { input='kotuku:edgeMode="mirror"', output='kotuku:edgeMode="mirror"', alpha=141 }
    } do
-      local svg <close> = document(f'<feGaussianBlur stdDeviation="1 0" {mode.input}/>', content, 64, namespace_attrib)
+      local svg <close> = document(source .. f'<feGaussianBlur stdDeviation="1 0" {mode.input}/>',
+         content, 64, namespace_attrib, 'filterUnits="userSpaceOnUse"')
       local _, filter = check svg.scene.mtFindDef('f')
       local xml = filter.effectXML
       if mode.output is '' then
@@ -426,7 +427,7 @@ end
          assert(xml.find(mode.output, 0, true) != nil, f'Export lost {mode.output}')
       end
 
-      local loaded <close> = document(source .. xml, content, 64, namespace_attrib, 'filterUnits="userSpaceOnUse"')
+      local loaded <close> = document(xml, content, 64, namespace_attrib, 'filterUnits="userSpaceOnUse"')
       local bmp <close> = draw(loaded, 64)
       local p = mGfx.ReadRGBPixel(bmp, 10, 9)
       assert(p.alpha is mode.alpha, f'Expected alpha {mode.alpha} for {mode.input}, got {p.alpha}')
@@ -2623,9 +2624,10 @@ end
    local svg <close> = document(effects, TILE_CONTENT, 64, nil, 'filterUnits="userSpaceOnUse"')
    local original <close> = draw(svg, 64)
    local xml = effectXML(svg)
-   assert(xml.find('<feTile in="effect0"', 0, true) and xml.find('x="2" y="3" width="50" height="40"', 0, true),
+   assert(xml.find('<feTile in="effect1"', 0, true) and xml.find('x="2" y="3" width="50" height="40"', 0, true),
       f'XMLDef must write the tile input and subregion: {xml}')
-   assert(xml.find('<feOffset result="effect0" dx="0" dy="0" x="4" y="4" width="8" height="6"', 0, true),
+   assert(xml.find('<feOffset in="effect0" result="effect1" dx="0" dy="0" x="4" y="4" width="8" height="6"',
+      0, true),
       f'XMLDef must write the offset subregion: {xml}')
    local loaded <close> = document(xml, TILE_CONTENT, 64, nil, 'filterUnits="userSpaceOnUse"')
    local diff = imageDifference(original, draw(loaded, 64))
@@ -2720,4 +2722,133 @@ end
    local loaded <close> = document(xml, UNIT_SQUARE, 64, nil, attribs)
    local copy <close> = draw(loaded, 64)
    assert(imageDifference(original, copy) is 0, f'XMLDef must preserve the resolved kernel: {xml}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function saveFilterDocument(SVG:obj!):str
+   local exporter <close> = obj.new('svg', { target=SVG.scene })
+   local file <close> = obj.new('file', { flags=FL_READ|FL_WRITE|FL_NEW|FL_BUFFER })
+   check exporter.acSaveToObject(file, 0)
+   check file.acSeek(SEEK_START, 0)
+   local content = string.alloc(file.size)
+   local _, size = check file.acRead(content)
+   assert(size is file.size, 'The complete saved SVG must be readable')
+   return content
+end
+
+@Test function FilterGraphSurvivesSaveAndReload()
+   local effects = [[
+      <feFlood x="8" y="8" width="40" height="40" flood-color="#6f87af" result="paint"/>
+      <feTurbulence baseFrequency=".12 .08" numOctaves="2" seed="3" result="noise"/>
+      <feColorMatrix in="paint" kotuku:type="brightness" kotuku:values=".9" result="adjusted"/>
+      <feComponentTransfer in="adjusted" result="mapped">
+         <feFuncR type="table" tableValues="0.18 0.8 0.9"/>
+         <feFuncG type="discrete" tableValues="0.1 0.3 0.9"/>
+         <feFuncB type="gamma" exponent="2" amplitude=".9" offset=".04"/>
+         <feFuncA kotuku:type="mask" kotuku:mask="191"/>
+      </feComponentTransfer>
+      <feConvolveMatrix in="mapped" order="2 1" kernelMatrix="1 3" divisor="4"
+            kotuku:kernelUnitX="2.5" targetX="0" edgeMode="wrap" preserveAlpha="true"/>
+      <feDisplacementMap in2="noise" scale="4" xChannelSelector="R" yChannelSelector="G" result="shifted"/>
+      <feBlend in="shifted" in2="adjusted" mode="hard-light" result="blend"/>
+      <feComposite in="blend" in2="shifted" operator="arithmetic" k1=".2" k2=".6" k3=".3" k4=".05" result="mixed"/>
+      <feMerge x="4" y="6" width="44" height="46" color-interpolation-filters="linearRGB">
+         <feMergeNode in="noise"/>
+         <feMergeNode in="mixed"/>
+         <feMergeNode kotuku:source="none"/>
+         <feMergeNode in="SourceAlpha"/>
+      </feMerge>]]
+   local content = '<rect x="25" y="26" width="4" height="6" fill="tomato" filter="url(#f)"/>'
+   local svg <close> = document(effects, content, 64, KOTUKU_NS,
+      'filterUnits="userSpaceOnUse" filterRes="72 68" kotuku:opacity=".75" kotuku:aspectRatio="none"')
+   local _, original_filter = check svg.scene.mtFindDef('f')
+   local remap = obj.find(original_filter.children('RemapFX')[0])
+   assert(remap.xmlDef.startsWith('<feComponentTransfer>'), 'The individual transfer definition is a complete element')
+   local flood = obj.find(original_filter.children('FloodFX')[0])
+   assert(flood.xmlDef.startsWith('feFlood '), 'The simple XMLDef adapter returns an unwrapped tag')
+
+   local original <close> = draw(svg, 64)
+   local saved = saveFilterDocument(svg)
+   local restored <close> = obj.new('svg', { statement=saved })
+   local _, filter = check restored.scene.mtFindDef('f')
+   assert((filter.opacity is 0.75) and (filter.aspectRatio is VFA_NONE) and
+      (filter.resX is 72) and (filter.resY is 68), 'Filter settings must survive reload')
+   assert(filter.effectXML is original_filter.effectXML, 'Every primitive and binding must survive reload')
+   local reloaded <close> = draw(restored, 64)
+   assert(imageDifference(original, reloaded) is 0, 'Saving and loading must preserve the rendered pixels')
+
+   local blend = obj.find(filter.children('CompositeFX')[0])
+   assert(blend.operator is OP_HARD_LIGHT, 'The standard blend name must restore the operator')
+   local colour = obj.find(filter.children('ColourFX')[0])
+   assert((colour.mode is CM_BRIGHTNESS) and (#colour.values is 1), 'Colour mode and values must remain inspectable')
+   assert(colour.set('mode', CM_NONE) is ERR_NoFieldAccess, 'Colour mode must be set before initialisation')
+   local before = filter.effectXML
+   blend.operator = OP_OVER
+   assert(filter.effectXML != before, 'The reloaded filter must reflect runtime edits in its next save')
+end
+
+@Test function WaveAndVectorSourcesSurviveSaveAndReload()
+   local effects = [[
+      <feImage href="#wave_source" preserveAspectRatio="none" result="shape"/>
+      <kotuku:feWaveFunction n="3" l="2" m="1" scale=".2" resolution="24"
+            preserveAspectRatio="xMinYMin meet" result="custom">
+         <stop offset="0" stop-color="#001022"/>
+         <stop offset=".45" stop-color="rgb(18 24 251 / .8)"/>
+         <stop offset="1" stop-color="#ffeebb"/>
+      </kotuku:feWaveFunction>
+      <kotuku:feWaveFunction n="2" l="1" m="0" scale=".33" resolution="20"
+            colormap="cmap:rocket" x="12" y="10" width="16" height="27" result="mapped"/>
+      <feMerge><feMergeNode in="custom"/><feMergeNode in="mapped"/><feMergeNode in="shape"/></feMerge>]]
+   local content = '<defs><g id="wave_source"><rect x="8" y="8" width="6" height="26" fill="red"/></g></defs>' ..
+      '<rect width="64" height="64" filter="url(#f)"/>'
+   local svg <close> = document(effects, content, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local original <close> = draw(svg, 64)
+   local saved = saveFilterDocument(svg)
+   assert(saved.find('xlink:href="#wave_source"', 0, true), 'The vector source must keep its definition reference')
+   local restored <close> = obj.new('svg', { statement=saved })
+   assert(effectXML(restored) is effectXML(svg), 'Wave settings, gradient stops and the vector source must reload')
+   local reloaded <close> = draw(restored, 64)
+   assert(imageDifference(original, reloaded) is 0, 'The wave and vector sources must render identically after reload')
+end
+
+@Test function SavingPreservesStrictSVGLighting()
+   local effects = [[<feDiffuseLighting surfaceScale="9" lighting-color="#b9c2ff" diffuseConstant=".9">
+      <feDistantLight azimuth="30" elevation="50"/></feDiffuseLighting>]]
+   for opacity in values(array<double> { 1.0, 0.75 }) do
+      local content = '<circle cx="28" cy="30" r="18" filter="url(#f)"/>'
+      local svg <close> = document(effects, content, 64)
+      local _, filter = check svg.scene.mtFindDef('f')
+      filter.opacity = opacity
+      if opacity != 1.0 then lightingFX(svg).{ metalness=0.5, fresnel=0.04, wrap=0.25 } end
+      local original <close> = draw(svg, 64)
+      local saved = saveFilterDocument(svg)
+      if opacity is 1.0 then
+         assert(saved.find('xmlns:kotuku', 0, true) is nil, 'Standard filters can be saved as standalone SVG')
+      else
+         assert(saved.find('kotuku:compliance="svg2"', 0, true), 'An extension must preserve strict compliance')
+      end
+      local restored <close> = obj.new('svg', { statement=saved })
+      assert(restored.scene.compliance is VSC_SVG2, 'Loading the saved SVG must retain standard lighting')
+      if opacity != 1.0 then
+         local light = lightingFX(restored)
+         assert((light.metalness is 0.5) and (light.fresnel is 0.04) and (light.wrap is 0.25),
+            'The combined material settings must be available if the lighting type is changed')
+      end
+      local reloaded <close> = draw(restored, 64)
+      assert(imageDifference(original, reloaded) is 0, 'Strict lighting must survive SVG save and reload')
+   end
+end
+
+@Test function UnsupportedFilterResourceFailsSVGSave()
+   local svg <close> = document('<feFlood/>', nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local image = filter.new('ImageFX')
+   image.new('Bitmap', { width=4, height=4, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL })
+   check image.init()
+
+   local exporter <close> = obj.new('svg', { target=svg.scene })
+   local file <close> = obj.new('file', { flags=FL_WRITE|FL_NEW|FL_BUFFER })
+   assert(exporter.acSaveToObject(file, 0) is ERR_NoSupport, 'An in-memory image must fail export explicitly')
+   assert(file.size is 0, 'A failed filter export must leave the destination unwritten')
 end
