@@ -1144,7 +1144,6 @@ class GradientColours {
       GradientColours(const kt::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
       GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
-      double resolution;
       double gamma;
 
       static double ease(GEZ Easing, double Value) {
@@ -1213,11 +1212,9 @@ class GradientColours {
       }
 
       void apply_resolution(double Resolution) {
-         resolution = 1.0 - Resolution;
-
          // For a given block of colours, compute the average colour and apply it to the entire block.
 
-         int block_size = std::max(1, int(resolution * int(table.size())));
+         const int block_size = std::max(1, int((1.0 - Resolution) * int(table.size())));
          for (int i = 0; i < table.size(); i += block_size) {
 
             int red = 0, green = 0, blue = 0, alpha = 0, total = 0;

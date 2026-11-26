@@ -99,5 +99,5 @@ end
 @Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0xac19ab55, 0.05) end
 @Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0x48db21f8, 0.03) end
 @Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0xa4a0ba99, 0.05) end
-@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0xfeab4cb1, 0.1) end
+@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x1733e944, 0.1) end
 --@Test(priority=3) function Widgets()     crcTest('Widgets', 'widgets.rpl', 0xbf1021d5, 0.01) end

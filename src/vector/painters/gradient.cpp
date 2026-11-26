@@ -180,7 +180,6 @@ static agg::rgba8 gradient_table_colour(agg::rgba Colour, bool Linear, double Al
 GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
    double Gamma, GEZ Easing)
 {
-   resolution = 1.0;
    gamma = 1.0;
 
    const bool linear = ColourSpace IS VCS::LINEAR_RGB;
@@ -229,7 +228,6 @@ GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS Colo
 
 GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution, double Gamma, GEZ Easing)
 {
-   resolution = 1.0;
    gamma = 1.0;
 
    for (int i=0; i < std::ssize(Map); i++) {
@@ -504,18 +502,19 @@ static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
 {
    if ((Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
 
-   const bool changed = (Self->Resolution != Value);
+   const double old_resolution = Self->Resolution;
+   if (old_resolution IS Value) return ERR::Okay;
+
    Self->Resolution = Value;
 
-   if ((Self->Colours) and (Self->Colours->resolution != Value)) {
-      if (Self->initialised()) {
-         Self->modified();
-         if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) return error;
+   if (Self->Colours) {
+      if (auto error = rebuild_gradient_colours(Self); error != ERR::Okay) {
+         Self->Resolution = old_resolution;
+         return error;
       }
-      else Self->Colours->apply_resolution(Value);
    }
-   else if (changed and Self->initialised()) Self->modified();
 
+   if (Self->initialised()) Self->modified();
    return ERR::Okay;
 }
 
