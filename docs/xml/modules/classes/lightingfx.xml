@@ -50,8 +50,8 @@ Lr,Lg,Lb = RGB components of light
 <li><code>DEQUANTISE</code>: Heights are read as floating point values, and areas that vary by no more than one alpha level are
 smoothed to remove terracing.</li>
 <li><code>DEQUANTISE_WIDE</code>: Reconstruct a gradual slope across flat runs of up to sixteen pixels bracketed by successive
-one-level steps in 8-bit heights.  Enable this mode explicitly.  When both modes are enabled, <code>DEQUANTISE</code> smooths
-samples the wide pass leaves unresolved.</li>
+one-level steps in 8-bit heights.  When both modes are enabled, as they are in <code>ALL</code>, <code>DEQUANTISE</code> smooths only
+the samples that the wide pass leaves unresolved.</li>
 <li><code>SHARPEN</code>: Slopes are measured with a sharper gradient, which keeps more of the detail in features a few pixels
 wide.  When the bump map is magnified so that a kernel unit spans more than one pixel, the gradient blends back to the
 SVG kernel, reaching it at two pixels per unit.</li>
@@ -65,6 +65,10 @@ the light's elevation, and the edge of the shadow softens with distance from the
 by <fl>Penumbra</fl>.</li>
 <li><code>SPECULAR_AA</code>: Specular highlights are widened where the surface varies within a pixel, so that high exponents
 do not produce isolated bright pixels.</li>
+<li><code>LOCAL_SHADOWS</code>: Point and spot lights cast shadows, in the same way as <code>SHADOWS</code> for distant lights.  It does not
+depend on <code>SHADOWS</code>.  The width of the shadow edge is set by
+<fl>Penumbra</fl> at the centre of the filter region, so receivers nearer to the light have wider edges and further ones
+narrower.  A shadow can be cast from anywhere in the filter region, so the effect reads its entire input.</li>
 </list>
 <p>Flat surfaces and broad shapes are lit the same as the SVG algorithm, but shadows can darken any surface that lies beside a raised area.  Set the scene's Compliance to <code>SVG1</code> or <code>SVG2</code> for results that match the SVG specification exactly, or set <fl>Features</fl> to zero to use the SVG algorithm for this effect alone.  The enhanced pipeline is still used if <fl>Ambient</fl> or <fl>Intensity</fl> is set.</p>
 <p>An <fl>Ambient</fl> light can be added to the diffuse result.  It is not blocked by shadows, but it is reduced by <code>CAVITY</code> and by an ambient occlusion map bound to <fl>OcclusionMap</fl>.  The <fl>Intensity</fl> of the light multiplies its <fl>Colour</fl>.  For the diffuse and specular types the light is limited to full strength before it is coloured, as the SVG algorithm does with <fl>Constant</fl>, so a value above 1 cannot make a coloured light brighter than full strength.  Both fields require the enhanced pipeline.  A diffuse effect with ambient light and an active <fl>OcclusionMap</fl> uses that pipeline at any Compliance setting.</p>
@@ -221,7 +225,8 @@ as <fl>Colour</fl>, and its alpha is ignored.  Without the flag the light uses t
 <li><code>Intensity</code> multiplies the light's colour, as <fl>Intensity</fl> does for the first light.  It must be zero or greater.</li>
 <li><code>Range</code> is the distance at which a point or spot light fades to nothing, in the units of its z coordinate.  Zero
 means that the light is unlimited.  A distant light cannot have a range.</li>
-<li>The <code>NO_SHADOWS</code> flag stops a distant light from casting shadows.</li>
+<li>The <code>NO_SHADOWS</code> flag stops the light from casting shadows.  Distant lights cast shadows with the <code>SHADOWS</code>
+feature, and point and spot lights with <code>LOCAL_SHADOWS</code>; refer to <fl>Features</fl>.</li>
 </list>
 <p>A light with a range is brightest at the point of the surface nearest to it, where its strength is unchanged.  Its strength falls with the square of the distance from there, and is multiplied by a smooth window that reaches zero at the range.  If no point of the surface lies within range, the light has no effect.</p>
 <p>The options are extensions of the SVG lighting model.  They take effect when the enhanced pipeline is in use, which is always the case for the <code>COMBINED</code> type; refer to <fl>Features</fl>.  <method>SetDistantLight</method> and its siblings reset the options of the light they configure, except for the intensity of the first light.</p>
@@ -344,7 +349,8 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
       <type lookup="LFX">LFX</type>
       <description>
 <p>When the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene is <code>NONE</code>, the lighting algorithm is extended with the features enabled here.  The default is <code>ALL</code>.  Each feature can be disabled independently, for instance to remove shadows from content that is lit from a low angle, or to tune the appearance of an effect that was designed for the SVG algorithm.  Disabling <code>SHARPEN</code> measures slopes with the same kernel as the SVG algorithm.</p>
-<p>Both dequantisation modes apply to 8-bit alpha inputs only.  Use <code>DEQUANTISE_WIDE</code> for shallow slopes in existing 8-bit height maps.  Select it alone to keep isolated ledges and terraces without successive one-level steps at their original heights.</p>
+<p>Both dequantisation modes apply to 8-bit alpha inputs only.  Together they give the smoothest result: the wide pass reconstructs shallow slopes whose terraces are up to sixteen pixels long, and <code>DEQUANTISE</code> smooths what remains. Select <code>DEQUANTISE_WIDE</code> without <code>DEQUANTISE</code> to keep isolated ledges, and terraces without successive one-level steps, at their original heights.  Select <code>DEQUANTISE</code> without <code>DEQUANTISE_WIDE</code> to keep deliberate one-level steps that are no more than sixteen pixels apart, which the wide pass would turn into a ramp.</p>
+<p><code>SHADOWS</code> controls the shadows of distant lights and <code>LOCAL_SHADOWS</code> those of point and spot lights, so either can be used without the other.  A light's <code>NO_SHADOWS</code> option excludes it from both.</p>
 <p>The strength of <code>CAVITY</code> and <code>DETAIL</code>, and the width of the shadow edge, are set by the <fl>Cavity</fl>, <fl>Detail</fl> and <fl>Penumbra</fl> fields.</p>
 <p>If no features are enabled, and neither <fl>Ambient</fl> nor <fl>Intensity</fl> is set, the SVG algorithm is used without modification.  Features have no effect when the Compliance of the scene is <code>SVG1</code> or <code>SVG2</code>, except for the <code>COMBINED</code> type, which always uses the enhanced pipeline.  The SVG class renders its own scene with a Compliance of <code>SVG2</code>, unless the document declares a Kōtuku namespace, in which case the Compliance is <code>NONE</code> and the features apply.  In SVG markup, features are selected with the <code>kotuku:features</code> attribute of <code>feDiffuseLighting</code> and <code>feSpecularLighting</code>.</p>
 <types lookup="LFX"/>
@@ -599,11 +605,12 @@ means that the light is unlimited.  A distant light cannot have a range.</li>
   </fields>
   <types>
     <constants lookup="LFX" comment="Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features.">
-      <const name="ALL">Synonym for <code>DEQUANTISE | SHARPEN | CAVITY | DETAIL | SHADOWS | SPECULAR_AA</code></const>
+      <const name="ALL">Synonym for <code>DEQUANTISE | SHARPEN | CAVITY | DETAIL | SHADOWS | SPECULAR_AA | DEQUANTISE_WIDE | LOCAL_SHADOWS</code></const>
       <const name="CAVITY">Darken narrow creases and pits in proportion to their curvature.</const>
       <const name="DEQUANTISE">Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.</const>
       <const name="DEQUANTISE_WIDE">Reconstruct gently sloping terraces in 8-bit heights before DEQUANTISE smooths other samples.</const>
       <const name="DETAIL">Give fine detail more relief than broad shapes.</const>
+      <const name="LOCAL_SHADOWS">Point and spot lights cast shadows from raised areas of the surface.</const>
       <const name="SHADOWS">Distant lights cast shadows from raised areas of the surface.</const>
       <const name="SHARPEN">Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.</const>
       <const name="SPECULAR_AA">Widen specular highlights where the surface varies within a pixel, preventing sparkle at high exponents.</const>

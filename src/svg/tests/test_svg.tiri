@@ -395,7 +395,7 @@ end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xcb395553) end
 
 -- NOTE: These hashes are liable to change as lighting routines continue to improve
-@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0xf31a9414) end
+@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0x858bf024) end
 @Test global function LightingFresnel()    hashTestSVG('filters/lighting_fresnel.svg', 0x6512999f) end
 @Test global function LightingWrap()       hashTestSVG('filters/lighting_wrap.svg', 0x81c8e26c) end
 @Test global function LightingMatcap()     hashTestSVG('filters/lighting_matcap.svg', 0x3a0ab99d) end

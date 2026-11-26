@@ -103,6 +103,7 @@ struct filter_sampling {
    static constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
    filter_access Access = filter_access::POINTWISE; // How the effect reads its input relative to each output pixel
    double X = 0, Y = 0; // Conservative device-pixel reach.  Full input may apply along only one axis.
+   bool EntireRegion = false; // Process the full filter region, beyond the page margin, if it can be allocated
 };
 
 //********************************************************************************************************************
@@ -2015,9 +2016,10 @@ static ERR get_source_graphic(extVectorFilter *Self, filter_surface_view &Output
 //********************************************************************************************************************
 // Sum the sampling margins across the pipeline.  Reference tiles are included separately using their geometry.
 
-static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
+static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY, bool &EntireRegion)
 {
    ReachX = ReachY = 0;
+   EntireRegion = false;
    for (const auto &step : Plan.Steps) {
       const auto sampling = step.Operation.Sampling(step);
       const auto valid = [](const filter_sampling &Sampling) {
@@ -2033,6 +2035,7 @@ static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
       }
 
       double reach_x = sampling.X, reach_y = sampling.Y;
+      EntireRegion = EntireRegion or sampling.EntireRegion;
       for (const auto &input : step.Inputs) {
          if (input.Role != filter_input_role::NAMED) continue;
          const auto &reach = input.Contract.Sampling;
@@ -2045,6 +2048,7 @@ static ERR filter_reach(const filter_plan &Plan, double &ReachX, double &ReachY)
 
          reach_x = std::max(reach_x, reach.X);
          reach_y = std::max(reach_y, reach.Y);
+         EntireRegion = EntireRegion or reach.EntireRegion;
       }
 
       ReachX += reach_x;
@@ -2118,8 +2122,8 @@ static void include_tile_inputs(filter_render_context &Render, const TClipRectan
 
 //********************************************************************************************************************
 // Computes the processing rectangle in scene device pixels.  The filter region is extended by the pipeline's
-// sampling reach, limited to the visible page plus a bounded margin and the source tiles.  The local bitmap
-// transforms are derived from the result.
+// sampling reach.  Effects that need the whole filter region use it directly when its surface can be allocated.
+// Otherwise the processing rectangle is limited to the visible page plus a bounded margin and the source tiles.
 
 static ERR set_clip_region(extVectorFilter *Self)
 {
@@ -2174,15 +2178,32 @@ static ERR set_clip_region(extVectorFilter *Self)
    if ((page_width <= 0) or (page_height <= 0)) return ERR::NothingDone;
 
    double reach_x, reach_y;
-   if (auto error = filter_reach(render.Plan, reach_x, reach_y); error != ERR::Okay) return error;
-   const double max_margin = std::max(page_width, page_height);
+   bool entire_region;
+   if (auto error = filter_reach(render.Plan, reach_x, reach_y, entire_region); error != ERR::Okay) return error;
 
-   const double margin_x = std::ceil(std::min(reach_x, max_margin));
-   const double margin_y = std::ceil(std::min(reach_y, max_margin));
-   TClipRectangle<double> clip = { -margin_x, -margin_y, page_width + margin_x, page_height + margin_y };
-   clip.shrinking(region);
-   if (not clip.valid()) return ERR::NothingDone;
-   include_tile_inputs(render, region, margin_x, margin_y, clip);
+   // True if Clip can be allocated as a processing surface.
+
+   const auto allocatable = [](const TClipRectangle<double> &Clip) {
+      if ((Clip.left < std::numeric_limits<int>::min()) or (Clip.top < std::numeric_limits<int>::min()) or
+          (Clip.right > std::numeric_limits<int>::max()) or (Clip.bottom > std::numeric_limits<int>::max()) or
+          (Clip.width() > 0xffff) or (Clip.height() > 0xffff)) return false;
+      size_t bytes;
+      int stride;
+      return filter_surface_size(int(Clip.width()), int(Clip.height()), 4, bytes, stride) IS ERR::Okay;
+   };
+
+   // An effect that needs the whole filter region, such as shadows that can cross it, receives it if the surface can
+   // be allocated.  Otherwise the region is limited to the page and a margin, as for other effects.
+
+   auto clip = region;
+   if ((not entire_region) or (not allocatable(region))) {
+      const double max_margin = std::max(page_width, page_height);
+      const double margin_x = std::ceil(std::min(reach_x, max_margin));
+      const double margin_y = std::ceil(std::min(reach_y, max_margin));
+      clip.shrinking({ -margin_x, -margin_y, page_width + margin_x, page_height + margin_y });
+      if (not clip.valid()) return ERR::NothingDone;
+      include_tile_inputs(render, region, margin_x, margin_y, clip);
+   }
 
    if ((clip.left < std::numeric_limits<int>::min()) or (clip.top < std::numeric_limits<int>::min()) or
        (clip.right > std::numeric_limits<int>::max()) or (clip.bottom > std::numeric_limits<int>::max()) or
