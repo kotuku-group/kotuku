@@ -190,16 +190,17 @@ end
 -- A black -> white horizontal ramp under the requested colour space.  The left edge is black, the right edge white,
 -- so the midpoint grey level reveals whether interpolation happened in sRGB or linear space.
 
-function newRampScene(ColourSpace)
+function newRampScene(ColourSpace, RightGrey)
+   local grey = RightGrey or 1.0
    local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
    vertices.insert(vertex(0,   0,   0.0, 0.0, 0.0)) -- top-left  = black
-   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
+   vertices.insert(vertex(100, 0,   grey, grey, grey)) -- top-right = grey
    vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
-   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
-   vertices.insert(vertex(100, 100, 1.0, 1.0, 1.0)) -- bot-right = white
+   vertices.insert(vertex(100, 0,   grey, grey, grey)) -- top-right = grey
+   vertices.insert(vertex(100, 100, grey, grey, grey)) -- bot-right = grey
    vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
 
    local gradient = scene.new('GradientGouraud', {
@@ -590,4 +591,20 @@ end
    assert((p.green > 120) and (p.green < 155),
       'Two translucent layers should source-over composite in order (green ' .. p.green .. ')')
    assert(p.blue > 215, 'Top blue layer should remain dominant (got ' .. p.blue .. ')')
+end
+
+@Test function DarkLinearRGBRampRetainsGreyLevels()
+   local scene = newRampScene(VCS_LINEAR_RGB, 20 / 255)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local levels = { }
+   for x in {0 to 100} do
+      local sample = mGfx.ReadRGBPixel(bmp, x, 10).red
+      assert(sample <= 20, f'Linear RGB ramp exceeded the right vertex colour at x={x}, got {sample}')
+      levels[sample] = true
+   end
+
+   assert(table.size(levels) >= 19, f'Expected at least 19 shades of grey, got {table.size(levels)}')
+   assert(levels[20], 'Expected the ramp to reach the right vertex colour')
 end

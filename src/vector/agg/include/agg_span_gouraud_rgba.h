@@ -17,7 +17,6 @@
 
 #include "agg_basics.h"
 #include "agg_color_rgba.h"
-#include "agg_dda_line.h"
 #include "agg_span_gouraud.h"
 
 namespace agg {
@@ -105,126 +104,53 @@ public:
         m_rgba3.init(coord[1], coord[2]);
     }
 
-    void generate(color_type* span, int x, int y, unsigned len)
+    template<class Output, class Convert>
+    void generate(Output *Span, int X, int Y, unsigned Length, Convert ConvertColour)
     {
-        m_rgba1.calc(y);//(m_rgba1.m_1dy > 2) ? m_rgba1.m_y1 : y);
-        const rgba_calc* pc1 = &m_rgba1;
-        const rgba_calc* pc2 = &m_rgba2;
+        m_rgba1.calc(Y);
+        const rgba_calc *left = &m_rgba1;
+        const rgba_calc *right = &m_rgba2;
 
-        if (y <= m_y2) { // Bottom part of the triangle (first subtriangle)
-            m_rgba2.calc(y + m_rgba2.m_1dy);
-        }
-        else { // Upper part (second subtriangle)
-            m_rgba3.calc(y - m_rgba3.m_1dy);
-            pc2 = &m_rgba3;
+        if (Y <= m_y2) m_rgba2.calc(Y + m_rgba2.m_1dy);
+        else {
+            m_rgba3.calc(Y - m_rgba3.m_1dy);
+            right = &m_rgba3;
         }
 
-        if (m_swap) {
-            // It means that the triangle is oriented clockwise,
-            // so that we need to swap the controlling structures
-            const rgba_calc* t = pc2;
-            pc2 = pc1;
-            pc1 = t;
+        if (m_swap) std::swap(left, right);
+
+        // Keep fractional precision for shallow slopes without rounding at each horizontal step.
+        const double width = std::max(int64_t(1), std::abs(int64_t(right->m_x) - left->m_x));
+        const double start = double(X) * subpixel_scale - left->m_x;
+        const int first[4] = { left->m_r, left->m_g, left->m_b, left->m_a };
+        const int last[4] = { right->m_r, right->m_g, right->m_b, right->m_a };
+        double position[4], step[4];
+        for (int channel=0; channel < 4; ++channel) {
+            const double slope = (last[channel] - first[channel]) / width;
+            position[channel] = first[channel] + slope * start;
+            step[channel] = slope * subpixel_scale;
         }
 
-        // Get the horizontal length with subpixel accuracy and protect it from division by zero
-        int nlen = abs(pc2->m_x - pc1->m_x);
-        if (nlen <= 0) nlen = 1;
+        for (unsigned i=0; i < Length; i++) {
+            int64_t red = int64_t(position[0] + 0.5);
+            int64_t green = int64_t(position[1] + 0.5);
+            int64_t blue = int64_t(position[2] + 0.5);
+            int64_t alpha = int64_t(position[3] + 0.5);
 
-        dda_line_interpolator<14> r(pc1->m_r, pc2->m_r, nlen);
-        dda_line_interpolator<14> g(pc1->m_g, pc2->m_g, nlen);
-        dda_line_interpolator<14> b(pc1->m_b, pc2->m_b, nlen);
-        dda_line_interpolator<14> a(pc1->m_a, pc2->m_a, nlen);
+            // Antialiasing can extend the span beyond the interpolated edges.
+            constexpr int64_t limit = color_type::base_mask;
+            if ((red | green | blue | alpha) & ~limit) {
+                red   = std::clamp(red,   int64_t(0), limit);
+                green = std::clamp(green, int64_t(0), limit);
+                blue  = std::clamp(blue,  int64_t(0), limit);
+                alpha = std::clamp(alpha, int64_t(0), limit);
+            }
 
-        // Calculate the starting point of the gradient with subpixel
-        // accuracy and correct (roll back) the interpolators.
-        // This operation will also clip the beginning of the span
-        // if necessary.
-
-        int start = pc1->m_x - (x << subpixel_shift);
-        r    -= start;
-        g    -= start;
-        b    -= start;
-        a    -= start;
-        nlen += start;
-
-        int vr, vg, vb, va;
-        enum lim_e { lim = color_type::base_mask };
-
-        // Beginning part of the span. Since we rolled back the interpolators, the color values may have overflow.
-        // So that, we render the beginning part with checking for overflow. It lasts until "start" is positive;
-        // typically it's 1-2 pixels, but may be more in some cases.
-
-        while (len and start > 0) {
-            vr = r.y();
-            vg = g.y();
-            vb = b.y();
-            va = a.y();
-            if (vr < 0) vr = 0;
-            if (vr > lim) vr = lim;
-            if (vg < 0) vg = 0;
-            if (vg > lim) vg = lim;
-            if (vb < 0) vb = 0;
-            if (vb > lim) vb = lim;
-            if (va < 0) va = 0;
-            if (va > lim) va = lim;
-            span->r = (value_type)vr;
-            span->g = (value_type)vg;
-            span->b = (value_type)vb;
-            span->a = (value_type)va;
-            r     += subpixel_scale;
-            g     += subpixel_scale;
-            b     += subpixel_scale;
-            a     += subpixel_scale;
-            nlen  -= subpixel_scale;
-            start -= subpixel_scale;
-            ++span;
-            --len;
-        }
-
-        // Middle part, no checking for overflow.  Actual spans can be longer than the calculated length
-        // because of anti-aliasing, thus, the interpolators can overflow. But while "nlen" is positive we are safe.
-
-        while (len and nlen > 0) {
-            span->r = (value_type)r.y();
-            span->g = (value_type)g.y();
-            span->b = (value_type)b.y();
-            span->a = (value_type)a.y();
-            r    += subpixel_scale;
-            g    += subpixel_scale;
-            b    += subpixel_scale;
-            a    += subpixel_scale;
-            nlen -= subpixel_scale;
-            ++span;
-            --len;
-        }
-
-        // Ending part; checking for overflow.
-        // Typically it's 1-2 pixels, but may be more in some cases.
-
-        while(len) {
-            vr = r.y();
-            vg = g.y();
-            vb = b.y();
-            va = a.y();
-            if (vr < 0) vr = 0;
-            if (vr > lim) vr = lim;
-            if (vg < 0) vg = 0;
-            if (vg > lim) vg = lim;
-            if (vb < 0) vb = 0;
-            if (vb > lim) vb = lim;
-            if (va < 0) va = 0;
-            if (va > lim) va = lim;
-            span->r = (value_type)vr;
-            span->g = (value_type)vg;
-            span->b = (value_type)vb;
-            span->a = (value_type)va;
-            r += subpixel_scale;
-            g += subpixel_scale;
-            b += subpixel_scale;
-            a += subpixel_scale;
-            ++span;
-            --len;
+            Span[i] = ConvertColour(value_type(red), value_type(green), value_type(blue), value_type(alpha));
+            position[0] += step[0];
+            position[1] += step[1];
+            position[2] += step[2];
+            position[3] += step[3];
         }
     }
 

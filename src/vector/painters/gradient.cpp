@@ -151,92 +151,117 @@ static agg::rgba gradient_stop_colour(const FRGB &Colour, bool Linear)
    return { decode(Colour.Red), decode(Colour.Green), decode(Colour.Blue), Colour.Alpha };
 }
 
-static agg::rgba8 gradient_table_colour(agg::rgba Colour, bool Linear, double Alpha)
+static agg::rgba interpolate_ramp_colour(const agg::rgba &Start, const agg::rgba &End, double Blend)
+{
+   return { std::lerp(Start.r, End.r, Blend), std::lerp(Start.g, End.g, Blend),
+      std::lerp(Start.b, End.b, Blend), std::lerp(Start.a, End.a, Blend) };
+}
+
+static void store_colour_ramp(GRADIENT_TABLE &Table, std::array<agg::rgba, 256> &Ramp, bool Linear, double Alpha,
+   double Resolution)
 {
    auto encode = [](double Value) {
-      const double magnitude = std::abs(Value);
-      if (magnitude <= 0.0031308) return 12.92 * Value;
-      return std::copysign(1.055 * std::pow(magnitude, 1.0 / 2.4) - 0.055, Value);
+      if (Value <= 0.0031308) return 12.92 * Value;
+      return 1.055 * std::pow(Value, 1.0 / 2.4) - 0.055;
    };
 
-   if (Linear) {
-      Colour.r = encode(Colour.r);
-      Colour.g = encode(Colour.g);
-      Colour.b = encode(Colour.b);
+   auto unit = [](double Value) { return (Value > 0.0) ? std::min(Value, 1.0) : 0.0; };
+
+   for (auto &colour : Ramp) {
+      colour.r = unit(Linear ? encode(colour.r) : colour.r);
+      colour.g = unit(Linear ? encode(colour.g) : colour.g);
+      colour.b = unit(Linear ? encode(colour.b) : colour.b);
+      colour.a = unit(colour.a * Alpha);
    }
 
-   auto to_byte = [](double Value) -> unsigned {
-      if (not (Value > 0.0)) return 0;
-      return agg::uround(std::min(Value, 1.0) * 255.0);
-   };
+   // Preserve the existing RMS banding in sRGB and straight alpha, but average before rounding to bytes.
+   const int block_size = std::max(1, int((1.0 - Resolution) * Ramp.size()));
+   for (int i=0; i < std::ssize(Ramp); i += block_size) {
+      const int end = std::min(i + block_size, int(Ramp.size()));
+      auto colour = Ramp[i];
+      if (end - i > 1) {
+         agg::rgba sum(0.0, 0.0, 0.0, 0.0);
+         for (int j=i; j < end; j++) {
+            const auto &sample = Ramp[j];
+            sum.r += sample.r * sample.r;
+            sum.g += sample.g * sample.g;
+            sum.b += sample.b * sample.b;
+            sum.a += sample.a * sample.a;
+         }
+         const double count = end - i;
+         colour = { std::sqrt(sum.r / count), std::sqrt(sum.g / count), std::sqrt(sum.b / count),
+            std::sqrt(sum.a / count) };
+      }
 
-   return { to_byte(Colour.r), to_byte(Colour.g), to_byte(Colour.b), to_byte(Colour.a * Alpha) };
+      const agg::rgba8 pixel(agg::uround(colour.r * 255.0), agg::uround(colour.g * 255.0),
+         agg::uround(colour.b * 255.0), agg::uround(colour.a * 255.0));
+      for (int j=i; j < end; j++) Table[j] = pixel;
+   }
 }
 
 //********************************************************************************************************************
-// Constructor for the GradientColours class.  This expects to be called whenever the Gradient class updates the
-// Stops array.
 
 GradientColours::GradientColours(const kt::vector<GradientStop> &Stops, VCS ColourSpace, double Alpha, double Resolution,
    double Gamma, GEZ Easing)
 {
-   gamma = 1.0;
-
    const bool linear = ColourSpace IS VCS::LINEAR_RGB;
-   int stop, i1, i2, i;
+   std::array<agg::rgba, 256> ramp;
+   ramp.fill(agg::rgba(0, 0, 0, 0));
 
-   for (stop=0; stop < std::ssize(Stops)-1; stop++) {
-      i1 = int(255.0 * Stops[stop].Offset);
-      if (i1 < 0) i1 = 0;
-      else if (i1 > 255) i1 = 255;
-
-      i2 = int(255.0 * Stops[stop+1].Offset);
-      if (i2 < 0) i2 = 0;
-      else if (i2 > 255) i2 = 255;
-
-      const auto begin = gradient_stop_colour(Stops[stop].RGB, linear);
-      const auto end = gradient_stop_colour(Stops[stop+1].RGB, linear);
-
-      if ((stop IS 0) and (i1 > 0)) {
-         const auto colour = gradient_table_colour(begin, linear, Alpha);
-         for (i=0; i < i1; i++) table[i] = colour;
-      }
-
-      if (i1 < i2) {
-         for (i=i1; i <= i2; i++) {
-            const double blend = ease(Easing, double(i - i1) / double(i2 - i1));
-            // SVG gradients interpolate straight RGB and alpha independently.
-            table[i] = gradient_table_colour({
-               std::lerp(begin.r, end.r, blend),
-               std::lerp(begin.g, end.g, blend),
-               std::lerp(begin.b, end.b, blend),
-               std::lerp(begin.a, end.a, blend)
-            }, linear, Alpha);
-         }
-      }
-      else if (i1 IS i2) table[i1] = gradient_table_colour(end, linear, Alpha);
-
-      if ((stop IS std::ssize(Stops)-2) and (i2 < 255)) {
-         const auto colour = gradient_table_colour(end, linear, Alpha);
-         for (i=i2; i <= 255; i++) table[i] = colour;
-      }
+   std::array<double, 256> positions;
+   for (int i=0; i < std::ssize(positions); i++) {
+      positions[i] = (Gamma IS 1.0) ? double(i) : std::pow(double(i) / 255.0, Gamma) * 255.0;
    }
 
-   apply_gamma(Gamma);
-   if (Resolution < 1) apply_resolution(Resolution);
+   auto stop_index = [](double Offset) {
+      return (Offset > 0.0) ? int(255.0 * std::min(Offset, 1.0)) : 0;
+   };
+
+   // Evaluate the original segments at the gamma-remapped positions. Resampling adjacent table entries
+   // would blend across a hard stop and apply the sRGB transfer function before interpolation.
+   auto first = positions.begin();
+   auto begin = gradient_stop_colour(Stops.front().RGB, linear);
+   for (int stop=0; stop < std::ssize(Stops)-1; stop++) {
+      const int i1 = stop_index(Stops[stop].Offset);
+      const int i2 = stop_index(Stops[stop + 1].Offset);
+      const auto end = gradient_stop_colour(Stops[stop + 1].RGB, linear);
+      auto start = std::lower_bound(first, positions.end(), double(i1));
+      if (stop IS 0) std::fill(ramp.begin(), ramp.begin() + (start - first), begin);
+
+      if (i1 < i2) {
+         const auto finish = std::upper_bound(start, positions.end(), double(i2));
+         for (auto pos=start; pos != finish; ++pos) {
+            const double blend = ease(Easing, (*pos - i1) / (i2 - i1));
+            ramp[pos - first] = interpolate_ramp_colour(begin, end, blend);
+         }
+      }
+      else if (i1 IS i2) {
+         for (auto pos=start; (pos != positions.end()) and (*pos IS i1); ++pos) ramp[pos - first] = end;
+      }
+
+      if (stop IS std::ssize(Stops)-2) {
+         auto finish = std::lower_bound(first, positions.end(), double(i2));
+         std::fill(ramp.begin() + (finish - first), ramp.end(), end);
+      }
+      begin = end;
+   }
+
+   store_colour_ramp(table, ramp, linear, Alpha, Resolution);
 }
 
 GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolution, double Gamma, GEZ Easing)
 {
-   gamma = 1.0;
-
-   for (int i=0; i < std::ssize(Map); i++) {
-      table[i] = agg::rgba8(Map[i]);
+   std::array<agg::rgba, 256> ramp;
+   for (int i=0; i < std::ssize(ramp); i++) {
+      const double position = (Gamma IS 1.0) ? double(i) / 255.0 : std::pow(double(i) / 255.0, Gamma);
+      const double source = ((Gamma IS 1.0) and (Easing IS GEZ::LINEAR)) ? double(i) : ease(Easing, position) * 255.0;
+      const int index = int(source);
+      const auto begin = gradient_stop_colour(Map[index], false);
+      const auto end = gradient_stop_colour(Map[std::min(index + 1, 255)], false);
+      ramp[i] = interpolate_ramp_colour(begin, end, source - index);
    }
 
-   apply_easing(Easing);
-   apply_gamma(Gamma);
-   if (Resolution < 1) apply_resolution(Resolution);
+   store_colour_ramp(table, ramp, false, 1.0, Resolution);
 }
 
 static ERR rebuild_gradient_colours(extGradient *Self)
@@ -395,7 +420,7 @@ gradient unchanged.
 
 static ERR GRADIENT_SET_Gamma(extGradient *Self, double Value)
 {
-   if (Value <= 0) return ERR::OutOfRange;
+   if ((not std::isfinite(Value)) or (Value <= 0)) return ERR::OutOfRange;
 
    const double old_gamma = Self->Gamma;
    if (old_gamma IS Value) return ERR::Okay;
@@ -500,7 +525,7 @@ Resolution is at its maximum when this value is set to 1 (the default).
 
 static ERR GRADIENT_SET_Resolution(extGradient *Self, double Value)
 {
-   if ((Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
+   if ((not std::isfinite(Value)) or (Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
 
    const double old_resolution = Self->Resolution;
    if (old_resolution IS Value) return ERR::Okay;

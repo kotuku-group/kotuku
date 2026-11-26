@@ -411,7 +411,7 @@ struct DiffusionCurve {
 
 struct GouraudTriangle {
    double x[3], y[3];      // Device-space vertex positions
-   agg::rgba8 colour[3];   // Vertex colours, fill opacity folded into alpha.  Encoding follows the cache's
+   agg::rgba16 colour[3];   // Vertex colours, fill opacity folded into alpha.  Encoding follows the cache's
                            // ColourSpace: sRGB-encoded for VCS::SRGB, linear-decoded for VCS::LINEAR_RGB.
 };
 
@@ -427,7 +427,7 @@ struct GouraudCache {
    uint64_t MeshHash = 0;       // Fingerprint of the source mesh (positions, colours, indices)
    double Opacity = -1.0;       // Fill opacity the colours were built with (-1 => never built)
    VCS ColourSpace = VCS::INHERIT; // Colour space the vertex colours were encoded for
-   bool Translucent = false;    // Any vertex alpha < 255; may select the seamless compound render path
+   bool Translucent = false;    // Any vertex alpha below full opacity; may select the seamless compound render path
    bool Overlapping = false;    // Triangle interiors overlap; requires ordered source-over compositing
    bool Valid = false;
 
@@ -635,9 +635,9 @@ class extGradientDiffusion : public extGradient {
    std::vector<DiffusionCurve> Curves;
 
    // Solved colour field, cached until the fingerprint changes (cf. ContourCache/WorleyCache).  The buffer holds
-   // premultiplied rgba8 texels sized FieldWidth * FieldHeight, optionally in linear RGB space.  Sampling stays
+   // premultiplied rgba16 texels sized FieldWidth * FieldHeight, optionally in linear RGB space.  Sampling stays
    // premultiplied until the filtered span is converted for rendering, avoiding fringes around translucent curves.
-   std::vector<agg::rgba8> FieldBuffer;
+   std::vector<agg::rgba16> FieldBuffer;
    int FieldWidth = 0, FieldHeight = 0;
    uint64_t FieldHash = 0; // Fingerprint of the curves, grid dimensions, solve rectangle and colour space
 
@@ -1144,7 +1144,6 @@ class GradientColours {
       GradientColours(const kt::vector<GradientStop> &, VCS, double, double, double = 1.0, GEZ = GEZ::LINEAR);
       GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
-      double gamma;
 
       static double ease(GEZ Easing, double Value) {
          switch (Easing) {
@@ -1177,59 +1176,6 @@ class GradientColours {
             case GEZ::LINEAR:
             default:
                return Value;
-         }
-      }
-
-      void apply_easing(GEZ Easing) {
-         if (Easing IS GEZ::LINEAR) return;
-
-         GRADIENT_TABLE src = table;
-
-         for (int i=0; i < std::ssize(table); i++) {
-            const double source = ease(Easing, double(i) / 255.0) * 255.0;
-            const int index = std::clamp(int(source), 0, 255);
-            const double blend = source - double(index);
-
-            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
-            else table[i] = src[255];
-         }
-      }
-
-      void apply_gamma(double Gamma) {
-         gamma = Gamma;
-         if (Gamma IS 1.0) return;
-
-         GRADIENT_TABLE src = table;
-
-         for (int i=0; i < std::ssize(table); i++) {
-            const double source = pow(double(i) / 255.0, Gamma) * 255.0;
-            const int index = std::clamp(int(source), 0, 255);
-            const double blend = source - double(index);
-
-            if (index < 255) table[i] = src[index].gradient(src[index + 1], blend);
-            else table[i] = src[255];
-         }
-      }
-
-      void apply_resolution(double Resolution) {
-         // For a given block of colours, compute the average colour and apply it to the entire block.
-
-         const int block_size = std::max(1, int((1.0 - Resolution) * int(table.size())));
-         for (int i = 0; i < table.size(); i += block_size) {
-
-            int red = 0, green = 0, blue = 0, alpha = 0, total = 0;
-            for (int b=i; (b < i + block_size) and (b < table.size()); b++, total++) {
-               red   += table[b].r * table[b].r;
-               green += table[b].g * table[b].g;
-               blue  += table[b].b * table[b].b;
-               alpha += table[b].a * table[b].a;
-            }
-
-            auto col = agg::rgba8{
-               uint8_t(sqrt(red/total)), uint8_t(sqrt(green/total)), uint8_t(sqrt(blue/total)), uint8_t(sqrt(alpha/total))
-            };
-
-            for (int b = i; (b < i + block_size) and (b < table.size()); b++) table[b] = col;
          }
       }
 };

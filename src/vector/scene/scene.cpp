@@ -34,8 +34,6 @@ Vector definitions can be saved and loaded from permanent storage by using the @
 #include "agg_conv_smooth_poly1.h"
 #include "agg_span_gradient.h"
 #include "agg_span_gouraud_rgba.h"
-#include "agg_span_gouraud_rgba_linear.h"
-#include "agg_span_gouraud_rgba_quantise.h"
 #include "agg_rasterizer_compound_aa.h"
 #include "agg_pixfmt_amask_adaptor.h"
 #include "agg_conv_contour.h"
