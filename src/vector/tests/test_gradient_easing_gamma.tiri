@@ -8,13 +8,13 @@ function newBitmap(Width, Height)
    return bmp
 end
 
-function stop(Offset, R, G, B)
+function stop(Offset, R, G, B, Alpha)
    local s = struct.new('GradientStop')
    s.offset    = Offset
    s.rgb.red   = R
    s.rgb.green = G
    s.rgb.blue  = B
-   s.rgb.alpha = 1.0
+   s.rgb.alpha = Alpha is nil ? 1.0 : Alpha
    return s
 end
 
@@ -34,15 +34,15 @@ function newLinearScene(Options, RectOptions)
       x1=0,
       y1=0,
       x2=100,
-      y2=0,
-      stops=blackWhiteStops()
+      y2=0
    }
 
    for key, value in pairs(Options) do
-      gradient_options[key] = value
+      if key != 'stops' then gradient_options[key] = value end
    end
 
    local gradient = scene.new('GradientLinear', gradient_options)
+   gradient.stops = Options.stops ?? blackWhiteStops()
    check scene.mtAddDef('linear', gradient)
 
    local rect_options = { x=0, y=0, width='100%', height='100%', fill='url(#linear)' }
@@ -90,6 +90,59 @@ function sampleMiddleRed(Scene):num
    local bmp = newBitmap(100, 20)
    drawScene(Scene, bmp)
    return mGfx.ReadRGBPixel(bmp, 50, 10).red
+end
+
+@Test function DarkLinearRGBRampUsesEveryGreyLevel()
+   local scene = newLinearScene({
+      colourSpace=VCS_LINEAR_RGB,
+      stops={ stop(0, 0, 0, 0), stop(1, 20 / 255, 20 / 255, 20 / 255) }
+   })
+   local bmp = newBitmap(100, 20)
+   drawScene(scene, bmp)
+
+   local levels = { }
+   for x in {0 into 99} do
+      local p = mGfx.ReadRGBPixel(bmp, x, 10)
+      assert(p.red is p.green and p.red is p.blue, f'Expected neutral grey at x={x}')
+      assert(p.red <= 20, f'The dark ramp exceeded sRGB level 20 at x={x}, got {p.red}')
+      levels[p.red] = true
+   end
+
+   assert(mGfx.ReadRGBPixel(bmp, 99, 10).red is 20, 'The dark ramp must end at sRGB level 20')
+   for level in {0 into 20} do
+      assert(levels[level], f'The linearRGB ramp skipped sRGB level {level}')
+   end
+end
+
+@Test function SRGBRoundsAfterInterpolatingFractionalStops()
+   local scene = newLinearScene({
+      colourSpace=VCS_SRGB,
+      stops={ stop(0, 10.6 / 255, 0, 0), stop(1, 11.6 / 255, 0, 0) }
+   })
+   local bmp = newBitmap(100, 20)
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 60, 10)
+   assert(p.red is 11, f'Expected red level 11 at 60%, got {p.red}')
+end
+
+@Test function TransparentStopRetainsItsColourDuringInterpolation()
+   for colour_space in values({ VCS_SRGB, VCS_LINEAR_RGB }) do
+      local scene = newLinearScene({
+         colourSpace=colour_space,
+         stops={ stop(0, 1, 0, 0), stop(1, 0, 0, 1, 0) }
+      })
+      local bmp = obj.new('bitmap', {
+         width=100, height=20, bitsPerPixel=32, bkgd='255,255,255,255', blendMode=BLM_SRGB
+      })
+      drawScene(scene, bmp)
+
+      local p = mGfx.ReadRGBPixel(bmp, 50, 10)
+      local expected = colour_space is VCS_SRGB ? 191 : 221
+      assert(math.abs(p.red - expected) <= 3 and math.abs(p.blue - expected) <= 3 and
+         math.abs(p.green - 128) <= 3,
+         f'Expected straight-alpha midpoint in colour space {colour_space}, got {p.red},{p.green},{p.blue}')
+   end
 end
 
 @Test function LinearEasingMatchesDefault()

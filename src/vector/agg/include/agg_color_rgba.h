@@ -269,23 +269,6 @@ namespace agg {
             return ret;
         }
 
-        inline self_type linear_gradient(const self_type& c, double k) const {
-            self_type ret;
-            calc_type ik = uround(k * int(base_scale));
-            calc_type r_linear = glLinearRGB.convert(r);
-            calc_type g_linear = glLinearRGB.convert(g);
-            calc_type b_linear = glLinearRGB.convert(b);
-            calc_type c_r_linear = glLinearRGB.convert(c.r);
-            calc_type c_g_linear = glLinearRGB.convert(c.g);
-            calc_type c_b_linear = glLinearRGB.convert(c.b);
-
-            ret.r = glLinearRGB.invert(value_type(r_linear + (((c_r_linear - r_linear) * ik) >> base_shift)));
-            ret.g = glLinearRGB.invert(value_type(g_linear + (((c_g_linear - g_linear) * ik) >> base_shift)));
-            ret.b = glLinearRGB.invert(value_type(b_linear + (((c_b_linear - b_linear) * ik) >> base_shift)));
-            ret.a = value_type(calc_type(a) + (((calc_type(c.a) - a) * ik) >> base_shift));
-            return ret;
-        }
-
         inline void add(const self_type& c, unsigned cover) {
             calc_type cr, cg, cb, ca;
             if (cover == cover_mask) {
