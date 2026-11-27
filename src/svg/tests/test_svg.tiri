@@ -397,10 +397,10 @@ end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0xcb395553) end
 
 -- NOTE: These hashes are liable to change as lighting routines continue to improve
-@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0x4508a801) end
-@Test global function LightingFresnel()    hashTestSVG('filters/lighting_fresnel.svg', 0x6d0e035b) end
+@Test global function LightingMetalness()  hashTestSVG('filters/lighting_metalness.svg', 0x6c585b97) end
+@Test global function LightingFresnel()    hashTestSVG('filters/lighting_fresnel.svg', 0x18d1c95d) end
 @Test global function LightingWrap()       hashTestSVG('filters/lighting_wrap.svg', 0x5a6693b0) end
-@Test global function LightingMatcap()     hashTestSVG('filters/lighting_matcap.svg', 0xbdd708d7) end
+@Test global function LightingMatcap()     hashTestSVG('filters/lighting_matcap.svg', 0x8017ac07) end
 @Test global function LightingNormalInput() hashTestSVG('filters/lighting_normal_input.svg', 0xcadcd45f, true) end
 
 -- Turbulence snapshots include sampling in user coordinates through the inverse transform at pixel centres.

@@ -425,20 +425,24 @@ function buildScene()
       x      = cmbColours.viewport.x + cmbColours.viewport.width + 10,
       y      = 10,
       items  = array<table> {
+         { label='Circular In' }, { label='Circular In Out' }, { label='Circular Out' },
          { label='Cubic In' }, { label='Cubic In Out' }, { label='Cubic Out' },
          { label='In' }, { label='In Out' }, { label='Linear' }, { label='Out' }
       },
       events = {
          activate = function(Item:table!)
             glEasing = choose Item.label from
-               'Cubic In'     -> GEZ_CUBIC_IN
-               'Cubic In Out' -> GEZ_CUBIC_IN_OUT
-               'Cubic Out'    -> GEZ_CUBIC_OUT
-               'In'           -> GEZ_IN
-               'In Out'       -> GEZ_IN_OUT
-               'Linear'       -> GEZ_LINEAR
-               'Out'          -> GEZ_OUT
-               else           -> GEZ_LINEAR
+               'Circular In'     -> GEZ_CIRCLE_IN
+               'Circular In Out' -> GEZ_CIRCLE_IN_OUT
+               'Circular Out'    -> GEZ_CIRCLE_OUT
+               'Cubic In'        -> GEZ_CUBIC_IN
+               'Cubic In Out'    -> GEZ_CUBIC_IN_OUT
+               'Cubic Out'       -> GEZ_CUBIC_OUT
+               'In'              -> GEZ_IN
+               'In Out'          -> GEZ_IN_OUT
+               'Linear'          -> GEZ_LINEAR
+               'Out'             -> GEZ_OUT
+               else              -> GEZ_LINEAR
             end
             glActiveGradient.easing = glEasing
             gradientVP.scene.surface.mtScheduleRedraw()

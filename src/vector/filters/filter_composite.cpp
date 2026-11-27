@@ -7,6 +7,10 @@ This filter combines the @FilterEffect.Input and @FilterEffect.Mix sources using
 compositing operations, or a colour blending algorithm.  The Input has priority and will be placed in the foreground
 for ordered operations such as `ATOP` and `OVER`.
 
+Set #OutputMode to `HEIGHT` to combine height maps in floating point, for enhanced @LightingFX.  Heights can then be
+built in stages without the 8-bit quantisation of an image result, for example by blurring a shape into a smooth
+height and adding fine relief from @TurbulenceFX to it afterwards, so that the relief is not blurred.
+
 -END-
 
 *********************************************************************************************************************/
@@ -20,9 +24,10 @@ class extCompositeFX : public extFilterEffect {
    double K1 = 0, K2 = 0, K3 = 0, K4 = 0; // For the arithmetic operator
    double Amount = 1.0;
    OP Operator = OP::OVER;
+   FOM OutputMode = FOM::IMAGE;
    filter_named_input AmountMask { "AmountMask", { .Kind = filter_input_kind::SCALAR_MAP,
       .ContributesRegion = false, .Optional = true } };
-   const filter_effect_extension Extension { std::span(&AmountMask, 1) };
+   filter_effect_extension Extension { std::span(&AmountMask, 1) }; // Format follows OutputMode
 
    extCompositeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       FilterExtension = &Extension;
@@ -656,6 +661,7 @@ struct blend_invert_rgb {
    }
 };
 
+//********************************************************************************************************************
 // Arithmetic uses premultiplied channels in the selected colour space.  The bitmap storage is sRGB encoded.
 
 template <bool Linear>
@@ -729,6 +735,7 @@ static void composite_arithmetic_rows(const extCompositeFX *Self, int Width, int
    }
 }
 
+//********************************************************************************************************************
 // Interpolate the fully composited pixel with the backdrop using premultiplied components.
 
 template<bool Linear>
@@ -772,6 +779,119 @@ static void apply_composite_amount(extCompositeFX *Self, const filter_surface_vi
    }
 }
 
+//********************************************************************************************************************
+// Runs Function(StartY, EndY) over Height rows, in parallel where the image is large enough to benefit.
+
+template <class FUNCTION>
+static void composite_rows(int Width, int Height, FUNCTION &&Function)
+{
+   constexpr size_t MIN_PIXELS_PER_WORKER = 32 * 1024;
+   constexpr int MIN_ROWS_PER_WORKER = 4;
+   if ((Width <= 0) or (Height <= 0)) return;
+
+   const size_t blocks = std::min(size_t(Height / MIN_ROWS_PER_WORKER),
+      (size_t(Width) * Height) / MIN_PIXELS_PER_WORKER);
+   const size_t workers = (blocks < 2) ? blocks : std::min(blocks, size_t(std::thread::hardware_concurrency()));
+
+   if (workers < 2) Function(0, Height);
+   else {
+      BS::thread_pool pool(workers);
+      pool.detach_blocks(0, Height, Function);
+      pool.wait();
+   }
+}
+
+//********************************************************************************************************************
+// Reads heights from an input in scene device pixels: the alpha of an image, or a native height.  Samples outside of
+// the input's valid region, and samples that are not finite, read as zero.
+
+struct composite_height_reader {
+   const filter_surface_view &Source;
+   int Alpha = 0;
+
+   explicit composite_height_reader(const filter_surface_view &View) : Source(View) {
+      if (View.Bitmap) Alpha = View.Bitmap->ColourFormat->AlphaPos >> 3;
+   }
+
+   float operator()(int SceneX, int SceneY) const {
+      const int x = SceneX - Source.OriginX, y = SceneY - Source.OriginY;
+      if ((x < Source.Valid.left) or (x >= Source.Valid.right) or (y < Source.Valid.top) or
+          (y >= Source.Valid.bottom)) return 0.0f;
+      if (Source.Format IS filter_surface_format::RGBA8) return filter_height_sample<false>(Source.row(y), x, Alpha);
+      return filter_height_sample<true>(Source.row(y), x, 0);
+   }
+};
+
+//********************************************************************************************************************
+// HEIGHT mode: combines the heights a (Input) and b (Mix) into a scalar result.  Porter-Duff operators apply their
+// alpha equations and blend modes their colour equations, without clamping.  The amount blends from b to the result.
+
+static ERR draw_height_composite(extCompositeFX *Self, const filter_surface_view &Input,
+   const filter_surface_view &Mix, const filter_map_view &Mask, bool Masked)
+{
+   filter_surface_view target;
+   float *dest;
+   if (auto error = get_numeric_target(Self, target, dest); error != ERR::Okay) return error;
+   if ((Input.Format IS filter_surface_format::RGBA8) and ((not Input.Bitmap) or (Input.Bitmap->BytesPerPixel != 4))) {
+      return ERR::NoSupport;
+   }
+   if ((Mix.Format IS filter_surface_format::RGBA8) and ((not Mix.Bitmap) or (Mix.Bitmap->BytesPerPixel != 4))) {
+      return ERR::NoSupport;
+   }
+
+   const auto &clip = target.Valid;
+   const int width = clip.width(), height = clip.height(), stride = target.Stride / sizeof(float);
+   const int scene_x = target.OriginX + clip.left, scene_y = target.OriginY + clip.top;
+   dest += std::ptrdiff_t(clip.top) * stride + clip.left;
+
+   const composite_height_reader read_input(Input), read_mix(Mix);
+   const double amount = Self->Amount;
+   constexpr double MAX_HEIGHT = std::numeric_limits<float>::max();
+
+   auto run = [&](auto Operation) {
+      composite_rows(width, height, [&](int StartY, int EndY) {
+         for (int y=StartY; y < EndY; ++y) {
+            auto row = dest + std::ptrdiff_t(y) * stride;
+            const int sy = scene_y + y;
+            for (int x=0; x < width; ++x) {
+               const int sx = scene_x + x;
+               double strength = amount;
+               if (Masked) strength *= std::clamp(Mask.sample(sx + 0.5, sy + 0.5)[0], 0.0f, 1.0f);
+               const double b = read_mix(sx, sy);
+               double result = b;
+               if (strength != 0.0) {
+                  result = Operation(read_input(sx, sy), b);
+                  if ((strength != 1.0) and std::isfinite(result)) result = std::lerp(b, result, strength);
+               }
+               row[x] = (std::abs(result) <= MAX_HEIGHT) ? float(result) : INVALID_FILTER_SAMPLE;
+            }
+         }
+      });
+   };
+
+   const double k1 = Self->K1, k2 = Self->K2, k3 = Self->K3, k4 = Self->K4;
+   switch (Self->Operator) {
+      case OP::ARITHMETIC: run([=](double A, double B) { return (k1 * A * B) + (k2 * A) + (k3 * B) + k4; }); break;
+      case OP::OVER:       run([](double A, double B) { return A + (B * (1.0 - A)); }); break;
+      case OP::IN:
+      case OP::MULTIPLY:   run([](double A, double B) { return A * B; }); break;
+      case OP::OUT:        run([](double A, double B) { return A * (1.0 - B); }); break;
+      case OP::ATOP:       run([](double, double B) { return B; }); break;
+      case OP::XOR:
+      case OP::EXCLUSION:  run([](double A, double B) { return A + B - (2.0 * A * B); }); break;
+      case OP::SCREEN:     run([](double A, double B) { return A + B - (A * B); }); break;
+      case OP::LIGHTEN:    run([](double A, double B) { return std::max(A, B); }); break;
+      case OP::DARKEN:     run([](double A, double B) { return std::min(A, B); }); break;
+      case OP::DIFFERENCE: run([](double A, double B) { return std::abs(A - B); }); break;
+      case OP::PLUS:       run([](double A, double B) { return A + B; }); break;
+      case OP::MINUS:      run([](double A, double B) { return B - A; }); break;
+      default:
+         kt::Log(__FUNCTION__).warning("Operator %d is not supported in HEIGHT mode.", int(Self->Operator));
+         return ERR::NoSupport;
+   }
+   return ERR::Okay;
+}
+
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -780,7 +900,9 @@ Draw: Render the effect to the target bitmap.
 
 static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
 {
-   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidState;
+   const auto step = active_filter_step(Self);
+   const bool numeric = step and (step->Format != filter_surface_format::RGBA8);
+   if ((not numeric) and ((not Self->Target) or (Self->Target->BytesPerPixel != 4))) return ERR::InvalidState;
 
    filter_surface_view input, mixture;
    if (auto error = get_source_view(Self, input, filter_input_role::INPUT); error != ERR::Okay) return error;
@@ -791,6 +913,8 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
    if (masked and (Self->Amount > 0)) {
       if (auto error = get_filter_map(Self, Self->AmountMask.Name, mask); error != ERR::Okay) return error;
    }
+
+   if (numeric) return draw_height_composite(Self, input, mixture, mask, masked);
 
    auto first_pixel = [](const filter_surface_view &View) {
       return View.row(View.Valid.top) + std::ptrdiff_t(View.Valid.left) * 4;
@@ -830,21 +954,7 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
             arithmetic_rows(Self, width, EndY - StartY, dp, sp, in_bmp->LineWidth, mp, mix_bmp->LineWidth);
          };
 
-         constexpr size_t MIN_PIXELS_PER_WORKER = 32 * 1024;
-         constexpr int MIN_ROWS_PER_WORKER = 4;
-         if ((width <= 0) or (height <= 0)) break;
-
-         const size_t blocks = std::min(size_t(height / MIN_ROWS_PER_WORKER),
-            (size_t(width) * height) / MIN_PIXELS_PER_WORKER);
-         const size_t workers = (blocks < 2) ? blocks : std::min(blocks, size_t(std::thread::hardware_concurrency()));
-
-         if (workers < 2) render_rows(0, height);
-         else {
-            BS::thread_pool pool(workers);
-            pool.detach_blocks(0, height, render_rows);
-            pool.wait();
-         }
-
+         composite_rows(width, height, render_rows);
          break;
       }
 
@@ -922,7 +1032,8 @@ Intermediate values blend the two with premultiplied components in the effect's 
 result is also interpolated.  The Amount applies to every operator, including `ARITHMETIC`.
 
 The value must be in the range 0 - 1.  Values outside of this range, or that are not finite, are rejected with
-`ERR::InvalidValue`.  If an #AmountMask is bound then it scales the Amount for each pixel.
+`ERR::InvalidValue`.  If an #AmountMask is bound then it scales the Amount for each pixel.  In `HEIGHT` mode the
+Amount interpolates between the Mix height and the result.
 
 SVG documents can set this field with the `kotuku:amount` attribute of `feComposite` and `feBlend`.
 
@@ -1037,6 +1148,58 @@ static ERR COMPOSITEFX_SET_K4(extCompositeFX *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
+OutputMode: Selects image or floating-point height output.
+Lookup: FOM
+
+The default `IMAGE` mode composites colour images.  In `HEIGHT` mode the effect combines two height maps and
+produces a floating-point height, for enhanced @LightingFX and other effects that accept heights.  Each input
+supplies a height: a native height from an effect such as @BlurFX or @TurbulenceFX in `HEIGHT` mode, or the alpha
+channel of an image.  Pixels outside of an input read as zero.
+
+With `a` the height of the @FilterEffect.Input and `b` the height of the @FilterEffect.Mix, the operators compute:
+
+<list type="bullet">
+<li>`ARITHMETIC`: `K1 * a * b + K2 * a + K3 * b + K4`.</li>
+<li>`PLUS`: `a + b`, and `MINUS`: `b - a`.</li>
+<li>`MULTIPLY` and `IN`: `a * b`, and `OUT`: `a * (1 - b)`.</li>
+<li>`LIGHTEN`: the greater of `a` and `b`, and `DARKEN`: the lesser.</li>
+<li>`SCREEN`: `a + b - a * b`, and `OVER`: `a + b * (1 - a)`.</li>
+<li>`DIFFERENCE`: `|a - b|`.</li>
+<li>`XOR` and `EXCLUSION`: `a + b - 2 * a * b`.</li>
+<li>`ATOP`: `b`.</li>
+</list>
+
+No result is clamped, so heights can exceed 1 or fall below 0, and a non-finite result is stored as a missing sample.
+#Amount and #AmountMask blend from `b` to the result.  The other operators are not supported in this mode, and the
+filter fails to draw with `ERR::NoSupport`.  The colour space of the effect does not apply.
+
+The effect's result cannot be the last in a filter, which must produce an image.  Changing the mode rebuilds the
+filter's draw plan.  SVG documents set this mode with `kotuku:outputMode="height"` on `feComposite` and `feBlend`.
+
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_GET_OutputMode(extCompositeFX *Self, FOM &Value)
+{
+   Value = Self->OutputMode;
+   return ERR::Okay;
+}
+
+static ERR COMPOSITEFX_SET_OutputMode(extCompositeFX *Self, FOM Value)
+{
+   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::OutOfRange;
+   if (Self->OutputMode != Value) {
+      Self->OutputMode = Value;
+      Self->Extension.Format = (Value IS FOM::HEIGHT) ? filter_surface_format::SCALAR_F32 :
+         filter_surface_format::RGBA8;
+      if (Self->Filter) Self->Filter->GraphRevision++;
+   }
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Operator: The compositing algorithm to use for rendering.
 Lookup: OP
 
@@ -1065,16 +1228,22 @@ XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Element)
 {
    constexpr std::string_view operators[] = { "over", "in", "out", "atop", "xor", "arithmetic" };
+
    if (Effect.Amount != 1.0) Element.attribute("kotuku:amount", Effect.Amount);
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+
    const auto op = size_t(Effect.Operator);
    const bool arithmetic = Effect.Operator IS OP::ARITHMETIC;
+
    const std::pair<CSTRING, double> coefficients[] = {
       { "k1", Effect.K1 }, { "k2", Effect.K2 }, { "k3", Effect.K3 }, { "k4", Effect.K4 }
    };
+
    for (const auto &[name, value] : coefficients) {
       if (arithmetic) Element.attribute(name, value);
       else if (value != 0) Element.attribute(std::string("kotuku:") + name, value);
    }
+
    if (op < std::size(operators)) {
       Element.Name = "feComposite";
       Element.attribute("operator", operators[op]);
@@ -1083,22 +1252,22 @@ static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Eleme
 
    Element.Name = "feBlend";
    switch (Effect.Operator) {
-      case OP::SCREEN: Element.attribute("mode", "screen"); break;
-      case OP::MULTIPLY: Element.attribute("mode", "multiply"); break;
-      case OP::LIGHTEN: Element.attribute("mode", "lighten"); break;
-      case OP::DARKEN: Element.attribute("mode", "darken"); break;
-      case OP::OVERLAY: Element.attribute("mode", "overlay"); break;
+      case OP::SCREEN:     Element.attribute("mode", "screen"); break;
+      case OP::MULTIPLY:   Element.attribute("mode", "multiply"); break;
+      case OP::LIGHTEN:    Element.attribute("mode", "lighten"); break;
+      case OP::DARKEN:     Element.attribute("mode", "darken"); break;
+      case OP::OVERLAY:    Element.attribute("mode", "overlay"); break;
       case OP::HARD_LIGHT: Element.attribute("mode", "hard-light"); break;
       case OP::SOFT_LIGHT: Element.attribute("mode", "soft-light"); break;
-      case OP::DODGE: Element.attribute("mode", "color-dodge"); break;
-      case OP::BURN: Element.attribute("mode", "color-burn"); break;
+      case OP::DODGE:      Element.attribute("mode", "color-dodge"); break;
+      case OP::BURN:       Element.attribute("mode", "color-burn"); break;
       case OP::DIFFERENCE: Element.attribute("mode", "difference"); break;
-      case OP::EXCLUSION: Element.attribute("mode", "exclusion"); break;
+      case OP::EXCLUSION:  Element.attribute("mode", "exclusion"); break;
       case OP::INVERT_RGB: Element.attribute("kotuku:mode", "invertRGB"); break;
-      case OP::INVERT: Element.attribute("kotuku:mode", "invert"); break;
-      case OP::CONTRAST: Element.attribute("kotuku:mode", "contrast"); break;
-      case OP::PLUS: Element.attribute("kotuku:mode", "plus"); break;
-      case OP::MINUS: Element.attribute("kotuku:mode", "minus"); break;
+      case OP::INVERT:     Element.attribute("kotuku:mode", "invert"); break;
+      case OP::CONTRAST:   Element.attribute("kotuku:mode", "contrast"); break;
+      case OP::PLUS:       Element.attribute("kotuku:mode", "plus"); break;
+      case OP::MINUS:      Element.attribute("kotuku:mode", "minus"); break;
       default: return ERR::InvalidValue;
    }
    return ERR::Okay;
@@ -1109,14 +1278,15 @@ static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Eleme
 #include "filter_composite_def.c"
 
 static const FieldArray clCompositeFXFields[] = {
-   { "K1",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K1 },
-   { "K2",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K2 },
-   { "K3",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K3 },
-   { "K4",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K4 },
-   { "Amount",   FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_Amount },
+   { "K1",         FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K1 },
+   { "K2",         FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K2 },
+   { "K3",         FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K3 },
+   { "K4",         FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K4 },
+   { "Amount",     FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_Amount },
    { "AmountMask", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, COMPOSITEFX_GET_AmountMask, COMPOSITEFX_SET_AmountMask, CLASSID::FILTEREFFECT },
-   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, COMPOSITEFX_SET_Operator, &clCompositeFXOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
+   { "Operator",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, COMPOSITEFX_SET_Operator, &clCompositeFXOP },
+   { "OutputMode", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, COMPOSITEFX_GET_OutputMode, COMPOSITEFX_SET_OutputMode, &clCompositeFXFOM },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

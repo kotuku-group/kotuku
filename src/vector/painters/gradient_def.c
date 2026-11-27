@@ -33,6 +33,9 @@ static const struct FieldDef clGradientEasing[] = {
    { "CubicIn", 0x00000004 },
    { "CubicOut", 0x00000005 },
    { "CubicInOut", 0x00000006 },
+   { "CircleIn", 0x00000007 },
+   { "CircleOut", 0x00000008 },
+   { "CircleInOut", 0x00000009 },
    { nullptr, 0 }
 };
 

@@ -596,6 +596,9 @@ enum class GEZ : int {
    CUBIC_IN = 4,
    CUBIC_OUT = 5,
    CUBIC_IN_OUT = 6,
+   CIRCLE_IN = 7,
+   CIRCLE_OUT = 8,
+   CIRCLE_IN_OUT = 9,
 };
 
 // Colour interpolation for gradient stops.
@@ -2973,6 +2976,11 @@ class objCompositeFX : public objFilterEffect {
    }
 
    inline ERR getAmountMask(objFilterEffect * &Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getOutputMode(FOM &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->GetValue(this, &Value);
    }
@@ -3016,8 +3024,13 @@ class objCompositeFX : public objFilterEffect {
    }
 
    inline ERR setAmountMask(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, 0x08100309, Value);
+   }
+
+   inline ERR setOutputMode(const FOM Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setK1(const double Value) noexcept {
@@ -3031,7 +3044,7 @@ class objCompositeFX : public objFilterEffect {
    }
 
    inline ERR setK3(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

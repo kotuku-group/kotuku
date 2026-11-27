@@ -13,8 +13,11 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p><fl>N</fl>, <fl>L</fl>, <fl>M</fl> and <fl>Scale</fl> shape the plot.  <fl>CentreX</fl> and <fl>CentreY</fl> position its centre in the square generation domain. Use <fl>OutputMode</fl> to send the field to a numerical consumer such as enhanced <class name="LightingFX">LightingFX</class> or a <class name="CompositeFX">CompositeFX</class> amount mask. The formula produces an aesthetic magnitude.</p>
-<p>Drawing clamps the quantum numbers to <code>N &gt;= 1</code>, <code>0 &lt;= L &lt; N</code> and <code>0 &lt;= M &lt;= L</code>. Samples that cannot be computed as finite values are zero.  The double-precision formula yields a zero field when the clamped N + L exceeds 170.</p></description>
+<p>The WaveFunctionFX class is a source effect that plots the magnitude of a hydrogen-like atomic orbital.  It takes no input, and the result is intended for decorative patterns and textures rather than scientific visualisation.</p>
+<p>The quantum numbers <fl>N</fl>, <fl>L</fl> and <fl>M</fl> select the shape of the orbital, and <fl>Scale</fl> sets its size.  Drawing clamps them to <code>N &gt;= 1</code>, <code>0 &lt;= L &lt; N</code> and <code>0 &lt;= M &lt;= L</code>, and the clamped values are written back to the object.  If the clamped N + L exceeds 170, the formula cannot be evaluated in double precision and the field is zero.  Samples that cannot be computed as finite values are also zero.</p>
+<p>The plot is generated in a square domain of <fl>Resolution</fl> pixels and fitted to the primitive subregion according to <fl>AspectRatio</fl> and <fl>ResampleMethod</fl>.  <fl>CentreX</fl> and <fl>CentreY</fl> position the centre of the orbital within the domain. The generated samples are retained until a field that changes them is modified, so a fixed <fl>Resolution</fl> avoids regenerating the plot when only the size of the target changes.</p>
+<p>By default the magnitude is scaled so that the largest sample is one; see <fl>Normalisation</fl>.  In <code>IMAGE</code> mode the samples are drawn in greyscale, or through the colour ramp defined by <fl>ColourMap</fl> or <fl>Stops</fl>.  Set <fl>OutputMode</fl> to <code>HEIGHT</code> to produce a floating-point scalar field for numerical inputs, such as the height map of an enhanced <class name="LightingFX">LightingFX</class> or the amount mask of a <class name="CompositeFX">CompositeFX</class>.</p>
+<p>SVG documents can use the effect with the <code>kotuku:feWaveFunction</code> element.</p></description>
     <source>
       <file path="filters/">filter_wavefunction.cpp</file>
     </source>

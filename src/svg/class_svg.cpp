@@ -368,6 +368,17 @@ and an image's alpha.  Supply the albedo through a separate image input.
 &lt;/filter&gt;
 </pre>
 
+`kotuku:outputMode="height"` on `feComposite` or `feBlend` combines two heights in floating point; refer to
+@CompositeFX.OutputMode for the operators.  A shape can then be smoothed and given sharp relief afterwards, without
+quantising the smooth height to 8 bits in between:
+
+<pre>
+&lt;feGaussianBlur in="SourceAlpha" stdDeviation="2.5" kotuku:outputMode="height" result="smooth"/&gt;
+&lt;feTurbulence type="fractalNoise" baseFrequency="0.06" kotuku:outputMode="height" result="marks"/&gt;
+&lt;feComposite in="smooth" in2="marks" operator="arithmetic" k2="1" k3="0.03" kotuku:outputMode="height"
+    result="height"/&gt;
+</pre>
+
 The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in` or from the map
 selected by `normalMap`.  It accepts `surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX`
 or `kernelUnitY` to set a kernel unit on one axis and keep the default on the other.  See @LightingFX.UnitX for how

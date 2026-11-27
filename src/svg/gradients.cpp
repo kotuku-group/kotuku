@@ -58,13 +58,16 @@ static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attri
 
       case SVF_easing:
          switch (strhash(Value)) {
-            case SVF_linear:     Gradient->setEasing(GEZ::LINEAR); break;
-            case SVF_in:         Gradient->setEasing(GEZ::IN); break;
-            case SVF_out:        Gradient->setEasing(GEZ::OUT); break;
-            case SVF_inOut:      Gradient->setEasing(GEZ::IN_OUT); break;
-            case SVF_cubicIn:    Gradient->setEasing(GEZ::CUBIC_IN); break;
-            case SVF_cubicOut:   Gradient->setEasing(GEZ::CUBIC_OUT); break;
-            case SVF_cubicInOut: Gradient->setEasing(GEZ::CUBIC_IN_OUT); break;
+            case SVF_linear:      Gradient->setEasing(GEZ::LINEAR); break;
+            case SVF_in:          Gradient->setEasing(GEZ::IN); break;
+            case SVF_out:         Gradient->setEasing(GEZ::OUT); break;
+            case SVF_inOut:       Gradient->setEasing(GEZ::IN_OUT); break;
+            case SVF_cubicIn:     Gradient->setEasing(GEZ::CUBIC_IN); break;
+            case SVF_cubicOut:    Gradient->setEasing(GEZ::CUBIC_OUT); break;
+            case SVF_cubicInOut:  Gradient->setEasing(GEZ::CUBIC_IN_OUT); break;
+            case SVF_circleIn:    Gradient->setEasing(GEZ::CIRCLE_IN); break;
+            case SVF_circleOut:   Gradient->setEasing(GEZ::CIRCLE_OUT); break;
+            case SVF_circleInOut: Gradient->setEasing(GEZ::CIRCLE_IN_OUT); break;
             default: kt::Log().warning("Unrecognised gradient easing '%s'", Value.c_str());
          }
          return ERR::Okay;

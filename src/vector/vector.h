@@ -1174,6 +1174,22 @@ class GradientColours {
                   return 1.0 - ((inverse * inverse * inverse) * 0.5);
                }
 
+            case GEZ::CIRCLE_IN:
+               return 1.0 - std::sqrt(std::max(0.0, 1.0 - (Value * Value)));
+
+            case GEZ::CIRCLE_OUT:
+               return std::sqrt(std::max(0.0, Value * (2.0 - Value)));
+
+            case GEZ::CIRCLE_IN_OUT:
+               if (Value < 0.5) {
+                  const double scaled = 2.0 * Value;
+                  return (1.0 - std::sqrt(std::max(0.0, 1.0 - (scaled * scaled)))) * 0.5;
+               }
+               else {
+                  const double inverse = -2.0 * Value + 2.0;
+                  return (std::sqrt(std::max(0.0, 1.0 - (inverse * inverse))) + 1.0) * 0.5;
+               }
+
             case GEZ::LINEAR:
             default:
                return Value;

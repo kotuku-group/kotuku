@@ -13,47 +13,8 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
   viewBox="0 0 1024 768">
   <defs>
     <!-- Hemisphere alpha sampled at equal polar angles to capture the steep rim -->
-    <radialGradient id="hemisphere">
+    <radialGradient id="hemisphere" easing="circleIn">
       <stop offset="0" stop-color="white" stop-opacity="1"/>
-      <stop offset="0.039260" stop-color="white" stop-opacity="0.999229"/>
-      <stop offset="0.078459" stop-color="white" stop-opacity="0.996917"/>
-      <stop offset="0.117537" stop-color="white" stop-opacity="0.993068"/>
-      <stop offset="0.156434" stop-color="white" stop-opacity="0.987688"/>
-      <stop offset="0.195090" stop-color="white" stop-opacity="0.980785"/>
-      <stop offset="0.233445" stop-color="white" stop-opacity="0.972370"/>
-      <stop offset="0.271440" stop-color="white" stop-opacity="0.962455"/>
-      <stop offset="0.309017" stop-color="white" stop-opacity="0.951057"/>
-      <stop offset="0.346117" stop-color="white" stop-opacity="0.938191"/>
-      <stop offset="0.382683" stop-color="white" stop-opacity="0.923880"/>
-      <stop offset="0.418660" stop-color="white" stop-opacity="0.908143"/>
-      <stop offset="0.453990" stop-color="white" stop-opacity="0.891007"/>
-      <stop offset="0.488621" stop-color="white" stop-opacity="0.872496"/>
-      <stop offset="0.522499" stop-color="white" stop-opacity="0.852640"/>
-      <stop offset="0.555570" stop-color="white" stop-opacity="0.831470"/>
-      <stop offset="0.587785" stop-color="white" stop-opacity="0.809017"/>
-      <stop offset="0.619094" stop-color="white" stop-opacity="0.785317"/>
-      <stop offset="0.649448" stop-color="white" stop-opacity="0.760406"/>
-      <stop offset="0.678801" stop-color="white" stop-opacity="0.734323"/>
-      <stop offset="0.707107" stop-color="white" stop-opacity="0.707107"/>
-      <stop offset="0.734323" stop-color="white" stop-opacity="0.678801"/>
-      <stop offset="0.760406" stop-color="white" stop-opacity="0.649448"/>
-      <stop offset="0.785317" stop-color="white" stop-opacity="0.619094"/>
-      <stop offset="0.809017" stop-color="white" stop-opacity="0.587785"/>
-      <stop offset="0.831470" stop-color="white" stop-opacity="0.555570"/>
-      <stop offset="0.852640" stop-color="white" stop-opacity="0.522499"/>
-      <stop offset="0.872496" stop-color="white" stop-opacity="0.488621"/>
-      <stop offset="0.891007" stop-color="white" stop-opacity="0.453990"/>
-      <stop offset="0.908143" stop-color="white" stop-opacity="0.418660"/>
-      <stop offset="0.923880" stop-color="white" stop-opacity="0.382683"/>
-      <stop offset="0.938191" stop-color="white" stop-opacity="0.346117"/>
-      <stop offset="0.951057" stop-color="white" stop-opacity="0.309017"/>
-      <stop offset="0.962455" stop-color="white" stop-opacity="0.271440"/>
-      <stop offset="0.972370" stop-color="white" stop-opacity="0.233445"/>
-      <stop offset="0.980785" stop-color="white" stop-opacity="0.195090"/>
-      <stop offset="0.987688" stop-color="white" stop-opacity="0.156434"/>
-      <stop offset="0.993068" stop-color="white" stop-opacity="0.117537"/>
-      <stop offset="0.996917" stop-color="white" stop-opacity="0.078459"/>
-      <stop offset="0.999229" stop-color="white" stop-opacity="0.039260"/>
       <stop offset="1" stop-color="white" stop-opacity="0"/>
     </radialGradient>
 
