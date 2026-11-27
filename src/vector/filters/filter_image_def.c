@@ -20,6 +20,7 @@ static const struct FieldDef clImageFXVSM[] = {
 static const struct FieldDef clImageFXFOM[] = {
    { "Image", 0x00000000 },
    { "Height", 0x00000001 },
+   { "Native", 0x00000002 },
    { nullptr, 0 }
 };
 

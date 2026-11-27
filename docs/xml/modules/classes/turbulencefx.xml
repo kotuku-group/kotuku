@@ -123,6 +123,7 @@
     <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX and BlurFX.">
       <const name="HEIGHT">Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.</const>
       <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+      <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
     </constants>
 
     <constants lookup="TB">

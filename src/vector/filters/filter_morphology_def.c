@@ -6,6 +6,19 @@ static const struct FieldDef clMorphologyFXMOP[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clMorphologyFXMKS[] = {
+   { "Rectangle", 0x00000000 },
+   { "Ellipse", 0x00000001 },
+   { "Cross", 0x00000002 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clMorphologyFXMCM[] = {
+   { "Components", 0x00000000 },
+   { "Alpha", 0x00000001 },
+   { nullptr, 0 }
+};
+
 static ERR MORPHOLOGYFX_New(extMorphologyFX *Self) {
    new (Self) extMorphologyFX(Self->Class, Self->UID);
    return ERR::Okay;

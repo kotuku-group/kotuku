@@ -361,17 +361,80 @@ static ERR blur_axis(extBlurFX *Effect, const uint8_t *InData, uint8_t *OutData,
 }
 
 //********************************************************************************************************************
-// The scalar stack kernel uses the sums of the two halves of the triangle to advance one sample at a time.
-// Accumulate in double precision to keep rounding error bounded over long rows and columns.
+// Each half of the native float kernel has weights that change by one across the window. Keep cumulative sums
+// on two stacks so expiring a sample drops its contribution without subtracting it from a running total.
+
+template<bool Ascending> class blur_weighted_window {
+   struct entry {
+      float Sample;
+      double Sum, Weighted;
+   };
+
+   std::array<entry, MAX_BLUR_RADIUS + 1> Front;
+   std::array<float, MAX_BLUR_RADIUS + 1> Back;
+   int FrontCount = 0, BackCount = 0;
+   double BackSum = 0, BackWeighted = 0;
+
+   public:
+   void push(float Sample) {
+      BackSum += Sample;
+      BackWeighted += Ascending ? double(BackCount + 1) * Sample : BackSum;
+      Back[BackCount++] = Sample;
+   }
+
+   float pop() {
+      if (not FrontCount) {
+         double sum = 0, weighted = 0;
+         while (BackCount) {
+            const float sample = Back[--BackCount];
+            sum += sample;
+            weighted += Ascending ? sum : double(FrontCount + 1) * sample;
+            Front[FrontCount++] = { sample, sum, weighted };
+         }
+         BackSum = BackWeighted = 0;
+      }
+      return Front[--FrontCount].Sample;
+   }
+
+   double weighted_sum() const {
+      if (not FrontCount) return BackWeighted;
+      const auto &front = Front[FrontCount - 1];
+      // Appending the second stack increases the weights on one side by the length of the other side.
+      const double offset = Ascending ? FrontCount * BackSum : BackCount * front.Sum;
+      return front.Weighted + BackWeighted + offset;
+   }
+};
+
+//********************************************************************************************************************
+
+template<class Read, class Write>
+static void blur_native_line(Read Sample, Write Store, int Count, int Radius)
+{
+   // The caller handles radius zero, so both halves always contain a sample.
+   blur_weighted_window<true> left;
+   blur_weighted_window<false> right;
+   for (int i=-Radius; i <= 0; ++i) left.push(Sample(i));
+   for (int i=1; i <= Radius; ++i) right.push(Sample(i));
+
+   for (int i=0; i < Count; ++i) {
+      Store(i, left.weighted_sum() + right.weighted_sum());
+      if (i + 1 >= Count) break;
+      left.pop();
+      left.push(right.pop());
+      right.push(Sample(int64_t(i) + Radius + 1));
+   }
+}
+
+//********************************************************************************************************************
 
 template<class READ>
-static void blur_height_axis(READ Read, float *Dest, int Width, int Height, int Stride, bool Vertical, double Radius,
-   const blur_edge &Edge)
+static void blur_numeric_axis(READ Read, float *Dest, int Width, int Height, int Stride, int Components,
+   bool Vertical, double Radius, const blur_edge &Edge, bool HeightMode)
 {
    const int lines = Vertical ? Width : Height;
    const int count = Vertical ? Height : Width;
-   const int line_step = Vertical ? 1 : Stride;
-   const int pixel_step = Vertical ? Stride : 1;
+   const int line_step = Vertical ? Components : Stride;
+   const int pixel_step = Vertical ? Stride : Components;
    Radius = std::clamp(Radius, 0.0, double(MAX_BLUR_RADIUS));
    const int lower = int(Radius);
    const double blend = Radius - lower;
@@ -388,6 +451,18 @@ static void blur_height_axis(READ Read, float *Dest, int Width, int Height, int 
          };
 
          auto dest = Dest + std::ptrdiff_t(line) * line_step;
+         auto store = [&](int Index, double Sum) {
+            auto &out = dest[std::ptrdiff_t(Index) * pixel_step];
+            const double value = HeightMode ? std::clamp(Sum * normalise, 0.0, 1.0) : Sum * normalise;
+            out = BlendOutput ? float(std::lerp(double(out), value, Blend)) : float(value);
+         };
+         if (not HeightMode) {
+            if (R) blur_native_line(sample, store, count, R);
+            else for (int i=0; i < count; ++i) store(i, sample(i));
+            continue;
+         }
+
+         // Height data has a limited range and uses the original rolling triangular kernel.
          double sum = 0, left = 0, right = 0;
          for (int i=-R; i <= R; ++i) {
             const float height = sample(i);
@@ -399,9 +474,7 @@ static void blur_height_axis(READ Read, float *Dest, int Width, int Height, int 
 
          int first = 0, middle = R;
          for (int i=0; i < count; ++i) {
-            auto &out = dest[std::ptrdiff_t(i) * pixel_step];
-            const double value = std::clamp(sum * normalise, 0.0, 1.0);
-            out = BlendOutput ? float(std::lerp(double(out), value, Blend)) : float(value);
+            store(i, sum);
             if (i + 1 >= count) break;
 
             sum -= left;
@@ -423,8 +496,7 @@ static void blur_height_axis(READ Read, float *Dest, int Width, int Height, int 
 
 //********************************************************************************************************************
 
-template<bool Scalar>
-static ERR draw_height_blur(extBlurFX *Self, const filter_surface_view &Source, const filter_step *Producer,
+static ERR draw_numeric_blur(extBlurFX *Self, const filter_surface_view &Source, const filter_step *Producer,
    double RadiusX, double RadiusY)
 {
    filter_surface_view target;
@@ -433,46 +505,62 @@ static ERR draw_height_blur(extBlurFX *Self, const filter_surface_view &Source, 
 
    const auto &clip = target.Valid;
    const int width = clip.width(), height = clip.height(), stride = target.Stride / sizeof(float);
-   dest += std::ptrdiff_t(clip.top) * stride + clip.left;
+   const int components = filter_components(target.Format);
+   const bool height_mode = Self->OutputMode IS FOM::HEIGHT;
+   dest += std::ptrdiff_t(clip.top) * stride + std::ptrdiff_t(clip.left) * components;
    const int x_shift = target.OriginX + clip.left - Source.OriginX;
    const int y_shift = target.OriginY + clip.top - Source.OriginY;
+   const bool bitmap = Source.Format IS filter_surface_format::RGBA8;
    int alpha = 0;
-   if constexpr (not Scalar) {
+   if (bitmap) {
       if ((not Source.Bitmap) or (Source.Bitmap->BytesPerPixel != 4)) return ERR::NoSupport;
       alpha = Source.Bitmap->ColourFormat->AlphaPos >> 3;
    }
 
-   auto read_height = [&](int X, int Y) -> float {
-      const int x = X + x_shift, y = Y + y_shift;
-      if ((x < Source.Valid.left) or (x >= Source.Valid.right) or
-          (y < Source.Valid.top) or (y >= Source.Valid.bottom)) return 0.0f;
-      return filter_height_sample<Scalar>(Source.row(y), x, alpha);
-   };
-
    const bool blur_x = RadiusX > 0, blur_y = RadiusY > 0;
-   if ((not blur_x) and (not blur_y)) {
-      for (int y=0; y < height; ++y) {
-         auto row = dest + std::ptrdiff_t(y) * stride;
-         for (int x=0; x < width; ++x) row[x] = read_height(x, y);
-      }
-      return ERR::Okay;
-   }
-
    const auto region = filter_input_region(Self, Source, Producer, Self->EdgeMode);
    const blur_edge edge_x = { region.left - x_shift, region.right - x_shift, Self->EdgeMode };
    const blur_edge edge_y = { region.top - y_shift, region.bottom - y_shift, Self->EdgeMode };
 
-   if (blur_x and blur_y) {
-      float *horizontal;
-      if (auto error = get_filter_scratch(Self, size_t(width) * height, horizontal); error != ERR::Okay) return error;
-      blur_height_axis(read_height, horizontal, width, height, width, false, RadiusX, edge_x);
-      auto read_horizontal = [&](int X, int Y) {
-         return ((Y >= 0) and (Y < height)) ? horizontal[std::ptrdiff_t(Y) * width + X] : 0.0f;
-      };
-      blur_height_axis(read_horizontal, dest, width, height, stride, true, RadiusY, edge_y);
+   // Horizontal results are needed for the source rows that the vertical pass can address.
+   const int rows = region.height();
+   float *horizontal = nullptr;
+   if (blur_x and blur_y and (rows > 0)) {
+      if (auto error = get_filter_scratch(Self, size_t(width) * rows, horizontal); error != ERR::Okay) return error;
    }
-   else if (blur_x) blur_height_axis(read_height, dest, width, height, stride, false, RadiusX, edge_x);
-   else blur_height_axis(read_height, dest, width, height, stride, true, RadiusY, edge_y);
+
+   for (int c=0; c < components; ++c) {
+      auto read = [&](int X, int Y) -> float {
+         const int x = X + x_shift, y = Y + y_shift;
+         if ((x < Source.Valid.left) or (x >= Source.Valid.right) or
+             (y < Source.Valid.top) or (y >= Source.Valid.bottom)) return 0.0f;
+         if (bitmap) return filter_height_sample<false>(Source.row(y), x, alpha);
+         filter_map_value value;
+         return read_numeric_sample(Source, x, y, value) ? value[c] : 0.0f;
+      };
+
+      if (blur_x and blur_y) {
+         if (horizontal) {
+            auto read_row = [&](int X, int Y) { return read(X, Y + edge_y.Start); };
+            blur_numeric_axis(read_row, horizontal, width, rows, width, 1, false, RadiusX, edge_x, height_mode);
+         }
+         auto read_horizontal = [&](int X, int Y) {
+            return horizontal ? horizontal[std::ptrdiff_t(Y - edge_y.Start) * width + X] : 0.0f;
+         };
+         blur_numeric_axis(read_horizontal, dest + c, width, height, stride, components, true,
+            RadiusY, edge_y, height_mode);
+      }
+      else if (blur_x or blur_y) {
+         blur_numeric_axis(read, dest + c, width, height, stride, components, blur_y,
+            blur_y ? RadiusY : RadiusX, blur_y ? edge_y : edge_x, height_mode);
+      }
+      else {
+         for (int y=0; y < height; ++y) {
+            auto row = dest + std::ptrdiff_t(y) * stride + c;
+            for (int x=0; x < width; ++x) row[std::ptrdiff_t(x) * components] = read(x, y);
+         }
+      }
+   }
    return ERR::Okay;
 }
 
@@ -493,11 +581,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
 
    filter_surface_view source;
    if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
-   if (step->Format IS filter_surface_format::SCALAR_F32) {
-      if (source.Format IS filter_surface_format::SCALAR_F32) return draw_height_blur<true>(Self, source, producer,
-         rx, ry);
-      return draw_height_blur<false>(Self, source, producer, rx, ry);
-   }
+   if (step->Format != filter_surface_format::RGBA8) return draw_numeric_blur(Self, source, producer, rx, ry);
 
    auto outBmp = Self->Target;
    if ((not outBmp) or (outBmp->BytesPerPixel != 4)) return ERR::InvalidState;
@@ -577,11 +661,15 @@ SVG reads and writes `CLAMP` as `edgeMode="duplicate"` and `REPEAT` as `edgeMode
 `MIRROR` uses the Kōtuku extension `kotuku:edgeMode="mirror"`.
 
 -FIELD-
-OutputMode: Selects an image or a linear height result.
+OutputMode: Selects the output surface format.
 Lookup: FOM
 
 In `HEIGHT` mode, the input can be a native height or a bitmap whose alpha channel supplies the height.  Both axes
 preserve fractional heights.  Bind the result to enhanced @LightingFX or another height-output blur.
+
+In `NATIVE` mode, scalar and vector float inputs are blurred component-wise and keep their signed range and
+original surface format.  Missing or invalid samples contribute zero.  Bitmap inputs use the usual RGBA blur.
+SVG represents this mode with `kotuku:outputMode="native"`.
 
 -FIELD-
 SX: The standard deviation of the blur on the x axis.
@@ -613,7 +701,7 @@ static ERR BLURFX_SET_EdgeMode(extBlurFX *Self, FEM Value)
 
 static ERR BLURFX_SET_OutputMode(extBlurFX *Self, FOM Value)
 {
-   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::OutOfRange;
+   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT) and (Value != FOM::NATIVE)) return ERR::OutOfRange;
    if (Self->OutputMode != Value) {
       Self->OutputMode = Value;
       if (Self->Filter) Self->Filter->GraphRevision++;
@@ -634,6 +722,7 @@ static ERR blur_xml(const extBlurFX &Effect, filter_xml_element &Element)
       default: return ERR::InvalidValue;
    }
    if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+   else if (Effect.OutputMode IS FOM::NATIVE) Element.attribute("kotuku:outputMode", "native");
    return ERR::Okay;
 }
 

@@ -2851,6 +2851,78 @@ function saveFilterDocument(SVG:obj!):str
    return content
 end
 
+@Test function MorphologyShapeAndChannelsRoundTrip()
+   local settings = 'filterUnits="userSpaceOnUse"'
+   local effects = [[<feFlood flood-color="red" flood-opacity=".25" result="base"/>
+      <feFlood flood-color="blue" x="32" y="32" width="1" height="1" result="dot"/>
+      <feMerge><feMergeNode in="base"/><feMergeNode in="dot"/></feMerge>
+      <feMorphology operator="dilate" radius="2" kotuku:channelMode="alpha" kotuku:kernelShape="ellipse"/>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS, settings)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local morph = obj.find(filter.children('MorphologyFX')[0])
+   assert((morph.kernelShape is MKS_ELLIPSE) and (morph.channelMode is MCM_ALPHA), 'Read back imported settings')
+
+   local ellipse <close> = draw(svg, 64)
+   local diagonal = mGfx.ReadRGBPixel(ellipse, 33, 33)
+   assert((diagonal.alpha is 255) and (diagonal.red is 255) and (diagonal.blue is 0),
+      'The ellipse must reach the diagonal and retain its straight red')
+   assert(mGfx.ReadRGBPixel(ellipse, 34, 34).alpha < 100, 'The ellipse must exclude the corner')
+
+   morph.kernelShape = MKS_CROSS
+   local cross <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(cross, 33, 33).alpha < 100, 'The cross must exclude the diagonal')
+   assert(mGfx.ReadRGBPixel(cross, 34, 32).alpha is 255, 'The cross must include the centre row')
+   assert(morph.set('kernelShape', 99) is ERR_OutOfRange, 'Invalid shapes must be rejected')
+   assert(morph.set('channelMode', 99) is ERR_OutOfRange, 'Invalid channel modes must be rejected')
+   local saved = saveFilterDocument(svg)
+   local loaded <close> = obj.new('SVG', { statement=saved })
+   local reloaded <close> = draw(loaded, 64)
+   assert(imageDifference(cross, reloaded) is 0, 'SVG must preserve the cross footprint and alpha-only operation')
+
+   morph.kernelShape = MKS_RECTANGLE
+   local alpha_rectangle <close> = draw(svg, 64)
+   local expanded = mGfx.ReadRGBPixel(alpha_rectangle, 34, 34)
+   assert((expanded.alpha is 255) and (expanded.red is 255) and (expanded.blue is 0),
+      'The rectangular alpha mode must retain the centre colour when coverage expands')
+
+   morph.channelMode = MCM_COMPONENTS
+   local rectangle <close> = draw(svg, 64)
+   local corner = mGfx.ReadRGBPixel(rectangle, 34, 34)
+   assert((corner.alpha is 255) and (corner.red is 255) and (corner.blue is 255),
+      'The rectangle must include the corner and process colour components independently')
+end
+
+@Test function NumericalNeighbourhoodsRoundTrip()
+   local settings = 'filterUnits="userSpaceOnUse"'
+   local effects = TILE_HEIGHT .. [[
+      <feGaussianBlur in="height" stdDeviation=".5" kotuku:outputMode="native" result="blurred"/>
+      <feConvolveMatrix in="blurred" order="3 1" kernelMatrix="1 2 1" result="smoothed"/>
+      <feMorphology in="smoothed" operator="dilate" radius="1" kotuku:kernelShape="cross" result="relief"/>]]
+   local svg <close> = document(effects .. litHeight('relief'), TILE_CONTENT, 64, KOTUKU_NS, settings)
+   local original <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(original, 16, 16).alpha is 255, 'The numerical chain must feed enhanced lighting')
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local reloaded <close> = draw(loaded, 64)
+   assert(imageDifference(original, reloaded) is 0, 'SVG must restore the native blur and numerical filter chain')
+
+   -- A shifted tap at the edge of a constant field should preserve the field with duplicate or wrap addressing.
+   local height = '<feTurbulence x="8" y="8" width="16" height="16" type="fractalNoise" baseFrequency="0" ' ..
+      'kotuku:outputMode="height" result="height"/>'
+   local light = litHeight('convolved')
+   local identity = '<feConvolveMatrix in="height" order="1" kernelMatrix="1" result="convolved"/>'
+   local expected <close> = draw(document(height .. identity .. light, TILE_CONTENT, 64, KOTUKU_NS, settings), 64)
+
+   for edge in values(array<str> { 'duplicate', 'wrap', 'none' }) do
+      for spacing in values(array<str> { '', 'kernelUnitLength=".5"' }) do
+         local shifted = '<feConvolveMatrix in="height" order="2 1" targetX="1" kernelMatrix="0 1" ' ..
+            f'edgeMode="{edge}" {spacing} result="convolved"/>'
+         local actual <close> = draw(document(height .. shifted .. light, TILE_CONTENT, 64, KOTUKU_NS, settings), 64)
+         local difference = imageDifference(expected, actual)
+         assert((difference is 0) is (edge != 'none'), f'Unexpected boundary samples for {edge} with {spacing}')
+      end
+   end
+end
+
 @Test function OffsetBilinearRoundTripsAndCanBeEdited()
    local settings = 'filterUnits="userSpaceOnUse"'
    local content = '<rect x="20" y="20" width="8" height="8" fill="red" filter="url(#f)"/>'

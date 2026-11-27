@@ -35,6 +35,11 @@ Convolution uses the device-pixel grid by default.  Set #UnitX and #UnitY to spe
 primitive units.  When that grid differs from the device-pixel grid, the effect resamples the input for convolution
 and then resamples the result back to device pixels.  Use #SetKernel() to change the kernel dimensions at runtime.
 
+Scalar and vector float inputs produce the same surface format.  The kernel operates on each component independently,
+with bilinear taps at fractional positions.  It uses the same anchor, divisor and edge mode as image convolution.
+Missing or invalid samples contribute zero.  Bias is added directly in the field's units.  Float output bypasses
+colour conversion, alpha handling and clamping.  Results outside the finite float range are invalid samples.
+
 -END-
 
 When the image must be resampled to match the coordinate system defined by UnitX/Y prior to
@@ -395,15 +400,61 @@ class extConvolveFX : public extFilterEffect {
 
 //********************************************************************************************************************
 
+static ERR draw_numeric_convolution(extConvolveFX *Self, const filter_surface_view &Source,
+   double UnitX, double UnitY)
+{
+   filter_surface_view target;
+   float *dest;
+   if (auto error = get_numeric_target(Self, target, dest); error != ERR::Okay) return error;
+
+   const auto &clip = target.Valid;
+   if (size_t(clip.width()) * clip.height() > 4096u * 4096u) return ERR::OutOfRange;
+
+   const int components = filter_components(target.Format), stride = target.Stride / sizeof(float);
+   const bool unit_grid = (UnitX IS 1.0) and (UnitY IS 1.0);
+   const auto step      = active_filter_step(Self);
+   const auto edge      = Self->edge_policy();
+   auto input           = Source;
+
+   input.Valid = filter_input_region(Self, Source, step->Inputs.front().Producer, edge);
+
+   const filter_map_view sampler { input, {
+      .Interpolation = unit_grid ? filter_interpolation::NEAREST : filter_interpolation::BILINEAR,
+      .Edge = edge
+   } };
+
+   const int columns = Self->MatrixColumns, rows = Self->MatrixRows;
+   const auto matrix = Self->Matrix;
+
+   for (int y=clip.top; y < clip.bottom; ++y) {
+      const double sy = double(target.OriginY) + filter_pixel_centre(y);
+      auto out = dest + std::ptrdiff_t(y) * stride + std::ptrdiff_t(clip.left) * components;
+      for (int x=clip.left; x < clip.right; ++x, out += components) {
+         const double sx = double(target.OriginX) + filter_pixel_centre(x);
+         double sums[2] {};
+         int coefficient = columns * rows - 1; // Rotate the kernel by 180 degrees.
+         for (int ky=0; ky < rows; ++ky) {
+            const double tap_y = sy + (ky - Self->TargetY) * UnitY;
+            for (int kx=0; kx < columns; ++kx, --coefficient) {
+               if (matrix[coefficient] IS 0.0) continue;
+               const auto value = sampler.sample(sx + (kx - Self->TargetX) * UnitX, tap_y);
+               for (int c=0; c < components; ++c) sums[c] += double(value[c]) * matrix[coefficient];
+            }
+         }
+
+         for (int c=0; c < components; ++c) {
+            const double value = sums[c] / Self->Divisor + Self->Bias;
+            out[c] = (std::abs(value) <= std::numeric_limits<float>::max()) ? float(value) : INVALID_FILTER_SAMPLE;
+         }
+      }
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
 {
-   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidValue;
-
-   const int canvas_width  = Self->Target->Clip.Right - Self->Target->Clip.Left;
-   const int canvas_height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
-
-   if (canvas_width * canvas_height > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
-
    filter_surface_view source;
    if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
 
@@ -413,6 +464,16 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
 
    if (std::abs(unit_x_pixel - 1.0) < 0.001) unit_x_pixel = 1.0;
    if (std::abs(unit_y_pixel - 1.0) < 0.001) unit_y_pixel = 1.0;
+
+   if (source.Format != filter_surface_format::RGBA8) {
+      return draw_numeric_convolution(Self, source, unit_x_pixel, unit_y_pixel);
+   }
+
+   if ((not Self->Target) or (Self->Target->BytesPerPixel != 4)) return ERR::InvalidValue;
+   const int canvas_width = Self->Target->Clip.Right - Self->Target->Clip.Left;
+   const int canvas_height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
+
+   if (size_t(canvas_width) * canvas_height > 4096u * 4096u) return ERR::OutOfRange;
 
    // PreserveAlpha convolves straight colour.  The resampled path takes premultiplied input in all cases because it
    // must interpolate before it can unpremultiply.

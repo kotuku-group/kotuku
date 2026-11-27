@@ -53,11 +53,12 @@
 
     <field>
       <name>OutputMode</name>
-      <comment>Selects an image or a linear height result.</comment>
+      <comment>Selects the output surface format.</comment>
       <access read="R" write="S">Read/Set</access>
       <type lookup="FOM">FOM</type>
       <description>
 <p>In <code>HEIGHT</code> mode, the input can be a native height or a bitmap whose alpha channel supplies the height.  Both axes preserve fractional heights.  Bind the result to enhanced <class name="LightingFX">LightingFX</class> or another height-output blur.</p>
+<p>In <code>NATIVE</code> mode, scalar and vector float inputs are blurred component-wise and keep their signed range and original surface format.  Missing or invalid samples contribute zero.  Bitmap inputs use the usual RGBA blur. SVG represents this mode with <code>kotuku:outputMode=&quot;native&quot;</code>.</p>
 <types lookup="FOM"/>
       </description>
     </field>
@@ -104,6 +105,7 @@
     <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX and BlurFX.">
       <const name="HEIGHT">Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.</const>
       <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+      <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
     </constants>
 
   </types>

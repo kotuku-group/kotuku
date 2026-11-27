@@ -1126,54 +1126,116 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
 {
    using enum filter_inputs;
    const auto class_id = ((extFilterEffect *)Effect)->classID();
+
 #ifdef UNIT_TESTS
    if (class_id IS CLASSID(kt::strihash(glFilterMaskTestClass))) return { DUAL };
    if (class_id IS CLASSID(kt::strihash(glFilterSurfaceTestClass))) return { GENERATOR };
 #endif
+
    switch (class_id) {
       case CLASSID::BLURFX:
          if (((const extBlurFX *)Effect)->OutputMode IS FOM::HEIGHT) {
             return { SINGLE, effect_sampling<extBlurFX>, filter_input_kind::SCALAR_MAP,
                filter_surface_format::SCALAR_F32 };
          }
-         return { SINGLE, effect_sampling<extBlurFX> };
-      case CLASSID::COLOURFX:       return { SINGLE };
-      case CLASSID::COMPOSITEFX:    return { DUAL };
-      case CLASSID::CONVOLVEFX:     return { SINGLE, effect_sampling<extConvolveFX> };
+
+         return {
+            .Inputs = SINGLE,
+            .Sampling = effect_sampling<extBlurFX>,
+            .InputFormat = ((const extBlurFX *)Effect)->OutputMode IS FOM::NATIVE
+         };
+
+      case CLASSID::COLOURFX:
+         return { SINGLE };
+
+      case CLASSID::COMPOSITEFX:
+         return { DUAL };
+
+      case CLASSID::CONVOLVEFX:
+         return {
+            .Inputs = SINGLE,
+            .Sampling = effect_sampling<extConvolveFX>,
+            .InputFormat = true
+         };
+
       case CLASSID::DISPLACEMENTFX:
-         return { ((const extDisplacementFX *)Effect)->VectorMap.Reference ? SINGLE : DUAL,
-            effect_sampling<extDisplacementFX> };
-      case CLASSID::FLOODFX:        return { GENERATOR };
+         return {
+            ((const extDisplacementFX *)Effect)->VectorMap.Reference ? SINGLE : DUAL,
+            effect_sampling<extDisplacementFX>
+         };
+
+      case CLASSID::FLOODFX:
+         return { GENERATOR };
+
       case CLASSID::IMAGEFX:
-         return { .Inputs = GENERATOR, .Format = ((const extImageFX *)Effect)->OutputMode IS FOM::HEIGHT ?
-            filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8 };
+         return {
+            .Inputs = GENERATOR,
+            .Format = ((const extImageFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+                      filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8
+         };
+
       case CLASSID::LIGHTINGFX: {
          const auto lighting = (const extLightingFX *)Effect;
          const auto primary = lighting->enhanced(filter_surface_format::SCALAR_F32) ?
             filter_input_kind::SCALAR_MAP : filter_input_kind::IMAGE;
-         return { lighting->reads_albedo() ? DUAL : SINGLE,
+         return {
+            lighting->reads_albedo() ? DUAL : SINGLE,
             [](const filter_step &Step) {
                const auto producer = Step.Inputs.front().Producer;
                const auto format = producer ? producer->Format : filter_surface_format::RGBA8;
                return ((const extLightingFX *)Step.Effect)->sampling(format);
             },
-            primary };
+            primary
+         };
       }
-      case CLASSID::MERGEFX:        return { MERGE };
-      case CLASSID::MORPHOLOGYFX:   return { SINGLE, effect_sampling<extMorphologyFX> };
-      case CLASSID::OFFSETFX:       return { SINGLE, effect_sampling<extOffsetFX> };
-      case CLASSID::REMAPFX:        return { SINGLE };
-      case CLASSID::SOURCEFX:       return { GENERATOR };
+
+      case CLASSID::MERGEFX:
+         return { MERGE };
+
+      case CLASSID::MORPHOLOGYFX:
+         return {
+            .Inputs = SINGLE,
+            .Sampling = effect_sampling<extMorphologyFX>,
+            .InputFormat = true
+         };
+
+      case CLASSID::OFFSETFX:
+         return { SINGLE, effect_sampling<extOffsetFX> };
+
+      case CLASSID::REMAPFX:
+         return { SINGLE };
+
+      case CLASSID::SOURCEFX:
+         return { GENERATOR };
+
       case CLASSID::TILEFX:
-         return { .Inputs = SINGLE, .InputFormat = true, .InputRegion = false };
+         return {
+            .Inputs = SINGLE,
+            .InputFormat = true,
+            .InputRegion = false
+         };
+
       case CLASSID::TURBULENCEFX:
-         return { .Inputs = GENERATOR, .Format = ((const extTurbulenceFX *)Effect)->OutputMode IS FOM::HEIGHT ?
-            filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8 };
-      case CLASSID::WAVEFUNCTIONFX: return { GENERATOR };
+         return {
+            .Inputs = GENERATOR,
+            .Format = ((const extTurbulenceFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+                      filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8
+         };
+
+      case CLASSID::WAVEFUNCTIONFX:
+         return { GENERATOR };
+
       default:
-         return { SINGLE, [](const filter_step &) -> filter_sampling {
-            return { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED };
-         } };
+         return {
+            SINGLE,
+            [](const filter_step &) -> filter_sampling {
+               return {
+                  filter_access::FULL_INPUT,
+                  filter_sampling::UNBOUNDED,
+                  filter_sampling::UNBOUNDED
+               };
+            }
+         };
    }
 }
 
@@ -2491,14 +2553,13 @@ static void clip_to_subregion(const filter_render_context &Render, const filter_
 }
 
 //********************************************************************************************************************
-// Returns true if an RGBA8 result stores normal components as data.  Effects that take the format of their input
-// pass the flag through from the producer, whose result is still live while its consumer is drawing.
+// Returns true if an RGBA8 result stores normal components as data.  Tiling carries over the flag from its producer.
 
 static bool normal_map_result(const filter_step &Step)
 {
    const auto effect = Step.Effect;
    if (effect->classID() IS CLASSID::LIGHTINGFX) return ((const extLightingFX *)effect)->Type IS LT::NORMAL;
-   if (Step.Operation.InputFormat and (not Step.Inputs.empty())) {
+   if ((effect->classID() IS CLASSID::TILEFX) and (not Step.Inputs.empty())) {
       if (auto producer = Step.Inputs.front().Producer; producer) return producer->Result.NormalMap;
    }
    return false;

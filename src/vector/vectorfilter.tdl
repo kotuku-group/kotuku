@@ -18,6 +18,15 @@
     'ERODE: Erode (thin) the input source.',
     'DILATE: Dilate (fatten) the input source.')
 
+  enums('MKS', { type='int', start=0, comment='MorphologyFX kernel shapes.' },
+    'RECTANGLE: Use the entire rectangular neighbourhood.',
+    'ELLIPSE: Use the samples within the ellipse defined by the two radii.',
+    'CROSS: Use only the centre row and centre column.')
+
+  enums('MCM', { type='int', start=0, comment='MorphologyFX channel modes for bitmap input.' },
+    'COMPONENTS: Apply the operator to each component independently.',
+    'ALPHA: Apply the operator to alpha and retain straight RGB from the centre sample.')
+
   enums('FEM', { type='int', start=0, comment='Filter input edge addressing modes.' },
     'TRANSPARENT: Sample transparent black outside the input.',
     'CLAMP: Extend the nearest edge sample.',
@@ -206,8 +215,10 @@
     ~array(struct(MergeLayer)) Layers
   ]])
 
-  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP', 'MKS', 'MCM' } }, [[
     ~int(MOP) Operator
+    ~int(MKS) KernelShape
+    ~int(MCM) ChannelMode
   ]])
 
   klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c',

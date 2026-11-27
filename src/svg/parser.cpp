@@ -1566,7 +1566,10 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
          default: {
             const auto local = kotuku_attrib(Self, Tag, name);
             if ((local IS "edgeMode") and iequals("mirror", val)) mirror_edge = true;
-            else if ((local IS "outputMode") and iequals("height", val)) fx->setOutputMode(FOM::HEIGHT);
+            else if (local IS "outputMode") {
+               if (iequals("height", val)) fx->setOutputMode(FOM::HEIGHT);
+               else if (iequals("native", val)) fx->setOutputMode(FOM::NATIVE);
+            }
             break;
          }
       }
@@ -3006,6 +3009,21 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_height: fx->setHeight(SVGUnit(val)); break;
          case SVF_in:     parse_input_source(Self, fx, val); break;
          case SVF_result: result_name = val; break;
+         default: {
+            const auto local = kotuku_attrib(Self, Tag, Tag.Attribs[a].Name);
+            if (local IS "kernelShape") {
+               if (iequals("ellipse", val)) fx->setKernelShape(MKS::ELLIPSE);
+               else if (iequals("cross", val)) fx->setKernelShape(MKS::CROSS);
+               else if (iequals("rectangle", val)) fx->setKernelShape(MKS::RECTANGLE);
+               else log.warning("Invalid morphology kernel shape '%s'.", val.c_str());
+            }
+            else if (local IS "channelMode") {
+               if (iequals("alpha", val)) fx->setChannelMode(MCM::ALPHA);
+               else if (iequals("components", val)) fx->setChannelMode(MCM::COMPONENTS);
+               else log.warning("Invalid morphology channel mode '%s'.", val.c_str());
+            }
+            break;
+         }
       }
    }
 
