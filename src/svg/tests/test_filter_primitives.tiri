@@ -2109,6 +2109,35 @@ end
    assert((single is 255) and (multiple is single),
       'The back-facing normal must fade the key shadow outside its range with or without a fill ' ..
       f'({single}, {multiple})')
+
+   -- A small draw with a fixed-size bitmap matcap must still allow a larger draw to retain off-page shadows.
+   local large_matcap <close> = obj.new('bitmap', { width=1024, height=1024, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL,
+      bkgd='0,0,0,255' })
+   large_matcap.acClear()
+
+   local svg <close> = obj.new('svg', { statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="64" height="64">
+         <filter id="f" x="0" y="0" width="64" height="64" filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+            <feFlood x="-85" y="0" width="10" height="64" result="block"/>
+            <feFlood flood-color="white" result="paint"/>
+            <xvg:feLighting in="block" in2="paint" surfaceScale="64" diffuseConstant="1" specularConstant="0"
+               features="local-shadows" penumbra="0">
+               <fePointLight x="-105" y="32" z="65"/>
+            </xvg:feLighting>
+         </filter>
+         <rect width="64" height="64" filter="url(#f)"/>
+      </svg>]] })
+   local _, filter = check svg.scene.mtFindDef('f')
+   lightingFX(svg).matcap = large_matcap
+
+   local small <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(small, 20, 32).red > 20, 'The blocker lies outside the initial filter region')
+
+   filter.{ x=-110, width=1200 }
+   local expanded <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(expanded, 20, 32)
+   assert((p.alpha is 255) and (p.red <= 1), 'The expanded filter region must retain the off-page shadow')
 end
 
 @Test function FloodOcclusionPreservesFractionalColourOnExport()
@@ -2467,6 +2496,22 @@ end
       assertRGBA({ red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }, 0, 255, 0, 255,
          f'Off-page tile at pixel {x},3')
    end
+
+   -- Each producer fits with the page on its own, but together their bounds exceed the clip width limit.
+   local with_matcap <close> = obj.new('svg', { statement=[[
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="64" height="64">
+         <filter id="f" filterUnits="userSpaceOnUse" x="-41000" y="0" width="82000" height="64">
+            <feFlood x="-40000" y="0" width="8" height="8" flood-color="red" result="matcap"/>
+            <xvg:feLighting in="SourceAlpha" matcap="#matcap"><feDistantLight elevation="60"/></xvg:feLighting>
+            <feFlood x="40000" y="0" width="8" height="8" flood-color="lime" result="tile"/>
+            <feTile in="tile" x="0" y="0" width="64" height="64"/>
+         </filter>
+         <g filter="url(#f)"/>
+      </svg>]] })
+   local tiled <close> = draw(with_matcap, 64)
+   local p = mGfx.ReadRGBPixel(tiled, 32, 32)
+   assertRGBA({ red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }, 0, 255, 0, 255,
+      'The tile must repeat on the page when the combined source bounds exceed the clip width limit')
 end
 
 -- An explicit subregion clips the repetition without moving the lattice, which stays anchored to the input.

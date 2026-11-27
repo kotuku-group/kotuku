@@ -141,6 +141,8 @@ struct filter_input_contract {
    filter_bitmap_conversion BitmapConversion = filter_bitmap_conversion::NONE; // Numerical-to-RGBA8 adapter for images
    bool TransparentFallback = false; // Colour channels of RGBA8 map pixels with zero alpha read as the Fallback
    bool NativeOnly = false; // A numerical input requires a native producer rather than RGBA8 map channels
+   // Any output pixel can read any pixel of the producer's subregion, which is then always processed in full.
+   bool WholeProducer = false;
 };
 
 //********************************************************************************************************************
@@ -269,6 +271,9 @@ struct filter_render_context {
    int BkgdOriginX, BkgdOriginY;      // Scene device-pixel position of BkgdBitmap (0,0)
    VCS ClientColourSpace;             // The client's resolved colour space, used when capturing SourceGraphic
    uint64_t Revision;                 // Filter GraphRevision when the draw started.  A mismatch aborts the draw.
+   bool Bounded = false;  // Limit processing to the page and margin, and tiles, even where effects need more
+   bool Expanded = false; // True if processing extends beyond the page and margin for the entire region or a whole
+                          // named input, which a bounded retry can avoid
    filter_plan Plan;
    const filter_step *ActiveStep = nullptr; // Step currently drawing, otherwise null
    TClipRectangle<int> VectorClip = { 0 }; // Processing rectangle in scene pixels.  Left/top are the bitmap origin.
@@ -2490,46 +2495,81 @@ static bool transform_filter_region(TClipRectangle<double> &Region, const agg::t
 static TClipRectangle<double> resolve_subregion(const filter_render_context &, const filter_step &);
 
 //********************************************************************************************************************
-// Reserve the reference tiles and the sampling margin their producers may need, even when the tiles are off-page.
+// Reserve the producers whose entire subregion an effect can read, with the sampling margin they may need, even when
+// they are off-page.  These are the tiles of TileFX and named inputs declared with WholeProducer.  The subregion of a
+// named input is only included if Fits accepts the result, otherwise the effect reads the processed part of it.
+// Returns true if a named input was included.
 
-static void include_tile_inputs(filter_render_context &Render, const TClipRectangle<double> &Region,
-   double MarginX, double MarginY, TClipRectangle<double> &Clip)
+template<class FITS>
+static bool include_whole_inputs(filter_render_context &Render, const TClipRectangle<double> &Region,
+   double MarginX, double MarginY, TClipRectangle<double> &Clip, FITS Fits)
 {
    auto tile_producer = [](const filter_step &Step) -> const filter_step * {
       if (Step.Effect->classID() IS CLASSID::TILEFX) return Step.Inputs.front().Producer;
       return nullptr;
    };
+   auto whole_producer = [](const filter_input &Input) {
+      return (Input.Role IS filter_input_role::NAMED) and Input.Contract.WholeProducer and Input.Producer;
+   };
    auto &steps = Render.Plan.Steps;
-   if (std::ranges::none_of(steps, tile_producer)) return;
+   if (std::ranges::none_of(steps, [&](const filter_step &Step) {
+      return tile_producer(Step) or std::ranges::any_of(Step.Inputs, whole_producer);
+   })) return false;
 
    // Resolve in draw order so that a producer can inherit the subregion of an earlier effect.
    for (auto &step : steps) step.Subregion = resolve_subregion(Render, step);
 
-   for (const auto &step : steps) {
-      const auto producer = tile_producer(step);
-      if ((not producer) or (not step.Subregion.valid())) continue;
-      auto bounds = producer->Subregion;
-      if ((not bounds.valid()) or (not finite_region(bounds))) continue;
+   // Returns the producer's subregion in scene pixels with the margin, or an invalid rectangle.
 
-      // The output lies inside the original tile, so this step only reads at the current pixel.
-      const auto &output = step.Subregion;
-      if ((output.left >= bounds.left) and (output.top >= bounds.top) and
-          (output.right <= bounds.right) and (output.bottom <= bounds.bottom)) continue;
-
-      if (not transform_filter_region(bounds, Render.ToScene)) continue;
+   auto producer_bounds = [&](const filter_step &Producer) -> TClipRectangle<double> {
+      auto bounds = Producer.Subregion;
+      if ((not bounds.valid()) or (not finite_region(bounds))) return { 0.0 };
+      if (not transform_filter_region(bounds, Render.ToScene)) return { 0.0 };
       bounds.shrinking(Region);
-      if (not bounds.valid()) continue;
+      if (not bounds.valid()) return { 0.0 };
       bounds = { std::floor(bounds.left) - MarginX, std::floor(bounds.top) - MarginY,
          std::ceil(bounds.right) + MarginX, std::ceil(bounds.bottom) + MarginY };
       bounds.shrinking(Region);
-      Clip.expanding(bounds);
+      return bounds;
+   };
+
+   // Reserve all required tiles before checking whether optional named inputs fit.
+   for (const auto &step : steps) {
+      const auto producer = tile_producer(step);
+      if ((not producer) or (not step.Subregion.valid()) or (not producer->Subregion.valid())) continue;
+
+      // The output lies inside the original tile, so this step only reads at the current pixel.
+      const auto &output = step.Subregion;
+      const auto &tile = producer->Subregion;
+      if ((output.left >= tile.left) and (output.top >= tile.top) and
+          (output.right <= tile.right) and (output.bottom <= tile.bottom)) continue;
+      if (auto bounds = producer_bounds(*producer); bounds.valid()) Clip.expanding(bounds);
    }
+
+   bool included = false;
+   for (const auto &step : steps) {
+      if (not step.Subregion.valid()) continue;
+      for (const auto &input : step.Inputs) {
+         if (not whole_producer(input)) continue;
+         const auto bounds = producer_bounds(*input.Producer);
+         if (not bounds.valid()) continue;
+         auto expanded = Clip;
+         expanded.expanding(bounds);
+         if ((expanded.left IS Clip.left) and (expanded.top IS Clip.top) and (expanded.right IS Clip.right) and
+             (expanded.bottom IS Clip.bottom)) continue;
+         if (not Fits(expanded)) continue;
+         Clip = expanded;
+         included = true;
+      }
+   }
+   return included;
 }
 
 //********************************************************************************************************************
 // Computes the processing rectangle in scene device pixels.  The filter region is extended by the pipeline's
-// sampling reach.  Effects that need the whole filter region use it directly when its surface can be allocated.
-// Otherwise the processing rectangle is limited to the visible page plus a bounded margin and the source tiles.
+// sampling reach.  Effects that need the whole filter region use it directly when its processing surface fits.
+// Otherwise the processing rectangle is limited to the visible page plus a bounded margin, the source tiles and the
+// subregions of whole named inputs that fit.
 
 static ERR set_clip_region(extVectorFilter *Self)
 {
@@ -2598,17 +2638,20 @@ static ERR set_clip_region(extVectorFilter *Self)
       return filter_surface_size(int(Clip.width()), int(Clip.height()), 4, bytes, stride) IS ERR::Okay;
    };
 
-   // An effect that needs the whole filter region, such as shadows that can cross it, receives it if the surface can
-   // be allocated.  Otherwise the region is limited to the page and a margin, as for other effects.
-
    auto clip = region;
-   if ((not entire_region) or (not allocatable(region))) {
+   render.Expanded = entire_region and (not render.Bounded) and allocatable(region);
+   if (not render.Expanded) {
       const double max_margin = std::max(page_width, page_height);
       const double margin_x = std::ceil(std::min(reach_x, max_margin));
       const double margin_y = std::ceil(std::min(reach_y, max_margin));
       clip.shrinking({ -margin_x, -margin_y, page_width + margin_x, page_height + margin_y });
       if (not clip.valid()) return ERR::NothingDone;
-      include_tile_inputs(render, region, margin_x, margin_y, clip);
+      // Whole named inputs are left out of a bounded retry, as they are the likely cause of its failure.
+
+      const auto fits_named = [&](const TClipRectangle<double> &Clip) {
+         return (not render.Bounded) and allocatable(Clip);
+      };
+      if (include_whole_inputs(render, region, margin_x, margin_y, clip, fits_named)) render.Expanded = true;
    }
 
    if ((clip.left < std::numeric_limits<int>::min()) or (clip.top < std::numeric_limits<int>::min()) or
@@ -2740,23 +2783,14 @@ static bool normal_map_result(const filter_step &Step)
 }
 
 //********************************************************************************************************************
-// Main rendering routine for filter effects.  Called by the scene graph renderer whenever a vector uses a filter.
-// The caller holds the filter lock through rendering and composition, and must call finish_filter_composition()
-// after a successful render.  ColourSpace is the client's resolved colour space in the renderer, which can be
-// inherited from a vector that is not a physical ancestor, e.g. the viewport that consumes a live pattern.
+// A single attempt at the draw.  If Bounded is true, processing is limited to the page, margin and source tiles.
 
-ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
-   objBitmap *BkgdBitmap, VCS ColourSpace, filter_render_result &Output, int BkgdOriginX, int BkgdOriginY)
+static ERR render_filter_pass(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
+   objBitmap *BkgdBitmap, VCS ColourSpace, filter_render_result &Output, int BkgdOriginX, int BkgdOriginY,
+   bool Bounded, bool &Expanded)
 {
    kt::Log log(__FUNCTION__);
-
-   Output = {};
-   if ((not Vector) or (not Viewport)) return log.warning(ERR::NullArgs);
-
-   if (Self->collecting()) return ERR::MarkedForDeletion;
-   if (Self->Render or Self->Composing) return ERR::Recursion;
-
-   kt::SwitchContext context(Self);
+   Expanded = false;
    const bool diagnostics = GetResource(RES::LOG_LEVEL) >= 6;
 
    filter_render_context render = {};
@@ -2766,6 +2800,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    render.BkgdOriginY       = BkgdOriginY;
    render.ClientColourSpace = ColourSpace;
    render.Revision          = Self->GraphRevision;
+   render.Bounded           = Bounded;
 
    for (auto effect : Self->Effects) effect->Target = nullptr;
 
@@ -2808,6 +2843,8 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    if (graph_changed()) return log.warning(ERR::InvalidState);
    if (auto error = set_clip_region(Self); error != ERR::Okay) return error;
    if (graph_changed()) return log.warning(ERR::InvalidState);
+
+   Expanded = render.Expanded;
 
    auto release_result = [&](filter_step &Step) {
       Step.Effect->Target = nullptr;
@@ -2908,11 +2945,46 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    }
 
    if (graph_changed()) return log.warning(ERR::InvalidState);
+
    Self->LastOutput = std::exchange(plan.Final->Surface, nullptr);
    Self->Composing = true;
    Output = { out, result.OriginX, result.OriginY, Self->Opacity };
    completed = true;
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Main rendering routine for filter effects.  Called by the scene graph renderer whenever a vector uses a filter.
+// The caller holds the filter lock through rendering and composition, and must call finish_filter_composition()
+// after a successful render.  ColourSpace is the client's resolved colour space in the renderer, which can be
+// inherited from a vector that is not a physical ancestor, e.g. the viewport that consumes a live pattern.
+//
+// An expanded draw that runs out of storage is repeated with processing limited to the page, margin and source
+// tiles.  Scratch storage can depend on the effect's inputs as well as the clip, so use the draw's live allocations.
+
+ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
+   objBitmap *BkgdBitmap, VCS ColourSpace, filter_render_result &Output, int BkgdOriginX, int BkgdOriginY)
+{
+   kt::Log log(__FUNCTION__);
+
+   Output = {};
+   if ((not Vector) or (not Viewport)) return log.warning(ERR::NullArgs);
+
+   if (Self->collecting()) return ERR::MarkedForDeletion;
+   if (Self->Render or Self->Composing) return ERR::Recursion;
+
+   kt::SwitchContext context(Self);
+
+   const auto revision = Self->GraphRevision;
+   bool expanded;
+   auto error = render_filter_pass(Self, Viewport, Vector, BkgdBitmap, ColourSpace, Output, BkgdOriginX,
+      BkgdOriginY, false, expanded);
+   if ((error != ERR::AllocMemory) or (not expanded) or (Self->GraphRevision != revision) or
+       Self->collecting()) return error;
+
+   log.detail("Filter #%d ran out of storage with an expanded clip; retrying with a bounded clip.", Self->UID);
+   return render_filter_pass(Self, Viewport, Vector, BkgdBitmap, ColourSpace, Output, BkgdOriginX, BkgdOriginY,
+      true, expanded);
 }
 
 //********************************************************************************************************************
