@@ -1221,7 +1221,9 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          }
       },
       dropdown = { -- Exclusive to combobox
-         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.corner, cornerY = Edge.corner },
+         path          = gui.paths.rectangle,
+         bkgd          = { fill = Palette.bkgd }, -- VectorPath
+         border        = { stroke = Palette.edge, strokeWidth = Edge.width }, -- VectorPath
          highlight     = { fill = Palette.contrast },
          textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
          icon          = Icon('fill(pearl)'),
@@ -1366,8 +1368,9 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          }
       },
       dropdown = {
-         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, cornerX = Edge.corner, cornerY = Edge.corner },
-         border        = { stroke = Palette.inverse },
+         path          = gui.paths.rectangle,
+         bkgd          = { fill = Palette.bkgd },
+         border        = { stroke = Palette.edge, strokeWidth = Edge.width },
          highlight     = { fill = Palette.contrast },
          textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
          icon          = Icon('fill(carbon)'),

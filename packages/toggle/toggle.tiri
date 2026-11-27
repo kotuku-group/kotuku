@@ -68,6 +68,14 @@ gui.toggle = function(Options:table!):table
       elseif &_focus then
          gui.applyStyle(&bkgd, &theme.input.focus)
       end
+
+      sw = &bkgd.strokeWidth
+      edge = (sw * 0.5) % 1 -- Pixel-align the stroke edges only
+      &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+      &_clipPath.{
+         x = edge, y = edge, xOffset = edge, yOffset = edge,
+         strokeWidth = sw, lineJoin = &bkgd.lineJoin, miterLimit = &bkgd.miterLimit
+      }
    end
 
    self.disable = function()
@@ -137,14 +145,36 @@ gui.toggle = function(Options:table!):table
          &_label.place(packed_width, &viewport.height, box.y, HEIGHT)
       end
 
-      edge = 1 - ((&theme.input.bkgd.strokeWidth ?? 0) * 0.5) % 1 -- Pixel-align the stroke edges only
-      h  = HEIGHT - (edge * 2)
-      r = math.max(0, math.min(gui.sizing.widget.cornerSize * h, (HEIGHT * 0.5) - edge))
+      box_viewport = &viewport.new('VectorViewport', { x = box.x, y = box.y, width = HEIGHT, height = HEIGHT })
+      &bkgd = box_viewport.new('VectorPath', &theme.input.bkgd)
 
-      &bkgd = &viewport.new('VectorRectangle', table.merge({
-         x = box.x+edge, y = box.y+edge, width = HEIGHT-edge, height = HEIGHT-edge,
-         cornerX = r, cornerY = r
-      }, &theme.input.bkgd))
+      -- A white fill and black border stroke clip the checkmark to the inner edge of the background path.
+
+      clip_mask = box_viewport.scene.new('VectorClip', {
+         name = 'ToggleClip', units = 'UserSpace', flags = VCLF_APPLY_FILLS | VCLF_APPLY_STROKES
+      })
+      &_clipPath = clip_mask.viewport.new('VectorPath', { fill = 'white', stroke = 'black' })
+
+      box_viewport.subscribe('Free', function() clip_mask?.free() end)
+
+      function reshape()
+         generate_path = &theme.input.path ?? gui.paths.rectangle
+         path = generate_path(box_viewport, {}).path
+         &bkgd.sequence = path
+         &_clipPath.sequence = path
+      end
+
+      refreshStyle()
+
+      reshape()
+
+      &bkgd.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+         reshape()
+      end
+
+      content = box_viewport.new('VectorViewport', {
+         x = 0, y = 0, width = '100%', height = '100%', mask = clip_mask
+      })
 
       -- Returns the placement of the checkmark viewport, with the pattern in the current text colour.  The fill is
       -- painted with padding around the icon's pattern tile, see gui.createIcon().
@@ -153,24 +183,25 @@ gui.toggle = function(Options:table!):table
          icon_theme = gui.rgbToIconTheme(&theme.input.text.fill)
          icon = gui.createIcon(&viewport.scene, 'items/checkmark', ICON_SIZE, icon_theme)
          return {
-            x      = box.x + math.floor((HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
-            y      = box.y + math.floor((HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
+            x      = math.floor((HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
+            y      = math.floor((HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
             width  = ICON_SIZE + (icon.margin * 2),
             height = ICON_SIZE + (icon.margin * 2),
             fill   = icon.fill
          }
       end
 
-      &iconRender = &viewport.new('VectorViewport', table.merge({ opacity = &value ? 1.0 : 0.25 }, checkmark()))
+      &iconRender = content.new('VectorViewport', table.merge({ opacity = &value ? 1.0 : 0.25 }, checkmark()))
 
       -- Apply the current theme to the existing vectors.
 
       function restyle()
          refreshStyle()
-         if &labelText then -- The label is drawn with widget.text; its size is kept so the layout does not move
-            size = &labelText.fontSize
+         reshape()
+         if &labelText then
+            size = &labelText.fontSize -- Get the size in case it is altered
             &labelText.fontStyle = gui.fontStyle(&theme.widget.text)
-            &labelText.fontSize = f'{size}px'
+            &labelText.fontSize = size -- Restore the size
          end
 
          try
