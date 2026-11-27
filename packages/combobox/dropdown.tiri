@@ -21,6 +21,7 @@ SCROLL_WIDTH <const> = gui.rpixel('16dp')
 gui._dropdown = function(Options)
    theme_name     = gui.getThemeName(Options.relative.scene) -- Adopt the theme of the window that opens the dropdown
    dropdown       = table.merge(gui.themes[theme_name].dropdown, Options.theme, true, true)
+   dropdown.path  ?= gui.paths.rectangle
    parent_surface = Options.target
    parent_surface ?= Options.relative.scene.surface
 
@@ -38,8 +39,12 @@ gui._dropdown = function(Options)
       scale     = 1, -- Scale applied to the menu when shown, e.g. to match a scaled client viewport
       lineLimit = Options.lineLimit, -- Maximum number of visible items before the menu scrolls
       items     = { },
-      bkgd      = nil -- The VectorRectangle that draws the menu background and border
+      bkgd      = nil, -- The VectorPath that fills the menu background
+      border    = nil  -- The VectorPath that strokes the menu border
    }
+
+   inset = (dropdown.border?.strokeWidth ?? 0) * 0.5 -- The border is stroked inside the surface edge
+   local reshape:func
 
    -- toggle() alternates the visible state of the menu.  A TimeLapse is supported so that rapid changes to
    -- menu visibility can be avoided.
@@ -65,7 +70,7 @@ gui._dropdown = function(Options)
    function ensureVisible(Item:table)
       if (not &scrollbar) or (not Item) then return end
       top = -&page.y
-      bottom = top + &height
+      bottom = top + &height - inset * 2
       if Item.y - VMARGIN < top then
          &scrollbar.scrollPage(0, top - Item.y + VMARGIN)
       elseif Item.y + Item.height + VMARGIN > bottom then
@@ -82,7 +87,7 @@ gui._dropdown = function(Options)
    -- construction.  The content width excludes the scrollbar.
 
    function layoutGroups()
-      content_width = &width - (&scrollbar ? SCROLL_WIDTH : 0)
+      content_width = &width - inset * 2 - (&scrollbar ? SCROLL_WIDTH : 0)
       if content_width is &groupWidth then return end
       &groupWidth = content_width
 
@@ -116,6 +121,7 @@ gui._dropdown = function(Options)
       scale = &scale > 0 ? &scale : 1
       surface.{ width = math.ceil(&width * scale), height = math.ceil(&height * scale) }
       &viewport.{ viewWidth = surface.width / scale, viewHeight = surface.height / scale }
+      reshape()
 
       if &scrollbar then
          if &hItem then ensureVisible(&hItem) else &page.y = 0 end
@@ -324,24 +330,57 @@ gui._dropdown = function(Options)
          end
       end
 
-      bksetting = table.merge({ x = 0, y = 0, xOffset = 0, yOffset = 0 }, dropdown.bkgd)
-      offset = 0
+      -- The menu shape is drawn in a viewport that is inset by half the border width, so that the border stroke
+      -- lies entirely within the surface.
 
-      if dropdown.bkgd?.strokeWidth then
-         offset = dropdown.bkgd.strokeWidth * 0.5
-         bksetting.{ x = offset, y = offset, xOffset = offset, yOffset = offset }
-      end
+      &shape = &viewport.new('VectorViewport', { x = inset, y = inset, xOffset = inset, yOffset = inset })
 
-      &bkgd = &viewport.new('VectorRectangle', bksetting) -- The corners are resolved once the items are measured
+      &bkgd = &shape.new('VectorPath', table.merge({ -- Background fill
+         x = 0, y = 0, xOffset = 0, yOffset = 0
+      }, dropdown.bkgd))
 
-      -- Items are placed in a page that scrolls within a clipped frame if there are more than lineLimit of them.
+      -- Items and the scrollbar are drawn in a viewport that is clipped to the inner edge of the border.  The mask is
+      -- a luminance copy of the background path: a white fill, less a black stroke of the border's width.  The
+      -- mask's user space is the parent viewport, so the mask path is placed as the background is.
 
-      &frame = &viewport.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, overflow=VOF_HIDDEN })
+      clip = &scene.new('VectorClip', {
+         name = 'DropdownClip', units = 'UserSpace', flags = VCLF_APPLY_FILLS | VCLF_APPLY_STROKES
+      })
+
+      clip_path = clip.viewport.new('VectorPath', {
+         x = 0, y = 0, xOffset = 0, yOffset = 0, fill = 'white', stroke = 'black',
+         strokeWidth = dropdown.border?.strokeWidth ?? 0,
+         lineJoin    = dropdown.border?.lineJoin,
+         miterLimit  = dropdown.border?.miterLimit
+      })
+
+      &clipView = &shape.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, mask=clip })
+
+      -- Items are placed in a page that scrolls within the frame if there are more than lineLimit of them.
+
+      &frame = &clipView.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, overflow=VOF_HIDDEN })
       &page = &frame.new('VectorViewport', { x=0, y=0, width='100%', height=1 })
 
       &highlight = &page.new('VectorRectangle', table.merge({
-         x = offset, y = offset, xOffset = offset, height = ITEM_HEIGHT, visibility = 'hidden'
+         x = 0, y = 0, xOffset = 0, height = ITEM_HEIGHT, visibility = 'hidden'
       }, dropdown.highlight))
+
+      &border = &shape.new('VectorPath', table.merge({ -- Foreground stroke
+         x = 0, y = 0, xOffset = 0, yOffset = 0, fill = 'none'
+      }, dropdown.border))
+
+      -- Path sequences are generated for the size of the shape viewport, which is only known once the menu is shown.
+
+      local shape_width:num, shape_height:num
+      reshape = function()
+         w, h = &shape.width, &shape.height
+         if w is shape_width and h is shape_height then return end
+         path = dropdown.path(&shape).path
+         &bkgd.sequence   = path
+         &border.sequence = path
+         clip_path.sequence = path
+         shape_width, shape_height = w, h
+      end
 
       -- Input coordinates are relative to the page, so they already account for scaling and scrolling.
 
@@ -468,25 +507,17 @@ gui._dropdown = function(Options)
       &height = y + VMARGIN
       &page.height = &height
 
-      -- The corner radius is relative to the height of a menu item
-
-      item_h = (#&items > 0) ? &items[0].height : math.round(FONT_MAX_HEIGHT * ITEM_SPACING)
-      &bkgd.cornerX = gui.sizing.widget.cornerSize * item_h
-      &bkgd.cornerY = &bkgd.cornerX
-
       layoutGroups()
 
       if &lineLimit and (&lineLimit > 0) and (#&items > &lineLimit) then
          &height = &items[&lineLimit].y + VMARGIN
          &width += SCROLL_WIDTH
          &scrollbar = gui.scrollbar({
-            target = &viewport, view = &frame, page = &page, direction = 'vertical',
+            target = &clipView, view = &frame, page = &page, direction = 'vertical',
             theme = { scrollbar = { thickness = SCROLL_WIDTH } }
          })
 
-         -- Inset the bar so that it does not cover the menu border.
-
-         &scrollbar.vbar.viewport.{ y = 2, yOffset = 2, xOffset = 2 }
+         &border.acMoveToFront() -- The bar is clipped to the inner edge of the border, which is drawn over it
       end
 
       &surface.{ width = &width, height = &height }
