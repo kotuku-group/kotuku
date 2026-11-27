@@ -504,8 +504,7 @@ class extLightingFX : public extFilterEffect {
          .XChannel = filter_map_channel::RED, .Transfer = filter_map_transfer::STORED, .Fallback = { 0.0f, 0.0f },
          .TransparentFallback = true } },
       // Every output pixel can read any part of the matcap, so the producer's entire subregion must be rendered.
-      { "Matcap", { .ContributesRegion = false, .Optional = true,
-         .Sampling = { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED, true } } }
+      { "Matcap", { .ContributesRegion = false, .Optional = true, .WholeProducer = true } }
    }};
    filter_named_input &NormalMap = MapInputs[0];
    filter_named_input &OcclusionMap = MapInputs[1];
@@ -2586,12 +2585,13 @@ the square that holds the sphere.  A producer whose subregion is unset is framed
 measured in device pixels, so the matcap's resolution follows the display scale of the client, and under a rotated
 or skewed transform it is the bounding box of the transformed subregion.
 
-The matcap can be read at any output pixel, so binding it makes the filter process its entire region where the
-surface for it can be allocated, rather than the page and a margin.  This raises the cost of a filter whose region
-extends far beyond the page.  Any part of the frame that lies outside of the processed area is cropped.  A frame
-that is empty, because the subregion has no area or lies entirely outside of that area, supplies no matcap, so the
-`LIGHT` mode then keeps the direct diffuse light.  Types other than `COMBINED` ignore the binding: the producer is not
-validated or required for them, and the filter is not made to process its entire region.
+The matcap can be read at any output pixel, so the producer's entire subregion is processed even where it lies off
+the page.  If that would exceed the filter's storage limit, processing is limited to the page and a margin, and any
+part of the frame that lies outside of that area is cropped.  Keep the producer's subregion small, as the matcap
+takes 16 bytes per pixel of its frame.  A frame that is empty, because the subregion has no area or lies entirely
+outside of the processed area, supplies no matcap, so the `LIGHT` mode then keeps the direct diffuse light.  Types
+other than `COMBINED` ignore the binding: the producer is not validated or required for them, and its subregion is
+not added to the processed area.
 
 The matcap is rebuilt from the result on every draw, so the producer may change at any time.  Binding an effect
 removes any matcap that was set with #Matcap or #MatcapPath, and setting either of those fields clears this binding.
