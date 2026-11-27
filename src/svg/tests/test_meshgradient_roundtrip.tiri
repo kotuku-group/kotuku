@@ -528,7 +528,7 @@ end
    local saved = saveScene(scene, output_path)
 
    assert(countMatches(saved, '<meshrow') is 2, 'Saved meshgradient should contain two mesh rows')
-   assert(saved.find('kotuku:x', 0, true) is nil, 'A standard shared-edge grid should not require independent-patch metadata')
+   assert(saved.find('xvg:x', 0, true) is nil, 'A standard shared-edge grid should not require independent-patch metadata')
    assert(saved.find('gradientTransform=', 0, true) != nil, 'Saved meshgradient should preserve the gradient transform')
 
    local reparsed_scene, reparsed_gradient = loadMesh(output_path)
@@ -689,8 +689,8 @@ end
 
    local saved = saveScene(scene, 'temp:meshgradient_non_rectangular_saved.svg')
    assert(countMeshRowsInGradient(saved, 'mesh2x2') is 1, 'Non-rectangular mesh should flatten to one meshrow')
-   assert(saved.find('kotuku:x', 0, true) != nil, 'Flattened non-adjacent patch should save as independent')
-   assert(saved.find('xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"', 0, true) != nil,
+   assert(saved.find('xvg:x', 0, true) != nil, 'Flattened non-adjacent patch should save as independent')
+   assert(saved.find('xmlns:xvg="http://www.kotuku.dev/xmlns/svg"', 0, true) != nil,
       'Saved document must declare the kotuku namespace for independent-patch attributes')
 
    local reparsed_scene, reparsed_gradient = loadMesh('temp:meshgradient_non_rectangular_saved.svg')

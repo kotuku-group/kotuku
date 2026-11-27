@@ -46,7 +46,7 @@
       <description>
 <p><code>TRANSPARENT</code> (the default) uses transparent black.  <code>CLAMP</code> uses the nearest edge sample, <code>REPEAT</code> wraps to the opposite edge and <code>MIRROR</code> reflects alternate copies of the input with the edge sample repeated at each join.</p>
 <p>For standard inputs the sampling rectangle is the filter bitmap.  For a referenced effect the non-transparent modes use the pixel-aligned bounding rectangle of its transformed primitive subregion, intersected with the filter bitmap. The addressing mode applies along each axis with an active blur.</p>
-<p>SVG reads and writes <code>CLAMP</code> as <code>edgeMode=&quot;duplicate&quot;</code> and <code>REPEAT</code> as <code>edgeMode=&quot;wrap&quot;</code>. <code>MIRROR</code> uses the Kōtuku extension <code>kotuku:edgeMode=&quot;mirror&quot;</code>.</p>
+<p>SVG reads and writes <code>CLAMP</code> as <code>edgeMode=&quot;duplicate&quot;</code> and <code>REPEAT</code> as <code>edgeMode=&quot;wrap&quot;</code>. <code>MIRROR</code> uses the Kōtuku extension <code>xvg:edgeMode=&quot;mirror&quot;</code>.</p>
 <types lookup="FEM"/>
       </description>
     </field>
@@ -58,7 +58,7 @@
       <type lookup="FOM">FOM</type>
       <description>
 <p>In <code>HEIGHT</code> mode, the input can be a native height or a bitmap whose alpha channel supplies the height.  Both axes preserve fractional heights.  Bind the result to enhanced <class name="LightingFX">LightingFX</class> or another height-output blur.</p>
-<p>In <code>NATIVE</code> mode, scalar and vector float inputs are blurred component-wise and keep their signed range and original surface format.  Missing or invalid samples contribute zero.  Bitmap inputs use the usual RGBA blur. SVG represents this mode with <code>kotuku:outputMode=&quot;native&quot;</code>.</p>
+<p>In <code>NATIVE</code> mode, scalar and vector float inputs are blurred component-wise and keep their signed range and original surface format.  Missing or invalid samples contribute zero.  Bitmap inputs use the usual RGBA blur. SVG represents this mode with <code>xvg:outputMode=&quot;native&quot;</code>.</p>
 <types lookup="FOM"/>
       </description>
     </field>

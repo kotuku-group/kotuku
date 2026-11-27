@@ -21,7 +21,7 @@ samples are drawn in greyscale, or through the colour ramp defined by #ColourMap
 `HEIGHT` to produce a floating-point scalar field for numerical inputs, such as the height map of an enhanced
 @LightingFX or the amount mask of a @CompositeFX.
 
-SVG documents can use the effect with the `kotuku:feWaveFunction` element.
+SVG documents can use the effect with the `xvg:feWaveFunction` element.
 
 -END-
 
@@ -498,7 +498,7 @@ XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 
 static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element &Element)
 {
-   Element.Name = "kotuku:feWaveFunction";
+   Element.Name = "xvg:feWaveFunction";
    Element.attribute("n", Effect.N);
    Element.attribute("l", Effect.L);
    Element.attribute("m", Effect.M);
@@ -507,11 +507,11 @@ static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element 
 
    write_filter_xml_aspect(Element, Effect.AspectRatio);
 
-   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
-   if (Effect.Normalisation IS WFN::RAW) Element.attribute("kotuku:normalisation", "raw");
-   if (Effect.ResampleMethod != VSM::AUTO) Element.attribute("kotuku:resampleMethod", int(Effect.ResampleMethod));
-   if (Effect.CentreX != 0.5) Element.attribute("kotuku:centreX", Effect.CentreX);
-   if (Effect.CentreY != 0.5) Element.attribute("kotuku:centreY", Effect.CentreY);
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("xvg:outputMode", "height");
+   if (Effect.Normalisation IS WFN::RAW) Element.attribute("xvg:normalisation", "raw");
+   if (Effect.ResampleMethod != VSM::AUTO) Element.attribute("xvg:resampleMethod", int(Effect.ResampleMethod));
+   if (Effect.CentreX != 0.5) Element.attribute("xvg:centreX", Effect.CentreX);
+   if (Effect.CentreY != 0.5) Element.attribute("xvg:centreY", Effect.CentreY);
 
    if (not Effect.ColourMap.empty()) Element.attribute("colormap", Effect.ColourMap);
    else {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-  xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="408" viewBox="0 0 1024 408"
+  xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="1024" height="408" viewBox="0 0 1024 408"
   font-family="sans-serif">
   <title>Lighting a flat surface with an RGB normal map</title>
   <desc>An opaque RGB map encodes a diamond bevel pattern. Two teal swatches use the same flat height and
@@ -24,19 +24,19 @@
 
     <filter id="flat" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="200"
       color-interpolation-filters="linearRGB">
-      <kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none"
+      <xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none"
         diffuseConstant=".85" specularConstant=".44" specularExponent="14" ambient="#536873">
         <feDistantLight azimuth="225" elevation="38"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <filter id="mapped" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="200"
       color-interpolation-filters="linearRGB">
       <feImage xlink:href="#encodedNormals" result="normals"/>
-      <kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none"
+      <xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none"
         normalMap="normals" diffuseConstant=".85" specularConstant=".44" specularExponent="14" ambient="#536873">
         <feDistantLight azimuth="225" elevation="38"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
   </defs>
 

@@ -1991,7 +1991,7 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
 }
 
 //********************************************************************************************************************
-// Reads a kotuku:normalConvention value.  Auto is accepted only where the effect supports it (DisplacementFX).
+// Reads a xvg:normalConvention value.  Auto is accepted only where the effect supports it (DisplacementFX).
 
 static std::optional<NMC> read_normal_convention(std::string_view Value, bool AllowAuto) noexcept
 {
@@ -2017,7 +2017,7 @@ static std::optional<MCH> read_map_channel(std::string_view Value) noexcept
 }
 
 //********************************************************************************************************************
-// Reads the space-separated feature names of a kotuku:features attribute.  Unknown names are skipped with a warning.
+// Reads the space-separated feature names of a xvg:features attribute.  Unknown names are skipped with a warning.
 
 static LFX read_lighting_features(std::string_view Value) noexcept
 {
@@ -2243,7 +2243,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       }
    }
 
-   // Configures a light from a light source element.  Append is true for kotuku:feLighting, which renders every
+   // Configures a light from a light source element.  Append is true for xvg:feLighting, which renders every
    // light child in document order.  Extension attributes in the Kōtuku namespace set the light's options; a malformed
    // value is reported and the option keeps its default.
 
@@ -2313,7 +2313,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
 
          const auto &val = Child.Attribs[a].Value;
          auto invalid = [&]() {
-            log.warning("Invalid %s value for 'kotuku:%.*s': '%s'", Child.name(), int(local.size()), local.data(),
+            log.warning("Invalid %s value for 'xvg:%.*s': '%s'", Child.name(), int(local.size()), local.data(),
                val.c_str());
          };
 
@@ -2338,7 +2338,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             auto number = iequals("none", val) ? std::optional<double>(0.0) : kt::font_traits::parse_number(val);
             if ((not number) or (not std::isfinite(*number)) or (*number < 0)) invalid();
             else if ((distant) and (*number > 0)) {
-               log.warning("A distant light cannot have a range; 'kotuku:range' is ignored.");
+               log.warning("A distant light cannot have a range; 'xvg:range' is ignored.");
             }
             else {
                options.Range = *number;
@@ -2366,7 +2366,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       return ERR::Okay;
    };
 
-   // The standard elements take their light source from their first child.  kotuku:feLighting renders every light
+   // The standard elements take their light source from their first child.  xvg:feLighting renders every light
    // child in document order, skipping descriptive elements.  Without a light child the default light is used.
 
    ERR light_error = ERR::Okay;
@@ -3074,7 +3074,7 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 }
 
 //********************************************************************************************************************
-// Reads the kotuku:viewBox="x y width height" extension of feImage.  Values may be separated by whitespace or
+// Reads the xvg:viewBox="x y width height" extension of feImage.  Values may be separated by whitespace or
 // commas.
 
 template<class Effect>

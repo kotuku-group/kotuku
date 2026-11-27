@@ -315,7 +315,7 @@ the current rectangle is retained.  An array that does not have four values is r
 Set an empty array, or a zero width and height, to clear the rectangle.  Reading the field returns an empty array
 when no rectangle is set.
 
-In SVG, the equivalent attribute is `kotuku:viewBox="x y width height"` on the `feImage` element.
+In SVG, the equivalent attribute is `xvg:viewBox="x y width height"` on the `feImage` element.
 
 *********************************************************************************************************************/
 

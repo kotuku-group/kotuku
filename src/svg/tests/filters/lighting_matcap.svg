@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- LightingFX matcaps on kotuku:feLighting.
+<!-- LightingFX matcaps on xvg:feLighting.
 
 The matcap attribute names an image relative to the document's folder.  Row 1: the quadrant matcap shows the
 orientation of the lookup, then chrome and a dielectric with the softbox.  Row 2: brass with the analytic
 highlight, then hammered steel and brushed aluminium plates.  Row 3: matcaps with Fresnel on a glaze and on a
 metal, and a bevelled star.
 
-Each cell is a 340x254 filter region in its own user space.  Every surface is lit by kotuku:feLighting, the COMBINED
+Each cell is a 340x254 filter region in its own user space.  Every surface is lit by xvg:feLighting, the COMBINED
 type of LightingFX, which uses the enhanced pipeline whatever the scene's Compliance. -->
 
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
   viewBox="0 0 1024 768">
   <defs>
     <!-- Hemisphere alpha sampled at equal polar angles to capture the steep rim -->
@@ -24,11 +24,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="white"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0" specularConstant="0"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0" specularConstant="0"
         matcap="matcaps/quadrant.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 2: Chrome: the studio matcap on a white metal dome, no analytic highlight -->
@@ -36,11 +36,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="white"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
         matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 3: Dielectric dome with diffuse light and the softbox matcap -->
@@ -48,11 +48,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#3a7d5c"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.4"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.4"
         specularExponent="30" ambient="#202020" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 4: Brass: the studio matcap tinted by a metal albedo, with the analytic highlight -->
@@ -60,11 +60,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e8b850"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="1" specularExponent="40"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="1" specularExponent="40"
         ambient="#202020" metalness="1" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 5: Hammered steel plate with the studio matcap -->
@@ -73,21 +73,21 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer result="relief">
         <feFuncA type="gamma" amplitude="1" exponent="0.5"/>
       </feComponentTransfer>
-      <feGaussianBlur in="relief" stdDeviation="1.25" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="12" specularConstant="0.5" specularExponent="30"
+      <feGaussianBlur in="relief" stdDeviation="1.25" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="12" specularConstant="0.5" specularExponent="30"
         metalness="1" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 6: Brushed aluminium plate with the softbox matcap and shadows -->
     <filter id="c6" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feTurbulence type="fractalNoise" baseFrequency="0.002 0.6" numOctaves="3" seed="8" result="height"
-        kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="3" specularConstant="0.6" specularExponent="50"
+        xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="3" specularConstant="0.6" specularExponent="50"
         metalness="1" features="all" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 7: Glazed ceramic dome: the softbox matcap with Fresnel 0.04, strong at the rim only -->
@@ -95,11 +95,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#9c3b2e"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="20"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="20"
         specularExponent="100" ambient="#303030" fresnel="0.04" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 8: Blue metal dome with the studio matcap and Fresnel 0.5: the reflection takes the albedo's colour at the
@@ -108,22 +108,22 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#3050c0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" specularConstant="0" metalness="1"
         fresnel="0.5" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 9: Bevelled chrome star with cavity: a blurred shape as the height, the studio matcap and a gold albedo at half
       metalness.  The blurred height extends past the star, where the dielectric half of the material would reflect
       highlights over the transparent albedo, so the result is clipped to the star's shape. -->
     <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="30" diffuseConstant="0.8" specularConstant="0.8"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="30" diffuseConstant="0.8" specularConstant="0.8"
         specularExponent="40" ambient="#303030" metalness="0.5" features="all" matcap="matcaps/studio.png">
         <feDistantLight azimuth="225" elevation="45"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
       <!-- Clip lighting output to the shape -->
       <feComposite in2="SourceAlpha" operator="in"/>
     </filter>

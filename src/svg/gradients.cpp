@@ -522,11 +522,11 @@ static bool read_mesh_patch_origin(const XTag &Tag, SVGMeshPoint &Origin) noexce
       auto &value = Tag.Attribs[a].Value;
       if (value.empty()) continue;
 
-      if (iequals("kotuku:x", name)) {
+      if (iequals("xvg:x", name) or iequals("kotuku:x", name)) { // kotuku: is the legacy prefix
          Origin.x = svtonum<double>(value);
          found_x = true;
       }
-      else if (iequals("kotuku:y", name)) {
+      else if (iequals("xvg:y", name) or iequals("kotuku:y", name)) {
          Origin.y = svtonum<double>(value);
          found_y = true;
       }

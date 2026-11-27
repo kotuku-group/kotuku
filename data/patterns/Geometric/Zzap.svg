@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/namespaces/kotuku">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/namespaces/kotuku">
   <!-- Created in 2026 by Paul Manias.  Freely distributable under the deed of CC0 1.0 Universal -->
   <title>Zzap!</title>
   <desc></desc>
@@ -7,11 +7,11 @@
       width="param(width) 128" height="param(height) 184">
       <rect width="100%" height="100%" fill="param(bkgd) red"/>
 
-      <kotuku:wave fill="param(foreA) yellow" thickness="param(thickness) 16" type="sawtooth"
+      <xvg:wave fill="param(foreA) yellow" thickness="param(thickness) 16" type="sawtooth"
         stroke="param(stroke) black" frequency="param(frequency) 16" stroke-width="4"
         x="-16" y="40" length="160" amplitude="32" stroke-linejoin="miter" stroke-linecap="miter"/>
 
-      <kotuku:wave fill="param(foreB) orange" thickness="param(thickness) 16" type="sawtooth"
+      <xvg:wave fill="param(foreB) orange" thickness="param(thickness) 16" type="sawtooth"
         stroke="param(stroke) black" frequency="param(frequency) 16" stroke-width="4"
         x="-24" y="132" length="192" amplitude="32" stroke-linejoin="miter" stroke-linecap="miter"/>
     </pattern>

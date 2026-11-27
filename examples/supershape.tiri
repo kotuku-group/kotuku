@@ -118,7 +118,7 @@ end
 function shapeSVG():str
    spiral = (glMode is 'Spiral')
    attribs = array<str> {
-      'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"',
+      'xmlns:xvg="http://www.kotuku.dev/xmlns/svg"',
       string.format('cx="%g" cy="%g" r="%g"', glShape.cx, glShape.cy, glShape.radius),
       string.format('m="%g" n1="%g" n2="%g" n3="%g"', glShape.m, glShape.n1, glShape.n2, glShape.n3),
       string.format('a="%g" b="%g" phi="%g"', glShape.a, glShape.b, glShape.phi)
@@ -141,7 +141,7 @@ function shapeSVG():str
       attribs.push(f'fill="{FILL_COLOUR}" fill-rule="evenodd"')
    end
 
-   return '<kotuku:shape ' .. attribs.concat(' ') .. '/>'
+   return '<xvg:shape ' .. attribs.concat(' ') .. '/>'
 end
 
 ----------------------------------------------------------------------------------------------------------------------

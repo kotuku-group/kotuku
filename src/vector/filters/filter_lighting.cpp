@@ -153,7 +153,7 @@ primitive subregion.  Flat areas produce RGB (128, 128, 255).
 Use this result as the Mix input of @DisplacementFX with red for X and green for Y, and use the image to bend as
 its primary input.  Match #Scale, #UnitX, #UnitY and the slope features on both lighting effects to align
 refraction with the shading of the same surface.  `NORMAL` uses dequantisation, sharpening and the detail boost.
-It works under any scene compliance and is available as `kotuku:feNormalMap`.
+It works under any scene compliance and is available as `xvg:feNormalMap`.
 
 The `COMBINED` type also accepts three material terms, all of which are disabled by default.  With #Metalness m,
 #Fresnel f0 and #Wrap w, the result is
@@ -199,8 +199,8 @@ A point or spot light with a range fades to nothing at that distance.  It is at 
 surface nearest to it, and falls from there with the square of the distance, multiplied by a smooth window that
 reaches zero at the range.  A light without a range is not attenuated, as in SVG.
 
-SVG documents can set #Features, #Cavity, #Detail, #Penumbra, #Ambient and the options of each light with `kotuku:`
-attributes, and the `COMBINED` type is available as the `kotuku:feLighting` element, which also accepts the material
+SVG documents can set #Features, #Cavity, #Detail, #Penumbra, #Ambient and the options of each light with `xvg:`
+attributes, and the `COMBINED` type is available as the `xvg:feLighting` element, which also accepts the material
 terms and several light sources; refer to the SVG class for details.
 
 -END-
@@ -2329,7 +2329,7 @@ If no features are enabled, and neither #Ambient nor #Intensity is set, the SVG 
 modification.  Features have no effect when the Compliance of the scene is `SVG1` or `SVG2`, except for the `COMBINED`
 type, which always uses the enhanced pipeline.  The SVG class renders its own scene with a Compliance of `SVG2`, unless
 the document declares a Kōtuku namespace, in which case the Compliance is `NONE` and the features apply.  In SVG
-markup, features are selected with the `kotuku:features` attribute of `feDiffuseLighting` and `feSpecularLighting`.
+markup, features are selected with the `xvg:features` attribute of `feDiffuseLighting` and `feSpecularLighting`.
 
 *********************************************************************************************************************/
 
@@ -3070,25 +3070,25 @@ static ERR LIGHTINGFX_SET_Wrap(extLightingFX *Self, double Value)
 XMLDef: Returns an SVG element that describes the effect.
 
 The result is a complete element.  The lighting types use `feDiffuseLighting`, `feSpecularLighting` or
-`kotuku:feLighting` and include their light sources.  The `NORMAL` type uses `kotuku:feNormalMap` and includes
-the primitive subregion and surface settings.  Settings that SVG cannot express are written as `kotuku:`
-attributes when they differ from their defaults.  These include `kotuku:features` if #Features is not `ALL`, and
-`kotuku:cavity`,
-`kotuku:detail` and `kotuku:penumbra` for #Cavity, #Detail and #Penumbra, `kotuku:normalConvention` and
-`kotuku:normalStrength` for #NormalConvention and #NormalStrength, `kotuku:occlusionChannel` and
-`kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, `kotuku:roughnessChannel` for
-#RoughnessChannel, and `kotuku:ambient` for #Ambient.  The
+`xvg:feLighting` and include their light sources.  The `NORMAL` type uses `xvg:feNormalMap` and includes
+the primitive subregion and surface settings.  Settings that SVG cannot express are written as `xvg:`
+attributes when they differ from their defaults.  These include `xvg:features` if #Features is not `ALL`, and
+`xvg:cavity`,
+`xvg:detail` and `xvg:penumbra` for #Cavity, #Detail and #Penumbra, `xvg:normalConvention` and
+`xvg:normalStrength` for #NormalConvention and #NormalStrength, `xvg:occlusionChannel` and
+`xvg:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, `xvg:roughnessChannel` for
+#RoughnessChannel, and `xvg:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel`, `wrap`, `anisotropy` and `anisotropyAngle` for #Metalness, #Fresnel,
 #Wrap, #Anisotropy and #AnisotropyAngle when they are not zero, and `matcapMode="light"` if #MatcapMode is `LIGHT`.
-The standard elements carry these settings as `kotuku:combinedMetalness` and similar.  An SVG-loaded matcap keeps its
+The standard elements carry these settings as `xvg:combinedMetalness` and similar.  An SVG-loaded matcap keeps its
 original relative reference so the image can be reloaded from the same document folder.  For API-loaded images #MatcapPath must be
 document-relative.  A matcap supplied as a #Matcap bitmap returns `ERR::NoSupport` during serialisation.  The attributes
-of `kotuku:feLighting` and `kotuku:feNormalMap` are written without the prefix because the elements are in the Kōtuku
-namespace.  The document must declare the prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
+of `xvg:feLighting` and `xvg:feNormalMap` are written without the prefix because the elements are in the Kōtuku
+namespace.  The document must declare the prefix, for example `xmlns:xvg="http://www.kotuku.dev/xmlns/svg"`.
 
 Each light is written as a child element, in the order in which the lights were added.  The options of
-#SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
-`kotuku:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
+#SetLightOptions() are written on the light's element as `xvg:colour`, `xvg:intensity`, `xvg:range` and
+`xvg:shadows`, when they differ from their defaults.  The intensity of the first light is #Intensity.
 
 @VectorFilter.EffectXML includes primary, albedo and named map bindings and assigns result names to referenced effects.
 
@@ -3098,10 +3098,10 @@ static ERR lighting_xml(const extLightingFX &Effect, filter_xml_element &Element
 {
    const bool combined = Effect.Type IS LT::COMBINED;
    const bool normal = Effect.Type IS LT::NORMAL;
-   const std::string prefix = (combined or normal) ? "" : "kotuku:";
+   const std::string prefix = (combined or normal) ? "" : "xvg:";
    switch (Effect.Type) {
-      case LT::NORMAL: Element.Name = "kotuku:feNormalMap"; break;
-      case LT::COMBINED: Element.Name = "kotuku:feLighting"; break;
+      case LT::NORMAL: Element.Name = "xvg:feNormalMap"; break;
+      case LT::COMBINED: Element.Name = "xvg:feLighting"; break;
       case LT::DIFFUSE: Element.Name = "feDiffuseLighting"; break;
       case LT::SPECULAR: Element.Name = "feSpecularLighting"; break;
       default: return ERR::InvalidValue;
@@ -3193,10 +3193,10 @@ static ERR lighting_xml(const extLightingFX &Effect, filter_xml_element &Element
          child.attribute("specularExponent", light.SpotExponent);
          if (light.ConeAngle) child.attribute("limitingConeAngle", light.ConeAngle);
       }
-      if (light.HasColour) write_filter_xml_colour(child, "kotuku:colour", light.Colour);
-      if (light.Intensity != 1.0) child.attribute("kotuku:intensity", light.Intensity);
-      if (light.Range > 0) child.attribute("kotuku:range", light.Range);
-      if (not light.Shadows) child.attribute("kotuku:shadows", "false");
+      if (light.HasColour) write_filter_xml_colour(child, "xvg:colour", light.Colour);
+      if (light.Intensity != 1.0) child.attribute("xvg:intensity", light.Intensity);
+      if (light.Range > 0) child.attribute("xvg:range", light.Range);
+      if (not light.Shadows) child.attribute("xvg:shadows", "false");
    }
    return ERR::Okay;
 }

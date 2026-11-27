@@ -749,10 +749,10 @@ static ERR morphology_xml(const extMorphologyFX &Effect, filter_xml_element &Ele
    Element.attribute("operator", Effect.Operator IS MOP::ERODE ? "erode" : "dilate");
    Element.attribute("radius", Element.number(Effect.RadiusX) + ' ' + Element.number(Effect.RadiusY));
 
-   if (Effect.KernelShape IS MKS::ELLIPSE) Element.attribute("kotuku:kernelShape", "ellipse");
-   else if (Effect.KernelShape IS MKS::CROSS) Element.attribute("kotuku:kernelShape", "cross");
+   if (Effect.KernelShape IS MKS::ELLIPSE) Element.attribute("xvg:kernelShape", "ellipse");
+   else if (Effect.KernelShape IS MKS::CROSS) Element.attribute("xvg:kernelShape", "cross");
 
-   if (Effect.ChannelMode IS MCM::ALPHA) Element.attribute("kotuku:channelMode", "alpha");
+   if (Effect.ChannelMode IS MCM::ALPHA) Element.attribute("xvg:channelMode", "alpha");
 
    return ERR::Okay;
 }

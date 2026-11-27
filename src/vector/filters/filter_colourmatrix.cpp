@@ -601,19 +601,19 @@ static ERR colour_xml(const extColourFX &Effect, filter_xml_element &Element)
       case CM::SATURATE: Element.attribute("type", "saturate"); standard_count = 1; break;
       case CM::HUE_ROTATE: Element.attribute("type", "hueRotate"); standard_count = 1; break;
       case CM::LUMINANCE_ALPHA: Element.attribute("type", "luminanceToAlpha"); break;
-      case CM::CONTRAST: Element.attribute("kotuku:type", "contrast"); extension = true; break;
-      case CM::BRIGHTNESS: Element.attribute("kotuku:type", "brightness"); extension = true; break;
-      case CM::HUE: Element.attribute("kotuku:type", "hue"); extension = true; break;
-      case CM::DESATURATE: Element.attribute("kotuku:type", "desaturate"); extension = true; break;
-      case CM::COLOURISE: Element.attribute("kotuku:type", "colourise"); extension = true; break;
-      case CM::NONE: Element.attribute("kotuku:type", "none"); extension = true; break;
+      case CM::CONTRAST: Element.attribute("xvg:type", "contrast"); extension = true; break;
+      case CM::BRIGHTNESS: Element.attribute("xvg:type", "brightness"); extension = true; break;
+      case CM::HUE: Element.attribute("xvg:type", "hue"); extension = true; break;
+      case CM::DESATURATE: Element.attribute("xvg:type", "desaturate"); extension = true; break;
+      case CM::COLOURISE: Element.attribute("xvg:type", "colourise"); extension = true; break;
+      case CM::NONE: Element.attribute("xvg:type", "none"); extension = true; break;
       default: return ERR::InvalidValue;
    }
 
    if (standard_count) Element.list("values", std::span(Effect.Values.data(), size_t(standard_count)));
    if (extension or (Effect.TotalValues != standard_count)) {
       // Preserve the authored array length, including entries unused by the selected mode.
-      Element.list("kotuku:values", std::span(Effect.Values.data(), size_t(Effect.TotalValues)));
+      Element.list("xvg:values", std::span(Effect.Values.data(), size_t(Effect.TotalValues)));
    }
    return ERR::Okay;
 }

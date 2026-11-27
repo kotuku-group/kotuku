@@ -45,7 +45,7 @@
       <description>
 <p>The Amount interpolates between the <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> source and the fully composited result.  A value of 1, the default, gives the unmodified result of the <fl>Operator</fl> and a value of 0 passes the Mix source through unchanged. Intermediate values blend the two with premultiplied components in the effect's colour space, so the alpha of the result is also interpolated.  The Amount applies to every operator, including <code>ARITHMETIC</code>.</p>
 <p>The value must be in the range 0 - 1.  Values outside of this range, or that are not finite, are rejected with <code>ERR::InvalidValue</code>.  If an <fl>AmountMask</fl> is bound then it scales the Amount for each pixel.  In <code>HEIGHT</code> mode the Amount interpolates between the Mix height and the result.</p>
-<p>SVG documents can set this field with the <code>kotuku:amount</code> attribute of <code>feComposite</code> and <code>feBlend</code>.</p>
+<p>SVG documents can set this field with the <code>xvg:amount</code> attribute of <code>feComposite</code> and <code>feBlend</code>.</p>
       </description>
     </field>
 
@@ -58,7 +58,7 @@
 <p>Bind an earlier effect in the same filter to vary the <fl>Amount</fl> across the image.  The mask is aligned with the scene and sampled at each output pixel, and the sampled value multiplies <fl>Amount</fl> for that pixel.  Where the mask is 1 the composited result is used at full <fl>Amount</fl>, and where it is 0 the <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> source passes through unchanged.</p>
 <p>The value is read from the alpha channel of an image result, as stored and without colour conversion.  A producer with a numerical result supplies the value directly.  Values are limited to the range 0 - 1.  Pixels outside of the producer's result read as 0.  The mask does not contribute to the default primitive subregion, and it is not read while <fl>Amount</fl> is 0.</p>
 <p>Attach both effects to the same filter before setting this field.  If the producer is removed, this field is cleared and the mask no longer applies.  Set the field to <code>NULL</code> to remove the mask.</p>
-<p>SVG documents can set this field with the <code>kotuku:amountMask</code> attribute of <code>feComposite</code> and <code>feBlend</code>, which names the <code>result</code> of an earlier primitive.</p>
+<p>SVG documents can set this field with the <code>xvg:amountMask</code> attribute of <code>feComposite</code> and <code>feBlend</code>, which names the <code>result</code> of an earlier primitive.</p>
       </description>
     </field>
 
@@ -133,7 +133,7 @@
 <li><code>ATOP</code>: <code>b</code>.</li>
 </list>
 <p>No result is clamped, so heights can exceed 1 or fall below 0, and a non-finite result is stored as a missing sample. <fl>Amount</fl> and <fl>AmountMask</fl> blend from <code>b</code> to the result.  The other operators are not supported in this mode, and the filter fails to draw with <code>ERR::NoSupport</code>.  The colour space of the effect does not apply.</p>
-<p>The effect's result cannot be the last in a filter, which must produce an image.  Changing the mode rebuilds the filter's draw plan.  SVG documents set this mode with <code>kotuku:outputMode=&quot;height&quot;</code> on <code>feComposite</code> and <code>feBlend</code>.</p>
+<p>The effect's result cannot be the last in a filter, which must produce an image.  Changing the mode rebuilds the filter's draw plan.  SVG documents set this mode with <code>xvg:outputMode=&quot;height&quot;</code> on <code>feComposite</code> and <code>feBlend</code>.</p>
 <types lookup="FOM"/>
       </description>
     </field>

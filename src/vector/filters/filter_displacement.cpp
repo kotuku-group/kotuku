@@ -195,7 +195,7 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
 -FIELD-
 EdgeMode: Controls how @FilterEffect.Input is sampled outside its image region.
 
-`TRANSPARENT` is the default.  The SVG extension `kotuku:edgeMode` accepts `transparent`, `clamp`,
+`TRANSPARENT` is the default.  The SVG extension `xvg:edgeMode` accepts `transparent`, `clamp`,
 `repeat` and `mirror`.
 
 *********************************************************************************************************************/
@@ -214,13 +214,13 @@ static ERR DISPLACEMENTFX_SET_EdgeMode(extDisplacementFX *Self, FEM Value)
 NeutralX: The X channel value that gives zero displacement in a colour map.
 
 The range is 0 to 1, with a default of 0.5.  The value is in the filter colour space for RGB and in unit
-coverage for alpha.  The SVG attribute is `kotuku:neutralX`.
+coverage for alpha.  The SVG attribute is `xvg:neutralX`.
 
 -FIELD-
 NeutralY: The Y channel value that gives zero displacement in a colour map.
 
 The range is 0 to 1, with a default of 0.5.  The value is in the filter colour space for RGB and in unit
-coverage for alpha.  The SVG attribute is `kotuku:neutralY`.
+coverage for alpha.  The SVG attribute is `xvg:neutralY`.
 
 *********************************************************************************************************************/
 
@@ -247,7 +247,7 @@ always read as colour.  RGB normal components ignore the neutral fields.
 
 In normal map mode a signed component of +127 displaces by half the effective scale for its axis.
 
-The SVG attribute is `kotuku:normalConvention`, with the values `auto`, `y-down` and `y-up`.
+The SVG attribute is `xvg:normalConvention`, with the values `auto`, `y-down` and `y-up`.
 
 -END-
 
@@ -312,13 +312,13 @@ static ERR DISPLACEMENTFX_SET_Scale(extDisplacementFX *Self, double Value)
 ScaleX: Overrides #Scale on the X axis.
 
 Accepts any finite signed value.  A zero override disables horizontal displacement in primitive coordinates.
-Read or write NaN for inheritance from #Scale.  An explicit override serialises as `kotuku:scaleX`.
+Read or write NaN for inheritance from #Scale.  An explicit override serialises as `xvg:scaleX`.
 
 -FIELD-
 ScaleY: Overrides #Scale on the Y axis.
 
 Accepts any finite signed value.  A zero override disables vertical displacement in primitive coordinates.
-Read or write NaN for inheritance from #Scale.  An explicit override serialises as `kotuku:scaleY`.
+Read or write NaN for inheritance from #Scale.  An explicit override serialises as `xvg:scaleY`.
 
 *********************************************************************************************************************/
 
@@ -390,20 +390,20 @@ static ERR displacement_xml(const extDisplacementFX &Effect, filter_xml_element 
    Element.attribute("scale", Effect.Scale);
    Element.attribute("xChannelSelector", channels.substr(int(Effect.XChannel), 1));
    Element.attribute("yChannelSelector", channels.substr(int(Effect.YChannel), 1));
-   if (std::isfinite(Effect.ScaleX)) Element.attribute("kotuku:scaleX", Effect.ScaleX);
-   if (std::isfinite(Effect.ScaleY)) Element.attribute("kotuku:scaleY", Effect.ScaleY);
-   if (Effect.NeutralX != 0.5) Element.attribute("kotuku:neutralX", Effect.NeutralX);
-   if (Effect.NeutralY != 0.5) Element.attribute("kotuku:neutralY", Effect.NeutralY);
+   if (std::isfinite(Effect.ScaleX)) Element.attribute("xvg:scaleX", Effect.ScaleX);
+   if (std::isfinite(Effect.ScaleY)) Element.attribute("xvg:scaleY", Effect.ScaleY);
+   if (Effect.NeutralX != 0.5) Element.attribute("xvg:neutralX", Effect.NeutralX);
+   if (Effect.NeutralY != 0.5) Element.attribute("xvg:neutralY", Effect.NeutralY);
    switch (Effect.EdgeMode) {
-      case FEM::CLAMP: Element.attribute("kotuku:edgeMode", "clamp"); break;
-      case FEM::REPEAT: Element.attribute("kotuku:edgeMode", "repeat"); break;
-      case FEM::MIRROR: Element.attribute("kotuku:edgeMode", "mirror"); break;
+      case FEM::CLAMP: Element.attribute("xvg:edgeMode", "clamp"); break;
+      case FEM::REPEAT: Element.attribute("xvg:edgeMode", "repeat"); break;
+      case FEM::MIRROR: Element.attribute("xvg:edgeMode", "mirror"); break;
       case FEM::TRANSPARENT: break;
    }
    if (Effect.ResampleMethod IS VSM::NEIGHBOUR) Element.attribute("image-rendering", "optimizeSpeed");
    else write_filter_xml_resampling(Element, Effect.ResampleMethod);
-   if (Effect.NormalConvention IS NMC::Y_DOWN) Element.attribute("kotuku:normalConvention", "y-down");
-   else if (Effect.NormalConvention IS NMC::Y_UP) Element.attribute("kotuku:normalConvention", "y-up");
+   if (Effect.NormalConvention IS NMC::Y_DOWN) Element.attribute("xvg:normalConvention", "y-down");
+   else if (Effect.NormalConvention IS NMC::Y_UP) Element.attribute("xvg:normalConvention", "y-up");
    return ERR::Okay;
 }
 

@@ -80,7 +80,7 @@ end
 @Test function KotukuNamespaceDropsCompliance()
    for _, uri in ipairs({ 'http://www.kotuku.dev/xmlns/svg', 'http://www.kotuku.dev/namespaces/kotuku' }) do
       local svg <close> = obj.new('svg', {
-         statement=f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="{uri}"/>'
+         statement=f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="{uri}"/>'
       })
       assert(svg.scene.compliance is VSC_NONE, f'{uri} must drop compliance, got {svg.scene.compliance}')
    end

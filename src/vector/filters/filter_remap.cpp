@@ -596,12 +596,12 @@ static ERR remap_xml(const extRemapFX &Effect, filter_xml_element &Element)
             child.attribute("type", "linear");
             child.attribute("slope", -1);
             child.attribute("intercept", 1);
-            child.attribute("kotuku:type", "invert");
+            child.attribute("xvg:type", "invert");
             break;
 
          case RFT::MASK:
-            child.attribute("kotuku:type", "mask");
-            child.attribute("kotuku:mask", transfer.Mask);
+            child.attribute("xvg:type", "mask");
+            child.attribute("xvg:mask", transfer.Mask);
             break;
       }
    }

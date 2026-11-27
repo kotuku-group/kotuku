@@ -452,8 +452,8 @@ static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent,
 
    XTag *patch_tag;
    if ((Independent) and (XML->getTag(patch_index, &patch_tag) IS ERR::Okay)) {
-      xml::NewAttrib(patch_tag, "kotuku:x", Patch.Top.StartX);
-      xml::NewAttrib(patch_tag, "kotuku:y", Patch.Top.StartY);
+      xml::NewAttrib(patch_tag, "xvg:x", Patch.Top.StartX);
+      xml::NewAttrib(patch_tag, "xvg:y", Patch.Top.StartY);
    }
 
    if ((RowIndex IS 0) or (Independent)) {
@@ -702,8 +702,8 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
 
             if (!error) {
-               if (filter->Opacity != 1.0) xml::NewAttrib(tag, "kotuku:opacity", filter->Opacity);
-               if (filter->AspectRatio IS VFA::NONE) xml::NewAttrib(tag, "kotuku:aspectRatio", "none");
+               if (filter->Opacity != 1.0) xml::NewAttrib(tag, "xvg:opacity", filter->Opacity);
+               if (filter->AspectRatio IS VFA::NONE) xml::NewAttrib(tag, "xvg:aspectRatio", "none");
                if (filter->ResX or filter->ResY) {
                   xml::NewAttrib(tag, "filterRes", std::to_string(filter->ResX) + ' ' + std::to_string(filter->ResY));
                }
@@ -713,7 +713,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
          else if (def->classID() IS CLASSID::VECTORTRANSITION) {
             int transition_index;
             XTag *tag;
-            error = XML->insertXML(def_index, XMI::CHILD_END, "<kotuku:transition/>", &transition_index);
+            error = XML->insertXML(def_index, XMI::CHILD_END, "<xvg:transition/>", &transition_index);
             if (!error) error = XML->getTag(transition_index, &tag);
             if (!error) xml::NewAttrib(tag, "id", key);
 
@@ -873,7 +873,7 @@ static ERR embed_collection_paints(extSVG *Self, objXML *XML, int Root)
 static bool uses_kotuku_markup(const XTag &Tag)
 {
    for (const auto &attribute : Tag.Attribs) {
-      if (attribute.Name.starts_with("kotuku:")) return true;
+      if (attribute.Name.starts_with("xvg:")) return true;
    }
    return std::ranges::any_of(Tag.Children, uses_kotuku_markup);
 }
@@ -887,12 +887,12 @@ static ERR save_svg_document(extSVG *Self, objXML *XML, int Root, OBJECTPTR Dest
    XTag *root;
    if (auto error = XML->getTag(Root, &root); error != ERR::Okay) return error;
 
-   if (Self->Scene->Compliance IS VSC::SVG1) xml::NewAttrib(root, "kotuku:compliance", "svg1");
+   if (Self->Scene->Compliance IS VSC::SVG1) xml::NewAttrib(root, "xvg:compliance", "svg1");
    else if (Self->Scene->Compliance IS VSC::SVG2) {
-      if (uses_kotuku_markup(*root)) xml::NewAttrib(root, "kotuku:compliance", "svg2");
+      if (uses_kotuku_markup(*root)) xml::NewAttrib(root, "xvg:compliance", "svg2");
       else {
          const auto declaration = std::ranges::find_if(root->Attribs, [](const auto &Attribute) {
-            return Attribute.Name IS "xmlns:kotuku";
+            return Attribute.Name IS "xmlns:xvg";
          });
          if (declaration != root->Attribs.end()) root->Attribs.erase(declaration);
       }
@@ -1078,7 +1078,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       auto shape = (objVector *)guide_obj;
       VMF guide_flags;
       XTag *guide_tag;
-      error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:guidePath/>", &guide_tag);
+      error = XML->insertStatement(TagID, XMI::CHILD_END, "<xvg:guidePath/>", &guide_tag);
 
       if (const auto shape_id = vector_reference_id(shape); (!error) and (not shape_id.empty())) {
          auto shape_ref = std::format("url(#{})", shape_id);
@@ -1442,7 +1442,7 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
    double dbl;
    Unit unit;
 
-   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<xvg:wave/>", &tag);
 
    if (!error) {
       if (!wave->getX(unit))        set_dimension(tag, "x", unit);
@@ -1507,7 +1507,7 @@ static ERR save_svg_scan_spiral(extSVG *Self, objXML *XML, objVector *Vector, in
    XTag *tag;
    int length;
 
-   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:spiral/>", &tag);
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<xvg:spiral/>", &tag);
 
    if (!error) {
       Unit unit;
@@ -1545,7 +1545,7 @@ static ERR save_svg_scan_shape(extSVG *Self, objXML *XML, objVector *Vector, int
    auto shape = (objVectorShape *)Vector;
    XTag *tag;
 
-   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<xvg:shape/>", &tag);
 
    if (!error) {
       double dbl;

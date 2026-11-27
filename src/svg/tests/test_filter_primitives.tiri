@@ -409,13 +409,13 @@ end
 @Test function BlurEdgeModesRoundTripThroughEffectXML()
    local source = '<feComponentTransfer x="8" y="8" width="3" height="3"/>'
    local content = '<rect x="10" y="9" width="1" height="1" fill="white" filter="url(#f)"/>'
-   local namespace_attrib = 'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"'
+   local namespace_attrib = 'xmlns:xvg="http://www.kotuku.dev/xmlns/svg"'
    for _, mode in {
       { input='', output='', alpha=85 },
       { input='edgeMode="none"', output='', alpha=85 },
       { input='edgeMode="duplicate"', output='edgeMode="duplicate"', alpha=170 },
       { input='edgeMode="wrap"', output='edgeMode="wrap"', alpha=85 },
-      { input='kotuku:edgeMode="mirror"', output='kotuku:edgeMode="mirror"', alpha=141 }
+      { input='xvg:edgeMode="mirror"', output='xvg:edgeMode="mirror"', alpha=141 }
    } do
       local svg <close> = document(source .. f'<feGaussianBlur stdDeviation="1 0" {mode.input}/>',
          content, 64, namespace_attrib, 'filterUnits="userSpaceOnUse"')
@@ -466,12 +466,12 @@ end
 
 @Test function BlurMirrorUsesScopedNamespace()
    local uri = 'http://www.kotuku.dev/xmlns/svg'
-   local declarations = f'xmlns:k="{uri}" xmlns:kotuku="{uri}"'
+   local declarations = f'xmlns:k="{uri}" xmlns:xvg="{uri}"'
    for _, mode in {
-      { input='k:edgeMode="mirror"', output='kotuku:edgeMode="mirror"' },
+      { input='k:edgeMode="mirror"', output='xvg:edgeMode="mirror"' },
       { input='xmlns:k="http://www.kotuku.dev/namespaces/kotuku" k:edgeMode="mirror"',
-        output='kotuku:edgeMode="mirror"' },
-      { input='xmlns:kotuku="urn:foreign" kotuku:edgeMode="mirror"', output='edgeMode="duplicate"' }
+        output='xvg:edgeMode="mirror"' },
+      { input='xmlns:xvg="urn:foreign" xvg:edgeMode="mirror"', output='edgeMode="duplicate"' }
    } do
       local effect = f'<feGaussianBlur stdDeviation="1" edgeMode="duplicate" {mode.input}/>'
       local svg <close> = document(effect, nil, 64, declarations)
@@ -689,7 +689,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Kotuku lighting attributes.  Each is read through a prefix bound to a Kotuku namespace, so the prefix name is free.
 
-KOTUKU_NS <const> = 'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"'
+KOTUKU_NS <const> = 'xmlns:xvg="http://www.kotuku.dev/xmlns/svg"'
 
 -- A shallow ground with a raised block, which casts a shadow, and a low ridge with shallow creases.
 
@@ -780,7 +780,7 @@ end
       { value='all', expected=LFX_ALL },
       { value='shadows sky-occlusion bogus', expected=LFX_SHADOWS } -- Unknown names are skipped
    } do
-      local svg <close> = lightingDocument(f'kotuku:features="{case.value}"')
+      local svg <close> = lightingDocument(f'xvg:features="{case.value}"')
       local fx = lightingFX(svg)
       assert(fx.features is case.expected, f'"{case.value}" must select {case.expected}, got {fx.features}')
    end
@@ -788,23 +788,23 @@ end
    local svg <close> = lightingDocument('k:features="none"', nil, 'xmlns:k="http://www.kotuku.dev/namespaces/kotuku"')
    assert(lightingFX(svg).features is 0, 'Any prefix bound to a Kotuku namespace must be accepted')
 
-   local foreign <close> = lightingDocument('kotuku:features="none"', nil, 'xmlns:kotuku="urn:foreign"')
+   local foreign <close> = lightingDocument('xvg:features="none"', nil, 'xmlns:xvg="urn:foreign"')
    assert(lightingFX(foreign).features is LFX_ALL, 'A foreign namespace must not set Features')
 end
 
 @Test function LightingStrengthAttributesSetFields()
-   local svg <close> = lightingDocument('kotuku:cavity="0.6" kotuku:detail="2.5" kotuku:penumbra="6"')
+   local svg <close> = lightingDocument('xvg:cavity="0.6" xvg:detail="2.5" xvg:penumbra="6"')
    local fx = lightingFX(svg)
    assert((fx.cavity is 0.6) and (fx.detail is 2.5) and (fx.penumbra is 6),
       f'Strengths must be read (got {fx.cavity}, {fx.detail}, {fx.penumbra})')
 
-   local invalid <close> = lightingDocument('kotuku:cavity="-1" kotuku:detail="0.5" kotuku:penumbra="-2"')
+   local invalid <close> = lightingDocument('xvg:cavity="-1" xvg:detail="0.5" xvg:penumbra="-2"')
    fx = lightingFX(invalid)
    assert((fx.cavity is 0.25) and (fx.detail is 1.5) and (fx.penumbra is 2),
       f'Invalid strengths must leave the defaults (got {fx.cavity}, {fx.detail}, {fx.penumbra})')
 
-   local malformed <close> = lightingDocument('kotuku:cavity="bad" kotuku:detail="3x" kotuku:penumbra="0px"',
-      '<feDistantLight elevation="30" kotuku:intensity="bad"/>')
+   local malformed <close> = lightingDocument('xvg:cavity="bad" xvg:detail="3x" xvg:penumbra="0px"',
+      '<feDistantLight elevation="30" xvg:intensity="bad"/>')
    fx = lightingFX(malformed)
    assert((fx.cavity is 0.25) and (fx.detail is 1.5) and (fx.penumbra is 2) and (fx.intensity is 1),
       'Malformed numbers and trailing text must leave the defaults')
@@ -829,7 +829,7 @@ end
 -- A document that sets the attributes renders as the same filter configured through the API in a NONE scene.
 
 @Test function LightingAttributesMatchTheAPI()
-   local attribs = 'kotuku:features="shadows cavity detail" kotuku:cavity="0.6" kotuku:detail="2" kotuku:penumbra="6"'
+   local attribs = 'xvg:features="shadows cavity detail" xvg:cavity="0.6" xvg:detail="2" xvg:penumbra="6"'
    local svg <close> = lightingDocument(attribs)
    assert(svg.scene.compliance is VSC_NONE, 'The Kotuku namespace must drop compliance')
    local doc <close> = draw(svg, 64)
@@ -851,14 +851,14 @@ end
 @Test function LightingXMLDefRoundTrips()
    for _, case in array<table> {
       { attribs='', light=nil },
-      { attribs='kotuku:features="shadows detail" kotuku:cavity="0.5" kotuku:penumbra="0"', light=nil },
-      { attribs='kotuku:features="dequantise-wide"', light=nil },
-      { attribs='kotuku:features="all local-shadows" kotuku:penumbra="4"', light='<fePointLight x="56" y="20" z="30"/>' },
-      { attribs='kotuku:features="local-shadows cavity"',
-        light='<feSpotLight x="60" y="4" z="40" pointsAtX="20" pointsAtY="40" pointsAtZ="0" kotuku:shadows="false"/>' },
-      { attribs='kotuku:features="none" lighting-color="#ffcc99" kernelUnitLength="2 1.5"',
+      { attribs='xvg:features="shadows detail" xvg:cavity="0.5" xvg:penumbra="0"', light=nil },
+      { attribs='xvg:features="dequantise-wide"', light=nil },
+      { attribs='xvg:features="all local-shadows" xvg:penumbra="4"', light='<fePointLight x="56" y="20" z="30"/>' },
+      { attribs='xvg:features="local-shadows cavity"',
+        light='<feSpotLight x="60" y="4" z="40" pointsAtX="20" pointsAtY="40" pointsAtZ="0" xvg:shadows="false"/>' },
+      { attribs='xvg:features="none" lighting-color="#ffcc99" kernelUnitLength="2 1.5"',
         light='<fePointLight x="20" y="12" z="40"/>' },
-      { attribs='kotuku:detail="3" lighting-color="rgb(64 128 255)"',
+      { attribs='xvg:detail="3" lighting-color="rgb(64 128 255)"',
         light='<feSpotLight x="60" y="4" z="50" pointsAtX="30" pointsAtY="30" pointsAtZ="0" ' ..
            'specularExponent="4" limitingConeAngle="25"/>' }
    } do
@@ -867,7 +867,7 @@ end
       local _, filter = check svg.scene.mtFindDef('f')
       local xml = filter.effectXML
       if case.attribs is '' then
-         assert(xml.find('kotuku:', 0, true) is nil, f'Default settings must be written as standard SVG: {xml}')
+         assert(xml.find('xvg:', 0, true) is nil, f'Default settings must be written as standard SVG: {xml}')
       end
 
       local loaded <close> = document(xml, LIGHTING_CONTENT, 64, KOTUKU_NS)
@@ -880,7 +880,7 @@ end
    end
 
    local specular <close> = document('<feSpecularLighting in="SourceAlpha" surfaceScale="4" specularConstant="0.8" ' ..
-      'specularExponent="24" kotuku:features="specular-aa"><feDistantLight azimuth="45" elevation="40"/>' ..
+      'specularExponent="24" xvg:features="specular-aa"><feDistantLight azimuth="45" elevation="40"/>' ..
       '</feSpecularLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS)
    local _, filter = check specular.scene.mtFindDef('f')
    local xml = filter.effectXML
@@ -898,7 +898,7 @@ end
             '<filter id="f" x="-110" y="0" width="174" height="64" filterUnits="userSpaceOnUse" ' ..
             'color-interpolation-filters="sRGB"><feFlood x="-85" y="0" width="10" height="64" result="block"/>' ..
             '<feDiffuseLighting in="block" x="-110" y="0" width="174" height="64" surfaceScale="64" ' ..
-            f'kotuku:features="{features}" kotuku:penumbra="0"><fePointLight x="-105" y="32" z="65"/>' ..
+            f'xvg:features="{features}" xvg:penumbra="0"><fePointLight x="-105" y="32" z="65"/>' ..
             '</feDiffuseLighting></filter><rect width="64" height="64" filter="url(#f)"/></svg>' })
          local bmp <close> = draw(svg, size)
          local p = mGfx.ReadRGBPixel(bmp, 20, 32)
@@ -919,7 +919,7 @@ end
          'filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood x="40" y="0" width="10" ' ..
          'height="64" result="block"/><feDiffuseLighting in="block" x="-100000" y="0" width="100064" ' ..
          'height="64" surfaceScale="64" ' ..
-         f'kotuku:features="{features}" kotuku:penumbra="0"><fePointLight x="60" y="32" z="65"/>' ..
+         f'xvg:features="{features}" xvg:penumbra="0"><fePointLight x="60" y="32" z="65"/>' ..
          '</feDiffuseLighting></filter><rect width="64" height="64" filter="url(#f)"/></svg>' })
       local bmp <close> = draw(svg, 64)
       -- ReadRGBPixel() reuses its result, so the channels are copied before the next read.  The ground between the
@@ -945,10 +945,10 @@ end
    }) do
       local light = f'<fePointLight x="{position.x}" y="{position.y}" z="10000000000"/>'
       local terrain = '<rect width="64" height="64" filter="url(#f)"/>'
-      local lighting = '<feDiffuseLighting in="SourceAlpha" kotuku:penumbra="0" '
-      local svg <close> = document(lighting .. 'kotuku:features="local-shadows">' .. light .. '</feDiffuseLighting>',
+      local lighting = '<feDiffuseLighting in="SourceAlpha" xvg:penumbra="0" '
+      local svg <close> = document(lighting .. 'xvg:features="local-shadows">' .. light .. '</feDiffuseLighting>',
          terrain, 64, KOTUKU_NS)
-      local baseline <close> = document(lighting .. 'kotuku:features="none">' .. light .. '</feDiffuseLighting>',
+      local baseline <close> = document(lighting .. 'xvg:features="none">' .. light .. '</feDiffuseLighting>',
          terrain, 64, KOTUKU_NS)
       local shadowed <close> = draw(svg, 64)
       local unshadowed <close> = draw(baseline, 64)
@@ -981,8 +981,8 @@ end
       ramp ..= '</g>'
 
       local azimuth = vertical ? 270 : 180
-      local lighting = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
-         f'features="dequantise"><feDistantLight azimuth="{azimuth}" elevation="30"/></kotuku:feLighting>'
+      local lighting = '<xvg:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
+         f'features="dequantise"><feDistantLight azimuth="{azimuth}" elevation="30"/></xvg:feLighting>'
       local svg <close> = document(lighting, ramp, 64, KOTUKU_NS)
       local legacy <close> = draw(svg, 64)
       local before = measureSpread(legacy, vertical)
@@ -995,8 +995,8 @@ end
       end
    end
 
-   local flat = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
-      'features="none"><feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
+   local flat = '<xvg:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
+      'features="none"><feDistantLight azimuth="180" elevation="30"/></xvg:feLighting>'
    for width in values(array<int> { 1, 32 }) do
       local ledge = '<g filter="url(#f)"><rect width="32" height="64" fill-opacity="0.4"/>' ..
          f'<rect x="32" width="{width}" height="64" fill-opacity="{103.25 / 255}"/>' ..
@@ -1017,9 +1017,9 @@ end
    ramp ..= '</g>'
 
    assert((LFX_ALL & LFX_DEQUANTISE_WIDE) != 0, 'ALL must include DEQUANTISE_WIDE')
-   local lighting = '<kotuku:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
+   local lighting = '<xvg:feLighting in="SourceAlpha" surfaceScale="80" specularConstant="0" ' ..
       'features="dequantise sharpen cavity detail shadows specular-aa local-shadows">' ..
-      '<feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
+      '<feDistantLight azimuth="180" elevation="30"/></xvg:feLighting>'
    local svg <close> = document(lighting, ramp, 64, KOTUKU_NS)
    local legacy <close> = draw(svg, 64)
    lightingFX(svg).features = LFX_ALL
@@ -1028,9 +1028,9 @@ end
 end
 
 @Test function WideDequantisationLeavesNativeHeightsIntact()
-   local effects = '<feTurbulence type="fractalNoise" baseFrequency=".02" kotuku:outputMode="height" result="height"/>' ..
-      '<kotuku:feLighting in="height" surfaceScale="20" specularConstant="0" features="none">' ..
-      '<feDistantLight azimuth="180" elevation="30"/></kotuku:feLighting>'
+   local effects = '<feTurbulence type="fractalNoise" baseFrequency=".02" xvg:outputMode="height" result="height"/>' ..
+      '<xvg:feLighting in="height" surfaceScale="20" specularConstant="0" features="none">' ..
+      '<feDistantLight azimuth="180" elevation="30"/></xvg:feLighting>'
    local svg <close> = document(effects, nil, 64, KOTUKU_NS)
    local original <close> = draw(svg, 64)
    assert(mGfx.ReadRGBPixel(original, 32, 32).alpha is 255, 'The native height chain must render')
@@ -1040,7 +1040,7 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Ambient light, intensity and kotuku:feLighting.  The combined content has a coloured albedo, which is transparent
+-- Ambient light, intensity and xvg:feLighting.  The combined content has a coloured albedo, which is transparent
 -- in the top-left corner so that the specular light can be seen beyond it.
 
 COMBINED_CONTENT <const> = '<g filter="url(#f)">' ..
@@ -1048,8 +1048,8 @@ COMBINED_CONTENT <const> = '<g filter="url(#f)">' ..
    '<rect x="36" y="16" width="16" height="16" fill="#2f6f9a"/></g>'
 
 function combinedDocument(Attribs:str, Light:str):obj
-   return document('<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" ' ..
-      f'{Attribs ?? ""}>{Light ?? "<feDistantLight azimuth=\"0\" elevation=\"30\"/>"}</kotuku:feLighting>',
+   return document('<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" ' ..
+      f'{Attribs ?? ""}>{Light ?? "<feDistantLight azimuth=\"0\" elevation=\"30\"/>"}</xvg:feLighting>',
       COMBINED_CONTENT, 64, KOTUKU_NS)
 end
 
@@ -1058,13 +1058,13 @@ function near(A:num!, B:num!):bool
 end
 
 @Test function LightingAmbientAndIntensityAttributes()
-   local svg <close> = lightingDocument('kotuku:ambient="rgb(51 102 153 / 0.5)"',
-      '<feDistantLight azimuth="0" elevation="30" kotuku:intensity="0.75"/>')
+   local svg <close> = lightingDocument('xvg:ambient="rgb(51 102 153 / 0.5)"',
+      '<feDistantLight azimuth="0" elevation="30" xvg:intensity="0.75"/>')
    local fx = lightingFX(svg)
    local a:any = fx.ambient
    assert(near(a.red, 0.2) and near(a.green, 0.4) and near(a.blue, 0.6) and near(a.alpha, 0.5),
-      f'kotuku:ambient must set Ambient (got {a.red}, {a.green}, {a.blue}, {a.alpha})')
-   assert(fx.intensity is 0.75, f'kotuku:intensity must set Intensity (got {fx.intensity})')
+      f'xvg:ambient must set Ambient (got {a.red}, {a.green}, {a.blue}, {a.alpha})')
+   assert(fx.intensity is 0.75, f'xvg:intensity must set Intensity (got {fx.intensity})')
    local doc <close> = draw(svg, 64)
 
    local plain <close> = lightingDocument()
@@ -1074,21 +1074,21 @@ end
    local diff = imageDifference(doc, draw(plain, 64))
    assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
 
-   local none <close> = lightingDocument('kotuku:ambient="none"')
+   local none <close> = lightingDocument('xvg:ambient="none"')
    assert(lightingFX(none).ambient.alpha is 0, 'An ambient of none must leave Ambient transparent')
 
-   local foreign <close> = lightingDocument('kotuku:ambient="white"',
-      '<feDistantLight azimuth="0" elevation="30" kotuku:intensity="2"/>', 'xmlns:kotuku="urn:foreign"')
+   local foreign <close> = lightingDocument('xvg:ambient="white"',
+      '<feDistantLight azimuth="0" elevation="30" xvg:intensity="2"/>', 'xmlns:xvg="urn:foreign"')
    fx = lightingFX(foreign)
    assert((fx.ambient.alpha is 0) and (fx.intensity is 1), 'A foreign namespace must not set Ambient or Intensity')
 end
 
 @Test function CombinedLightingElementIsParsed()
    local svg <close> = combinedDocument('diffuseConstant="0.8" specularConstant="0.3" specularExponent="12" ' ..
-      'ambient="#336699" features="shadows cavity" cavity="0.5" kotuku:penumbra="4"',
-      '<feDistantLight azimuth="0" elevation="30" kotuku:intensity="1.5"/>')
+      'ambient="#336699" features="shadows cavity" cavity="0.5" xvg:penumbra="4"',
+      '<feDistantLight azimuth="0" elevation="30" xvg:intensity="1.5"/>')
    local fx = lightingFX(svg)
-   assert(fx.type is LT_COMBINED, f'kotuku:feLighting must create the COMBINED type (got {fx.type})')
+   assert(fx.type is LT_COMBINED, f'xvg:feLighting must create the COMBINED type (got {fx.type})')
    assert((fx.constant is 0.8) and (fx.specularConstant is 0.3) and (fx.exponent is 12),
       f'Constants must be read (got {fx.constant}, {fx.specularConstant}, {fx.exponent})')
    assert((fx.features is LFX_SHADOWS | LFX_CAVITY) and (fx.cavity is 0.5) and (fx.penumbra is 4),
@@ -1108,20 +1108,20 @@ end
    assert(#filter.children('LightingFX') is 0, 'feLighting outside the Kotuku namespace must be ignored')
 end
 
--- EffectXML writes kotuku:feLighting with unprefixed extension attributes and preserves both inputs.
+-- EffectXML writes xvg:feLighting with unprefixed extension attributes and preserves both inputs.
 
 @Test function CombinedXMLDefRoundTrips()
    for _, case in array<table> {
       { attribs='diffuseConstant="0.9" specularConstant="0.5" specularExponent="40" lighting-color="#ffcc99"' },
       { attribs='ambient="rgb(10% 20% 30%)" features="shadows specular-aa" detail="2"',
-        light='<fePointLight x="20" y="12" z="40" kotuku:intensity="1.75"/>' }
+        light='<fePointLight x="20" y="12" z="40" xvg:intensity="1.75"/>' }
    } do
       local svg <close> = combinedDocument(case.attribs, case.light)
       local original <close> = draw(svg, 64)
       local _, filter = check svg.scene.mtFindDef('f')
       local xml = filter.effectXML
-      assert(xml.startsWith('<kotuku:feLighting '), f'The combined type must be written as kotuku:feLighting: {xml}')
-      assert(xml.find(' kotuku:features', 0, true) is nil, f'Attributes of kotuku:feLighting are unprefixed: {xml}')
+      assert(xml.startsWith('<xvg:feLighting '), f'The combined type must be written as xvg:feLighting: {xml}')
+      assert(xml.find(' xvg:features', 0, true) is nil, f'Attributes of xvg:feLighting are unprefixed: {xml}')
 
       local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
       local diff = imageDifference(original, draw(loaded, 64))
@@ -1155,8 +1155,8 @@ NORMAL_CONTENT <const> = '<g filter="url(#f)">' ..
 end
 
 @Test function NormalMapAcceptsNativeHeight()
-   local svg <close> = document('<feTurbulence baseFrequency=".04" kotuku:outputMode="height" result="height"/>' ..
-      '<kotuku:feNormalMap in="height" surfaceScale="16"/>', nil, 64, KOTUKU_NS)
+   local svg <close> = document('<feTurbulence baseFrequency=".04" xvg:outputMode="height" result="height"/>' ..
+      '<xvg:feNormalMap in="height" surfaceScale="16"/>', nil, 64, KOTUKU_NS)
    local bitmap <close> = draw(svg, 64)
    local p = mGfx.ReadRGBPixel(bitmap, 32, 32)
    assert((p.alpha is 255) and ((p.red != 128) or (p.green != 128)),
@@ -1166,7 +1166,7 @@ end
 @Test function NormalMapPreservesSingleAxisKernelUnits()
    local settings = 'primitiveUnits="objectBoundingBox"'
    for axis in values(array<str> { 'X', 'Y' }) do
-      local svg <close> = document('<kotuku:feNormalMap in="SourceAlpha" surfaceScale="8" features="none"/>',
+      local svg <close> = document('<xvg:feNormalMap in="SourceAlpha" surfaceScale="8" features="none"/>',
          NORMAL_CONTENT, 64, KOTUKU_NS, settings)
       local fx = lightingFX(svg)
       if axis is 'X' then fx.unitX = 0.02
@@ -1182,7 +1182,7 @@ end
    end
 end
 
--- Material attributes of kotuku:feLighting.  Invalid values keep the defaults, and the standard elements ignore the
+-- Material attributes of xvg:feLighting.  Invalid values keep the defaults, and the standard elements ignore the
 -- attributes, with or without the prefix.
 
 @Test function LightingMaterialAttributes()
@@ -1203,11 +1203,11 @@ end
    assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
    assert(imageDifference(doc, draw(combinedDocument(), 64)) > 0, 'The attributes must change the default render')
 
-   local prefixed <close> = combinedDocument('kotuku:metalness="1" kotuku:wrap="0.25" kotuku:anisotropy="1" ' ..
-      'kotuku:matcapMode="light"')
+   local prefixed <close> = combinedDocument('xvg:metalness="1" xvg:wrap="0.25" xvg:anisotropy="1" ' ..
+      'xvg:matcapMode="light"')
    fx = lightingFX(prefixed)
    assert((fx.metalness is 1) and (fx.wrap is 0.25) and (fx.anisotropy is 1) and (fx.matcapMode is MTC_LIGHT),
-      'The prefixed attributes must be accepted on kotuku:feLighting')
+      'The prefixed attributes must be accepted on xvg:feLighting')
 
    for _, attribs in array<str> {
       'metalness="1.5" fresnel="-0.1" wrap="2" anisotropy="1.01" anisotropyAngle="inf" matcapMode="lit"',
@@ -1220,14 +1220,14 @@ end
          attribs)
    end
 
-   local standard <close> = lightingDocument('kotuku:metalness="1" kotuku:fresnel="0.5" kotuku:wrap="1" ' ..
-      'kotuku:anisotropy="1" kotuku:anisotropyAngle="45" kotuku:matcapMode="light"')
+   local standard <close> = lightingDocument('xvg:metalness="1" xvg:fresnel="0.5" xvg:wrap="1" ' ..
+      'xvg:anisotropy="1" xvg:anisotropyAngle="45" xvg:matcapMode="light"')
    fx = lightingFX(standard)
    assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0) and (fx.anisotropy is 0) and
       (fx.anisotropyAngle is 0) and (fx.matcapMode is MTC_REFLECT),
       'feDiffuseLighting must ignore the material attributes')
-   local carried <close> = lightingDocument('kotuku:combinedMatcapMode="light"')
-   assert(lightingFX(carried).matcapMode is MTC_LIGHT, 'feDiffuseLighting must carry kotuku:combinedMatcapMode')
+   local carried <close> = lightingDocument('xvg:combinedMatcapMode="light"')
+   assert(lightingFX(carried).matcapMode is MTC_LIGHT, 'feDiffuseLighting must carry xvg:combinedMatcapMode')
    local diff_standard = imageDifference(draw(standard, 64), draw(lightingDocument(), 64))
    assert(diff_standard is 0, f'The material attributes must not change feDiffuseLighting ({diff_standard})')
 end
@@ -1289,7 +1289,7 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Multiple lights.  kotuku:feLighting renders every light child in document order, and the Kotuku attributes of a
+-- Multiple lights.  xvg:feLighting renders every light child in document order, and the Kotuku attributes of a
 -- light child set its colour, intensity, range and shadows.
 
 function lightTags(XML:str!):array<str>
@@ -1313,10 +1313,10 @@ end
 -- A key light, a coloured fill with a range and a spot light, separated by descriptive elements.
 
 MIXED_LIGHTS <const> = '<desc>Key, fill and spot</desc>' ..
-   '<feDistantLight azimuth="0" elevation="30" kotuku:shadows="false"/><title>Lights</title>' ..
-   '<fePointLight x="12" y="44" z="30" kotuku:colour="#ff8040" kotuku:intensity="0.5" kotuku:range="60"/>' ..
+   '<feDistantLight azimuth="0" elevation="30" xvg:shadows="false"/><title>Lights</title>' ..
+   '<fePointLight x="12" y="44" z="30" xvg:colour="#ff8040" xvg:intensity="0.5" xvg:range="60"/>' ..
    '<metadata/><feSpotLight x="60" y="4" z="50" pointsAtX="30" pointsAtY="30" pointsAtZ="0" specularExponent="4" ' ..
-   'limitingConeAngle="25" kotuku:colour="rgb(64 128 255)" kotuku:intensity="1.25"/>'
+   'limitingConeAngle="25" xvg:colour="rgb(64 128 255)" xvg:intensity="1.25"/>'
 
 MIXED_ATTRIBS <const> = 'features="shadows cavity" specularConstant="0.4" specularExponent="16"'
 
@@ -1325,12 +1325,12 @@ MIXED_ATTRIBS <const> = 'features="shadows cavity" specularConstant="0.4" specul
    local tags = lightTags(effectXML(svg))
    assert((#tags is 3) and tags[0].startsWith('<feDistantLight') and tags[1].startsWith('<fePointLight') and
       tags[2].startsWith('<feSpotLight'), f'Every light must be parsed in document order ({tags})')
-   assert(tags[0].find('kotuku:shadows="false"') and (not tags[0].find('kotuku:intensity')),
+   assert(tags[0].find('xvg:shadows="false"') and (not tags[0].find('xvg:intensity')),
       f'The key light must keep its options alone ({tags[0]})')
-   assert(tags[1].find('kotuku:colour="rgb(255 128 64)"') and tags[1].find('kotuku:intensity="0.5"') and
-      tags[1].find('kotuku:range="60"'), f'The fill light must have its options ({tags[1]})')
-   assert(tags[2].find('kotuku:colour="rgb(64 128 255)"') and tags[2].find('kotuku:intensity="1.25"') and
-      (not tags[2].find('kotuku:range')), f'The spot light must have its options ({tags[2]})')
+   assert(tags[1].find('xvg:colour="rgb(255 128 64)"') and tags[1].find('xvg:intensity="0.5"') and
+      tags[1].find('xvg:range="60"'), f'The fill light must have its options ({tags[1]})')
+   assert(tags[2].find('xvg:colour="rgb(64 128 255)"') and tags[2].find('xvg:intensity="1.25"') and
+      (not tags[2].find('xvg:range')), f'The spot light must have its options ({tags[2]})')
    local doc <close> = draw(svg, 64)
 
    -- The same lights configured through the API render identically.
@@ -1373,38 +1373,38 @@ end
    local expected <close> = draw(reference, 64)
 
    for _, attribs in array<str> {
-      'kotuku:shadows="true" kotuku:range="none" kotuku:intensity="1"',
-      'kotuku:colour="bogus" kotuku:intensity="-1" kotuku:range="-5" kotuku:shadows="maybe"',
-      'kotuku:intensity="0.5x" kotuku:range="12px" kotuku:colour=""',
-      'kotuku:intensity="" kotuku:range="" kotuku:shadows=""'
+      'xvg:shadows="true" xvg:range="none" xvg:intensity="1"',
+      'xvg:colour="bogus" xvg:intensity="-1" xvg:range="-5" xvg:shadows="maybe"',
+      'xvg:intensity="0.5x" xvg:range="12px" xvg:colour=""',
+      'xvg:intensity="" xvg:range="" xvg:shadows=""'
    } do
       local svg <close> = combinedDocument(MIXED_ATTRIBS, f'{point} {attribs}/>')
       local tags = lightTags(effectXML(svg))
-      assert((#tags is 1) and (not tags[0].find('kotuku:')), f'{attribs}: the defaults must be kept ({tags})')
+      assert((#tags is 1) and (not tags[0].find('xvg:')), f'{attribs}: the defaults must be kept ({tags})')
       local diff = imageDifference(expected, draw(svg, 64))
       assert(diff is 0, f'{attribs}: the light must render with its defaults (max difference {diff})')
    end
 
    local distant <close> = combinedDocument(MIXED_ATTRIBS,
-      '<feDistantLight azimuth="0" elevation="30" kotuku:range="40" kotuku:intensity="0.5"/>')
+      '<feDistantLight azimuth="0" elevation="30" xvg:range="40" xvg:intensity="0.5"/>')
    local tags = lightTags(effectXML(distant))
-   assert((not tags[0].find('kotuku:range')) and tags[0].find('kotuku:intensity="0.5"'),
+   assert((not tags[0].find('xvg:range')) and tags[0].find('xvg:intensity="0.5"'),
       f'A range on a distant light must be ignored without discarding the other options ({tags[0]})')
 
    -- A range of none is the same as an unlimited range.
 
-   local none <close> = combinedDocument(MIXED_ATTRIBS, f'{point} kotuku:range="none" kotuku:intensity="0.5"/>')
-   local unlimited <close> = combinedDocument(MIXED_ATTRIBS, f'{point} kotuku:intensity="0.5"/>')
+   local none <close> = combinedDocument(MIXED_ATTRIBS, f'{point} xvg:range="none" xvg:intensity="0.5"/>')
+   local unlimited <close> = combinedDocument(MIXED_ATTRIBS, f'{point} xvg:intensity="0.5"/>')
    assert(imageDifference(draw(none, 64), draw(unlimited, 64)) is 0, 'A range of none must be unlimited')
-   local ranged <close> = combinedDocument(MIXED_ATTRIBS, f'{point} kotuku:range="30" kotuku:intensity="0.5"/>')
+   local ranged <close> = combinedDocument(MIXED_ATTRIBS, f'{point} xvg:range="30" xvg:intensity="0.5"/>')
    assert(imageDifference(draw(ranged, 64), draw(unlimited, 64)) > 0, 'A range must attenuate the light')
 end
 
 @Test function LightRangeSurvivesRotation()
    local function drawRange(Transform:str, Range:str):obj
-      local svg <close> = document('<kotuku:feLighting in="SourceAlpha" surfaceScale="0" ' ..
+      local svg <close> = document('<xvg:feLighting in="SourceAlpha" surfaceScale="0" ' ..
          'specularConstant="1" specularExponent="1" diffuseConstant="0" features="none">' ..
-         f'<fePointLight x="31" y="31" z="20" kotuku:range="{Range}"/></kotuku:feLighting>',
+         f'<fePointLight x="31" y="31" z="20" xvg:range="{Range}"/></xvg:feLighting>',
          f'<rect width="64" height="64" transform="{Transform}" filter="url(#f)"/>', 64, KOTUKU_NS)
       return draw(svg, 64)
    end
@@ -1417,11 +1417,11 @@ end
 end
 
 @Test function WideLightRangeRetainsDistanceFalloff()
-   for _, extra_light in array<str> { '', '<feDistantLight elevation="90" kotuku:intensity="0"/>' } do
-      local svg <close> = document('<kotuku:feLighting in="SourceAlpha" surfaceScale="0" ' ..
+   for _, extra_light in array<str> { '', '<feDistantLight elevation="90" xvg:intensity="0"/>' } do
+      local svg <close> = document('<xvg:feLighting in="SourceAlpha" surfaceScale="0" ' ..
          'specularConstant="0" diffuseConstant="1" features="none">' ..
-         '<fePointLight x="32" y="32" z="10" kotuku:range="1000000000"/>' .. extra_light ..
-         '</kotuku:feLighting>', nil, 64, KOTUKU_NS)
+         '<fePointLight x="32" y="32" z="10" xvg:range="1000000000"/>' .. extra_light ..
+         '</xvg:feLighting>', nil, 64, KOTUKU_NS)
       local bmp <close> = draw(svg, 64)
       local centre = mGfx.ReadRGBPixel(bmp, 32, 32).red
       local edge = mGfx.ReadRGBPixel(bmp, 60, 32).red
@@ -1436,19 +1436,19 @@ end
 @Test function LightAttributesFollowTheNamespace()
    local ns = KOTUKU_NS .. ' xmlns:k="http://www.kotuku.dev/namespaces/kotuku" xmlns:x="urn:foreign"'
    local function lights(Light:str):obj
-      return document('<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20">' ..
-         f'<feDistantLight azimuth="0" elevation="30"/>{Light}</kotuku:feLighting>', COMBINED_CONTENT, 64, ns)
+      return document('<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20">' ..
+         f'<feDistantLight azimuth="0" elevation="30"/>{Light}</xvg:feLighting>', COMBINED_CONTENT, 64, ns)
    end
 
    local prefixed <close> = lights('<fePointLight x="20" y="12" z="40" k:intensity="0.5" k:range="30"/>')
    local tags = lightTags(effectXML(prefixed))
-   assert(tags[1].find('kotuku:intensity="0.5"') and tags[1].find('kotuku:range="30"'),
+   assert(tags[1].find('xvg:intensity="0.5"') and tags[1].find('xvg:range="30"'),
       f'Any prefix bound to a Kotuku namespace must be accepted ({tags[1]})')
 
    local foreign <close> = lights('<fePointLight x="20" y="12" z="40" x:colour="red" x:intensity="2" ' ..
       'x:range="10" x:shadows="false"/>')
    tags = lightTags(effectXML(foreign))
-   assert(not tags[1].find('kotuku:'), f'A foreign namespace must not set the light options ({tags[1]})')
+   assert(not tags[1].find('xvg:'), f'A foreign namespace must not set the light options ({tags[1]})')
    local plain <close> = lights('<fePointLight x="20" y="12" z="40"/>')
    assert(imageDifference(draw(foreign, 64), draw(plain, 64)) is 0, 'Foreign attributes must not change the render')
 end
@@ -1474,9 +1474,9 @@ end
    end
 
    local coloured <close> = lightingDocument(nil,
-      '<feDistantLight azimuth="0" elevation="30" kotuku:colour="#ff0000" kotuku:intensity="0.75"/>')
+      '<feDistantLight azimuth="0" elevation="30" xvg:colour="#ff0000" xvg:intensity="0.75"/>')
    local tags = lightTags(effectXML(coloured))
-   assert(tags[0].find('kotuku:colour="rgb(255 0 0)"') and tags[0].find('kotuku:intensity="0.75"'),
+   assert(tags[0].find('xvg:colour="rgb(255 0 0)"') and tags[0].find('xvg:intensity="0.75"'),
       f'The options of the first light must be read ({tags[0]})')
    local bmp <close> = draw(coloured, 64)
    local p = mGfx.ReadRGBPixel(bmp, 44, 24)
@@ -1490,7 +1490,7 @@ end
 
 @Test function LightingNormalMapRetainsHeightShadows()
    local svg <close> = document('<feFlood flood-color="#8080ff" result="flat"/>' ..
-      '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" kotuku:normalMap="flat" kotuku:features="shadows">' ..
+      '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" xvg:normalMap="flat" xvg:features="shadows">' ..
       '<feDistantLight azimuth="0" elevation="30"/></feDiffuseLighting>', LIGHTING_CONTENT, 64, KOTUKU_NS)
    local fx = lightingFX(svg)
    assert(fx.normalMap != nil, 'Diffuse lighting must accept the namespaced normal map attribute')
@@ -1503,12 +1503,12 @@ end
 end
 
 @Test function LightingRetainsNativeHeightAfterNormalMapRemoval()
-   local height = '<feTurbulence type="fractalNoise" baseFrequency=".1" kotuku:outputMode="height" result="height"/>'
-   local lighting = '<feDiffuseLighting in="height" surfaceScale="4" kotuku:features="none"'
+   local height = '<feTurbulence type="fractalNoise" baseFrequency=".1" xvg:outputMode="height" result="height"/>'
+   local lighting = '<feDiffuseLighting in="height" surfaceScale="4" xvg:features="none"'
    local light = '><feDistantLight azimuth="0" elevation="45"/></feDiffuseLighting>'
    local content = '<rect width="64" height="64" fill="white" filter="url(#f)"/>'
    local svg <close> = document(height .. '<feFlood flood-color="#008080" result="normals"/>' ..
-      lighting .. ' kotuku:normalMap="normals"' .. light, content, 64, KOTUKU_NS)
+      lighting .. ' xvg:normalMap="normals"' .. light, content, 64, KOTUKU_NS)
    local fx = lightingFX(svg)
    local map = fx.normalMap
    assert(map != nil, 'The RGB normal map must be bound')
@@ -1529,10 +1529,10 @@ end
 @Test function ScopedHeightAttributeAndSharedProducer()
    local noise = '<feTurbulence type="fractalNoise" baseFrequency=".02" result="raise"'
    local effects = noise .. ' xmlns:h="http://www.kotuku.dev/xmlns/svg" h:outputMode="height"/>' ..
-      '<kotuku:feLighting in="raise" x="0" width="32" lighting-color="red" specularConstant="0" result="left">' ..
-      '<feDistantLight azimuth="0" elevation="40"/></kotuku:feLighting>' ..
-      '<kotuku:feLighting in="raise" x="32" width="32" lighting-color="blue" specularConstant="0" result="right">' ..
-      '<feDistantLight azimuth="90" elevation="40"/></kotuku:feLighting>' ..
+      '<xvg:feLighting in="raise" x="0" width="32" lighting-color="red" specularConstant="0" result="left">' ..
+      '<feDistantLight azimuth="0" elevation="40"/></xvg:feLighting>' ..
+      '<xvg:feLighting in="raise" x="32" width="32" lighting-color="blue" specularConstant="0" result="right">' ..
+      '<feDistantLight azimuth="90" elevation="40"/></xvg:feLighting>' ..
       '<feMerge><feMergeNode in="left"/><feMergeNode in="right"/></feMerge>'
    local shared <close> = document(effects, nil, 64, KOTUKU_NS, 'primitiveUnits="userSpaceOnUse"')
    local bitmap <close> = draw(shared, 64)
@@ -1545,7 +1545,7 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Normal map conventions.  A dome's Y-down normals come from kotuku:feNormalMap.  A colour matrix maps green G to
+-- Normal map conventions.  A dome's Y-down normals come from xvg:feNormalMap.  A colour matrix maps green G to
 -- 256 - G, which negates Y exactly, so the Y-up copy encodes the same directions in the other convention.  The matrix
 -- runs in sRGB so that the copy is exact in either filter colour space.
 
@@ -1556,7 +1556,7 @@ DOME_CONTENT <const> = '<defs><radialGradient id="dome" r="0.42"><stop offset="0
 -- Effects that publish the dome's Y-down normals as 'down' and the Y-up copy as 'up'.
 
 function domeNormals():str
-   return '<kotuku:feNormalMap in="SourceAlpha" surfaceScale="12" features="none" result="down"/>' ..
+   return '<xvg:feNormalMap in="SourceAlpha" surfaceScale="12" features="none" result="down"/>' ..
       '<feColorMatrix type="matrix" in="down" color-interpolation-filters="sRGB" result="up" ' ..
       'values="1 0 0 0 0  0 -1 0 0 ' .. (256 / 255) .. '  0 0 1 0 0  0 0 0 1 0"/>'
 end
@@ -1572,9 +1572,9 @@ end
 -- The dome is lit as a flat surface (surfaceScale 0), so its shading comes from the bound map alone.
 
 function domeLighting(Map:str, Attribs:str):obj
-   return document(domeNormals() .. '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" ' ..
+   return document(domeNormals() .. '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" ' ..
       f'features="none" normalMap="{Map}" ambient="#202020" specularConstant="0.5" specularExponent="8" ' ..
-      f'{Attribs ?? ""}><feDistantLight azimuth="60" elevation="35"/></kotuku:feLighting>',
+      f'{Attribs ?? ""}><feDistantLight azimuth="60" elevation="35"/></xvg:feLighting>',
       DOME_CONTENT, 64, KOTUKU_NS)
 end
 
@@ -1613,9 +1613,9 @@ end
 
 @Test function NormalStrengthScalesTheRelief()
    local flat <close> = draw(document(domeNormals() .. '<feFlood flood-color="#8080ff" result="flat"/>' ..
-      '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none" normalMap="flat" ' ..
+      '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="0" features="none" normalMap="flat" ' ..
       'ambient="#202020" specularConstant="0.5" specularExponent="8"><feDistantLight azimuth="60" elevation="35"/>' ..
-      '</kotuku:feLighting>', DOME_CONTENT, 64, KOTUKU_NS), 64)
+      '</xvg:feLighting>', DOME_CONTENT, 64, KOTUKU_NS), 64)
    local zero <close> = draw(domeLighting('down', 'normalStrength="0"'), 64)
    local diff = imageDifference(flat, zero)
    assert(diff is 0, f'Strength 0 must match a flat map (max difference {diff})')
@@ -1634,9 +1634,9 @@ end
 @Test function NormalStrengthZeroFlattensTangentNormals()
    local function renderMap(Colour:str):obj
       local svg <close> = document(f'<feFlood flood-color="{Colour}" result="map"/>' ..
-         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="12" features="none" ' ..
+         '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="12" features="none" ' ..
          'normalMap="map" normalStrength="0" ambient="#202020">' ..
-         '<feDistantLight azimuth="60" elevation="35"/></kotuku:feLighting>', DOME_CONTENT, 64, KOTUKU_NS)
+         '<feDistantLight azimuth="60" elevation="35"/></xvg:feLighting>', DOME_CONTENT, 64, KOTUKU_NS)
       return draw(svg, 64)
    end
 
@@ -1682,16 +1682,16 @@ end
    end
    assert(fx.normalConvention is NMC_Y_DOWN, 'LightingFX must reject AUTO')
 
-   local standard <close> = lightingDocument('kotuku:normalConvention="y-up" kotuku:normalStrength="2"')
+   local standard <close> = lightingDocument('xvg:normalConvention="y-up" xvg:normalStrength="2"')
    fx = lightingFX(standard)
    assert((fx.normalConvention is NMC_Y_UP) and (fx.normalStrength is 2),
       'The standard lighting elements must accept the prefixed attributes')
    local exported = effectXML(standard)
-   assert(exported.find('kotuku:normalConvention="y-up"', 0, true), f'Standard elements must prefix: {exported}')
+   assert(exported.find('xvg:normalConvention="y-up"', 0, true), f'Standard elements must prefix: {exported}')
 end
 
 -- Refraction of noise through the dome.  feOffset copies the map exactly but drops the flag that marks
--- kotuku:feNormalMap results, so the copy is read as colour unless normalConvention is set.
+-- xvg:feNormalMap results, so the copy is read as colour unless normalConvention is set.
 
 function refraction(Map:str, Attribs:str, ColourSpace:str):obj
    return draw(document(domeNormals() .. '<feOffset in="down" result="copy"/>' ..
@@ -1706,30 +1706,30 @@ end
       local flagged <close> = refraction('down', nil, space)
       local colour <close> = refraction('copy', nil, space)
       assert(imageDifference(flagged, colour) > 0, f'An unflagged map must be read as colour by default in {space}')
-      local down <close> = refraction('copy', 'kotuku:normalConvention="y-down"', space)
+      local down <close> = refraction('copy', 'xvg:normalConvention="y-down"', space)
       local diff = imageDifference(flagged, down)
       assert(diff is 0, f'y-down must read any map as feNormalMap normals in {space} (max difference {diff})')
    end
 
    for space in values(array<str> { 'sRGB', 'linearRGB' }) do
       local flagged <close> = refraction('down', nil, space)
-      local up <close> = refraction('up', 'kotuku:normalConvention="y-up"', space)
+      local up <close> = refraction('up', 'xvg:normalConvention="y-up"', space)
       local diff = imageDifference(flagged, up)
       assert(diff is 0, f'y-up with the Y-up map must match the Y-down refraction in {space} (max difference {diff})')
-      local wrong <close> = refraction('up', 'kotuku:normalConvention="y-down"', space)
+      local wrong <close> = refraction('up', 'xvg:normalConvention="y-down"', space)
       assert(imageDifference(flagged, wrong) > 0,
          f'Reading the Y-up map as Y-down must change the refraction in {space}')
    end
 
    local svg <close> = document(domeNormals() .. '<feTurbulence baseFrequency=".15" seed="3" result="image"/>' ..
       '<feDisplacementMap in="image" in2="up" scale="10" xChannelSelector="R" yChannelSelector="G" ' ..
-      'kotuku:normalConvention="y-up"/>', DOME_CONTENT, 64, KOTUKU_NS)
+      'xvg:normalConvention="y-up"/>', DOME_CONTENT, 64, KOTUKU_NS)
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('DisplacementFX')[0])
    assert(fx.normalConvention is NMC_Y_UP, 'The attribute must set NormalConvention')
    local original <close> = draw(svg, 64)
    local xml = filter.effectXML
-   assert(xml.find('kotuku:normalConvention="y-up"', 0, true), f'XMLDef must write the convention: {xml}')
+   assert(xml.find('xvg:normalConvention="y-up"', 0, true), f'XMLDef must write the convention: {xml}')
    local loaded <close> = document(xml, DOME_CONTENT, 64, KOTUKU_NS)
    diff = imageDifference(original, draw(loaded, 64))
    assert(diff is 0, f'The convention must survive XMLDef (max difference {diff}): {xml}')
@@ -1803,7 +1803,7 @@ end
    local effects = [[<feFlood x="20" y="20" width="4" height="4" flood-color="red" result="image"/>
       <feFlood flood-color="red" result="map"/>
       <feDisplacementMap in="image" in2="map" scale="8" xChannelSelector="R" yChannelSelector="A"
-         kotuku:scaleX="-2" kotuku:scaleY="0" kotuku:neutralX="0"/>]]
+         xvg:scaleX="-2" xvg:scaleY="0" xvg:neutralX="0"/>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS)
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('DisplacementFX')[0])
@@ -1831,7 +1831,7 @@ end
       (mGfx.ReadRGBPixel(edited, 23, 23).alpha is 0), 'Cleared X must inherit Scale and neutral alpha must give zero Y')
 
    local xml = filter.effectXML
-   assert((xml.find('scaleX', 0, true) is nil) and xml.find('kotuku:scaleY="2"', 0, true),
+   assert((xml.find('scaleX', 0, true) is nil) and xml.find('xvg:scaleY="2"', 0, true),
       f'Serialisation must preserve an inherited X and explicit Y: {xml}')
    local loaded <close> = document(xml, nil, 64, KOTUKU_NS)
    local restored <close> = draw(loaded, 64)
@@ -1843,7 +1843,7 @@ end
       <feFlood x="11" y="10" width="1" height="1" flood-color="blue" result="blue"/>
       <feMerge result="image"><feMergeNode in="red"/><feMergeNode in="blue"/></feMerge>
       <feFlood result="map"/>
-      <feDisplacementMap in="image" in2="map" scale="-2" kotuku:scaleY="0" image-rendering="optimizeSpeed"/>]]
+      <feDisplacementMap in="image" in2="map" scale="-2" xvg:scaleY="0" image-rendering="optimizeSpeed"/>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS)
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('DisplacementFX')[0])
@@ -1877,7 +1877,7 @@ end
 @Test function DisplacementBilinearWeightsColourByCoverage()
    local effects = [[<feFlood x="10" y="10" width="1" height="1" flood-color="red" result="image"/>
       <feFlood result="map"/>
-      <feDisplacementMap in="image" in2="map" scale="1" kotuku:scaleY="0"/>]]
+      <feDisplacementMap in="image" in2="map" scale="1" xvg:scaleY="0"/>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS)
    local bmp <close> = draw(svg, 64)
    for x in {9 into 10} do
@@ -1902,9 +1902,9 @@ end
 
 function occlusionDocument(Attribs:str, ColourSpace:str, Lighting:str):obj
    return document('<feOffset in="SourceGraphic" result="ao"/><feFlood flood-color="#c08040" result="albedo"/>' ..
-      '<kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" ' ..
+      '<xvg:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" ' ..
       f'{Lighting ?? "diffuseConstant=\"0\" specularConstant=\"0\""} {Attribs ?? ""}>' ..
-      '<feDistantLight azimuth="0" elevation="45"/></kotuku:feLighting>', aoContent(true), 64, KOTUKU_NS,
+      '<feDistantLight azimuth="0" elevation="45"/></xvg:feLighting>', aoContent(true), 64, KOTUKU_NS,
       f'color-interpolation-filters="{ColourSpace ?? "sRGB"}"')
 end
 
@@ -1949,8 +1949,8 @@ end
    local direct = 'diffuseConstant="0.8" specularConstant="0.5" specularExponent="12"'
    local function combined(Attribs:str):obj
       return draw(document('<feFlood flood-color="black" result="ao"/>' ..
-         f'<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" {direct} {Attribs ?? ""}>' ..
-         '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS), 64)
+         f'<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" {direct} {Attribs ?? ""}>' ..
+         '<feDistantLight azimuth="0" elevation="30"/></xvg:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS), 64)
    end
    local function diffuse(Attribs:str):obj
       return draw(document('<feFlood flood-color="black" result="ao"/>' ..
@@ -1964,11 +1964,11 @@ end
    end
 
    local diff = imageDifference(combined(), combined('occlusionMap="ao"'))
-   assert(diff is 0, f'Without ambient light the map must not change kotuku:feLighting (max difference {diff})')
-   diff = imageDifference(diffuse(), diffuse('kotuku:occlusionMap="ao"'))
+   assert(diff is 0, f'Without ambient light the map must not change xvg:feLighting (max difference {diff})')
+   diff = imageDifference(diffuse(), diffuse('xvg:occlusionMap="ao"'))
    assert(diff is 0, f'Without ambient light the map must not change feDiffuseLighting (max difference {diff})')
-   diff = imageDifference(specular('kotuku:ambient="white"'),
-      specular('kotuku:ambient="white" kotuku:occlusionMap="ao"'))
+   diff = imageDifference(specular('xvg:ambient="white"'),
+      specular('xvg:ambient="white" xvg:occlusionMap="ao"'))
    assert(diff is 0, f'feSpecularLighting must ignore the map (max difference {diff})')
 
    -- With ambient light the black map removes the ambient term and leaves the direct light.
@@ -1979,8 +1979,8 @@ end
    assert(diff is 0, f'A black map must remove exactly the ambient light (max difference {diff})')
    assert(imageDifference(lit, occluded) > 10, 'The ambient light must brighten the unoccluded surface')
 
-   local ambient <close> = diffuse('kotuku:ambient="#606060"')
-   diff = imageDifference(diffuse(), diffuse('kotuku:ambient="#606060" kotuku:occlusionMap="ao"'))
+   local ambient <close> = diffuse('xvg:ambient="#606060"')
+   diff = imageDifference(diffuse(), diffuse('xvg:ambient="#606060" xvg:occlusionMap="ao"'))
    assert(diff is 0, f'A black map must remove the ambient light of feDiffuseLighting (max difference {diff})')
    assert(imageDifference(ambient, diffuse()) > 10, 'The ambient light must brighten feDiffuseLighting')
 end
@@ -1996,13 +1996,13 @@ end
 
    for compliance in values(array<int> { VSC_SVG1, VSC_SVG2 }) do
       local plain <close> = render(compliance, '')
-      local no_ambient <close> = render(compliance, 'kotuku:occlusionMap="ao"')
+      local no_ambient <close> = render(compliance, 'xvg:occlusionMap="ao"')
       local diff = imageDifference(plain, no_ambient)
       assert(diff is 0, f'An occlusion map without ambient light must preserve SVG diffuse lighting, got {diff}')
 
-      local ambient = 'kotuku:ambient="#606060"'
+      local ambient = 'xvg:ambient="#606060"'
       local unbound <close> = render(compliance, ambient)
-      local disabled <close> = render(compliance, ambient .. ' kotuku:occlusionMap="ao" kotuku:occlusionStrength="0"')
+      local disabled <close> = render(compliance, ambient .. ' xvg:occlusionMap="ao" xvg:occlusionStrength="0"')
       diff = imageDifference(unbound, disabled)
       assert(diff is 0, f'A disabled map must preserve SVG diffuse lighting, got {diff}')
    end
@@ -2014,8 +2014,8 @@ end
    local function render(Flood:str, Channel:str):obj
       local attribs = 'ambient="white" occlusionMap="map"' .. (Channel ? f' occlusionChannel="{Channel}"' : '')
       return draw(document(f'<feFlood {Flood} result="map"/><feFlood flood-color="#c08040" result="albedo"/>' ..
-         '<kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" diffuseConstant="0" ' ..
-         f'specularConstant="0" {attribs}><feDistantLight elevation="45"/></kotuku:feLighting>',
+         '<xvg:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" diffuseConstant="0" ' ..
+         f'specularConstant="0" {attribs}><feDistantLight elevation="45"/></xvg:feLighting>',
          aoContent(true), 64, KOTUKU_NS), 64)
    end
 
@@ -2042,9 +2042,9 @@ end
    local open <close> = draw(occlusionDocument(ambient), 64)
    local function render(Flood:str, Attribs:str):obj
       return draw(document(f'<feFlood {Flood} result="map"/><feFlood flood-color="#c08040" result="albedo"/>' ..
-         '<kotuku:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" diffuseConstant="0" ' ..
+         '<xvg:feLighting in="SourceAlpha" in2="albedo" surfaceScale="0" features="none" diffuseConstant="0" ' ..
          f'specularConstant="0" {ambient} occlusionMap="map" {Attribs ?? ""}><feDistantLight elevation="45"/>' ..
-         '</kotuku:feLighting>', aoContent(true), 64, KOTUKU_NS), 64)
+         '</xvg:feLighting>', aoContent(true), 64, KOTUKU_NS), 64)
    end
 
    local clear <close> = render('flood-color="black" flood-opacity="0"')
@@ -2075,8 +2075,8 @@ end
 
    local function render(Map:str, Matcap:bool):obj
       local svg <close> = document(f'<feFlood flood-color="{Map}" result="ao"/>' ..
-         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" diffuseConstant="0" ' ..
-         'specularConstant="0" occlusionMap="ao"><feDistantLight elevation="45"/></kotuku:feLighting>',
+         '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" diffuseConstant="0" ' ..
+         'specularConstant="0" occlusionMap="ao"><feDistantLight elevation="45"/></xvg:feLighting>',
          COMBINED_CONTENT, 64, KOTUKU_NS)
       if Matcap then lightingFX(svg).matcap = matcap end
       return draw(svg, 64)
@@ -2094,16 +2094,16 @@ end
       local svg <close> = document('<feFlood x="40" y="0" width="10" height="64" result="block"/>' ..
          '<feFlood flood-color="white" result="paint"/>' ..
          f'<feFlood flood-color="{Normal}" result="normals"/>' ..
-         '<kotuku:feLighting in="block" in2="paint" surfaceScale="64" diffuseConstant="1" specularConstant="0" ' ..
+         '<xvg:feLighting in="block" in2="paint" surfaceScale="64" diffuseConstant="1" specularConstant="0" ' ..
          'normalMap="normals" features="local-shadows" penumbra="0" matcapMode="light">' ..
-         '<fePointLight x="60" y="32" z="65" kotuku:range="25"/>' .. Fill .. '</kotuku:feLighting>',
+         '<fePointLight x="60" y="32" z="65" xvg:range="25"/>' .. Fill .. '</xvg:feLighting>',
          nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
       lightingFX(svg).matcap = matcap
       local bmp <close> = draw(svg, 64)
       return mGfx.ReadRGBPixel(bmp, 20, 32).red
    end
 
-   local fill = '<feDistantLight elevation="90" kotuku:intensity="0"/>'
+   local fill = '<feDistantLight elevation="90" xvg:intensity="0"/>'
    assert(renderKeyShadow('', '#ff8080') is 0, 'The blocker must shadow a normal that faces the key light')
    local single, multiple = renderKeyShadow('', '#018080'), renderKeyShadow(fill, '#018080')
    assert((single is 255) and (multiple is single),
@@ -2113,8 +2113,8 @@ end
 
 @Test function FloodOcclusionPreservesFractionalColourOnExport()
    local svg <close> = document('<feFlood flood-color="rgb(99.99999% 0% 0%)" result="ao"/>' ..
-      '<kotuku:feLighting in="SourceAlpha" ambient="white" occlusionMap="ao" occlusionStrength="255" ' ..
-      'diffuseConstant="0" specularConstant="0"><feDistantLight elevation="45"/></kotuku:feLighting>',
+      '<xvg:feLighting in="SourceAlpha" ambient="white" occlusionMap="ao" occlusionStrength="255" ' ..
+      'diffuseConstant="0" specularConstant="0"><feDistantLight elevation="45"/></xvg:feLighting>',
       nil, 64, KOTUKU_NS)
    local original <close> = draw(svg, 64)
    assert(mGfx.ReadRGBPixel(original, 32, 32).red is 0,
@@ -2135,7 +2135,7 @@ end
       f'The attributes must set the fields (got {fx.occlusionChannel}, {fx.occlusionStrength})')
    local original <close> = draw(svg, 64)
    local xml = effectXML(svg)
-   assert(xml.find('kotuku:occlusionMap="effect', 0, true) and xml.find('occlusionChannel="G"', 0, true) and
+   assert(xml.find('xvg:occlusionMap="effect', 0, true) and xml.find('occlusionChannel="G"', 0, true) and
       xml.find('occlusionStrength="0.5"', 0, true), f'XMLDef must write the occlusion options: {xml}')
    local loaded <close> = document(xml, aoContent(true), 64, KOTUKU_NS)
    local diff = imageDifference(original, draw(loaded, 64))
@@ -2166,15 +2166,15 @@ end
    assert(fx.occlusionStrength is 1, 'OcclusionStrength must reject negative and infinite values')
 
    local standard <close> = document('<feOffset in="SourceGraphic" result="ao"/>' ..
-      '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" kotuku:occlusionMap="ao" ' ..
-      'kotuku:occlusionChannel="luminance" kotuku:occlusionStrength="2"><feDistantLight elevation="45"/>' ..
+      '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" xvg:occlusionMap="ao" ' ..
+      'xvg:occlusionChannel="luminance" xvg:occlusionStrength="2"><feDistantLight elevation="45"/>' ..
       '</feDiffuseLighting>', aoContent(true), 64, KOTUKU_NS)
    fx = lightingFX(standard)
    assert(fx.occlusionMap and (fx.occlusionChannel is MCH_LUMINANCE) and (fx.occlusionStrength is 2),
       'The standard lighting elements must accept the prefixed attributes')
    local exported = effectXML(standard)
-   assert(exported.find('kotuku:occlusionChannel="luminance"', 0, true) and
-      exported.find('kotuku:occlusionStrength="2"', 0, true), f'Standard elements must prefix: {exported}')
+   assert(exported.find('xvg:occlusionChannel="luminance"', 0, true) and
+      exported.find('xvg:occlusionStrength="2"', 0, true), f'Standard elements must prefix: {exported}')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -2207,7 +2207,7 @@ end
    local ramp <close> = draw(document('<feOffset/>', aoContent(false), 64), 64)
    local svg <close> = document('<feOffset in="SourceGraphic" result="rough"/>' ..
       '<feSpecularLighting in="SourceAlpha" specularConstant="0.15" specularExponent="20" ' ..
-      'kotuku:roughnessMap="rough"><feDistantLight elevation="90"/></feSpecularLighting>', aoContent(true), 64,
+      'xvg:roughnessMap="rough"><feDistantLight elevation="90"/></feSpecularLighting>', aoContent(true), 64,
       KOTUKU_NS)
    local bmp <close> = draw(svg, 64)
    for x in {0 to 64 by 3} do
@@ -2236,7 +2236,7 @@ end
 @Test function SmoothRegionsHaveNarrowerBrighterHighlights()
    local flat = '<rect width="64" height="64" filter="url(#f)"/>'
    local function render(Floods:str, LightX:num):obj
-      return roughnessRender(Floods, specularElement('kotuku:roughnessMap="map"',
+      return roughnessRender(Floods, specularElement('xvg:roughnessMap="map"',
          f'<fePointLight x="{LightX}" y="32" z="24"/>'), flat)
    end
    local smooth_flood = '<feFlood flood-color="rgb(102 102 102)" result="map"/>'
@@ -2278,21 +2278,21 @@ end
    local combined_lights = '<feDistantLight azimuth="0" elevation="30"/><fePointLight x="12" y="44" z="30"/>'
    local cases = array<table> {
       { name='feSpecularLighting', element=(Attribs) => specularElement(Attribs), content=LIGHTING_CONTENT },
-      { name='kotuku:feLighting', content=COMBINED_CONTENT, element=(Attribs) =>
-         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="0.6" ' ..
-         f'specularExponent="20" {Attribs ?? ""}><feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>' },
-      { name='kotuku:feLighting with material', content=COMBINED_CONTENT, element=(Attribs) =>
-         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="2" ' ..
+      { name='xvg:feLighting', content=COMBINED_CONTENT, element=(Attribs) =>
+         '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="0.6" ' ..
+         f'specularExponent="20" {Attribs ?? ""}><feDistantLight azimuth="0" elevation="30"/></xvg:feLighting>' },
+      { name='xvg:feLighting with material', content=COMBINED_CONTENT, element=(Attribs) =>
+         '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="2" ' ..
          f'fresnel="0.5" specularExponent="20" {Attribs ?? ""}><feDistantLight azimuth="0" elevation="30"/>' ..
-         '</kotuku:feLighting>' },
-      { name='kotuku:feLighting with two lights', content=COMBINED_CONTENT, element=(Attribs) =>
-         '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="0.6" ' ..
-         f'specularExponent="20" {Attribs ?? ""}>{combined_lights}</kotuku:feLighting>' }
+         '</xvg:feLighting>' },
+      { name='xvg:feLighting with two lights', content=COMBINED_CONTENT, element=(Attribs) =>
+         '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" specularConstant="0.6" ' ..
+         f'specularExponent="20" {Attribs ?? ""}>{combined_lights}</xvg:feLighting>' }
    }
 
    for space in values(array<str> { 'sRGB', 'linearRGB' }) do
       for _, case in cases do
-         local attrib = case.name.startsWith('feSpecular') ? 'kotuku:roughnessMap="map"' : 'roughnessMap="map"'
+         local attrib = case.name.startsWith('feSpecular') ? 'xvg:roughnessMap="map"' : 'roughnessMap="map"'
          local plain <close> = roughnessRender(matched, case.element(), case.content, space)
          local uniform <close> = roughnessRender(matched, case.element(attrib), case.content, space)
          local diff = imageDifference(plain, uniform)
@@ -2325,23 +2325,23 @@ end
    local diffuse = '<feDiffuseLighting in="SourceAlpha" surfaceScale="20" {}>' ..
       '<feDistantLight azimuth="0" elevation="30"/></feDiffuseLighting>'
    local plain_diffuse = diffuse.replace('{}', '')
-   local bound_diffuse = diffuse.replace('{}', 'kotuku:roughnessMap="map"')
+   local bound_diffuse = diffuse.replace('{}', 'xvg:roughnessMap="map"')
    local plain <close> = roughnessRender(map, plain_diffuse)
    local bound <close> = roughnessRender(map, bound_diffuse)
    local diff = imageDifference(plain, bound)
    assert(diff is 0, f'feDiffuseLighting must ignore the map (max difference {diff})')
 
-   local normals = '<kotuku:feNormalMap in="SourceAlpha" surfaceScale="20" {}/>'
+   local normals = '<xvg:feNormalMap in="SourceAlpha" surfaceScale="20" {}/>'
    local plain_element = normals.replace('{}', '')
    local bound_element = normals.replace('{}', 'roughnessMap="map"')
    local plain_normals <close> = roughnessRender(map, plain_element)
    local bound_normals <close> = roughnessRender(map, bound_element)
    diff = imageDifference(plain_normals, bound_normals)
-   assert(diff is 0, f'kotuku:feNormalMap must ignore the map (max difference {diff})')
+   assert(diff is 0, f'xvg:feNormalMap must ignore the map (max difference {diff})')
 
    for compliance in values(array<int> { VSC_SVG1, VSC_SVG2 }) do
       local function render(Flood:str):obj
-         local svg <close> = document(Flood .. specularElement('kotuku:roughnessMap="map"',
+         local svg <close> = document(Flood .. specularElement('xvg:roughnessMap="map"',
             '<fePointLight x="32" y="32" z="24"/>'), '<rect width="64" height="64" filter="url(#f)"/>', 64,
             KOTUKU_NS)
          svg.scene.compliance = compliance
@@ -2358,7 +2358,7 @@ end
 
 @Test function RoughnessChannelSelectsPackedMaps()
    local function render(Flood:str, Channel:str):obj
-      local attribs = 'kotuku:roughnessMap="map"' .. (Channel ? f' kotuku:roughnessChannel="{Channel}"' : '')
+      local attribs = 'xvg:roughnessMap="map"' .. (Channel ? f' xvg:roughnessChannel="{Channel}"' : '')
       return roughnessRender(f'<feFlood {Flood} result="map"/>', specularElement(attribs))
    end
 
@@ -2379,22 +2379,22 @@ end
 
 @Test function RoughnessOptionsValidateAndRoundTrip()
    local floods = '<feFlood flood-color="rgb(10 102 200)" result="map"/>'
-   local svg <close> = document(floods .. '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" ' ..
+   local svg <close> = document(floods .. '<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" ' ..
       'surfaceScale="20" specularExponent="20" roughnessMap="map" roughnessChannel="G">' ..
-      '<feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS)
+      '<feDistantLight azimuth="0" elevation="30"/></xvg:feLighting>', COMBINED_CONTENT, 64, KOTUKU_NS)
    local fx = lightingFX(svg)
    assert((fx.roughnessChannel is MCH_GREEN) and fx.roughnessMap,
       f'The attributes must set the fields (got {fx.roughnessChannel})')
    local original <close> = draw(svg, 64)
    local xml = effectXML(svg)
-   assert(xml.find('kotuku:roughnessMap="effect', 0, true) and xml.find('roughnessChannel="G"', 0, true),
+   assert(xml.find('xvg:roughnessMap="effect', 0, true) and xml.find('roughnessChannel="G"', 0, true),
       f'XMLDef must write the roughness options: {xml}')
    local loaded <close> = document(xml, COMBINED_CONTENT, 64, KOTUKU_NS)
    local diff = imageDifference(original, draw(loaded, 64))
    assert(diff is 0, f'The roughness options must survive XMLDef (max difference {diff}): {xml}')
 
-   local plain <close> = document('<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" ' ..
-      'specularExponent="20"><feDistantLight azimuth="0" elevation="30"/></kotuku:feLighting>', COMBINED_CONTENT, 64,
+   local plain <close> = document('<xvg:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" ' ..
+      'specularExponent="20"><feDistantLight azimuth="0" elevation="30"/></xvg:feLighting>', COMBINED_CONTENT, 64,
       KOTUKU_NS)
    local plain_xml = effectXML(plain)
    assert(plain_xml.find('roughness', 0, true) is nil, f'Default roughness options must not be written: {plain_xml}')
@@ -2408,20 +2408,20 @@ end
    diff = imageDifference(unbound, draw(svg, 64))
    assert(diff is 0, f'Removing the map must restore the constant exponent (max difference {diff})')
 
-   local invalid <close> = document('<kotuku:feLighting in="SourceAlpha" roughnessMap="missing" ' ..
-      'roughnessChannel="X"><feDistantLight elevation="45"/></kotuku:feLighting>', nil, 64, KOTUKU_NS)
+   local invalid <close> = document('<xvg:feLighting in="SourceAlpha" roughnessMap="missing" ' ..
+      'roughnessChannel="X"><feDistantLight elevation="45"/></xvg:feLighting>', nil, 64, KOTUKU_NS)
    fx = lightingFX(invalid)
    assert((fx.roughnessMap is nil) and (fx.roughnessChannel is MCH_RED),
       'Invalid roughness options must leave the defaults')
 
-   local standard <close> = document(floods .. specularElement('kotuku:roughnessMap="map" ' ..
-      'kotuku:roughnessChannel="luminance"'), LIGHTING_CONTENT, 64, KOTUKU_NS)
+   local standard <close> = document(floods .. specularElement('xvg:roughnessMap="map" ' ..
+      'xvg:roughnessChannel="luminance"'), LIGHTING_CONTENT, 64, KOTUKU_NS)
    fx = lightingFX(standard)
    assert(fx.roughnessMap and (fx.roughnessChannel is MCH_LUMINANCE),
       'The standard lighting elements must accept the prefixed attributes')
    local exported = effectXML(standard)
-   assert(exported.find('kotuku:roughnessMap="effect', 0, true) and
-      exported.find('kotuku:roughnessChannel="luminance"', 0, true), f'Standard elements must prefix: {exported}')
+   assert(exported.find('xvg:roughnessMap="effect', 0, true) and
+      exported.find('xvg:roughnessChannel="luminance"', 0, true), f'Standard elements must prefix: {exported}')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -2510,11 +2510,11 @@ end
 -- The lit result is exactly periodic, including where the copies meet.
 
 TILE_HEIGHT <const> = '<feTurbulence x="8" y="8" width="16" height="16" type="fractalNoise" baseFrequency=".125" ' ..
-   'numOctaves="2" stitchTiles="stitch" kotuku:outputMode="height" result="height"/>'
+   'numOctaves="2" stitchTiles="stitch" xvg:outputMode="height" result="height"/>'
 
 function litHeight(Input:str):str
-   return f'<kotuku:feLighting in="{Input}" surfaceScale="20" specularConstant="0" features="none">' ..
-      '<feDistantLight azimuth="135" elevation="40"/></kotuku:feLighting>'
+   return f'<xvg:feLighting in="{Input}" surfaceScale="20" specularConstant="0" features="none">' ..
+      '<feDistantLight azimuth="135" elevation="40"/></xvg:feLighting>'
 end
 
 @Test function TiledFloatHeightLightsLikeTheUntiledHeight()
@@ -2582,8 +2582,8 @@ function writeHeightRampSVG(Path:str!, Effects:str!)
       f'color-interpolation-filters="sRGB">{Effects}</filter><rect width="512" height="48" filter="url(#f)"/></svg>')
 end
 
-HEIGHT_RAMP_LIGHT <const> = '<kotuku:feLighting in="tiled" surfaceScale="16" specularConstant="0" ' ..
-   'features="none"><feDistantLight azimuth="0" elevation="45"/></kotuku:feLighting>'
+HEIGHT_RAMP_LIGHT <const> = '<xvg:feLighting in="tiled" surfaceScale="16" specularConstant="0" ' ..
+   'features="none"><feDistantLight azimuth="0" elevation="45"/></xvg:feLighting>'
 
 function heightRampSpread(Bitmap:obj!):<num, num, num>
    local lo, hi, sum, sum_sq = 255, 0, 0, 0
@@ -2608,7 +2608,7 @@ end
    end
    writeHeightRampPNG(png_path, true)
    writeHeightRampSVG(svg_path, f'<feImage href="{name}.png" width="256" height="48" ' ..
-      'kotuku:outputMode="height" result="ramp"/><feTile in="ramp" result="tiled"/>' .. HEIGHT_RAMP_LIGHT)
+      'xvg:outputMode="height" result="ramp"/><feTile in="ramp" result="tiled"/>' .. HEIGHT_RAMP_LIGHT)
    local svg <close> = obj.new('svg', { path=svg_path })
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('ImageFX')[0])
@@ -2660,7 +2660,7 @@ end
    end
 
    writeHeightRampSVG(svg_path, f'<feImage href="{name}.png" width="256" height="48" ' ..
-      'kotuku:outputMode="height" kotuku:heightChannel="G" result="ramp"/><feTile in="ramp" result="tiled"/>' ..
+      'xvg:outputMode="height" xvg:heightChannel="G" result="ramp"/><feTile in="ramp" result="tiled"/>' ..
       HEIGHT_RAMP_LIGHT)
    local svg <close> = obj.new('svg', { path=svg_path })
    local _, filter = check svg.scene.mtFindDef('f')
@@ -2676,7 +2676,7 @@ end
       check exporter.acSaveToObject(file, 0)
    end
    local xml = io.readAll(export_path)
-   assert(xml.find('kotuku:outputMode="height"', 0, true) and xml.find('kotuku:heightChannel="G"', 0, true),
+   assert(xml.find('xvg:outputMode="height"', 0, true) and xml.find('xvg:heightChannel="G"', 0, true),
       'The height attributes must survive SVG export')
    local restored <close> = obj.new('svg', { path=export_path })
    local restored_bmp <close> = draw(restored, 512)
@@ -2784,7 +2784,7 @@ end
 @Test function FractionalOffsetChainCapturesOffPageTaps()
    local svg <close> = obj.new('svg', { statement=f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} ' ..
       'width="64" height="64"><filter id="f" filterUnits="userSpaceOnUse" x="-4" y="0" width="68" height="64">' ..
-      '<feOffset dx=".25" kotuku:resampleMethod="2"/><feOffset dx=".25" kotuku:resampleMethod="2"/>' ..
+      '<feOffset dx=".25" xvg:resampleMethod="2"/><feOffset dx=".25" xvg:resampleMethod="2"/>' ..
       '</filter><rect x="-2" y="20" width="1" height="8" fill="red" filter="url(#f)"/></svg>' })
    local bmp <close> = draw(svg, 64)
    local p = mGfx.ReadRGBPixel(bmp, 0, 24)
@@ -2899,7 +2899,7 @@ end
    local effects = [[<feFlood flood-color="red" flood-opacity=".25" result="base"/>
       <feFlood flood-color="blue" x="32" y="32" width="1" height="1" result="dot"/>
       <feMerge><feMergeNode in="base"/><feMergeNode in="dot"/></feMerge>
-      <feMorphology operator="dilate" radius="2" kotuku:channelMode="alpha" kotuku:kernelShape="ellipse"/>]]
+      <feMorphology operator="dilate" radius="2" xvg:channelMode="alpha" xvg:kernelShape="ellipse"/>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS, settings)
    local _, filter = check svg.scene.mtFindDef('f')
    local morph = obj.find(filter.children('MorphologyFX')[0])
@@ -2938,9 +2938,9 @@ end
 @Test function NumericalNeighbourhoodsRoundTrip()
    local settings = 'filterUnits="userSpaceOnUse"'
    local effects = TILE_HEIGHT .. [[
-      <feGaussianBlur in="height" stdDeviation=".5" kotuku:outputMode="native" result="blurred"/>
+      <feGaussianBlur in="height" stdDeviation=".5" xvg:outputMode="native" result="blurred"/>
       <feConvolveMatrix in="blurred" order="3 1" kernelMatrix="1 2 1" result="smoothed"/>
-      <feMorphology in="smoothed" operator="dilate" radius="1" kotuku:kernelShape="cross" result="relief"/>]]
+      <feMorphology in="smoothed" operator="dilate" radius="1" xvg:kernelShape="cross" result="relief"/>]]
    local svg <close> = document(effects .. litHeight('relief'), TILE_CONTENT, 64, KOTUKU_NS, settings)
    local original <close> = draw(svg, 64)
    assert(mGfx.ReadRGBPixel(original, 16, 16).alpha is 255, 'The numerical chain must feed enhanced lighting')
@@ -2950,7 +2950,7 @@ end
 
    -- A shifted tap at the edge of a constant field should preserve the field with duplicate or wrap addressing.
    local height = '<feTurbulence x="8" y="8" width="16" height="16" type="fractalNoise" baseFrequency="0" ' ..
-      'kotuku:outputMode="height" result="height"/>'
+      'xvg:outputMode="height" result="height"/>'
    local light = litHeight('convolved')
    local identity = '<feConvolveMatrix in="height" order="1" kernelMatrix="1" result="convolved"/>'
    local expected <close> = draw(document(height .. identity .. light, TILE_CONTENT, 64, KOTUKU_NS, settings), 64)
@@ -2985,7 +2985,7 @@ end
    assert(mGfx.ReadRGBPixel(fractional, 24, 24).alpha is 255, 'The interior remains opaque')
 
    local xml = saveFilterDocument(svg)
-   assert(xml.find('kotuku:resampleMethod="2"'), f'Expected a namespaced resampling attribute in {xml}')
+   assert(xml.find('xvg:resampleMethod="2"'), f'Expected a namespaced resampling attribute in {xml}')
    local loaded <close> = obj.new('svg', { statement=xml })
    local reloaded <close> = draw(loaded, 64)
    assert(imageDifference(fractional, reloaded) is 0, 'Fractional output must survive SVG round-trip')
@@ -2995,27 +2995,27 @@ end
    local effects = [[
       <feFlood x="8" y="8" width="40" height="40" flood-color="#6f87af" result="paint"/>
       <feTurbulence baseFrequency=".12 .08" numOctaves="2" seed="3" result="noise"/>
-      <feColorMatrix in="paint" kotuku:type="brightness" kotuku:values=".9" result="adjusted"/>
+      <feColorMatrix in="paint" xvg:type="brightness" xvg:values=".9" result="adjusted"/>
       <feComponentTransfer in="adjusted" result="mapped">
          <feFuncR type="table" tableValues="0.18 0.8 0.9"/>
          <feFuncG type="discrete" tableValues="0.1 0.3 0.9"/>
          <feFuncB type="gamma" exponent="2" amplitude=".9" offset=".04"/>
-         <feFuncA kotuku:type="mask" kotuku:mask="191"/>
+         <feFuncA xvg:type="mask" xvg:mask="191"/>
       </feComponentTransfer>
       <feConvolveMatrix in="mapped" order="2 1" kernelMatrix="1 3" divisor="4"
-            kotuku:kernelUnitX="2.5" targetX="0" edgeMode="wrap" preserveAlpha="true"/>
+            xvg:kernelUnitX="2.5" targetX="0" edgeMode="wrap" preserveAlpha="true"/>
       <feDisplacementMap in2="noise" scale="4" xChannelSelector="R" yChannelSelector="G" result="shifted"/>
       <feBlend in="shifted" in2="adjusted" mode="hard-light" result="blend"/>
       <feComposite in="blend" in2="shifted" operator="arithmetic" k1=".2" k2=".6" k3=".3" k4=".05" result="mixed"/>
       <feMerge x="4" y="6" width="44" height="46" color-interpolation-filters="linearRGB">
          <feMergeNode in="noise"/>
          <feMergeNode in="mixed"/>
-         <feMergeNode kotuku:source="none"/>
+         <feMergeNode xvg:source="none"/>
          <feMergeNode in="SourceAlpha"/>
       </feMerge>]]
    local content = '<rect x="25" y="26" width="4" height="6" fill="tomato" filter="url(#f)"/>'
    local svg <close> = document(effects, content, 64, KOTUKU_NS,
-      'filterUnits="userSpaceOnUse" filterRes="72 68" kotuku:opacity=".75" kotuku:aspectRatio="none"')
+      'filterUnits="userSpaceOnUse" filterRes="72 68" xvg:opacity=".75" xvg:aspectRatio="none"')
    local _, original_filter = check svg.scene.mtFindDef('f')
    local remap = obj.find(original_filter.children('RemapFX')[0])
    assert(remap.xmlDef.startsWith('<feComponentTransfer>'), 'The individual transfer definition is a complete element')
@@ -3160,13 +3160,13 @@ end
 @Test function WaveAndVectorSourcesSurviveSaveAndReload()
    local effects = [[
       <feImage href="#wave_source" preserveAspectRatio="none" result="shape"/>
-      <kotuku:feWaveFunction n="3" l="2" m="1" scale=".2" resolution="24"
+      <xvg:feWaveFunction n="3" l="2" m="1" scale=".2" resolution="24"
             preserveAspectRatio="xMinYMin meet" result="custom">
          <stop offset="0" stop-color="#001022"/>
          <stop offset=".45" stop-color="rgb(18 24 251 / .8)"/>
          <stop offset="1" stop-color="#ffeebb"/>
-      </kotuku:feWaveFunction>
-      <kotuku:feWaveFunction n="2" l="1" m="0" scale=".33" resolution="20"
+      </xvg:feWaveFunction>
+      <xvg:feWaveFunction n="2" l="1" m="0" scale=".33" resolution="20"
             colormap="cmap:rocket" x="12" y="10" width="16" height="27" result="mapped"/>
       <feMerge><feMergeNode in="custom"/><feMergeNode in="mapped"/><feMergeNode in="shape"/></feMerge>]]
    local content = '<defs><g id="wave_source"><rect x="8" y="8" width="6" height="26" fill="red"/></g></defs>' ..
@@ -3193,9 +3193,9 @@ end
       local original <close> = draw(svg, 64)
       local saved = saveFilterDocument(svg)
       if opacity is 1.0 then
-         assert(saved.find('xmlns:kotuku', 0, true) is nil, 'Standard filters can be saved as standalone SVG')
+         assert(saved.find('xmlns:xvg', 0, true) is nil, 'Standard filters can be saved as standalone SVG')
       else
-         assert(saved.find('kotuku:compliance="svg2"', 0, true), 'An extension must preserve strict compliance')
+         assert(saved.find('xvg:compliance="svg2"', 0, true), 'An extension must preserve strict compliance')
       end
       local restored <close> = obj.new('svg', { statement=saved })
       assert(restored.scene.compliance is VSC_SVG2, 'Loading the saved SVG must retain standard lighting')
@@ -3265,7 +3265,7 @@ end
 @Test function CompositeAmountInterpolatesPremultipliedColour()
    local svg <close> = document([[<feFlood flood-color="red" flood-opacity=".5" result="red"/>
       <feFlood flood-color="blue" flood-opacity=".5" result="blue"/>
-      <feComposite operator="in" in="red" in2="blue" kotuku:amount=".5"/>]], nil, 64, KOTUKU_NS)
+      <feComposite operator="in" in="red" in2="blue" xvg:amount=".5"/>]], nil, 64, KOTUKU_NS)
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('CompositeFX')[0])
    assert(fx.amount is 0.5, 'The namespaced strength must be imported')
@@ -3287,8 +3287,8 @@ end
    local effects = [[<feFlood flood-color="red" result="red"/>
       <feFlood flood-color="blue" result="blue"/>
       <feFlood width="32" height="64" flood-opacity=".5" result="alpha"/>
-      <feTurbulence type="fractalNoise" baseFrequency="0" kotuku:outputMode="height" result="height"/>
-      <feBlend mode="normal" in="red" in2="blue" color-interpolation-filters="linearRGB" kotuku:amountMask="alpha"/>]]
+      <feTurbulence type="fractalNoise" baseFrequency="0" xvg:outputMode="height" result="height"/>
+      <feBlend mode="normal" in="red" in2="blue" color-interpolation-filters="linearRGB" xvg:amountMask="alpha"/>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS, 'primitiveUnits="userSpaceOnUse"')
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('CompositeFX')[0])
@@ -3316,8 +3316,8 @@ end
 @Test function WeightedMergeLayersReplaceLegacyBindingsAndRoundTrip()
    local effects = [[<feFlood flood-color="red" result="red"/><feFlood flood-color="blue" result="blue"/>
       <feMerge result="lower"><feMergeNode in="red"/></feMerge>
-      <feMerge><feMergeNode in="lower"/><feMergeNode in="blue" kotuku:opacity=".25"/>
-         <feMergeNode in="blue" kotuku:enabled="false"/></feMerge>]]
+      <feMerge><feMergeNode in="lower"/><feMergeNode in="blue" xvg:opacity=".25"/>
+         <feMergeNode in="blue" xvg:enabled="false"/></feMerge>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS)
    local _, filter = check svg.scene.mtFindDef('f')
    local fx = obj.find(filter.children('MergeFX')[1])
@@ -3387,8 +3387,8 @@ end
 
 @Test function InactiveMergeLayersExportAfterProducerRemoval()
    local effects = [[<feFlood flood-color="red" result="red"/><feFlood flood-color="blue" result="blue"/>
-      <feMerge><feMergeNode in="red"/><feMergeNode in="blue" kotuku:enabled="false"/>
-         <feMergeNode in="blue" kotuku:opacity="0"/></feMerge>]]
+      <feMerge><feMergeNode in="red"/><feMergeNode in="blue" xvg:enabled="false"/>
+         <feMergeNode in="blue" xvg:opacity="0"/></feMerge>]]
    local svg <close> = document(effects, nil, 64, KOTUKU_NS)
    local _, filter = check svg.scene.mtFindDef('f')
    obj.find(filter.children('FloodFX')[1]).free()

@@ -118,7 +118,7 @@ parse, e.g. via #DataFeed(), and to symbols instantiated with #ParseSymbol().
 
 <header>Conditional processing</header>
 
-Use `kotuku:requiredParams` to select whole elements by SVG parameter value.  On an eligible element a failed
+Use `xvg:requiredParams` to select whole elements by SVG parameter value.  On an eligible element a failed
 condition suppresses the element and its descendants, including outside a `&lt;switch&gt;`.  A `&lt;switch&gt;`
 selects its first child whose conditions all pass.  `requiredExtensions` requires every URI in its list to be
 supported.  A non-empty `systemLanguage` passes in any locale.
@@ -154,7 +154,7 @@ use document values.  To select between filter effects, switch the element that 
 
 <pre>
 &lt;switch&gt;
-  &lt;rect kotuku:requiredParams="lighting=off" requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"
+  &lt;rect xvg:requiredParams="lighting=off" requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0"
     class="swatch" filter="url(#flat)"/&gt;
   &lt;rect class="swatch" filter="url(#lit)"/&gt;
 &lt;/switch&gt;
@@ -210,16 +210,16 @@ document.
 &lt;/filter&gt;
 </pre>
 
-On an `feImage` with an external file reference, `kotuku:outputMode="height"` supplies a floating-point height map.
-16-bit greyscale PNGs retain their full sample precision.  For other images, `kotuku:heightChannel` selects the
+On an `feImage` with an external file reference, `xvg:outputMode="height"` supplies a floating-point height map.
+16-bit greyscale PNGs retain their full sample precision.  For other images, `xvg:heightChannel` selects the
 stored channel as `R` (default), `G`, `B`, `A` or `luminance`.  The values are resampled as heights without colour
 conversion.
 
 To repeat a map, limit the primitive that supplies it to a single tile with `x`, `y`, `width` and `height`, then pass
 its result to `feTile`.  The tile repeats across the subregion of `feTile`, which defaults to the filter region, with
 copies aligned to the tile's own position.  `feTile` keeps the data kind of its input: a normal map from
-`kotuku:feNormalMap` is still read as normals by `feDisplacementMap`, and a floating-point height from
-`kotuku:outputMode="height"` is repeated at full precision.  See @TileFX for how tiles that do not cover whole pixels
+`xvg:feNormalMap` is still read as normals by `feDisplacementMap`, and a floating-point height from
+`xvg:outputMode="height"` is repeated at full precision.  See @TileFX for how tiles that do not cover whole pixels
 are resampled.
 
 <pre>
@@ -234,36 +234,36 @@ The attributes below configure `feDiffuseLighting` and `feSpecularLighting`.  An
 namespace can be used.
 
 <list type="bullet">
-<li>`kotuku:features`: `all`, `none`, or a space-separated list of `dequantise`, `sharpen`, `cavity`, `detail`,
+<li>`xvg:features`: `all`, `none`, or a space-separated list of `dequantise`, `sharpen`, `cavity`, `detail`,
 `shadows`, `specular-aa`, `dequantise-wide` and `local-shadows`.  Sets @LightingFX.Features.  The default is `all`,
 which enables every feature.</li>
-<li>`kotuku:cavity`: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
+<li>`xvg:cavity`: strength of the darkening of creases and pits, 0 or greater, default 0.25.  Sets
 @LightingFX.Cavity.</li>
-<li>`kotuku:detail`: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets @LightingFX.Detail.</li>
-<li>`kotuku:penumbra`: width of the soft edge of shadows in degrees, 0 or greater, default 2.  Sets
+<li>`xvg:detail`: relief multiplier for fine detail, 1 or greater, default 1.5.  Sets @LightingFX.Detail.</li>
+<li>`xvg:penumbra`: width of the soft edge of shadows in degrees, 0 or greater, default 2.  Sets
 @LightingFX.Penumbra.</li>
-<li>`kotuku:ambient`: a colour, or `none` (the default).  Ambient light added to the diffuse light; its alpha scales
+<li>`xvg:ambient`: a colour, or `none` (the default).  Ambient light added to the diffuse light; its alpha scales
 it.  Sets @LightingFX.Ambient.  It has no effect on `feSpecularLighting`.</li>
-<li>`kotuku:normalMap` selects the named image result of an earlier primitive for RGB surface directions.
+<li>`xvg:normalMap` selects the named image result of an earlier primitive for RGB surface directions.
 Sets @LightingFX.NormalMap.  The primary input still supplies height.</li>
-<li>`kotuku:normalConvention`: `y-down` (the default) or `y-up`, the direction of Y in the green channel of the
+<li>`xvg:normalConvention`: `y-down` (the default) or `y-up`, the direction of Y in the green channel of the
 normal map.  Most texture libraries and Blender export `y-up` (OpenGL) maps; DirectX tools export `y-down`.  A wrong
 value swaps the shading of slopes that face up and down the image.  Sets @LightingFX.NormalConvention.</li>
-<li>`kotuku:normalStrength`: 0 or greater, default 1.  Multiplies the X and Y components of the normal map, so 0
+<li>`xvg:normalStrength`: 0 or greater, default 1.  Multiplies the X and Y components of the normal map, so 0
 flattens it and values above 1 exaggerate it.  Sets @LightingFX.NormalStrength.</li>
-<li>`kotuku:occlusionMap` selects the named result of an earlier primitive as an ambient occlusion map, in which white
+<li>`xvg:occlusionMap` selects the named result of an earlier primitive as an ambient occlusion map, in which white
 is fully exposed and black fully occluded.  It darkens the ambient light and the matcap, but not the light of the light
 sources.  Sets @LightingFX.OcclusionMap.  It has no effect on `feSpecularLighting`.</li>
-<li>`kotuku:occlusionChannel`: `R` (the default), `G`, `B`, `A` or `luminance`, the channel of the occlusion map to
+<li>`xvg:occlusionChannel`: `R` (the default), `G`, `B`, `A` or `luminance`, the channel of the occlusion map to
 read.  Packed ORM maps store occlusion in `R`.  Sets @LightingFX.OcclusionChannel.</li>
-<li>`kotuku:occlusionStrength`: 0 or greater, default 1.  The occlusion `ao` is applied as
+<li>`xvg:occlusionStrength`: 0 or greater, default 1.  The occlusion `ao` is applied as
 `1 + strength * (ao - 1)`, so 0 disables the map.  Sets @LightingFX.OcclusionStrength.</li>
-<li>`kotuku:roughnessMap` selects the named result of an earlier primitive as a roughness map, in which black is
+<li>`xvg:roughnessMap` selects the named result of an earlier primitive as a roughness map, in which black is
 smooth and white fully rough.  Each pixel's roughness sets its own specular exponent, so smooth areas have narrow,
 bright highlights and rough areas broad, dim ones.  `specularExponent` remains the exponent at which the specular
 constant is calibrated, and pixels that the map does not cover use it.  Sets @LightingFX.RoughnessMap.  It has no
 effect on `feDiffuseLighting`.</li>
-<li>`kotuku:roughnessChannel`: `R` (the default), `G`, `B`, `A` or `luminance`, the channel of the roughness map to
+<li>`xvg:roughnessChannel`: `R` (the default), `G`, `B`, `A` or `luminance`, the channel of the roughness map to
 read.  Packed ORM maps store roughness in `G`.  Sets @LightingFX.RoughnessChannel.</li>
 </list>
 
@@ -271,15 +271,15 @@ The light source elements `feDistantLight`, `fePointLight` and `feSpotLight` acc
 light's options with @LightingFX.SetLightOptions():
 
 <list type="bullet">
-<li>`kotuku:colour`: the colour of this light, in the syntax of `lighting-color`.  If it is omitted the light takes
+<li>`xvg:colour`: the colour of this light, in the syntax of `lighting-color`.  If it is omitted the light takes
 the primitive's `lighting-color`, which defaults to white.</li>
-<li>`kotuku:intensity`: a multiplier of the light's colour, 0 or greater, default 1.  Zero turns off the light's
+<li>`xvg:intensity`: a multiplier of the light's colour, 0 or greater, default 1.  Zero turns off the light's
 direct light.</li>
-<li>`kotuku:range`: for point and spot lights, the distance at which the light fades to nothing, in the units of its
+<li>`xvg:range`: for point and spot lights, the distance at which the light fades to nothing, in the units of its
 `z` coordinate, or `none`.  The light is at full strength at the point of the surface nearest to it and falls with the
 square of the distance from there.  Omitting it, `none` and 0 leave the light unlimited.  A distant light cannot
 have a range; the attribute is reported and ignored.</li>
-<li>`kotuku:shadows`: `true` (the default) or `false`.  With `false` the light casts no shadows.  Point and spot
+<li>`xvg:shadows`: `true` (the default) or `false`.  With `false` the light casts no shadows.  Point and spot
 lights cast shadows with the `local-shadows` feature, and distant lights with `shadows`.</li>
 </list>
 
@@ -289,8 +289,8 @@ namespace and draw the standard SVG lighting.
 A light source element can be animated with `animate` and `set` children, as in web browsers.  They animate the
 numeric attributes of the light's own type: `azimuth` and `elevation` of `feDistantLight`, `x`, `y` and `z` of
 `fePointLight`, and those plus `pointsAtX`, `pointsAtY`, `pointsAtZ`, `specularExponent` and `limitingConeAngle` of
-`feSpotLight`.  The animations move the light in place with @LightingFX.SetLight(), so its `kotuku:` options and its
-place among the lights of `kotuku:feLighting` are kept.  Other attributes and an `href` to another element are
+`feSpotLight`.  The animations move the light in place with @LightingFX.SetLight(), so its `xvg:` options and its
+place among the lights of `xvg:feLighting` are kept.  Other attributes and an `href` to another element are
 reported and ignored, and the light's colour cannot be animated.  An exported document does not include the
 animations.
 
@@ -301,16 +301,16 @@ animations.
 </pre>
 
 <pre>
-&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"&gt;
+&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"&gt;
   &lt;filter id="relief"&gt;
-    &lt;feDiffuseLighting in="SourceAlpha" surfaceScale="8" kotuku:features="shadows cavity" kotuku:penumbra="4"&gt;
+    &lt;feDiffuseLighting in="SourceAlpha" surfaceScale="8" xvg:features="shadows cavity" xvg:penumbra="4"&gt;
       &lt;feDistantLight azimuth="225" elevation="35"/&gt;
     &lt;/feDiffuseLighting&gt;
   &lt;/filter&gt;
 &lt;/svg&gt;
 </pre>
 
-The `kotuku:feLighting` element is the `COMBINED` type of @LightingFX.  It lights an albedo with diffuse, specular and
+The `xvg:feLighting` element is the `COMBINED` type of @LightingFX.  It lights an albedo with diffuse, specular and
 ambient light in one primitive.  The `in` attribute selects a floating-point height result or an image whose alpha
 supplies the height.  The `in2` attribute selects the albedo, which defaults to opaque white.  It accepts
 `surfaceScale`, `diffuseConstant`, `specularConstant`, `specularExponent`, `kernelUnitLength` and `lighting-color`.
@@ -347,39 +347,39 @@ primitives with `feComposite` to light a standard document with several sources.
 document's compliance, but other renderers do not draw it.
 
 <pre>
-&lt;kotuku:feLighting in="SourceAlpha" in2="paint" surfaceScale="6" specularConstant="0.6" specularExponent="24"&gt;
+&lt;xvg:feLighting in="SourceAlpha" in2="paint" surfaceScale="6" specularConstant="0.6" specularExponent="24"&gt;
   &lt;feDistantLight azimuth="225" elevation="40"/&gt;
-  &lt;fePointLight x="40" y="120" z="60" kotuku:colour="#8af" kotuku:intensity="0.6" kotuku:range="200"/&gt;
-&lt;/kotuku:feLighting&gt;
+  &lt;fePointLight x="40" y="120" z="60" xvg:colour="#8af" xvg:intensity="0.6" xvg:range="200"/&gt;
+&lt;/xvg:feLighting&gt;
 </pre>
 
-In documents using the Kōtuku namespace, `kotuku:outputMode="height"` on `feTurbulence` or `feGaussianBlur`
+In documents using the Kōtuku namespace, `xvg:outputMode="height"` on `feTurbulence` or `feGaussianBlur`
 produces a floating-point height result for enhanced lighting.  A height-output blur accepts both a height result
 and an image's alpha.  Supply the albedo through a separate image input.
 
 <pre>
-&lt;filter id="brass" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"&gt;
-  &lt;feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" kotuku:outputMode="height" result="raw"/&gt;
-  &lt;feGaussianBlur in="raw" stdDeviation="1.5" kotuku:outputMode="height" result="smooth"/&gt;
-  &lt;kotuku:feLighting in="smooth" in2="SourceGraphic" surfaceScale="6" diffuseConstant="0.9"
+&lt;filter id="brass" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"&gt;
+  &lt;feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" xvg:outputMode="height" result="raw"/&gt;
+  &lt;feGaussianBlur in="raw" stdDeviation="1.5" xvg:outputMode="height" result="smooth"/&gt;
+  &lt;xvg:feLighting in="smooth" in2="SourceGraphic" surfaceScale="6" diffuseConstant="0.9"
       specularConstant="0.6" specularExponent="40" ambient="#202830"&gt;
-    &lt;feDistantLight azimuth="225" elevation="35" kotuku:intensity="1.4"/&gt;
-  &lt;/kotuku:feLighting&gt;
+    &lt;feDistantLight azimuth="225" elevation="35" xvg:intensity="1.4"/&gt;
+  &lt;/xvg:feLighting&gt;
 &lt;/filter&gt;
 </pre>
 
-`kotuku:outputMode="height"` on `feComposite` or `feBlend` combines two heights in floating point; refer to
+`xvg:outputMode="height"` on `feComposite` or `feBlend` combines two heights in floating point; refer to
 @CompositeFX.OutputMode for the operators.  A shape can then be smoothed and given sharp relief afterwards, without
 quantising the smooth height to 8 bits in between:
 
 <pre>
-&lt;feGaussianBlur in="SourceAlpha" stdDeviation="2.5" kotuku:outputMode="height" result="smooth"/&gt;
-&lt;feTurbulence type="fractalNoise" baseFrequency="0.06" kotuku:outputMode="height" result="marks"/&gt;
-&lt;feComposite in="smooth" in2="marks" operator="arithmetic" k2="1" k3="0.03" kotuku:outputMode="height"
+&lt;feGaussianBlur in="SourceAlpha" stdDeviation="2.5" xvg:outputMode="height" result="smooth"/&gt;
+&lt;feTurbulence type="fractalNoise" baseFrequency="0.06" xvg:outputMode="height" result="marks"/&gt;
+&lt;feComposite in="smooth" in2="marks" operator="arithmetic" k2="1" k3="0.03" xvg:outputMode="height"
     result="height"/&gt;
 </pre>
 
-The `kotuku:feNormalMap` element writes the surface normals from the height selected by `in` or from the map
+The `xvg:feNormalMap` element writes the surface normals from the height selected by `in` or from the map
 selected by `normalMap`.  It accepts `surfaceScale`, `kernelUnitLength`, `features` and `detail`.  Use `kernelUnitX`
 or `kernelUnitY` to set a kernel unit on one axis and keep the default on the other.  See @LightingFX.UnitX for how
 the default is resolved.
@@ -389,16 +389,16 @@ these primitives distort the graphic at changes in its alpha.  To refract an ima
 image as the displacement primitive's `in`.
 
 <pre>
-&lt;filter id="refraction" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"&gt;
-  &lt;kotuku:feNormalMap in="SourceAlpha" surfaceScale="8" result="normals"/&gt;
+&lt;filter id="refraction" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"&gt;
+  &lt;xvg:feNormalMap in="SourceAlpha" surfaceScale="8" result="normals"/&gt;
   &lt;feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" yChannelSelector="G" scale="12"/&gt;
 &lt;/filter&gt;
 </pre>
 
-To refract through a normal map loaded by `feImage`, add `kotuku:normalConvention` to `feDisplacementMap` with the
+To refract through a normal map loaded by `feImage`, add `xvg:normalConvention` to `feDisplacementMap` with the
 map's convention, `y-down` or `y-up`.  The map is then read as signed normal components in either colour space, as
 lighting reads it, rather than as colour.  The default, `auto`, does this only for the result of
-`kotuku:feNormalMap`.  Sets @DisplacementFX.NormalConvention.
+`xvg:feNormalMap`.  Sets @DisplacementFX.NormalConvention.
 
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
@@ -604,9 +604,9 @@ a #Path has been configured, the referenced SVG file will be loaded and parsed i
 
 The default behaviour creates a local @VectorScene object to contain the generated scene graph.  Its
 @VectorScene.Compliance is set to `SVG2` so that the document is rendered to the SVG standard.  If the document
-declares a Kōtuku namespace, for instance `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`, it is asking for
+declares a Kōtuku namespace, for instance `xmlns:xvg="http://www.kotuku.dev/xmlns/svg"`, it is asking for
 features beyond the standard and Compliance defaults to `NONE`.  The namespace declaration alone enables this
-behaviour.  Set the root `kotuku:compliance` attribute to `svg1` or `svg2` to select standard rendering in a
+behaviour.  Set the root `xvg:compliance` attribute to `svg1` or `svg2` to select standard rendering in a
 document that uses Kōtuku markup.
 
 The local scene can be overridden by setting the #Target field to redirect content into an existing scene graph
@@ -971,7 +971,7 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
       static const std::string root_doc =
          "<?xml version=\"1.0\" standalone=\"no\"?>\n"
          "<svg version=\"1.2\" xmlns=\"http://www.w3.org/2000/svg\" "
-         "xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>";
+         "xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:xvg=\"http://www.kotuku.dev/xmlns/svg\"/>";
 
       auto xml = objXML::create { fl::Flags(XMF::NEW|XMF::READABLE), fl::Statement(root_doc) };
 
@@ -1238,7 +1238,7 @@ static ERR SET_FrameRate(extSVG *Self, int Value)
 ParamNames: Lists the names of the parameters that the document references.
 
 This field returns the sorted, unique names of parameters referenced by `param()`, `env()` or a valid
-`kotuku:requiredParams` test, including parameters without supplied values.  Names are reported without a leading
+`xvg:requiredParams` test, including parameters without supplied values.  Names are reported without a leading
 `--`.  An `env()` binding in a custom property is reported when it reaches an element.  Use this field to check
 which #SetKey() values the document references.  The array is empty before parsing or when the document references
 no parameters.

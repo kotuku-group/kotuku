@@ -554,7 +554,7 @@ static ERR turbulence_xml(const extTurbulenceFX &Effect, filter_xml_element &Ele
    Element.attribute("seed", Effect.Seed);
    Element.attribute("stitchTiles", Effect.Stitch ? "stitch" : "noStitch");
    Element.attribute("type", Effect.Type IS TB::NOISE ? "fractalNoise" : "turbulence");
-   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("xvg:outputMode", "height");
    return ERR::Okay;
 }
 

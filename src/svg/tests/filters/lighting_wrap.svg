@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- LightingFX wrap on kotuku:feLighting.
+<!-- LightingFX wrap on xvg:feLighting.
 
 Columns are wrap 0, 0.5 and 1.  Rows: wax blobs with shadows under a low light, a skin-toned dome lit from the side
 without shadows, and a raised block on flat paper whose cast shadow keeps its edge while the ground brightens.
 
-Each cell is a 340x254 filter region in its own user space.  Every surface is lit by kotuku:feLighting, the COMBINED
+Each cell is a 340x254 filter region in its own user space.  Every surface is lit by xvg:feLighting, the COMBINED
 type of LightingFX, which uses the enhanced pipeline whatever the scene's Compliance. -->
 
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
   viewBox="0 0 1024 768">
   <defs>
     <!-- Hemisphere alpha sampled at equal polar angles to capture the steep rim -->
@@ -60,11 +60,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="4"/>
       <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 16 -10.5"/>
       <feMorphology operator="dilate" radius="1" result="relief"/>
-      <feGaussianBlur in="relief" stdDeviation="6" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="20" diffuseConstant="1" specularConstant="0.2"
+      <feGaussianBlur in="relief" stdDeviation="6" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="20" diffuseConstant="1" specularConstant="0.2"
         specularExponent="8" ambient="#202020" features="all" wrap="0">
         <feDistantLight azimuth="20" elevation="20"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 2: Wax blobs with shadows, light at a low elevation, wrap 0.5 -->
@@ -72,11 +72,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="4"/>
       <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 16 -10.5"/>
       <feMorphology operator="dilate" radius="1" result="relief"/>
-      <feGaussianBlur in="relief" stdDeviation="6" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="20" diffuseConstant="1" specularConstant="0.2"
+      <feGaussianBlur in="relief" stdDeviation="6" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="20" diffuseConstant="1" specularConstant="0.2"
         specularExponent="8" ambient="#202020" features="all" wrap="0.5">
         <feDistantLight azimuth="20" elevation="20"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 3: Wax blobs with shadows, light at a low elevation, wrap 1 -->
@@ -84,11 +84,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="4"/>
       <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 16 -10.5"/>
       <feMorphology operator="dilate" radius="1" result="relief"/>
-      <feGaussianBlur in="relief" stdDeviation="6" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="SourceGraphic" surfaceScale="20" diffuseConstant="1" specularConstant="0.2"
+      <feGaussianBlur in="relief" stdDeviation="6" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="20" diffuseConstant="1" specularConstant="0.2"
         specularExponent="8" ambient="#202020" features="all" wrap="1">
         <feDistantLight azimuth="20" elevation="20"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 4: Skin-toned dome lit from the side without shadows, wrap 0.  The terminator moves past the middle as wrap
@@ -97,11 +97,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e0a890"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.1"
         specularExponent="10" features="none" wrap="0">
         <feDistantLight azimuth="0" elevation="5"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 5: Skin-toned dome lit from the side without shadows, wrap 0.5.  The terminator moves past the middle as wrap
@@ -110,11 +110,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e0a890"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.1"
         specularExponent="10" features="none" wrap="0.5">
         <feDistantLight azimuth="0" elevation="5"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 6: Skin-toned dome lit from the side without shadows, wrap 1.  The terminator moves past the middle as wrap
@@ -123,44 +123,44 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e0a890"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="0.1"
         specularExponent="10" features="none" wrap="1">
         <feDistantLight azimuth="0" elevation="5"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 7: Raised block casting a shadow on flat paper, wrap 0.  The flat ground brightens with wrap but the shadow
       keeps its edge -->
     <filter id="c7" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feFlood flood-color="#c8d4e0" result="paper"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="paper" surfaceScale="40" diffuseConstant="1" specularConstant="0.1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="paper" surfaceScale="40" diffuseConstant="1" specularConstant="0.1"
         specularExponent="10" features="shadows" penumbra="2" wrap="0">
         <feDistantLight azimuth="20" elevation="30"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 8: Raised block casting a shadow on flat paper, wrap 0.5.  The flat ground brightens with wrap but the shadow
       keeps its edge -->
     <filter id="c8" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feFlood flood-color="#c8d4e0" result="paper"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="paper" surfaceScale="40" diffuseConstant="1" specularConstant="0.1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="paper" surfaceScale="40" diffuseConstant="1" specularConstant="0.1"
         specularExponent="10" features="shadows" penumbra="2" wrap="0.5">
         <feDistantLight azimuth="20" elevation="30"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 9: Raised block casting a shadow on flat paper, wrap 1.  The flat ground brightens with wrap but the shadow
       keeps its edge -->
     <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feFlood flood-color="#c8d4e0" result="paper"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="paper" surfaceScale="40" diffuseConstant="1" specularConstant="0.1"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="paper" surfaceScale="40" diffuseConstant="1" specularConstant="0.1"
         specularExponent="10" features="shadows" penumbra="2" wrap="1">
         <feDistantLight azimuth="20" elevation="30"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
   </defs>
 
