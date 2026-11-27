@@ -218,7 +218,7 @@ such as those of chrome or glass.  The path is relative to the document's folder
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
 warning is logged and the surface is drawn without it.  Sets <class name="LightingFX" field="MatcapPath">LightingFX.MatcapPath</class>.</li>
 <li><code>matcapMode</code>: <code>reflect</code> (the default) adds the matcap to the specular light as a reflection.  <code>light</code> uses it as
-the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Sets <class name="LightingFX" field="MatcapMode">_LightingFX.MatcapMode_</class>.</li>
+the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Sets <class name="LightingFX" field="MatcapMode">LightingFX.MatcapMode</class>.</li>
 </list>
 <p>The element accepts any number of light source elements, which light the surface together in document order. Their light is added before the result is limited to full strength, so a key light and fill lights can share one primitive.  <code>desc</code>, <code>title</code> and <code>metadata</code> children are ignored, and without a light source the default light is used.  The standard lighting primitives keep the SVG rule of one light source, their first child; combine separate primitives with <code>feComposite</code> to light a standard document with several sources.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
 <pre>&lt;kotuku:feLighting in=&quot;SourceAlpha&quot; in2=&quot;paint&quot; surfaceScale=&quot;6&quot; specularConstant=&quot;0.6&quot; specularExponent=&quot;24&quot;&gt;
@@ -235,6 +235,12 @@ the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Se
     &lt;feDistantLight azimuth=&quot;225&quot; elevation=&quot;35&quot; kotuku:intensity=&quot;1.4&quot;/&gt;
   &lt;/kotuku:feLighting&gt;
 &lt;/filter&gt;
+</pre>
+<p><code>kotuku:outputMode=&quot;height&quot;</code> on <code>feComposite</code> or <code>feBlend</code> combines two heights in floating point; refer to <class name="CompositeFX" field="OutputMode">CompositeFX.OutputMode</class> for the operators.  A shape can then be smoothed and given sharp relief afterwards, without quantising the smooth height to 8 bits in between:</p>
+<pre>&lt;feGaussianBlur in=&quot;SourceAlpha&quot; stdDeviation=&quot;2.5&quot; kotuku:outputMode=&quot;height&quot; result=&quot;smooth&quot;/&gt;
+&lt;feTurbulence type=&quot;fractalNoise&quot; baseFrequency=&quot;0.06&quot; kotuku:outputMode=&quot;height&quot; result=&quot;marks&quot;/&gt;
+&lt;feComposite in=&quot;smooth&quot; in2=&quot;marks&quot; operator=&quot;arithmetic&quot; k2=&quot;1&quot; k3=&quot;0.03&quot; kotuku:outputMode=&quot;height&quot;
+    result=&quot;height&quot;/&gt;
 </pre>
 <p>The <code>kotuku:feNormalMap</code> element writes the surface normals from the height selected by <code>in</code> or from the map selected by <code>normalMap</code>.  It accepts <code>surfaceScale</code>, <code>kernelUnitLength</code>, <code>features</code> and <code>detail</code>.  Use <code>kernelUnitX</code> or <code>kernelUnitY</code> to set a kernel unit on one axis and keep the default on the other.  See <class name="LightingFX" field="UnitX">LightingFX.UnitX</class> for how the default is resolved.</p>
 <p>Use the normal map's named result as <code>in2</code> on <code>feDisplacementMap</code> with red for X and green for Y.  For example, these primitives distort the graphic at changes in its alpha.  To refract an image behind a surface, select that image as the displacement primitive's <code>in</code>.</p>

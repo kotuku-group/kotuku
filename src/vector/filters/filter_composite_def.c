@@ -27,6 +27,13 @@ static const struct FieldDef clCompositeFXOP[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clCompositeFXFOM[] = {
+   { "Image", 0x00000000 },
+   { "Height", 0x00000001 },
+   { "Native", 0x00000002 },
+   { nullptr, 0 }
+};
+
 static ERR COMPOSITEFX_New(extCompositeFX *Self) {
    new (Self) extCompositeFX(Self->Class, Self->UID);
    return ERR::Okay;

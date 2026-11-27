@@ -230,6 +230,29 @@ end
       linear_mid .. ', eased ' .. eased_mid .. ')')
 end
 
+@Test function CircularEasingsFollowAQuarterCircle()
+   local cases = {
+      { name='CIRCLE_IN', easing=GEZ_CIRCLE_IN, curve=function(T) return 1 - math.sqrt(1 - T * T) end },
+      { name='CIRCLE_OUT', easing=GEZ_CIRCLE_OUT, curve=function(T) return math.sqrt(T * (2 - T)) end },
+      { name='CIRCLE_IN_OUT', easing=GEZ_CIRCLE_IN_OUT, curve=function(T)
+         if T < 0.5 then return (1 - math.sqrt(1 - 4 * T * T)) * 0.5 end
+         local inverse = 2 - 2 * T
+         return (math.sqrt(1 - inverse * inverse) + 1) * 0.5
+      end }
+   }
+
+   local bmp = newBitmap(100, 20)
+   for sample in values(cases) do
+      drawScene(newLinearScene({ easing=sample.easing }), bmp)
+      for x in values({ 10, 25, 40, 50, 60, 75, 90 }) do
+         local expected = sample.curve((x + 0.5) / 100) * 255
+         local red = mGfx.ReadRGBPixel(bmp, x, 10).red
+         assert(math.abs(red - expected) <= 4,
+            f'{sample.name} at x={x}: expected red near {math.floor(expected + 0.5)}, got {red}')
+      end
+   end
+end
+
 @Test function PostInitEasingChangeRebuildsTable()
    local scene, gradient = newLinearScene({ easing=GEZ_LINEAR })
 

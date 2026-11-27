@@ -14,13 +14,16 @@
     "CLEAR:      Disables the gradient.")
 
   enums("GEZ", { type="int", start=0, comment="Gradient easing functions." },
-    "LINEAR:       Linear interpolation (no easing) - the default.",
-    "IN:           Ease-in (slow start).",
-    "OUT:          Ease-out (slow end).",
-    "IN_OUT:       Smoothstep-style ease-in and ease-out.",
-    "CUBIC_IN:     Cubic ease-in.",
-    "CUBIC_OUT:    Cubic ease-out.",
-    "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
+    "LINEAR:        Linear interpolation (no easing) - the default.",
+    "IN:            Ease-in (slow start).",
+    "OUT:           Ease-out (slow end).",
+    "IN_OUT:        Smoothstep-style ease-in and ease-out.",
+    "CUBIC_IN:      Cubic ease-in.",
+    "CUBIC_OUT:     Cubic ease-out.",
+    "CUBIC_IN_OUT:  Cubic ease-in and ease-out.",
+    "CIRCLE_IN:     Circular ease-in, following a quarter circle.  The slope is vertical at the end.",
+    "CIRCLE_OUT:    Circular ease-out, following a quarter circle.  The slope is vertical at the start.",
+    "CIRCLE_IN_OUT: Circular ease-in and ease-out.  The slope is vertical at the midpoint.")
 
   enums("GCI", { type="int", start=0, comment="Colour interpolation for gradient stops." },
     "DEFAULT: Follow the gradient's ColourSpace.",

@@ -206,6 +206,9 @@
     </constants>
 
     <constants lookup="GEZ" comment="Gradient easing functions.">
+      <const name="CIRCLE_IN">Circular ease-in, following a quarter circle.  The slope is vertical at the end.</const>
+      <const name="CIRCLE_IN_OUT">Circular ease-in and ease-out.  The slope is vertical at the midpoint.</const>
+      <const name="CIRCLE_OUT">Circular ease-out, following a quarter circle.  The slope is vertical at the start.</const>
       <const name="CUBIC_IN">Cubic ease-in.</const>
       <const name="CUBIC_IN_OUT">Cubic ease-in and ease-out.</const>
       <const name="CUBIC_OUT">Cubic ease-out.</const>

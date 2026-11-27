@@ -2856,6 +2856,11 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   if (const auto output = find_kotuku_attrib(Self, Tag, "outputMode")) {
+      if (iequals(*output, "height")) fx->setOutputMode(FOM::HEIGHT);
+      else if (not iequals(*output, "image")) log.warning("Invalid composite outputMode '%s'.", output->c_str());
+   }
+
    if (const auto mask = find_kotuku_attrib(Self, Tag, "amountMask")) {
       const auto input = Self->Effects.find(*mask);
       if ((input IS Self->Effects.end()) or (fx->setAmountMask(input->second) != ERR::Okay)) {

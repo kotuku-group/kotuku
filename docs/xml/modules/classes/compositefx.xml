@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>This filter combines the <class name="FilterEffect" field="Input">FilterEffect.Input</class> and <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> sources using either one of the Porter-Duff compositing operations, or a colour blending algorithm.  The Input has priority and will be placed in the foreground for ordered operations such as <code>ATOP</code> and <code>OVER</code>.</p></description>
+<p>This filter combines the <class name="FilterEffect" field="Input">FilterEffect.Input</class> and <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> sources using either one of the Porter-Duff compositing operations, or a colour blending algorithm.  The Input has priority and will be placed in the foreground for ordered operations such as <code>ATOP</code> and <code>OVER</code>.</p>
+<p>Set <fl>OutputMode</fl> to <code>HEIGHT</code> to combine height maps in floating point, for enhanced <class name="LightingFX">LightingFX</class>.  Heights can then be built in stages without the 8-bit quantisation of an image result, for example by blurring a shape into a smooth height and adding fine relief from <class name="TurbulenceFX">TurbulenceFX</class> to it afterwards, so that the relief is not blurred.</p></description>
     <source>
       <file path="filters/">filter_composite.cpp</file>
     </source>
@@ -43,7 +44,7 @@
       <type>DOUBLE</type>
       <description>
 <p>The Amount interpolates between the <class name="FilterEffect" field="Mix">FilterEffect.Mix</class> source and the fully composited result.  A value of 1, the default, gives the unmodified result of the <fl>Operator</fl> and a value of 0 passes the Mix source through unchanged. Intermediate values blend the two with premultiplied components in the effect's colour space, so the alpha of the result is also interpolated.  The Amount applies to every operator, including <code>ARITHMETIC</code>.</p>
-<p>The value must be in the range 0 - 1.  Values outside of this range, or that are not finite, are rejected with <code>ERR::InvalidValue</code>.  If an <fl>AmountMask</fl> is bound then it scales the Amount for each pixel.</p>
+<p>The value must be in the range 0 - 1.  Values outside of this range, or that are not finite, are rejected with <code>ERR::InvalidValue</code>.  If an <fl>AmountMask</fl> is bound then it scales the Amount for each pixel.  In <code>HEIGHT</code> mode the Amount interpolates between the Mix height and the result.</p>
 <p>SVG documents can set this field with the <code>kotuku:amount</code> attribute of <code>feComposite</code> and <code>feBlend</code>.</p>
       </description>
     </field>
@@ -114,6 +115,30 @@
     </field>
 
     <field>
+      <name>OutputMode</name>
+      <comment>Selects image or floating-point height output.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="FOM">FOM</type>
+      <description>
+<p>The default <code>IMAGE</code> mode composites colour images.  In <code>HEIGHT</code> mode the effect combines two height maps and produces a floating-point height, for enhanced <class name="LightingFX">LightingFX</class> and other effects that accept heights.  Each input supplies a height: a native height from an effect such as <class name="BlurFX">BlurFX</class> or <class name="TurbulenceFX">TurbulenceFX</class> in <code>HEIGHT</code> mode, or the alpha channel of an image.  Pixels outside of an input read as zero.</p>
+<p>With <code>a</code> the height of the <class name="FilterEffect" field="Input">FilterEffect.Input</class> and <code>b</code> the height of the <class name="FilterEffect" field="Mix">FilterEffect.Mix</class>, the operators compute:</p>
+<list type="bullet">
+<li><code>ARITHMETIC</code>: <code>K1 * a * b + K2 * a + K3 * b + K4</code>.</li>
+<li><code>PLUS</code>: <code>a + b</code>, and <code>MINUS</code>: <code>b - a</code>.</li>
+<li><code>MULTIPLY</code> and <code>IN</code>: <code>a * b</code>, and <code>OUT</code>: <code>a * (1 - b)</code>.</li>
+<li><code>LIGHTEN</code>: the greater of <code>a</code> and <code>b</code>, and <code>DARKEN</code>: the lesser.</li>
+<li><code>SCREEN</code>: <code>a + b - a * b</code>, and <code>OVER</code>: <code>a + b * (1 - a)</code>.</li>
+<li><code>DIFFERENCE</code>: <code>|a - b|</code>.</li>
+<li><code>XOR</code> and <code>EXCLUSION</code>: <code>a + b - 2 * a * b</code>.</li>
+<li><code>ATOP</code>: <code>b</code>.</li>
+</list>
+<p>No result is clamped, so heights can exceed 1 or fall below 0, and a non-finite result is stored as a missing sample. <fl>Amount</fl> and <fl>AmountMask</fl> blend from <code>b</code> to the result.  The other operators are not supported in this mode, and the filter fails to draw with <code>ERR::NoSupport</code>.  The colour space of the effect does not apply.</p>
+<p>The effect's result cannot be the last in a filter, which must produce an image.  Changing the mode rebuilds the filter's draw plan.  SVG documents set this mode with <code>kotuku:outputMode=&quot;height&quot;</code> on <code>feComposite</code> and <code>feBlend</code>.</p>
+<types lookup="FOM"/>
+      </description>
+    </field>
+
+    <field>
       <name>XMLDef</name>
       <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
@@ -123,6 +148,12 @@
 
   </fields>
   <types>
+    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX, BlurFX and WaveFunctionFX.">
+      <const name="HEIGHT">Produce a linear floating-point scalar surface for numerical filter inputs.</const>
+      <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+      <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
+    </constants>
+
     <constants lookup="OP" comment="Operators for CompositionFX.">
       <const name="ARITHMETIC">The SVG 'arithmetic' blending algorithm.</const>
       <const name="ATOP">The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.</const>

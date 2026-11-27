@@ -15,7 +15,9 @@
       <path d="M94 50 50 94 50 80 80 50Z" fill="#d0d0ba"/>
       <path d="M50 94 6 50 20 50 50 80Z" fill="#30d0ba"/>
     </pattern>
+
     <rect id="encodedNormals" width="300" height="200" fill="url(#bevelNormals)"/>
+
     <clipPath id="swatch">
       <rect width="300" height="200" rx="10"/>
     </clipPath>
@@ -48,6 +50,7 @@
     <text y="235" font-size="18" fill="#f3f8f8">RGB normal map</text>
     <text y="260" font-size="14" fill="#afc4cc">The four colours encode the bevel directions.</text>
   </g>
+
   <g transform="translate(362 120)">
     <g clip-path="url(#swatch)">
       <rect width="300" height="200" fill="#4a8886" filter="url(#flat)"/>
@@ -55,6 +58,7 @@
     <text y="235" font-size="18" fill="#f3f8f8">Height-derived normals</text>
     <text y="260" font-size="14" fill="#afc4cc">The flat surface has uniform lighting.</text>
   </g>
+
   <g transform="translate(684 120)">
     <g clip-path="url(#swatch)">
       <rect width="300" height="200" fill="#4a8886" filter="url(#mapped)"/>

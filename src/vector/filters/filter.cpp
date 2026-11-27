@@ -120,6 +120,7 @@ struct filter_operation {
    filter_surface_format Format = filter_surface_format::RGBA8; // Result format for the effect's current settings
    bool InputFormat = false; // The result takes the format of the Input producer, overriding Format and Primary
    bool InputRegion = true;  // The Input binding contributes to the default primitive subregion
+   filter_input_kind Secondary = filter_input_kind::IMAGE; // Contract kind of the Mix binding of DUAL effects
 };
 
 //********************************************************************************************************************
@@ -1304,6 +1305,14 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
          return { SINGLE };
 
       case CLASSID::COMPOSITEFX:
+         if (((const extCompositeFX *)Effect)->OutputMode IS FOM::HEIGHT) {
+            return {
+               .Inputs = DUAL,
+               .Primary = filter_input_kind::SCALAR_MAP,
+               .Format = filter_surface_format::SCALAR_F32,
+               .Secondary = filter_input_kind::SCALAR_MAP
+            };
+         }
          return { DUAL };
 
       case CLASSID::CONVOLVEFX:
@@ -1654,7 +1663,8 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
                return error;
             }
             if (operation.Inputs IS filter_inputs::DUAL) {
-               if (auto error = add_input(effect->MixType, effect->Mix, filter_input_role::MIX); error != ERR::Okay) {
+               if (auto error = add_input(effect->MixType, effect->Mix, filter_input_role::MIX, 0,
+                   { .Kind = operation.Secondary }); error != ERR::Okay) {
                   return error;
                }
             }
