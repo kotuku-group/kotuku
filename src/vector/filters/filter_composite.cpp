@@ -1035,7 +1035,7 @@ The value must be in the range 0 - 1.  Values outside of this range, or that are
 `ERR::InvalidValue`.  If an #AmountMask is bound then it scales the Amount for each pixel.  In `HEIGHT` mode the
 Amount interpolates between the Mix height and the result.
 
-SVG documents can set this field with the `kotuku:amount` attribute of `feComposite` and `feBlend`.
+SVG documents can set this field with the `xvg:amount` attribute of `feComposite` and `feBlend`.
 
 *********************************************************************************************************************/
 
@@ -1064,7 +1064,7 @@ while #Amount is 0.
 Attach both effects to the same filter before setting this field.  If the producer is removed, this field is cleared
 and the mask no longer applies.  Set the field to `NULL` to remove the mask.
 
-SVG documents can set this field with the `kotuku:amountMask` attribute of `feComposite` and `feBlend`, which names
+SVG documents can set this field with the `xvg:amountMask` attribute of `feComposite` and `feBlend`, which names
 the `result` of an earlier primitive.
 
 *********************************************************************************************************************/
@@ -1174,7 +1174,7 @@ No result is clamped, so heights can exceed 1 or fall below 0, and a non-finite 
 filter fails to draw with `ERR::NoSupport`.  The colour space of the effect does not apply.
 
 The effect's result cannot be the last in a filter, which must produce an image.  Changing the mode rebuilds the
-filter's draw plan.  SVG documents set this mode with `kotuku:outputMode="height"` on `feComposite` and `feBlend`.
+filter's draw plan.  SVG documents set this mode with `xvg:outputMode="height"` on `feComposite` and `feBlend`.
 
 *********************************************************************************************************************/
 
@@ -1229,8 +1229,8 @@ static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Eleme
 {
    constexpr std::string_view operators[] = { "over", "in", "out", "atop", "xor", "arithmetic" };
 
-   if (Effect.Amount != 1.0) Element.attribute("kotuku:amount", Effect.Amount);
-   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+   if (Effect.Amount != 1.0) Element.attribute("xvg:amount", Effect.Amount);
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("xvg:outputMode", "height");
 
    const auto op = size_t(Effect.Operator);
    const bool arithmetic = Effect.Operator IS OP::ARITHMETIC;
@@ -1241,7 +1241,7 @@ static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Eleme
 
    for (const auto &[name, value] : coefficients) {
       if (arithmetic) Element.attribute(name, value);
-      else if (value != 0) Element.attribute(std::string("kotuku:") + name, value);
+      else if (value != 0) Element.attribute(std::string("xvg:") + name, value);
    }
 
    if (op < std::size(operators)) {
@@ -1263,11 +1263,11 @@ static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Eleme
       case OP::BURN:       Element.attribute("mode", "color-burn"); break;
       case OP::DIFFERENCE: Element.attribute("mode", "difference"); break;
       case OP::EXCLUSION:  Element.attribute("mode", "exclusion"); break;
-      case OP::INVERT_RGB: Element.attribute("kotuku:mode", "invertRGB"); break;
-      case OP::INVERT:     Element.attribute("kotuku:mode", "invert"); break;
-      case OP::CONTRAST:   Element.attribute("kotuku:mode", "contrast"); break;
-      case OP::PLUS:       Element.attribute("kotuku:mode", "plus"); break;
-      case OP::MINUS:      Element.attribute("kotuku:mode", "minus"); break;
+      case OP::INVERT_RGB: Element.attribute("xvg:mode", "invertRGB"); break;
+      case OP::INVERT:     Element.attribute("xvg:mode", "invert"); break;
+      case OP::CONTRAST:   Element.attribute("xvg:mode", "contrast"); break;
+      case OP::PLUS:       Element.attribute("xvg:mode", "plus"); break;
+      case OP::MINUS:      Element.attribute("xvg:mode", "minus"); break;
       default: return ERR::InvalidValue;
    }
    return ERR::Okay;

@@ -661,7 +661,7 @@ use the pixel-aligned bounding rectangle of its transformed primitive subregion,
 The addressing mode applies along each axis with an active blur.
 
 SVG reads and writes `CLAMP` as `edgeMode="duplicate"` and `REPEAT` as `edgeMode="wrap"`.
-`MIRROR` uses the Kōtuku extension `kotuku:edgeMode="mirror"`.
+`MIRROR` uses the Kōtuku extension `xvg:edgeMode="mirror"`.
 
 *********************************************************************************************************************/
 
@@ -684,7 +684,7 @@ preserve fractional heights.  Bind the result to enhanced @LightingFX or another
 
 In `NATIVE` mode, scalar and vector float inputs are blurred component-wise and keep their signed range and
 original surface format.  Missing or invalid samples contribute zero.  Bitmap inputs use the usual RGBA blur.
-SVG represents this mode with `kotuku:outputMode="native"`.
+SVG represents this mode with `xvg:outputMode="native"`.
 
 *********************************************************************************************************************/
 
@@ -751,13 +751,13 @@ static ERR blur_xml(const extBlurFX &Effect, filter_xml_element &Element)
    switch (Effect.EdgeMode) {
       case FEM::CLAMP:  Element.attribute("edgeMode", "duplicate"); break;
       case FEM::REPEAT: Element.attribute("edgeMode", "wrap"); break;
-      case FEM::MIRROR: Element.attribute("kotuku:edgeMode", "mirror"); break;
+      case FEM::MIRROR: Element.attribute("xvg:edgeMode", "mirror"); break;
       case FEM::TRANSPARENT: break;
       default: return ERR::InvalidValue;
    }
 
-   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
-   else if (Effect.OutputMode IS FOM::NATIVE) Element.attribute("kotuku:outputMode", "native");
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("xvg:outputMode", "height");
+   else if (Effect.OutputMode IS FOM::NATIVE) Element.attribute("xvg:outputMode", "native");
    return ERR::Okay;
 }
 

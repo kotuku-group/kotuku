@@ -143,7 +143,7 @@ static ERR offset_xml(const extOffsetFX &Effect, filter_xml_element &Element)
    Element.Name = "feOffset";
    Element.attribute("dx", Effect.XOffset);
    Element.attribute("dy", Effect.YOffset);
-   if (Effect.ResampleMethod != VSM::NEIGHBOUR) Element.attribute("kotuku:resampleMethod", int(Effect.ResampleMethod));
+   if (Effect.ResampleMethod != VSM::NEIGHBOUR) Element.attribute("xvg:resampleMethod", int(Effect.ResampleMethod));
    return ERR::Okay;
 }
 

@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- LightingFX Fresnel term on kotuku:feLighting.
+<!-- LightingFX Fresnel term on xvg:feLighting.
 
 Rows 1 and 3 have Fresnel off, 0.04 and 0.25 in their columns.  Row 1 is a glazed ceramic dome with a broad
 highlight; the specular constants (0.4, 10 and 1.6) give about the same highlight where the surface faces the
 viewer, so the difference is at the rim.  Row 2 is a blue dome at Fresnel 0.25 and metalness 0, 0.5 and 1.  Row 3
 is a ceramic dome that reflects the softbox matcap, which Fresnel keeps faint except at the rim.
 
-Each cell is a 340x254 filter region in its own user space.  Every surface is lit by kotuku:feLighting, the COMBINED
+Each cell is a 340x254 filter region in its own user space.  Every surface is lit by xvg:feLighting, the COMBINED
 type of LightingFX, which uses the enhanced pipeline whatever the scene's Compliance. -->
 
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="1024" height="768"
   viewBox="0 0 1024 768">
   <defs>
     <!-- Hemisphere alpha sampled at equal polar angles to capture the steep rim -->
@@ -23,11 +23,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e8e2d0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0.4"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0.4"
         specularExponent="3" ambient="#303030">
         <feDistantLight azimuth="235" elevation="30"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 2: Glazed ceramic dome with a broad highlight (exponent 3), Fresnel 0.04, specular constant 10 -->
@@ -35,11 +35,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e8e2d0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="10"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="10"
         specularExponent="3" ambient="#303030" fresnel="0.04">
         <feDistantLight azimuth="235" elevation="30"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 3: Glazed ceramic dome with a broad highlight (exponent 3), Fresnel 0.25, specular constant 1.6 -->
@@ -47,11 +47,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#e8e2d0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="1.6"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="1.6"
         specularExponent="3" ambient="#303030" fresnel="0.25">
         <feDistantLight azimuth="235" elevation="30"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 4: Blue dome at Fresnel 0.25 and metalness 0.  F0 blends from 0.25 to the albedo, and the rim turns towards the
@@ -60,11 +60,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#4060d0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1.5"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1.5"
         specularExponent="6" ambient="#202020" metalness="0" fresnel="0.25">
         <feDistantLight azimuth="235" elevation="50"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 5: Blue dome at Fresnel 0.25 and metalness 0.5.  F0 blends from 0.25 to the albedo, and the rim turns towards
@@ -73,11 +73,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#4060d0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1.5"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1.5"
         specularExponent="6" ambient="#202020" metalness="0.5" fresnel="0.25">
         <feDistantLight azimuth="235" elevation="50"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 6: Blue dome at Fresnel 0.25 and metalness 1.  F0 blends from 0.25 to the albedo, and the rim turns towards the
@@ -86,11 +86,11 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#4060d0"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" kotuku:outputMode="height"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1.5"
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.5" result="height" xvg:outputMode="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="1" specularConstant="1.5"
         specularExponent="6" ambient="#202020" metalness="1" fresnel="0.25">
         <feDistantLight azimuth="235" elevation="50"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 7: Ceramic dome with a shallow relief and the softbox matcap, no analytic highlight, Fresnel off.  Fresnel
@@ -98,14 +98,14 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
     <filter id="c7" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feTurbulence type="turbulence" baseFrequency="0.06" numOctaves="1" seed="3" result="noise"/>
       <feComposite in="noise" in2="SourceAlpha" operator="arithmetic" k2="0.04" k3="1" result="relief"/>
-      <feGaussianBlur in="relief" stdDeviation="1.5" result="height" kotuku:outputMode="height"/>
+      <feGaussianBlur in="relief" stdDeviation="1.5" result="height" xvg:outputMode="height"/>
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#dfe6e8"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0"
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0"
         ambient="#303030" matcap="matcaps/softbox.png">
         <feDistantLight azimuth="235" elevation="50"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 8: Ceramic dome with a shallow relief and the softbox matcap, no analytic highlight, Fresnel 0.04.  Fresnel
@@ -113,14 +113,14 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
     <filter id="c8" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feTurbulence type="turbulence" baseFrequency="0.06" numOctaves="1" seed="3" result="noise"/>
       <feComposite in="noise" in2="SourceAlpha" operator="arithmetic" k2="0.04" k3="1" result="relief"/>
-      <feGaussianBlur in="relief" stdDeviation="1.5" result="height" kotuku:outputMode="height"/>
+      <feGaussianBlur in="relief" stdDeviation="1.5" result="height" xvg:outputMode="height"/>
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#dfe6e8"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0"
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0"
         ambient="#303030" matcap="matcaps/softbox.png" fresnel="0.04">
         <feDistantLight azimuth="235" elevation="50"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
 
     <!-- 9: Ceramic dome with a shallow relief and the softbox matcap, no analytic highlight, Fresnel 0.25.  Fresnel
@@ -128,14 +128,14 @@ type of LightingFX, which uses the enhanced pipeline whatever the scene's Compli
     <filter id="c9" filterUnits="userSpaceOnUse" x="0" y="0" width="340" height="254">
       <feTurbulence type="turbulence" baseFrequency="0.06" numOctaves="1" seed="3" result="noise"/>
       <feComposite in="noise" in2="SourceAlpha" operator="arithmetic" k2="0.04" k3="1" result="relief"/>
-      <feGaussianBlur in="relief" stdDeviation="1.5" result="height" kotuku:outputMode="height"/>
+      <feGaussianBlur in="relief" stdDeviation="1.5" result="height" xvg:outputMode="height"/>
       <feComponentTransfer in="SourceAlpha" result="mask"><feFuncA type="linear" slope="255"/></feComponentTransfer>
       <feFlood flood-color="#dfe6e8"/>
       <feComposite in2="mask" operator="in" result="albedo"/>
-      <kotuku:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0"
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="110" diffuseConstant="0.9" specularConstant="0"
         ambient="#303030" matcap="matcaps/softbox.png" fresnel="0.25">
         <feDistantLight azimuth="235" elevation="50"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
   </defs>
 

@@ -442,7 +442,7 @@ when no rectangle is set.
 If the source bitmap shrinks after the rectangle is set so that it no longer fits, drawing the effect fails with
 `ERR::OutOfRange`.
 
-In SVG, the equivalent attribute is `kotuku:viewBox="x y width height"` on the `feImage` element.
+In SVG, the equivalent attribute is `xvg:viewBox="x y width height"` on the `feImage` element.
 
 *********************************************************************************************************************/
 
@@ -515,8 +515,8 @@ static ERR image_xml(extImageFX &Effect, filter_xml_element &Element)
    if (Effect.ResampleMethod IS VSM::LANCZOS) Element.attribute("image-rendering", "optimizeQuality");
    else write_filter_xml_resampling(Element, Effect.ResampleMethod);
 
-   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
-   write_filter_xml_channel(Element, "kotuku:heightChannel", Effect.HeightChannel);
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("xvg:outputMode", "height");
+   write_filter_xml_channel(Element, "xvg:heightChannel", Effect.HeightChannel);
    return ERR::Okay;
 }
 

@@ -931,8 +931,8 @@ static ERR convolve_xml(const extConvolveFX &Effect, filter_xml_element &Element
    if (Effect.UnitXProvided and Effect.UnitYProvided) {
       Element.attribute("kernelUnitLength", Element.number(Effect.UnitX) + ' ' + Element.number(Effect.UnitY));
    }
-   else if (Effect.UnitXProvided) Element.attribute("kotuku:kernelUnitX", Effect.UnitX);
-   else if (Effect.UnitYProvided) Element.attribute("kotuku:kernelUnitY", Effect.UnitY);
+   else if (Effect.UnitXProvided) Element.attribute("xvg:kernelUnitX", Effect.UnitX);
+   else if (Effect.UnitYProvided) Element.attribute("xvg:kernelUnitY", Effect.UnitY);
 
    if (Effect.PreserveAlpha) Element.attribute("preserveAlpha", "true");
    return ERR::Okay;

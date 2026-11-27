@@ -95,7 +95,7 @@
 <p>By default the source vector is drawn at its original size.  Set ViewBox to four values, <code>{ x, y, width, height }</code>, to render only a section of it, such as one cell of a vector atlas.  The section, given in the user coordinates of the <fl>Source</fl> vector, is fitted to the primitive subregion according to <fl>AspectRatio</fl>, in the same way as the <code>viewBox</code> of an SVG viewport.  Artwork outside the section is clipped, including in the margins that a <code>MEET</code> aspect ratio leaves.</p>
 <p>The width and height must be greater than zero and all values must be finite, or <code>ERR::OutOfRange</code> is returned and the current rectangle is retained.  An array that does not have four values is rejected with <code>ERR::InvalidValue</code>.</p>
 <p>Set an empty array, or a zero width and height, to clear the rectangle.  Reading the field returns an empty array when no rectangle is set.</p>
-<p>In SVG, the equivalent attribute is <code>kotuku:viewBox=&quot;x y width height&quot;</code> on the <code>feImage</code> element.</p>
+<p>In SVG, the equivalent attribute is <code>xvg:viewBox=&quot;x y width height&quot;</code> on the <code>feImage</code> element.</p>
       </description>
     </field>
 

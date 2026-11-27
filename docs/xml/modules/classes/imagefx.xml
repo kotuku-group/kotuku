@@ -143,7 +143,7 @@
 <p>All values must be whole numbers, the width and height must be greater than zero, and the rectangle must lie inside the current source bitmap if one is set.  Otherwise the new value is rejected with <code>ERR::OutOfRange</code> and the current rectangle is retained.  An array that does not have four values is rejected with <code>ERR::InvalidValue</code>.</p>
 <p>Set an empty array, or a zero width and height, to clear the rectangle.  Reading the field returns an empty array when no rectangle is set.</p>
 <p>If the source bitmap shrinks after the rectangle is set so that it no longer fits, drawing the effect fails with <code>ERR::OutOfRange</code>.</p>
-<p>In SVG, the equivalent attribute is <code>kotuku:viewBox=&quot;x y width height&quot;</code> on the <code>feImage</code> element.</p>
+<p>In SVG, the equivalent attribute is <code>xvg:viewBox=&quot;x y width height&quot;</code> on the <code>feImage</code> element.</p>
       </description>
     </field>
 

@@ -134,8 +134,8 @@ If a referenced effect is removed from the filter, the EffectID of its layer is 
 remains `REFERENCE`.  Assign a new list to repair the pipeline.  Reading #SourceList returns the same sources
 without the Opacity and Enabled controls.
 
-In SVG documents, each `feMergeNode` defines a layer.  The `kotuku:opacity` attribute sets the Opacity and
-`kotuku:enabled="false"` disables the layer.
+In SVG documents, each `feMergeNode` defines a layer.  The `xvg:opacity` attribute sets the Opacity and
+`xvg:enabled="false"` disables the layer.
 
 -ERRORS-
 Okay:

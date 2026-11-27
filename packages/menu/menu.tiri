@@ -562,6 +562,7 @@ gui.menu = function(Options:table!)
       if surface.flags has RNF_VISIBLE or &_preparing then return end
 
       -- Rebuild only the content so input subscriptions and viewport focus remain intact.
+
       if &prepare then
          &_preparing = true
          defer &_preparing = false end

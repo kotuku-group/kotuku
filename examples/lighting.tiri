@@ -4,7 +4,7 @@ Lighting Workbench
 
 Experiment with the SVG lighting filters on surfaces that are generated from filter primitives.  The last primitive
 supplies a bump map as image alpha or float heights, lit by feDiffuseLighting, feSpecularLighting or
-kotuku:feLighting according to the controls on the left.  For example, this declaration produces the surface of a moon:
+xvg:feLighting according to the controls on the left.  For example, this declaration produces the surface of a moon:
 
    <feTurbulence type="fractalNoise" baseFrequency=".01" numOctaves="9"/>
    <feComponentTransfer>
@@ -13,24 +13,24 @@ kotuku:feLighting according to the controls on the left.  For example, this decl
 
 The declaration is inserted into a complete SVG document that ends the filter with the lighting primitive:
 
-   <svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+   <svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg">
      <filter id="surface">
        ...declaration...
        <feDiffuseLighting diffuseConstant="4" surfaceScale="4" lighting-color="#ffffff"
-           kotuku:features="dequantise sharpen cavity detail shadows specular-aa" kotuku:cavity="0.25"
-           kotuku:detail="1.5" kotuku:penumbra="2">
+           xvg:features="dequantise sharpen cavity detail shadows specular-aa" xvg:cavity="0.25"
+           xvg:detail="1.5" xvg:penumbra="2">
          <feDistantLight azimuth="0" elevation="4"/>
        </feDiffuseLighting>
      </filter>
      <rect width="100%" height="100%" fill="white" filter="url(#surface)"/>
    </svg>
 
-The 'combined' lighting mode replaces the standard primitive with kotuku:feLighting, which lights a surface colour
+The 'combined' lighting mode replaces the standard primitive with xvg:feLighting, which lights a surface colour
 (the albedo) with diffuse, specular and ambient light in one pass:
 
-   <kotuku:feLighting in2="SourceGraphic" diffuseConstant="1" specularConstant="0.5" specularExponent="20" ...>
+   <xvg:feLighting in2="SourceGraphic" diffuseConstant="1" specularConstant="0.5" specularExponent="20" ...>
      <feDistantLight azimuth="0" elevation="4"/>
-   </kotuku:feLighting>
+   </xvg:feLighting>
 
 The albedo is the fill of the rectangle, chosen with the Albedo combobox beneath the preview.  Unlike a chain of
 lighting and composite primitives, the light is only clamped when the result is written, so a strong light brightens the
@@ -47,7 +47,7 @@ Surfaces are chosen from the presets in the Surface combobox, or entered in the 
 applied after a short pause in typing.  Point and spot lights are positioned by clicking or dragging in the preview;
 spot lights point at the centre of the preview.
 
-Use kotuku:outputMode="height" on feTurbulence or feGaussianBlur to supply float heights to enhanced lighting.
+Use xvg:outputMode="height" on feTurbulence or feGaussianBlur to supply float heights to enhanced lighting.
 Smooth relief uses it on both primitives.  To see the reflected horizon, choose combined lighting, the Studio matcap
 and white albedo.  Set Metalness to 1 and Surface scale to 40, and lower the Specular constant.  When the lighting
 settings select standard SVG lighting, the preview uses image output and keeps the declarations in the editor.
@@ -55,7 +55,7 @@ settings select standard SVG lighting, the preview uses image output and keeps t
 The Features toggles select the enhancements that LightingFX applies to the SVG lighting algorithm, and the sliders
 beneath them set the strength of the cavity and detail features and the width of the shadow edge.  The ambient light
 (diffuse and combined modes) and the light's intensity are also extensions.  They are written to the lighting
-primitive and its light source as kotuku: attributes.  The attributes take effect because the scene of the window has a
+primitive and its light source as xvg: attributes.  The attributes take effect because the scene of the window has a
 Compliance of NONE.  In diffuse and specular modes, disabling the features and using the default intensity and
 ambient settings selects standard SVG lighting.
 --]]
@@ -191,13 +191,13 @@ ambient settings selects standard SVG lighting.
 <feComponentTransfer>
   <feFuncA type="discrete" tableValues="0 0 .15 .3 .45 .6 .8 1"/>
 </feComponentTransfer>
-<feGaussianBlur stdDeviation="2" kotuku:outputMode="height"/>]] },
+<feGaussianBlur stdDeviation="2" xvg:outputMode="height"/>]] },
 
       { label = 'Bubbles', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".04" numOctaves="2" seed="4"/>
 <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 16 -10.5"/>
 <feMorphology operator="dilate" radius="1"/>
-<feGaussianBlur stdDeviation="4" kotuku:outputMode="height"/>]] },
+<feGaussianBlur stdDeviation="4" xvg:outputMode="height"/>]] },
 
       { label = 'Stucco', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".08" numOctaves="4" seed="3"/>
@@ -206,29 +206,29 @@ ambient settings selects standard SVG lighting.
 </feComponentTransfer>]] },
 
       { label = 'Water', source = [[
-<feTurbulence type="turbulence" baseFrequency=".012 .035" numOctaves="2" seed="5" kotuku:outputMode="height"/>
-<feGaussianBlur stdDeviation="1.5" kotuku:outputMode="height"/>]] },
+<feTurbulence type="turbulence" baseFrequency=".012 .035" numOctaves="2" seed="5" xvg:outputMode="height"/>
+<feGaussianBlur stdDeviation="1.5" xvg:outputMode="height"/>]] },
 
       { label = 'Smooth relief', source = [[
-<feTurbulence type="fractalNoise" baseFrequency=".004 .005" seed="7" kotuku:outputMode="height"/>
-<feGaussianBlur stdDeviation="3.25 2.75" kotuku:outputMode="height"/>]] },
+<feTurbulence type="fractalNoise" baseFrequency=".004 .005" seed="7" xvg:outputMode="height"/>
+<feGaussianBlur stdDeviation="3.25 2.75" xvg:outputMode="height"/>]] },
 
       { label = 'Wood grain', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".003 .04" numOctaves="4" seed="21"/>
 <feComponentTransfer>
   <feFuncA type="table" tableValues="0 .3 .1 .4 .15 .45"/>
 </feComponentTransfer>
-<feGaussianBlur stdDeviation=".7" kotuku:outputMode="height"/>]] },
+<feGaussianBlur stdDeviation=".7" xvg:outputMode="height"/>]] },
 
       { label = 'Brushed metal', source = [[
-<feTurbulence type="fractalNoise" baseFrequency=".002 .6" numOctaves="3" seed="8" kotuku:outputMode="height"/>]] },
+<feTurbulence type="fractalNoise" baseFrequency=".002 .6" numOctaves="3" seed="8" xvg:outputMode="height"/>]] },
 
       { label = 'Hammered metal', source = [[
 <feTurbulence type="turbulence" baseFrequency=".05" numOctaves="1" seed="7"/>
 <feComponentTransfer>
   <feFuncA type="gamma" amplitude="1" exponent=".5"/>
 </feComponentTransfer>
-<feGaussianBlur stdDeviation="1.25" kotuku:outputMode="height"/>]] },
+<feGaussianBlur stdDeviation="1.25" xvg:outputMode="height"/>]] },
 
       { label = 'Sand', source = [[
 <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="1"/>]] },
@@ -253,7 +253,7 @@ end
 
 function lightSource():str
    p = glParams
-   intensity = (p.intensity is 1) ? '' : f' kotuku:intensity="{fmt(p.intensity)}"'
+   intensity = (p.intensity is 1) ? '' : f' xvg:intensity="{fmt(p.intensity)}"'
    if p.source is 'distant' then
       return f'<feDistantLight azimuth="{fmt(p.azimuth)}" elevation="{fmt(p.elevation)}"{intensity}/>'
    end
@@ -266,7 +266,7 @@ function lightSource():str
       f'pointsAtY="{fmt(glPreviewHeight * 0.5)}" pointsAtZ="0" limitingConeAngle="{fmt(p.cone)}"{intensity}/>'
 end
 
--- The enhanced features and their strengths, as kotuku: attributes of the lighting primitive.
+-- The enhanced features and their strengths, as xvg: attributes of the lighting primitive.
 
 function featureAttributes():str
    names = ''
@@ -274,11 +274,11 @@ function featureAttributes():str
       if (glFeatures & feature.flag) != 0 then names = (names is '') ? feature.name : f'{names} {feature.name}' end
    end
    p = glParams
-   return f'kotuku:features="{(names is "") ? "none" : names}" kotuku:cavity="{fmt(p.cavity)}" ' ..
-      f'kotuku:detail="{fmt(p.detail)}" kotuku:penumbra="{fmt(p.penumbra)}"'
+   return f'xvg:features="{(names is "") ? "none" : names}" xvg:cavity="{fmt(p.cavity)}" ' ..
+      f'xvg:detail="{fmt(p.detail)}" xvg:penumbra="{fmt(p.penumbra)}"'
 end
 
--- The ambient light is ignored by specular lighting, so it is only written for the other modes.  kotuku:feLighting
+-- The ambient light is ignored by specular lighting, so it is only written for the other modes.  xvg:feLighting
 -- accepts its extension attributes with or without the prefix.
 
 function lightingPrimitive():str
@@ -289,14 +289,14 @@ function lightingPrimitive():str
          f'{common}>\n  {lightSource()}\n</feSpecularLighting>'
    end
 
-   if p.ambient then common ..= f' kotuku:ambient="{p.ambient}"' end
+   if p.ambient then common ..= f' xvg:ambient="{p.ambient}"' end
    if p.lighting is 'combined' then
       for _, name in array<str> { 'metalness', 'fresnel', 'wrap' } do
          if p[name] > 0 then common ..= f' {name}="{fmt(p[name])}"' end
       end
-      return f'<kotuku:feLighting in2="SourceGraphic" diffuseConstant="{fmt(p.constant)}" ' ..
+      return f'<xvg:feLighting in2="SourceGraphic" diffuseConstant="{fmt(p.constant)}" ' ..
          f'specularConstant="{fmt(p.specularConstant)}" specularExponent="{fmt(p.exponent)}" ' ..
-         f'{common}>\n  {lightSource()}\n</kotuku:feLighting>'
+         f'{common}>\n  {lightSource()}\n</xvg:feLighting>'
    end
    return f'<feDiffuseLighting diffuseConstant="{fmt(p.constant)}" {common}>\n  {lightSource()}\n</feDiffuseLighting>'
 end
@@ -306,7 +306,7 @@ end
 
 function surfaceDocument(Source:str, ID:str):str
    albedo = ALBEDOS[glParams.albedo]
-   return '<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">\n' ..
+   return '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg">\n' ..
       f'<defs>{albedo.defs ?? ""}</defs>\n' ..
       f'<filter id="{ID}">\n{Source}\n{lightingPrimitive()}\n</filter>\n' ..
       f'<rect width="100%" height="100%" fill="{albedo.fill}" filter="url(#{ID})"/>\n</svg>'

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"
   width="968" height="424" viewBox="0 0 968 424" font-family="sans-serif">
   <title>Water ripples with a shared normal map</title>
   <desc>A straight tile grid, its water surface normal map, and the grid refracted and lit by that surface.</desc>
@@ -18,25 +18,25 @@
     <!-- Both filter chains use the same seed, smoothing and surface scale. -->
     <filter id="surface-normals" filterUnits="userSpaceOnUse" x="-24" y="-24" width="336" height="280">
       <feTurbulence type="fractalNoise" baseFrequency=".019 .035" seed="17" numOctaves="2"
-        kotuku:outputMode="height" result="noise"/>
-      <feGaussianBlur in="noise" stdDeviation="1.6" kotuku:outputMode="height" result="height"/>
-      <kotuku:feNormalMap in="height" surfaceScale="30" features="none"/>
+        xvg:outputMode="height" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="1.6" xvg:outputMode="height" result="height"/>
+      <xvg:feNormalMap in="height" surfaceScale="30" features="none"/>
     </filter>
 
     <filter id="water" filterUnits="userSpaceOnUse" x="-24" y="-24" width="336" height="280"
       color-interpolation-filters="linearRGB">
       <feTurbulence type="fractalNoise" baseFrequency=".019 .035" seed="17" numOctaves="2"
-        kotuku:outputMode="height" result="noise"/>
-      <feGaussianBlur in="noise" stdDeviation="1.6" kotuku:outputMode="height" result="height"/>
+        xvg:outputMode="height" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="1.6" xvg:outputMode="height" result="height"/>
       <!-- Red and green are the signed horizontal and vertical components of the surface normal. -->
-      <kotuku:feNormalMap in="height" surfaceScale="30" features="none" result="normals"/>
+      <xvg:feNormalMap in="height" surfaceScale="30" features="none" result="normals"/>
       <feDisplacementMap in="SourceGraphic" in2="normals" xChannelSelector="R" yChannelSelector="G"
         scale="30" result="refracted"/>
       <!-- Light the refracted grid with the same height field to align the glints with the distortion. -->
-      <kotuku:feLighting in="height" in2="refracted" surfaceScale="30" features="none"
+      <xvg:feLighting in="height" in2="refracted" surfaceScale="30" features="none"
         diffuseConstant=".48" specularConstant=".52" specularExponent="26" ambient="#b7c5c7">
         <feDistantLight azimuth="235" elevation="55"/>
-      </kotuku:feLighting>
+      </xvg:feLighting>
     </filter>
   </defs>
 

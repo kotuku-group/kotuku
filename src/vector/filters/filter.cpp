@@ -918,7 +918,7 @@ static ERR read_view_box(std::span<const double> Array, view_box &Result)
 static void write_filter_xml_view_box(filter_xml_element &Element, const view_box &Rect)
 {
    if (has_view_box(Rect)) {
-      Element.attribute("kotuku:viewBox", Element.number(Rect[VB_X]) + ' ' + Element.number(Rect[VB_Y]) + ' ' +
+      Element.attribute("xvg:viewBox", Element.number(Rect[VB_X]) + ' ' + Element.number(Rect[VB_Y]) + ' ' +
          Element.number(Rect[VB_WIDTH]) + ' ' + Element.number(Rect[VB_HEIGHT]));
    }
 }
@@ -969,7 +969,7 @@ static void write_filter_xml_channel(filter_xml_element &Element, std::string_vi
 static void write_filter_xml_resampling(filter_xml_element &Element, VSM Method)
 {
    // Keep the selected API method, including methods which share one implementation in DisplacementFX.
-   if (Method != VSM::BILINEAR) Element.attribute("kotuku:resampleMethod", int(Method));
+   if (Method != VSM::BILINEAR) Element.attribute("xvg:resampleMethod", int(Method));
 }
 
 //********************************************************************************************************************
@@ -3164,11 +3164,11 @@ static ERR bind_merge_xml(const extMergeFX &Effect, filter_xml_element &Element,
       const auto &layer = Effect.Layers[i];
       const auto &source = Effect.SourceList[i];
       auto &node = Element.child("feMergeNode");
-      if (layer.Opacity != 1.0) node.attribute("kotuku:opacity", layer.Opacity);
-      if (not layer.Enabled) node.attribute("kotuku:enabled", "false");
+      if (layer.Opacity != 1.0) node.attribute("xvg:opacity", layer.Opacity);
+      if (not layer.Enabled) node.attribute("xvg:enabled", "false");
       const bool unresolved = (source.SourceType IS VSF::REFERENCE) and (not source.Effect);
       const bool inactive = (not layer.Enabled) or (layer.Opacity IS 0);
-      if ((source.SourceType IS VSF::NONE) or (unresolved and inactive)) node.attribute("kotuku:source", "none");
+      if ((source.SourceType IS VSF::NONE) or (unresolved and inactive)) node.attribute("xvg:source", "none");
       else if (auto error = bind_filter_xml_input(node, "in", source.SourceType, source.Effect, Positions,
           Consumer, Graph); error != ERR::Okay) return error;
    }
@@ -3196,7 +3196,7 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
          if (auto error = bind("in2", effect->MixType, effect->Mix); error != ERR::Okay) return error;
       }
       else if ((effect->classID() IS CLASSID::LIGHTINGFX) and (effect->MixType != VSF::NONE)) {
-         if (auto error = bind("kotuku:albedo", effect->MixType, effect->Mix); error != ERR::Okay) return error;
+         if (auto error = bind("xvg:albedo", effect->MixType, effect->Mix); error != ERR::Okay) return error;
       }
       if (operation.Inputs IS filter_inputs::MERGE) {
          if (auto error = bind_merge_xml(*(extMergeFX *)effect, element, positions, i, Elements);
@@ -3208,12 +3208,12 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
       else if (effect->classID() IS CLASSID::COMPOSITEFX) {
          const auto &mask = ((extCompositeFX *)effect)->AmountMask;
          if (mask.Source != VSF::NONE) {
-            if (auto error = bind("kotuku:amountMask", mask.Source, mask.Reference); error != ERR::Okay) return error;
+            if (auto error = bind("xvg:amountMask", mask.Source, mask.Reference); error != ERR::Okay) return error;
          }
       }
       else if (effect->FilterExtension) {
          if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;
-         constexpr CSTRING attributes[] = { "kotuku:normalMap", "kotuku:occlusionMap", "kotuku:roughnessMap" };
+         constexpr CSTRING attributes[] = { "xvg:normalMap", "xvg:occlusionMap", "xvg:roughnessMap" };
          const auto inputs = effect->FilterExtension->Inputs;
          if (inputs.size() != std::size(attributes)) return ERR::NoSupport;
          for (size_t slot = 0; slot < inputs.size(); slot++) {

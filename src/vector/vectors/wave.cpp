@@ -10,7 +10,7 @@ The sine wave will be generated from (#X,#Y) across #Length.  The parent view he
 centring and path closure, while #Amplitude defines the wave height.  The path vertices are generated on a
 left-to-right basis.
 
-Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.
+Waves can be used in Kotuku's SVG implementation by using the &lt;xvg:wave/&gt; element.
 
 -END-
 

@@ -15,7 +15,7 @@
     <description>
 <p>The VectorWave class provides functionality for generating paths based on sine waves.  This feature is not part of the SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.</p>
 <p>The sine wave will be generated from (<fl>X</fl>,<fl>Y</fl>) across <fl>Length</fl>.  The parent view height provides the vertical region for centring and path closure, while <fl>Amplitude</fl> defines the wave height.  The path vertices are generated on a left-to-right basis.</p>
-<p>Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.</p></description>
+<p>Waves can be used in Kotuku's SVG implementation by using the &lt;xvg:wave/&gt; element.</p></description>
     <source>
       <file path="vectors/">wave.cpp</file>
     </source>

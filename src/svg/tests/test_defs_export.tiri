@@ -55,8 +55,8 @@ end
 
 function waveDocument(ID:str, AttribName:str):str
    return [[
-<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
-  <kotuku:wave id="]] .. ID .. [[" x="0" y="40" length="100" amplitude="20" frequency="2" ]] ..
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg">
+  <xvg:wave id="]] .. ID .. [[" x="0" y="40" length="100" amplitude="20" frequency="2" ]] ..
      AttribName .. [[="8" fill="none" stroke="black"/>
 </svg>
 ]]
@@ -274,7 +274,7 @@ end
    check scene.mtAddDef('text_transition', transition)
 
    local saved = saveScene(scene, 'temp:svg_defs_transition.svg')
-   assertContains(saved, '<kotuku:transition', 'Saved SVG should contain the transition definition')
+   assertContains(saved, '<xvg:transition', 'Saved SVG should contain the transition definition')
    assertContains(saved, 'id="text_transition"', 'Transition should use the scene def key')
    assertContains(saved, '<stop offset="0"', 'Transition definition should include XMLDef stop elements')
    assertContains(saved, 'transform="matrix(', 'Transition definition should include XMLDef transform matrices')
@@ -341,8 +341,8 @@ end
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
    scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    obj.new('svg', { target=scene, statement=[[
-<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
-  <kotuku:wave id="svg_wave_noise" x="0" y="40" length="100" amplitude="20" frequency="2" noise="0.75" fill="none" stroke="black"/>
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg">
+  <xvg:wave id="svg_wave_noise" x="0" y="40" length="100" amplitude="20" frequency="2" noise="0.75" fill="none" stroke="black"/>
 </svg>
 ]] })
 
@@ -358,8 +358,8 @@ end
    local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
    local svg = obj.new('svg', { target=scene, statement=[[
 <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"
-     xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
-  <kotuku:spiral id="sampling_spiral" startTurn="0.25" endTurn="2.5"
+     xmlns:xvg="http://www.kotuku.dev/xmlns/svg">
+  <xvg:spiral id="sampling_spiral" startTurn="0.25" endTurn="2.5"
                  tolerance="0.01" clockwise="false" reverse="true" thickness="2%" fill="none" stroke="black"/>
 </svg>]] })
    local spiral = obj.find('sampling_spiral')
@@ -391,8 +391,8 @@ end
    local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
    local svg = obj.new('svg', { target=scene, statement=[[
 <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"
-     xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
-  <kotuku:shape tolerance="0.1" startAngle="45" endAngle="135" normalise="false" close="false"
+     xmlns:xvg="http://www.kotuku.dev/xmlns/svg">
+  <xvg:shape tolerance="0.1" startAngle="45" endAngle="135" normalise="false" close="false"
                 spiral="3" offset="5"/>
 </svg>]] })
    local shape = svg.viewport.child

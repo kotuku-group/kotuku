@@ -1083,7 +1083,7 @@ LIGHT_PAGE <const> = 48
 
 function lightDocument(Lighting:str!):obj
    local svg = obj.new('svg', { statement=
-      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg" ' ..
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" ' ..
       f'width="{LIGHT_PAGE}" height="{LIGHT_PAGE}"><filter id="f" x="0" y="0" width="1" height="1" ' ..
       f'color-interpolation-filters="sRGB">{Lighting}</filter>' ..
       f'<rect width="{LIGHT_PAGE}" height="{LIGHT_PAGE}" filter="url(#f)"/></svg>' })
@@ -1156,13 +1156,13 @@ end
    end
 end
 
--- Animations target their own light of kotuku:feLighting, and the options of each light are kept.  A distant light
+-- Animations target their own light of xvg:feLighting, and the options of each light are kept.  A distant light
 -- of a standard lighting element can also be animated.
 
 @Test global function LightAnimationsTargetTheirOwnLight()
-   local lights = '<kotuku:feLighting in="SourceAlpha" surfaceScale="2" ambient="#000">' ..
-      '<feDistantLight azimuth="{azimuth}" elevation="40" kotuku:intensity="0.5">{a}</feDistantLight>' ..
-      '<fePointLight x="{x}" y="10" z="30" kotuku:colour="#f00">{b}</fePointLight></kotuku:feLighting>'
+   local lights = '<xvg:feLighting in="SourceAlpha" surfaceScale="2" ambient="#000">' ..
+      '<feDistantLight azimuth="{azimuth}" elevation="40" xvg:intensity="0.5">{a}</feDistantLight>' ..
+      '<fePointLight x="{x}" y="10" z="30" xvg:colour="#f00">{b}</fePointLight></xvg:feLighting>'
    local function document(Azimuth:num!, X:num!, A:str, B:str):obj
       return lightDocument(lights.replace('{azimuth}', tostring(Azimuth)).replace('{x}', tostring(X))
          .replace('{a}', A ?? '').replace('{b}', B ?? ''))

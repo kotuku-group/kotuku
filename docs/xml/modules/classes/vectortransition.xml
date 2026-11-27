@@ -13,15 +13,15 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The VectorTransition class is used to gradually transform vector shapes over the length of a path.  This feature is not SVG compliant, though it can be utilised from SVG files via the 'kotuku:' name space.</p>
+<p>The VectorTransition class is used to gradually transform vector shapes over the length of a path.  This feature is not SVG compliant, though it can be utilised from SVG files via the 'xvg:' name space.</p>
 <p>The transition is defined as a series of stops and transform instructions, of which at least 2 are required in order to interpolate the transforms over distance.  The transform strings are defined as per the SVG guidelines for the transform attribute.</p>
 <p>The following example illustrates the use of a transition in SVG:</p>
 <pre>&lt;defs&gt;
-    &lt;kotuku:transition id=&quot;hill&quot;&gt;
+    &lt;xvg:transition id=&quot;hill&quot;&gt;
       &lt;stop offset=&quot;0&quot; transform=&quot;scale(0.3)&quot;/&gt;
       &lt;stop offset=&quot;50%&quot; transform=&quot;scale(1.5)&quot;/&gt;
       &lt;stop offset=&quot;100%&quot; transform=&quot;scale(0.3)&quot;/&gt;
-    &lt;/kotuku:transition&gt;
+    &lt;/xvg:transition&gt;
   &lt;/defs&gt;
 
   &lt;rect fill=&quot;#ffffff&quot; width=&quot;100%&quot; height=&quot;100%&quot;/&gt;
@@ -51,7 +51,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The returned XML defines the transition's stop list as <code>&lt;stop/&gt;</code> elements, excluding the wrapping <code>&lt;kotuku:transition/&gt;</code> element and <code>id</code> attribute.</p>
+<p>The returned XML defines the transition's stop list as <code>&lt;stop/&gt;</code> elements, excluding the wrapping <code>&lt;xvg:transition/&gt;</code> element and <code>id</code> attribute.</p>
       </description>
       <tags>caller-owns-result</tags>
     </field>

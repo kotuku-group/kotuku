@@ -48,7 +48,7 @@
 <p>A <code>REFERENCE</code> layer requires the EffectID of an earlier effect in the same filter.  The EffectID is reset to zero for all other source types.  A layer with a SourceType of <code>NONE</code> contributes nothing to the result.  The Opacity scales the alpha channel of the source before it is composited, and must be in the range 0 - 1.  Enabled must be 1 to render the layer or 0 to skip it.</p>
 <p>Disabled layers and layers with an Opacity of 0 retain their configuration but are not rendered and do not read their source.  This allows layers to be toggled without rebuilding the list.</p>
 <p>If a referenced effect is removed from the filter, the EffectID of its layer is reset to zero and the SourceType remains <code>REFERENCE</code>.  Assign a new list to repair the pipeline.  Reading <fl>SourceList</fl> returns the same sources without the Opacity and Enabled controls.</p>
-<p>In SVG documents, each <code>feMergeNode</code> defines a layer.  The <code>kotuku:opacity</code> attribute sets the Opacity and <code>kotuku:enabled=&quot;false&quot;</code> disables the layer.</p>
+<p>In SVG documents, each <code>feMergeNode</code> defines a layer.  The <code>xvg:opacity</code> attribute sets the Opacity and <code>xvg:enabled=&quot;false&quot;</code> disables the layer.</p>
       </description>
     </field>
 
