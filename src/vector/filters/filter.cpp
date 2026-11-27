@@ -1048,8 +1048,12 @@ static void clear_filter_references(extFilterEffect *Effect, objFilterEffect *Pr
    if ((not Producer) or (Effect->Input IS Producer)) Effect->Input = nullptr;
    if ((not Producer) or (Effect->Mix IS Producer)) Effect->Mix = nullptr;
    if (Effect->classID() IS CLASSID::MERGEFX) {
-      for (auto &source : ((extMergeFX *)Effect)->List) {
-         if ((not Producer) or (source.Effect IS Producer)) source.Effect = nullptr;
+      auto merge = (extMergeFX *)Effect;
+      for (size_t i = 0; i < merge->Layers.size(); i++) {
+         if ((not Producer) or (merge->SourceList[i].Effect IS Producer)) {
+            merge->Layers[i].EffectID = 0;
+            merge->SourceList[i].Effect = nullptr;
+         }
       }
    }
    if (auto extension = Effect->FilterExtension; extension) {
@@ -1332,7 +1336,7 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
          case filter_inputs::GENERATOR: break;
          case filter_inputs::SINGLE: count = 1; break;
          case filter_inputs::DUAL: count = 2; break;
-         case filter_inputs::MERGE: count = ((extMergeFX *)effect)->List.size(); break;
+         case filter_inputs::MERGE: count = ((extMergeFX *)effect)->Layers.size(); break;
       }
 
       if (count > MAX_FILTER_INPUTS - input_count) return log.warning(ERR::ArrayFull);
@@ -1435,10 +1439,15 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
             }
             break;
          case filter_inputs::MERGE: {
-            const auto &sources = ((extMergeFX *)effect)->List;
-            for (size_t j = 0; j < sources.size(); j++) {
-               if (auto error = add_input(sources[j].SourceType, sources[j].Effect, filter_input_role::MERGE, j);
-                   error != ERR::Okay) return error;
+            const auto merge = (extMergeFX *)effect;
+            for (size_t j = 0; j < merge->Layers.size(); j++) {
+               const auto &layer = merge->Layers[j];
+               const bool active = layer.Enabled and (layer.Opacity > 0);
+               const auto source = active ? layer.SourceType : VSF::NONE;
+               const auto producer = active ? merge->SourceList[j].Effect : nullptr;
+               if (auto error = add_input(source, producer, filter_input_role::MERGE, j); error != ERR::Okay) {
+                  return error;
+               }
             }
             break;
          }
@@ -2921,9 +2930,15 @@ static ERR bind_filter_xml_input(filter_xml_element &Element, CSTRING Attribute,
 static ERR bind_merge_xml(const extMergeFX &Effect, filter_xml_element &Element, const filter_positions &Positions,
    size_t Consumer, std::span<filter_xml_element> Graph = {})
 {
-   for (const auto &source : Effect.List) {
+   for (size_t i = 0; i < Effect.Layers.size(); i++) {
+      const auto &layer = Effect.Layers[i];
+      const auto &source = Effect.SourceList[i];
       auto &node = Element.child("feMergeNode");
-      if (source.SourceType IS VSF::NONE) node.attribute("kotuku:source", "none");
+      if (layer.Opacity != 1.0) node.attribute("kotuku:opacity", layer.Opacity);
+      if (not layer.Enabled) node.attribute("kotuku:enabled", "false");
+      const bool unresolved = (source.SourceType IS VSF::REFERENCE) and (not source.Effect);
+      const bool inactive = (not layer.Enabled) or (layer.Opacity IS 0);
+      if ((source.SourceType IS VSF::NONE) or (unresolved and inactive)) node.attribute("kotuku:source", "none");
       else if (auto error = bind_filter_xml_input(node, "in", source.SourceType, source.Effect, Positions,
           Consumer, Graph); error != ERR::Okay) return error;
    }
@@ -2959,6 +2974,12 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
       }
       if (effect->classID() IS CLASSID::DISPLACEMENTFX) {
          if (((const extDisplacementFX *)effect)->VectorMap.Reference) return ERR::NoSupport;
+      }
+      else if (effect->classID() IS CLASSID::COMPOSITEFX) {
+         const auto &mask = ((extCompositeFX *)effect)->AmountMask;
+         if (mask.Source != VSF::NONE) {
+            if (auto error = bind("kotuku:amountMask", mask.Source, mask.Reference); error != ERR::Okay) return error;
+         }
       }
       else if (effect->FilterExtension) {
          if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;

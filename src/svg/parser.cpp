@@ -1498,8 +1498,6 @@ void svgState::proc_mask(XTag &Tag) noexcept
 }
 
 //********************************************************************************************************************
-
-//********************************************************************************************************************
 // Applies color-interpolation-filters on a filter primitive, which overrides the filter's value for that primitive.
 // The property's initial value, auto, is linearRGB.  An absent or inherited value uses the filter's.
 
@@ -1686,59 +1684,89 @@ ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   std::vector<MergeSource> list;
+   std::vector<MergeLayer> layers;
    for (auto &child : Tag.Children) {
-      if (svg_tag_hash(child) IS SVF_feMergeNode) {
-         const auto source = find_kotuku_attrib(Self, child, "source");
-         if (source and (*source IS "none")) {
-            list.emplace_back(VSF::NONE);
-            continue;
-         }
-         if (not child.attrib("in")) {
-            if (fx->Prev) list.emplace_back(VSF::REFERENCE, fx->Prev);
-            else list.emplace_back(VSF::GRAPHIC);
-            continue;
-         }
-         for (int a=1; a < std::ssize(child.Attribs); a++) {
-            if (iequals("in", child.Attribs[a].Name)) {
-               switch (strhash(child.Attribs[a].Value)) {
-                  case SVF_SourceGraphic:   list.push_back(VSF::GRAPHIC); break;
-                  case SVF_SourceAlpha:     list.push_back(VSF::ALPHA); break;
-                  case SVF_BackgroundImage: list.push_back(VSF::BKGD); break;
-                  case SVF_BackgroundAlpha: list.push_back(VSF::BKGD_ALPHA); break;
-                  case SVF_FillPaint:       list.push_back(VSF::FILL); break;
-                  case SVF_StrokePaint:     list.push_back(VSF::STROKE); break;
-                  default:  {
-                     if (auto ref = child.Attribs[a].Value.c_str()) {
-                        while ((*ref) and (*ref <= 0x20)) ref++;
-                        if (Self->Effects.contains(ref)) {
-                           list.emplace_back(VSF::REFERENCE, Self->Effects[ref]);
-                        }
-                        else {
-                           log.warning("Invalid 'in' reference '%s'", ref);
-                           list.emplace_back(VSF::REFERENCE);
-                        }
-                     }
-                     else log.warning("'in' reference is an empty string.");
+      if (svg_tag_hash(child) != SVF_feMergeNode) {
+         log.warning("Unrecognised feMerge child node '%s'", child.name());
+         continue;
+      }
 
-                     break;
-                  }
-               }
-            }
-            else log.warning("Invalid feMergeNode attribute '%s'", child.Attribs[a].Name.c_str());
+      MergeLayer layer { VSF::GRAPHIC, 0, 1.0, 1 };
+      if (const auto opacity = find_kotuku_attrib(Self, child, "opacity")) {
+         const auto number = kt::font_traits::parse_number(*opacity);
+         if ((not number) or (*number < 0) or (*number > 1)) {
+            FreeResource(fx);
+            return log.warning(ERR::InvalidValue);
+         }
+
+         layer.Opacity = *number;
+      }
+
+      if (const auto enabled = find_kotuku_attrib(Self, child, "enabled")) {
+         if (*enabled IS "false") layer.Enabled = 0;
+         else if (*enabled != "true") {
+            FreeResource(fx);
+            return log.warning(ERR::InvalidValue);
          }
       }
-      else log.warning("Unrecognised feMerge child node '%s'", child.name());
+
+      if (const auto source = find_kotuku_attrib(Self, child, "source"); source and (*source IS "none")) {
+         layer.SourceType = VSF::NONE;
+      }
+      else if (not child.attrib("in")) {
+         if (fx->Prev) {
+            layer.SourceType = VSF::REFERENCE;
+            layer.EffectID = fx->Prev->UID;
+         }
+      }
+      else for (int a = 1; a < std::ssize(child.Attribs); a++) {
+         const auto &attr = child.Attribs[a];
+         if (not iequals("in", attr.Name)) continue;
+
+         switch (strhash(attr.Value)) {
+            case SVF_SourceGraphic:   layer.SourceType = VSF::GRAPHIC; break;
+            case SVF_SourceAlpha:     layer.SourceType = VSF::ALPHA; break;
+            case SVF_BackgroundImage: layer.SourceType = VSF::BKGD; break;
+            case SVF_BackgroundAlpha: layer.SourceType = VSF::BKGD_ALPHA; break;
+            case SVF_FillPaint:       layer.SourceType = VSF::FILL; break;
+            case SVF_StrokePaint:     layer.SourceType = VSF::STROKE; break;
+            default: {
+               auto ref = attr.Value.c_str();
+               while ((*ref) and (*ref <= 0x20)) ref++;
+               layer.SourceType = VSF::REFERENCE;
+               if (auto effect = Self->Effects.find(ref); effect != Self->Effects.end()) {
+                  layer.EffectID = effect->second->UID;
+               }
+               else log.warning("Invalid 'in' reference '%s'", ref);
+               break;
+            }
+         }
+
+         break;
+      }
+      layers.push_back(layer);
    }
 
-   if (!list.empty()) {
-      if (fx->setSourceList(list) != ERR::Okay) {
-         FreeResource(fx);
-         return log.warning(ERR::SetField);
+   auto error = fx->setLayers(layers);
+   if (error IS ERR::DoesNotExist) {
+      // Keep unresolved SVG inputs in the graph so the planner rejects the filter before running any effects.
+      std::vector<MergeSource> sources;
+      sources.reserve(layers.size());
+      for (const auto &layer : layers) {
+         if ((not layer.Enabled) or (layer.Opacity IS 0)) sources.emplace_back(VSF::NONE);
+         else sources.emplace_back(layer.SourceType,
+            layer.EffectID ? (objFilterEffect *)GetObjectPtr(layer.EffectID) : nullptr);
       }
+      error = fx->setSourceList(sources);
+   }
+
+   if (error != ERR::Okay) {
+      FreeResource(fx);
+      return log.warning(error);
    }
 
    apply_primitive_colour_space(fx, Tag);
+
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;
@@ -2787,13 +2815,32 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   if (const auto amount = find_kotuku_attrib(Self, Tag, "amount")) {
+      const auto number = kt::font_traits::parse_number(*amount);
+      if ((not number) or (fx->setAmount(*number) != ERR::Okay)) {
+         FreeResource(fx);
+         return log.warning(ERR::InvalidValue);
+      }
+   }
+
+   if (const auto mask = find_kotuku_attrib(Self, Tag, "amountMask")) {
+      const auto input = Self->Effects.find(*mask);
+      if ((input IS Self->Effects.end()) or (fx->setAmountMask(input->second) != ERR::Okay)) {
+         log.warning("Invalid composite amount mask '%s'.", mask->c_str());
+         FreeResource(fx);
+         return ERR::InvalidValue;
+      }
+   }
+
    // SVG's second input has the same default as 'in': the previous result, or SourceGraphic.
+
    if (fx->MixType IS VSF::NIL) {
       if (fx->Prev) fx->setMix(fx->Prev);
       else fx->setMixType(VSF::GRAPHIC);
    }
 
    apply_primitive_colour_space(fx, Tag);
+
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
       return ERR::Okay;

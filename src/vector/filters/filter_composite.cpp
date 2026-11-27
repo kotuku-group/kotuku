@@ -18,9 +18,15 @@ class extCompositeFX : public extFilterEffect {
    using create = kt::Create<extCompositeFX>;
 
    double K1 = 0, K2 = 0, K3 = 0, K4 = 0; // For the arithmetic operator
-   OP Operator = OP::OVER; // OP constant
+   double Amount = 1.0;
+   OP Operator = OP::OVER;
+   filter_named_input AmountMask { "AmountMask", { .Kind = filter_input_kind::SCALAR_MAP,
+      .ContributesRegion = false, .Optional = true } };
+   const filter_effect_extension Extension { std::span(&AmountMask, 1) };
 
-   extCompositeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+   extCompositeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
+      FilterExtension = &Extension;
+   }
 
    template <class CompositeOp, bool Linear>
    void doMix(const objBitmap *InBitmap, const objBitmap *MixBitmap, uint8_t *Dest, const uint8_t *In,
@@ -723,6 +729,49 @@ static void composite_arithmetic_rows(const extCompositeFX *Self, int Width, int
    }
 }
 
+// Interpolate the fully composited pixel with the backdrop using premultiplied components.
+
+template<bool Linear>
+static void apply_composite_amount(extCompositeFX *Self, const filter_surface_view &Mix,
+   const filter_map_view &Mask, bool Masked)
+{
+   const auto &target = *Self->Target;
+   const auto &clip = target.Clip;
+   const int alpha = target.ColourFormat->AlphaPos >> 3;
+
+   for (int y = clip.Top; y < clip.Bottom; y++) {
+      auto dest = target.Data + std::ptrdiff_t(y) * target.LineWidth + clip.Left * 4;
+      auto backdrop = Mix.row(y) + clip.Left * 4;
+      for (int x = clip.Left; x < clip.Right; x++, dest += 4, backdrop += 4) {
+         double amount = Self->Amount;
+         if (Masked) {
+            const auto sample = Mask.sample(Mix.OriginX + x + 0.5, Mix.OriginY + y + 0.5)[0];
+            amount *= std::clamp(sample, 0.0f, 1.0f);
+         }
+
+         if (amount IS 1.0) continue;
+         if (amount IS 0.0) {
+            std::memcpy(dest, backdrop, 4);
+            continue;
+         }
+
+         const double base_alpha = backdrop[alpha] * (1.0 - amount);
+         const double effect_alpha = dest[alpha] * amount;
+         const double out_alpha = base_alpha + effect_alpha;
+         dest[alpha] = uint8_t(std::lround(out_alpha));
+         for (int channel = 0; channel < 4; channel++) {
+            if (channel IS alpha) continue;
+            if (not dest[alpha]) dest[channel] = 0;
+            else {
+               const double base = composite_decode<Linear>(backdrop[channel]) * base_alpha;
+               const double effect = composite_decode<Linear>(dest[channel]) * effect_alpha;
+               dest[channel] = composite_encode<Linear>(uint16_t(std::lround((base + effect) / out_alpha)));
+            }
+         }
+      }
+   }
+}
+
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -736,6 +785,12 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
    filter_surface_view input, mixture;
    if (auto error = get_source_view(Self, input, filter_input_role::INPUT); error != ERR::Okay) return error;
    if (auto error = get_source_view(Self, mixture, filter_input_role::MIX); error != ERR::Okay) return error;
+
+   const bool masked = Self->AmountMask.Source != VSF::NONE;
+   filter_map_view mask;
+   if (masked and (Self->Amount > 0)) {
+      if (auto error = get_filter_map(Self, Self->AmountMask.Name, mask); error != ERR::Okay) return error;
+   }
 
    auto first_pixel = [](const filter_surface_view &View) {
       return View.row(View.Valid.top) + std::ptrdiff_t(View.Valid.left) * 4;
@@ -830,10 +885,15 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
          if (not linear) {
             // The sRGB blend equations produce premultiplied values.  Filter results use straight RGBA.
             Self->Target->Flags |= BMF::PREMUL;
-            return Self->Target->demultiply();
+            if (auto error = Self->Target->demultiply(); error != ERR::Okay) return error;
          }
          break;
       }
+   }
+
+   if (masked or (Self->Amount != 1.0)) {
+      if (linear) apply_composite_amount<true>(Self, mixture, mask, masked);
+      else apply_composite_amount<false>(Self, mixture, mask, masked);
    }
 
    return ERR::Okay;
@@ -854,25 +914,127 @@ static ERR COMPOSITEFX_Init(extCompositeFX *Self)
 /*********************************************************************************************************************
 
 -FIELD-
+Amount: Strength of the compositing operation.
+
+The Amount interpolates between the @FilterEffect.Mix source and the fully composited result.  A value of 1, the
+default, gives the unmodified result of the #Operator and a value of 0 passes the Mix source through unchanged.
+Intermediate values blend the two with premultiplied components in the effect's colour space, so the alpha of the
+result is also interpolated.  The Amount applies to every operator, including `ARITHMETIC`.
+
+The value must be in the range 0 - 1.  Values outside of this range, or that are not finite, are rejected with
+`ERR::InvalidValue`.  If an #AmountMask is bound then it scales the Amount for each pixel.
+
+SVG documents can set this field with the `kotuku:amount` attribute of `feComposite` and `feBlend`.
+
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_SET_Amount(extCompositeFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0) or (Value > 1)) return ERR::InvalidValue;
+   Self->Amount = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+AmountMask: Optional earlier effect whose output scales #Amount.
+
+Bind an earlier effect in the same filter to vary the #Amount across the image.  The mask is aligned with the scene
+and sampled at each output pixel, and the sampled value multiplies #Amount for that pixel.  Where the mask is 1 the
+composited result is used at full #Amount, and where it is 0 the @FilterEffect.Mix source passes through unchanged.
+
+The value is read from the alpha channel of an image result, as stored and without colour conversion.  A producer with
+a numerical result supplies the value directly.  Values are limited to the range 0 - 1.  Pixels outside of the
+producer's result read as 0.  The mask does not contribute to the default primitive subregion, and it is not read
+while #Amount is 0.
+
+Attach both effects to the same filter before setting this field.  If the producer is removed, this field is cleared
+and the mask no longer applies.  Set the field to `NULL` to remove the mask.
+
+SVG documents can set this field with the `kotuku:amountMask` attribute of `feComposite` and `feBlend`, which names
+the `result` of an earlier primitive.
+
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_GET_AmountMask(extCompositeFX *Self, objFilterEffect **Value)
+{
+   *Value = Self->AmountMask.Reference;
+   return ERR::Okay;
+}
+
+static ERR COMPOSITEFX_SET_AmountMask(extCompositeFX *Self, objFilterEffect *Value)
+{
+   return set_named_filter_input(Self, Self->AmountMask.Name, Value ? VSF::REFERENCE : VSF::NONE, Value);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 K1: Input value for the arithmetic operation.
 
 The `ARITHMETIC` operator computes `result = K1 * i1 * i2 + K2 * i1 + K3 * i2 + K4` for each premultiplied colour
 component, where `i1` is the @FilterEffect.Input and `i2` is the @FilterEffect.Mix.
+
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_SET_K1(extCompositeFX *Self, double Value)
+{
+   Self->K1 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 K2: Input value for the arithmetic operation.
 
 Refer to #K1 for the arithmetic formula.
 
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_SET_K2(extCompositeFX *Self, double Value)
+{
+   Self->K2 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 K3: Input value for the arithmetic operation.
 
 Refer to #K1 for the arithmetic formula.
 
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_SET_K3(extCompositeFX *Self, double Value)
+{
+   Self->K3 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 K4: Input value for the arithmetic operation.
 
 Refer to #K1 for the arithmetic formula.
+
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_SET_K4(extCompositeFX *Self, double Value)
+{
+   Self->K4 = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 Operator: The compositing algorithm to use for rendering.
@@ -883,6 +1045,17 @@ Setting the Operator will determine the algorithm that is used for compositing. 
 Operators that mix colour components use @FilterEffect.ColourSpace.  They inherit the parent @VectorFilter's colour
 space by default.  The `IN` and `OUT` operators only modify the alpha channel.
 
+*********************************************************************************************************************/
+
+static ERR COMPOSITEFX_SET_Operator(extCompositeFX *Self, OP Value)
+{
+   Self->Operator = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 -END-
@@ -892,6 +1065,7 @@ XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Element)
 {
    constexpr std::string_view operators[] = { "over", "in", "out", "atop", "xor", "arithmetic" };
+   if (Effect.Amount != 1.0) Element.attribute("kotuku:amount", Effect.Amount);
    const auto op = size_t(Effect.Operator);
    const bool arithmetic = Effect.Operator IS OP::ARITHMETIC;
    const std::pair<CSTRING, double> coefficients[] = {
@@ -934,60 +1108,13 @@ static ERR composite_xml(const extCompositeFX &Effect, filter_xml_element &Eleme
 
 #include "filter_composite_def.c"
 
-//********************************************************************************************************************
-// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
-// the filter's clients.
-
-static ERR COMPOSITEFX_SET_K1(extCompositeFX *Self, double Value)
-{
-   Self->K1 = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR COMPOSITEFX_SET_K2(extCompositeFX *Self, double Value)
-{
-   Self->K2 = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR COMPOSITEFX_SET_K3(extCompositeFX *Self, double Value)
-{
-   Self->K3 = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR COMPOSITEFX_SET_K4(extCompositeFX *Self, double Value)
-{
-   Self->K4 = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR COMPOSITEFX_SET_Operator(extCompositeFX *Self, OP Value)
-{
-   Self->Operator = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static const FieldArray clCompositeFXFields[] = {
    { "K1",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K1 },
    { "K2",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K2 },
    { "K3",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K3 },
    { "K4",       FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_K4 },
+   { "Amount",   FDF_DOUBLE|FDF_RW, nullptr, COMPOSITEFX_SET_Amount },
+   { "AmountMask", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, COMPOSITEFX_GET_AmountMask, COMPOSITEFX_SET_AmountMask, CLASSID::FILTEREFFECT },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, COMPOSITEFX_SET_Operator, &clCompositeFXOP },
    { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD

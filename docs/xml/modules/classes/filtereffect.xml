@@ -177,7 +177,7 @@
       <const name="SRGB">Operate on sRGB-encoded values directly.  This is the fastest option, and is the SVG default for <code>color-interpolation</code>.</const>
     </constants>
 
-    <constants lookup="VSF" comment="Filter source types - these are used internally">
+    <constants lookup="VSF" comment="Filter source types.">
       <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
       <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>
       <const name="BKGD_ALPHA">As for <code>BKGD</code> but only the alpha channel is used.</const>

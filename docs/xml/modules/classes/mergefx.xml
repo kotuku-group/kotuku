@@ -38,12 +38,27 @@
 
   <fields>
     <field>
+      <name>Layers</name>
+      <comment>An ordered list of weighted merge sources, from bottom to top.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>MergeLayer[]</type>
+      <description>
+<p>The list is an array of MergeLayer structures.  Each layer is composited over the result of the layers before it, so the first entry is the bottom of the stack.  Assigning an array replaces the entire list.  The new list is validated before it is applied, so the existing list is retained if an error is returned.</p>
+<struct lookup="MergeLayer"/>
+<p>A <code>REFERENCE</code> layer requires the EffectID of an earlier effect in the same filter.  The EffectID is reset to zero for all other source types.  A layer with a SourceType of <code>NONE</code> contributes nothing to the result.  The Opacity scales the alpha channel of the source before it is composited, and must be in the range 0 - 1.  Enabled must be 1 to render the layer or 0 to skip it.</p>
+<p>Disabled layers and layers with an Opacity of 0 retain their configuration but are not rendered and do not read their source.  This allows layers to be toggled without rebuilding the list.</p>
+<p>If a referenced effect is removed from the filter, the EffectID of its layer is reset to zero and the SourceType remains <code>REFERENCE</code>.  Assign a new list to repair the pipeline.  Reading <fl>SourceList</fl> returns the same sources without the Opacity and Enabled controls.</p>
+<p>In SVG documents, each <code>feMergeNode</code> defines a layer.  The <code>kotuku:opacity</code> attribute sets the Opacity and <code>kotuku:enabled=&quot;false&quot;</code> disables the layer.</p>
+      </description>
+    </field>
+
+    <field>
       <name>SourceList</name>
       <comment>A list of source types to be processed in the merge.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>MergeSource[]</type>
       <description>
-<p>The list of sources is built as a simple array of MergeSource structures.</p>
+<p>The list is an array of MergeSource structures. Reading it returns the bindings from <fl>Layers</fl> in order. Assigning it replaces <fl>Layers</fl> with enabled entries at opacity one.</p>
 <p>Input sources are defined by the SourceType field value.  A <code>REFERENCE</code> entry needs a pointer to an earlier effect in the same filter before the pipeline can render.  If a referenced effect is removed, that entry retains its <code>REFERENCE</code> type and its pointer is cleared.  Replace the list to repair the pipeline.</p>
       </description>
     </field>
@@ -58,7 +73,7 @@
 
   </fields>
   <types>
-    <constants lookup="VSF" comment="Filter source types - these are used internally">
+    <constants lookup="VSF" comment="Filter source types.">
       <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
       <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>
       <const name="BKGD_ALPHA">As for <code>BKGD</code> but only the alpha channel is used.</const>
@@ -72,6 +87,13 @@
 
   </types>
   <structs>
+    <struct name="MergeLayer" comment="Weighted input source for MergeFX.">
+      <field name="SourceType" type="VSF" lookup="VSF">Input source type.</field>
+      <field name="EffectID" type="INT">Object ID of the producer for REFERENCE.</field>
+      <field name="Opacity" type="DOUBLE">Normalised layer opacity.</field>
+      <field name="Enabled" type="INT">Set to TRUE to render the layer.</field>
+    </struct>
+
     <struct name="MergeSource" comment="Input source declaration for MergeFX">
       <field name="SourceType" type="VSF" lookup="VSF">The type of the required source.</field>
       <field name="Effect" type="objFilterEffect *">Effect pointer if the <code>SourceType</code> is <code>REFERENCE</code>.</field>

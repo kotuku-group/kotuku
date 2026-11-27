@@ -14,114 +14,97 @@ carries minimal overhead compared to most other effect classes.
 
 #include <algorithm>
 
-enum RFT {
-   RFT_IDENTITY=0,
-   RFT_DISCRETE,
-   RFT_LINEAR,
-   RFT_GAMMA,
-   RFT_TABLE,
-   RFT_INVERT,
-   RFT_MASK
-};
-
 class Component {
    public:
+   Component() { configure({ .Type = RFT::IDENTITY }); }
 
-   Component(CSTRING pName) : Name(pName), Type(RFT_IDENTITY) {
-      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i;
-      update_ilookup();
-   }
+   RemapTransfer Transfer;
+   uint8_t Lookup[256], ILookup[256];
 
-   std::string Name;
-   std::vector<double> Table; // If table; A list of function values.
-   double Slope;              // If linear; the slope of the linear function.
-   double Intercept;          // If linear; the intercept of the linear function.
-   double Amplitude;          // If gamma; the amplitude of the gamma function.
-   double Exponent;           // If gamma; the exponent of the gamma function.
-   double Offset;             // If gamma; the offset of the gamma function.
-   RFT    Type;               // The type of algorithm to use.
-   uint8_t  Lookup[256];        // sRGB lookup
-   uint8_t  ILookup[256];       // Linear RGB lookup; composes sRGB->linear conversion, the transfer function and
-                                // linear->sRGB inversion so the render loop performs one lookup per channel.
+   ERR configure(const RemapTransfer &Value) {
+      RemapTransfer next { .Type = Value.Type };
+      switch (Value.Type) {
+         case RFT::IDENTITY:
+         case RFT::INVERT: break;
+         case RFT::MASK:
+            if ((Value.Mask < 0) or (Value.Mask > 255)) return ERR::InvalidValue;
+            next.Mask = Value.Mask;
+            break;
 
-   void update_ilookup() {
-      for (size_t i=0; i < sizeof(ILookup); i++) ILookup[i] = glLinearRGB.invert(Lookup[glLinearRGB.convert(i)]);
-   }
+         case RFT::LINEAR:
+            if ((not std::isfinite(Value.Slope)) or (not std::isfinite(Value.Intercept))) return ERR::InvalidValue;
+            next.Slope = Value.Slope;
+            next.Intercept = Value.Intercept;
+            break;
 
-   void select_invert() {
-      Type = RFT_INVERT;
-      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = 255 - i;
-      update_ilookup();
-   }
+         case RFT::GAMMA:
+            if ((not std::isfinite(Value.Amplitude)) or (not std::isfinite(Value.Exponent)) or
+                (not std::isfinite(Value.Offset))) return ERR::InvalidValue;
+            next.Amplitude = Value.Amplitude;
+            next.Exponent  = Value.Exponent;
+            next.Offset    = Value.Offset;
+            break;
 
-   void select_identity() {
-      Type = RFT_IDENTITY;
-      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i;
-      update_ilookup();
-   }
+         case RFT::DISCRETE:
+         case RFT::TABLE:
+            if ((Value.Count < 1) or (Value.Count > std::ssize(Value.Values))) return ERR::InvalidValue;
+            for (int i = 0; i < Value.Count; i++) {
+               if (not std::isfinite(Value.Values[i])) return ERR::InvalidValue;
+               next.Values[i] = Value.Values[i];
+            }
+            next.Count = Value.Count;
+            break;
 
-   void select_mask(uint8_t pMask) {
-      Type = RFT_MASK;
-      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i & pMask;
-      update_ilookup();
-   }
-
-   void select_linear(const double pSlope, const double pIntercept) {
-      Type      = RFT_LINEAR;
-      Slope     = pSlope;
-      Intercept = pIntercept;
-
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i] = std::clamp(int((double(i) * pSlope) + pIntercept * 255.0), 0, 255);
+         default: return ERR::InvalidValue;
       }
-      update_ilookup();
-   }
 
-   void select_gamma(const double pAmplitude, const double pExponent, const double pOffset) {
-      Type      = RFT_GAMMA;
-      Amplitude = pAmplitude;
-      Exponent  = pExponent;
-      Offset    = pOffset;
+      for (int i = 0; i < 256; i++) {
+         double value = i;
+         const double x = double(i) / 255.0;
+         switch (next.Type) {
+            case RFT::INVERT: value = 255 - i; break;
+            case RFT::MASK:   value = i & next.Mask; break;
+            case RFT::LINEAR:
+               value = (double(i) * next.Slope) + next.Intercept * 255.0;
+               if (not std::isfinite(value)) value = 255.0 * std::fma(x, next.Slope, next.Intercept);
+               break;
 
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         double pe = pow(double(i) * (1.0/255.0), pExponent);
-         Lookup[i] = std::clamp(int(((pAmplitude * pe) + pOffset) * 255.0), 0, 255);
+            case RFT::GAMMA:
+               value = next.Offset;
+               if (next.Amplitude != 0) value += next.Amplitude * std::pow(double(i) * (1.0/255.0), next.Exponent);
+               value *= 255.0;
+               break;
+
+            case RFT::DISCRETE:
+               value = 255.0 * next.Values[std::min(int((i * next.Count) / 255.0), next.Count - 1)];
+               break;
+
+            case RFT::TABLE: {
+               const double position = x * (next.Count - 1);
+               const int index       = int(position);
+               const double start    = next.Values[index], end = next.Values[std::min(index + 1, next.Count - 1)];
+               const double fraction = position - index;
+               value = 255.0 * (start + fraction * (end - start));
+               if (not std::isfinite(value)) value = 255.0 * std::lerp(start, end, fraction);
+               break;
+            }
+
+            default: break;
+         }
+
+         Lookup[i] = uint8_t(std::fmax(0.0, std::fmin(255.0, value)));
       }
-      update_ilookup();
-   }
 
-   void select_discrete(kt::vector<double> &Values) {
-      Type = RFT_DISCRETE;
-      Table.clear();
-      Table.insert(Table.end(), Values.data(), Values.data() + Values.size());
-
-      uint32_t n = Table.size();
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         auto k = uint32_t((i * n) / 255.0);
-         k = std::min(k, (uint32_t)n - 1);
-         auto val = 255.0 * double(Table[k]);
-         val = std::max(0.0, std::min(255.0, val));
-         Lookup[i] = uint8_t(val);
+      for (int i = 0; i < 256; i++) {
+         ILookup[i] = glLinearRGB.invert(Lookup[glLinearRGB.convert(i)]);
       }
-      update_ilookup();
-   }
 
-   void select_table(kt::vector<double> &Values) {
-      Type = RFT_TABLE;
-      Table.clear();
-      Table.insert(Table.end(), Values.data(), Values.data() + Values.size());
-
-      uint32_t n = Table.size();
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-          double c = double(i) / 255.0;
-          auto k = uint32_t(c * (n - 1));
-          double v = Table[std::min((k + 1), (n - 1))];
-          int val = int(255.0 * (Table[k] + (c * (n - 1) - k) * (v - Table[k])));
-          Lookup[i] = std::max(0, std::min(255, val));
-      }
-      update_ilookup();
+      Transfer = next;
+      return ERR::Okay;
    }
 };
+
+//********************************************************************************************************************
 
 class extRemapFX : public extFilterEffect {
    public:
@@ -135,7 +118,7 @@ class extRemapFX : public extFilterEffect {
    Component Alpha;
 
    extRemapFX(objMetaClass *ClassPtr, OBJECTID ObjectID) :
-      extFilterEffect(ClassPtr, ObjectID), Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
+      extFilterEffect(ClassPtr, ObjectID) { }
 
    Component * getComponent(CMP Component) {
       switch(Component) {
@@ -147,6 +130,28 @@ class extRemapFX : public extFilterEffect {
       }
    }
 };
+
+//********************************************************************************************************************
+
+static ERR set_remap_transfer(extRemapFX *Self, Component *Channel, const RemapTransfer &Value)
+{
+   if (not Channel) return ERR::Args;
+   if (auto error = Channel->configure(Value); error != ERR::Okay) return error;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR select_remap_table(extRemapFX *Self, CMP Channel, RFT Type, const kt::vector<double> *Values)
+{
+   if (not Values) return ERR::NullArgs;
+   RemapTransfer transfer { .Type = Type };
+   if (Values->empty() or (Values->size() > std::size(transfer.Values))) return ERR::Args;
+   transfer.Count = int(Values->size());
+   std::ranges::copy(*Values, transfer.Values);
+   return set_remap_transfer(Self, Self->getComponent(Channel), transfer);
+}
 
 /*********************************************************************************************************************
 -ACTION-
@@ -242,6 +247,7 @@ vector(double) Values: A list of values for the discrete function.
 
 -RESULT-
 Okay:
+InvalidValue: A coefficient or table value is not finite.
 NullArgs:
 
 -TAGS-
@@ -251,18 +257,8 @@ mutates-object, copies-input
 
 static ERR REMAPFX_SelectDiscrete(extRemapFX *Self, struct rf::SelectDiscrete *Args)
 {
-   kt::Log log;
-
-   if ((not Args) or (not Args->Values)) return log.warning(ERR::NullArgs);
-   if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
-
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_discrete(*Args->Values);
-      log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+   if (not Args) return ERR::NullArgs;
+   return select_remap_table(Self, Args->Component, RFT::DISCRETE, Args->Values);
 }
 
 /*********************************************************************************************************************
@@ -287,17 +283,8 @@ mutates-object
 
 static ERR REMAPFX_SelectIdentity(extRemapFX *Self, struct rf::SelectIdentity *Args)
 {
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_identity();
-      log.detail("%s", cmp->Name.c_str());
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+   if (not Args) return ERR::NullArgs;
+   return set_remap_transfer(Self, Self->getComponent(Args->Component), { .Type = RFT::IDENTITY });
 }
 
 /*********************************************************************************************************************
@@ -316,6 +303,7 @@ double Exponent: The exponent of the gamma function.
 
 -RESULT-
 Okay:
+InvalidValue: A coefficient or table value is not finite.
 NullArgs:
 
 -TAGS-
@@ -325,17 +313,9 @@ mutates-object
 
 static ERR REMAPFX_SelectGamma(extRemapFX *Self, struct rf::SelectGamma *Args)
 {
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_gamma(Args->Amplitude, Args->Exponent, Args->Offset);
-      log.detail("%s Amplitude: %.2f, Exponent: %.2f, Offset: %.2f", cmp->Name.c_str(), cmp->Amplitude, cmp->Exponent, cmp->Offset);
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+   if (not Args) return ERR::NullArgs;
+   return set_remap_transfer(Self, Self->getComponent(Args->Component),
+      { .Type = RFT::GAMMA, .Amplitude = Args->Amplitude, .Exponent = Args->Exponent, .Offset = Args->Offset });
 }
 
 /*********************************************************************************************************************
@@ -363,17 +343,9 @@ mutates-object
 
 static ERR REMAPFX_SelectInvert(extRemapFX *Self, struct rf::SelectInvert *Args)
 {
-   kt::Log log;
+   if (not Args) return ERR::NullArgs;
 
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_invert();
-      log.detail("%s", cmp->Name.c_str());
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+   return set_remap_transfer(Self, Self->getComponent(Args->Component), { .Type = RFT::INVERT });
 }
 
 /*********************************************************************************************************************
@@ -393,6 +365,7 @@ double Intercept: The intercept of the linear function.
 -RESULT-
 Okay:
 Args:
+InvalidValue: A coefficient or table value is not finite.
 NullArgs:
 
 -TAGS-
@@ -402,17 +375,10 @@ mutates-object
 
 static ERR REMAPFX_SelectLinear(extRemapFX *Self, struct rf::SelectLinear *Args)
 {
-   kt::Log log;
+   if (not Args) return ERR::NullArgs;
 
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_linear(Args->Slope, Args->Intercept);
-      log.detail("%s Slope: %.2f, Intercept: %.2f", cmp->Name.c_str(), cmp->Slope, Args->Intercept);
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+   return set_remap_transfer(Self, Self->getComponent(Args->Component),
+      { .Type = RFT::LINEAR, .Slope = Args->Slope, .Intercept = Args->Intercept });
 }
 
 /*********************************************************************************************************************
@@ -442,17 +408,10 @@ mutates-object
 
 static ERR REMAPFX_SelectMask(extRemapFX *Self, struct rf::SelectMask *Args)
 {
-   kt::Log log;
+   if (not Args) return ERR::NullArgs;
 
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_mask(Args->Mask);
-      log.detail("%s, Mask: $%.2x", cmp->Name.c_str(), Args->Mask);
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+   return set_remap_transfer(Self, Self->getComponent(Args->Component),
+      { .Type = RFT::MASK, .Mask = uint8_t(Args->Mask) });
 }
 
 /*********************************************************************************************************************
@@ -472,6 +431,7 @@ vector(double) Values: A list of values for the table function.
 -RESULT-
 Okay:
 Args:
+InvalidValue: A coefficient or table value is not finite.
 NullArgs:
 
 -TAGS-
@@ -481,18 +441,111 @@ mutates-object, copies-input
 
 static ERR REMAPFX_SelectTable(extRemapFX *Self, struct rf::SelectTable *Args)
 {
-   kt::Log log;
+   if (not Args) return ERR::NullArgs;
 
-   if ((not Args) or (not Args->Values)) return log.warning(ERR::NullArgs);
-   if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
+   return select_remap_table(Self, Args->Component, RFT::TABLE, Args->Values);
+}
 
-   if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_table(*Args->Values);
-      log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::Args);
+/*********************************************************************************************************************
+
+-FIELD-
+RedTransfer: The red channel's transfer configuration.
+
+Each channel of a RemapFX has a transfer function that maps the channel's input value to an output value.  The
+RedTransfer, #GreenTransfer, #BlueTransfer and #AlphaTransfer fields read and write the complete configuration of
+that function as a RemapTransfer structure.  The function of every channel is `IDENTITY` by default.
+
+!RemapTransfer
+
+The Type determines which of the other fields are used.  In the following, `C` is the input value and `C'` is the
+output value, both in the range 0 - 1.
+
+<list type="bullet">
+<li>`IDENTITY`: `C' = C`.</li>
+<li>`LINEAR`: `C' = Slope * C + Intercept`.</li>
+<li>`GAMMA`: `C' = Amplitude * pow(C, Exponent) + Offset`.</li>
+<li>`TABLE`: The Count entries of Values define a piecewise linear function over equal intervals, between which
+`C` is interpolated.</li>
+<li>`DISCRETE`: The Count entries of Values define a step function of equal intervals, and `C'` is the entry of the
+interval containing `C`.</li>
+<li>`INVERT`: `C' = 1 - C`.</li>
+<li>`MASK`: The 8-bit channel value is combined with Mask using a bitwise AND.</li>
+</list>
+
+The result is limited to the range 0 - 1.  The function applies to non-premultiplied channel values.  When the
+effect's colour space is linear RGB, the red, green and blue functions apply to linear values; the alpha function is
+never converted.  Fully transparent pixels are treated as transparent black before the functions are applied, so an
+alpha function can make them visible.
+
+Writing this field validates the members used by the Type and discards the rest, so reading the field back returns
+zero for unused members.  Each Values entry and each parameter must be finite, Count must be between 1 and 1024 for
+`TABLE` and `DISCRETE`, and Mask must be between 0 and 255.  An invalid configuration leaves the channel unchanged.
+Reading the field returns a copy of the configuration that is allocated as a resource.
+
+The #SelectIdentity(), #SelectLinear() and other Select methods offer an alternative means of configuring a channel.
+
+-ERRORS-
+Okay:
+NullArgs:
+InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.
+
+-TAGS-
+caller-owns-result
+
+-FIELD-
+GreenTransfer: The green channel's transfer configuration. See #RedTransfer.
+
+-ERRORS-
+Okay:
+NullArgs:
+InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.
+
+-TAGS-
+caller-owns-result
+
+-FIELD-
+BlueTransfer: The blue channel's transfer configuration. See #RedTransfer.
+
+-ERRORS-
+Okay:
+NullArgs:
+InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.
+
+-TAGS-
+caller-owns-result
+
+-FIELD-
+AlphaTransfer: The alpha channel's transfer configuration. See #RedTransfer.
+
+-ERRORS-
+Okay:
+NullArgs:
+InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.
+
+-TAGS-
+caller-owns-result
+
+-END-
+
+*********************************************************************************************************************/
+
+template<Component extRemapFX::*Channel>
+static ERR REMAPFX_GET_Transfer(extRemapFX *Self, RemapTransfer **Value)
+{
+   APTR memory = nullptr;
+   *Value = nullptr;
+
+   if (auto error = AllocResource(sizeof(RemapTransfer), MEM::NIL, &memory, nullptr); error != ERR::Okay) return error;
+
+   *Value = new (memory) RemapTransfer((Self->*Channel).Transfer);
+   return ERR::Okay;
+}
+
+template<Component extRemapFX::*Channel>
+static ERR REMAPFX_SET_Transfer(extRemapFX *Self, const RemapTransfer *Value)
+{
+   if (not Value) return ERR::NullArgs;
+   return set_remap_transfer(Self, &(Self->*Channel), *Value);
 }
 
 /*********************************************************************************************************************
@@ -511,32 +564,48 @@ static ERR remap_xml(const extRemapFX &Effect, filter_xml_element &Element)
       { "feFuncR", &Effect.Red }, { "feFuncG", &Effect.Green },
       { "feFuncB", &Effect.Blue }, { "feFuncA", &Effect.Alpha }
    };
+
    for (const auto &[name, component] : channels) {
       auto &child = Element.child(name);
-      switch (component->Type) {
-         case RFT_IDENTITY: child.attribute("type", "identity"); break;
-         case RFT_DISCRETE:
-         case RFT_TABLE:
-            child.attribute("type", component->Type IS RFT_TABLE ? "table" : "discrete");
-            child.list("tableValues", std::span(component->Table));
+      const auto &transfer = component->Transfer;
+      switch (transfer.Type) {
+         case RFT::IDENTITY:
+            child.attribute("type", "identity");
             break;
-         case RFT_LINEAR:
+
+         case RFT::DISCRETE:
+         case RFT::TABLE:
+            child.attribute("type", transfer.Type IS RFT::TABLE ? "table" : "discrete");
+            child.list("tableValues", std::span(transfer.Values, size_t(transfer.Count)));
+            break;
+
+         case RFT::LINEAR:
             child.attribute("type", "linear");
-            child.attribute("slope", component->Slope);
-            child.attribute("intercept", component->Intercept);
+            child.attribute("slope", transfer.Slope);
+            child.attribute("intercept", transfer.Intercept);
             break;
-         case RFT_GAMMA:
+
+         case RFT::GAMMA:
             child.attribute("type", "gamma");
-            child.attribute("amplitude", component->Amplitude);
-            child.attribute("exponent", component->Exponent);
-            child.attribute("offset", component->Offset);
+            child.attribute("amplitude", transfer.Amplitude);
+            child.attribute("exponent", transfer.Exponent);
+            child.attribute("offset", transfer.Offset);
             break;
-         case RFT_INVERT: child.attribute("type", "linear"); child.attribute("slope", -1);
-            child.attribute("intercept", 1); child.attribute("kotuku:type", "invert"); break;
-         case RFT_MASK: child.attribute("kotuku:type", "mask");
-            child.attribute("kotuku:mask", int(component->Lookup[255])); break;
+
+         case RFT::INVERT:
+            child.attribute("type", "linear");
+            child.attribute("slope", -1);
+            child.attribute("intercept", 1);
+            child.attribute("kotuku:type", "invert");
+            break;
+
+         case RFT::MASK:
+            child.attribute("kotuku:type", "mask");
+            child.attribute("kotuku:mask", transfer.Mask);
+            break;
       }
    }
+
    return ERR::Okay;
 }
 
@@ -545,7 +614,11 @@ static ERR remap_xml(const extRemapFX &Effect, filter_xml_element &Element)
 #include "filter_remap_def.c"
 
 static const FieldArray clRemapFXFields[] = {
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
+   { "RedTransfer",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_RESOURCE|FDF_STORE, REMAPFX_GET_Transfer<&extRemapFX::Red>, REMAPFX_SET_Transfer<&extRemapFX::Red>, "RemapTransfer" },
+   { "GreenTransfer", FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_RESOURCE|FDF_STORE, REMAPFX_GET_Transfer<&extRemapFX::Green>, REMAPFX_SET_Transfer<&extRemapFX::Green>, "RemapTransfer" },
+   { "BlueTransfer",  FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_RESOURCE|FDF_STORE, REMAPFX_GET_Transfer<&extRemapFX::Blue>, REMAPFX_SET_Transfer<&extRemapFX::Blue>, "RemapTransfer" },
+   { "AlphaTransfer", FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_RESOURCE|FDF_STORE, REMAPFX_GET_Transfer<&extRemapFX::Alpha>, REMAPFX_SET_Transfer<&extRemapFX::Alpha>, "RemapTransfer" },
+   { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

@@ -965,7 +965,17 @@ follow a <code>url()</code> reference.</li>
       <const name="VLineRel"/>
     </constants>
 
-    <constants lookup="VSF" comment="Filter source types - these are used internally">
+    <constants lookup="RFT" comment="Remap transfer function.">
+      <const name="DISCRETE"/>
+      <const name="GAMMA"/>
+      <const name="IDENTITY"/>
+      <const name="INVERT"/>
+      <const name="LINEAR"/>
+      <const name="MASK"/>
+      <const name="TABLE"/>
+    </constants>
+
+    <constants lookup="VSF" comment="Filter source types.">
       <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
       <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>
       <const name="BKGD_ALPHA">As for <code>BKGD</code> but only the alpha channel is used.</const>
@@ -1026,6 +1036,13 @@ follow a <code>url()</code> reference.</li>
       <field name="Flags" type="LOF" lookup="LOF">Optional settings.</field>
     </struct>
 
+    <struct name="MergeLayer" comment="Weighted input source for MergeFX.">
+      <field name="SourceType" type="VSF" lookup="VSF">Input source type.</field>
+      <field name="EffectID" type="INT">Object ID of the producer for REFERENCE.</field>
+      <field name="Opacity" type="DOUBLE">Normalised layer opacity.</field>
+      <field name="Enabled" type="INT">Set to TRUE to render the layer.</field>
+    </struct>
+
     <struct name="MergeSource" comment="Input source declaration for MergeFX">
       <field name="SourceType" type="VSF" lookup="VSF">The type of the required source.</field>
       <field name="Effect" type="objFilterEffect *">Effect pointer if the <code>SourceType</code> is <code>REFERENCE</code>.</field>
@@ -1065,6 +1082,18 @@ follow a <code>url()</code> reference.</li>
       <field name="X3" type="DOUBLE">The X3 coordinate for curve-to or smooth-curve-to</field>
       <field name="Y3" type="DOUBLE">The Y3 coordinate for curve-to or smooth-curve-to</field>
       <field name="Angle" type="DOUBLE">Arc angle</field>
+    </struct>
+
+    <struct name="RemapTransfer" comment="Mathematical configuration of a RemapFX channel.">
+      <field name="Values" type="DOUBLE" size="1024">Samples for TABLE and DISCRETE.</field>
+      <field name="Count" type="INT">Number of active samples.</field>
+      <field name="Type" type="RFT" lookup="RFT">Transfer function.</field>
+      <field name="Slope" type="DOUBLE">LINEAR coefficient.</field>
+      <field name="Intercept" type="DOUBLE">LINEAR offset.</field>
+      <field name="Amplitude" type="DOUBLE">GAMMA amplitude.</field>
+      <field name="Exponent" type="DOUBLE">GAMMA exponent.</field>
+      <field name="Offset" type="DOUBLE">GAMMA offset.</field>
+      <field name="Mask" type="INT">MASK bit mask in [0, 255].</field>
     </struct>
 
     <struct name="Transition" comment="For VectorTransition definitions">

@@ -118,9 +118,16 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
                   return ERR::SetValueNotArray;
                }
                else if (type IS LUA_TSTRUCT) {
-                  if (auto fs = lua_isstruct(Lua, -1) ? lua_tostruct(Lua, -1) : nullptr) {
-                     copymem(fs->data, sti, fs->structsize);
+                  auto fs = lua_tostruct(Lua, -1);
+                  if ((not fs) or (fs->def != def) or (fs->structsize != uint32_t(def->Size))) {
+                     lua_pop(Lua, 2);
+                     return ERR::SetValueNotStruct;
                   }
+                  if (lj_struct_stale(fs)) {
+                     lua_pop(Lua, 2);
+                     return ERR::DoesNotExist;
+                  }
+                  copymem(fs->data, sti, fs->structsize);
                }
                else {
                   lua_pop(Lua, 2);
@@ -219,6 +226,12 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
    }
    else if (type IS LUA_TARRAY) {
       GCarray *arr = lua_toarray(Lua, ValueIndex);
+      if ((Field->Flags & (FD_STRUCT|FD_POINTER)) IS FD_STRUCT) {
+         auto def = find_struct(Lua, uint32_t(Field->Arg));
+         if ((not def) or (arr->elemtype != AET::STRUCT) or (arr->struct_definition() != def)) {
+            return ERR::SetValueNotStruct;
+         }
+      }
       std::span<int> span((int *)arr->arraydata(), arr->len);
       return Object->set(Field, span, arr->type_flags());
    }
@@ -245,7 +258,7 @@ static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, const Field *Fi
 
 static ERR object_set_object(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
-   if (auto def = lua_toobject(Lua, ValueIndex)) {
+   if (auto def = lua_optobject(Lua, ValueIndex)) {
       OBJECTPTR ptr_obj;
       if (auto error = access_object(def, ptr_obj); error IS ERR::Okay) {
          error = Object->set(Field, ptr_obj);
