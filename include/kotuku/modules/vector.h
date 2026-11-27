@@ -2602,6 +2602,13 @@ struct LightGeometry {
 
 #define VER_IMAGEFX (1.000000)
 
+// ImageFX methods
+
+namespace ifx {
+struct Reload { static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
 class objImageFX : public objFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::IMAGEFX;
@@ -2618,6 +2625,10 @@ class objImageFX : public objFilterEffect {
       return Action(AC::Draw, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
+   inline ERR reload() noexcept {
+      return Action(AC(-10), this, nullptr);
+   }
 
    // Customised field getting
 
@@ -2654,6 +2665,11 @@ class objImageFX : public objFilterEffect {
       return error;
    }
 
+   inline ERR getViewBox(std::span<double> &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->GetValue(this, &Value);
@@ -2668,13 +2684,13 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOutputMode(const FOM Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2683,10 +2699,19 @@ class objImageFX : public objFilterEffect {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setBitmap(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
    inline ERR setPath(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00804508, &Value);
+      return field->WriteValue(this, field, 0x00804308, &Value);
+   }
+
+   inline ERR setViewBox(std::span<const double> Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
 };
@@ -2711,6 +2736,7 @@ class objSourceFX : public objFilterEffect {
       return Action(AC::Draw, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
 
    // Customised field getting
 
@@ -2720,6 +2746,11 @@ class objSourceFX : public objFilterEffect {
    }
 
    inline ERR getSource(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getViewBox(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
@@ -2733,20 +2764,23 @@ class objSourceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSourceName(const std::string_view &Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00804408, &Value);
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, 0x08100309, Value);
+   }
+
+   inline ERR setViewBox(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, 0x08100509, Value);
+      return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
 };

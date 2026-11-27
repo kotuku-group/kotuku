@@ -33,6 +33,12 @@ static const struct FieldDef clImageFXMCH[] = {
    { nullptr, 0 }
 };
 
+
+static const struct MethodEntry clImageFXMethods[] = {
+   { AC(-10), (APTR)IMAGEFX_Reload, "Reload", 0, 0 },
+   { AC::NIL, 0, 0, 0, 0 }
+};
+
 static ERR IMAGEFX_New(extImageFX *Self) {
    new (Self) extImageFX(Self->Class, Self->UID);
    return ERR::Okay;
@@ -49,6 +55,7 @@ static const struct ActionArray clImageFXActions[] = {
    { AC::Init, IMAGEFX_Init },
    { AC::New, IMAGEFX_New },
    { AC::NewChild, IMAGEFX_NewChild },
+   { AC::Refresh, IMAGEFX_Refresh },
    { AC::NIL, nullptr }
 };
 

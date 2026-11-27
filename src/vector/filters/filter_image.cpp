@@ -11,14 +11,23 @@ ImageFX: Renders a bitmap image in the effect pipeline.
 The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The
 client has the option of providing a pre-allocated @Bitmap or the path to a @Image file as the source.
 
-If a pre-allocated @Bitmap is to be used, it must be owned by the ImageFX object before the ImageFX is initialised.
-The bitmap can be created as a child of the uninitialised ImageFX, or an existing bitmap can be assigned to it with
-~Core.SetOwner().  The bitmap must be initialised before the ImageFX.  The default `IMAGE` mode requires 32 bits per
-pixel with an alpha channel.  The bitmap is retained for the lifetime of the ImageFX.  An attempt to free it earlier is
-deferred until the ImageFX is freed.  Changes to the content of the bitmap are rendered on the next draw of the filter.
-Call @Vector.Refresh() on the filtered vector to ensure that it is redrawn.
+A pre-allocated bitmap is assigned to the #Bitmap field, or it can be created as a child of the uninitialised ImageFX.
+The bitmap must be initialised before it is assigned, or before the ImageFX is initialised in the case of a child.
+The default `IMAGE` mode requires 32 bits per pixel with an alpha channel.  The ImageFX keeps the bitmap alive
+until it is replaced or the ImageFX is freed; an attempt to free it earlier is deferred.  Source images loaded from a
+#Path are converted to the required format automatically.
 
-If a source image file is referenced, it will be upscaled to meet the requirements automatically as needed.
+The source can be replaced at any time, including after initialisation.  Setting #Path loads a new image file, and
+setting #Bitmap binds a different bitmap.  A replacement that fails, for instance because the file cannot be read or
+the current #ViewBox does not fit inside the new image, leaves the previous source active.  Use #Reload() to read
+the file at #Path again after it has been modified on disk.
+
+Changes to the pixels of a bound bitmap are not detected automatically.  Call Refresh() on the ImageFX after editing
+the bitmap in place, so that buffered viewports that use the filter are redrawn.
+
+Set #ViewBox to render a section of the bitmap, such as one cell of an image atlas.  The selected pixels are
+fitted to the primitive subregion according to #AspectRatio, and resampling clamps to the edges of the section so
+that neighbouring pixels do not bleed into the result.
 
 Setting #OutputMode to `HEIGHT` produces a floating-point map for effects such as @TileFX and @LightingFX.
 A `BMF::GREYSCALE` bitmap supplies its full 16-bit samples, including when loaded from a 16-bit greyscale PNG.
@@ -44,7 +53,8 @@ class extImageFX : public extFilterEffect {
    FOM OutputMode = FOM::IMAGE;
    MCH HeightChannel = MCH::RED;
    objImage *Image = nullptr;   // Origin image if loading a source file.
-   bool BitmapPinned = false;  // True if the client's Bitmap holds a strong pin taken by Init()
+   bool BitmapPinned = false;  // True for a pinned child or external bitmap.
+   view_box ViewBox { 0, 0, 0, 0 }; // Optional crop in bitmap pixels; zero size selects the whole bitmap.
    std::string ImageHref; // Document-relative path supplied by the SVG parser.
 
    extImageFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
@@ -57,6 +67,8 @@ class extImageFX : public extFilterEffect {
    }
 };
 
+//********************************************************************************************************************
+
 static objImage * load_filter_image(const std::string_view &Path, FOM Mode)
 {
    if (Mode IS FOM::HEIGHT) {
@@ -66,20 +78,87 @@ static objImage * load_filter_image(const std::string_view &Path, FOM Mode)
 }
 
 //********************************************************************************************************************
-// Read one height sample.  Clamp the taps to the bitmap edges without blending in zero at the boundary.
+// Converts a view box to whole pixels within Bitmap.  An unset rectangle selects the entire bitmap.
+
+static ERR image_crop(const view_box &Rect, const objBitmap &Bitmap, TClipRectangle<int> &Crop)
+{
+   if (not has_view_box(Rect)) {
+      Crop = TClipRectangle<int>(0, 0, Bitmap.Width, Bitmap.Height);
+      return ERR::Okay;
+   }
+
+   const double right = Rect[VB_X] + Rect[VB_WIDTH], bottom = Rect[VB_Y] + Rect[VB_HEIGHT];
+   if ((Rect[VB_X] < 0) or (Rect[VB_Y] < 0) or (right > Bitmap.Width) or (bottom > Bitmap.Height)) {
+      return ERR::OutOfRange;
+   }
+
+   Crop = TClipRectangle<int>(int(Rect[VB_X]), int(Rect[VB_Y]), int(right), int(bottom));
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Checks that a bitmap can supply the active output mode and contains the current view box.
+
+static ERR check_image_bitmap(extImageFX *Self, objBitmap *Bitmap, FOM Mode)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (not Bitmap->initialised()) return log.warning(ERR::NotInitialised);
+
+   if ((Mode != FOM::HEIGHT) and (Bitmap->BytesPerPixel != 4)) {
+      log.warning("The source bitmap #%d has %d bytes per pixel; 4 are required.", Bitmap->UID, Bitmap->BytesPerPixel);
+      return ERR::InvalidValue;
+   }
+
+   TClipRectangle<int> crop;
+   return image_crop(Self->ViewBox, *Bitmap, crop);
+}
+
+//********************************************************************************************************************
+// Swaps in a new source.  Image is the owning image for a file source, or null for a client bitmap, which is pinned
+// for as long as it remains the source.  The previous source is released after the swap.
+
+static void replace_image_source(extImageFX *Self, objImage *Image, objBitmap *Bitmap)
+{
+   if (not Image) Bitmap->pin();
+   auto old_bitmap = std::exchange(Self->Bitmap, Bitmap);
+   auto old_pinned = std::exchange(Self->BitmapPinned, not Image);
+   auto old_image = std::exchange(Self->Image, Image);
+
+   effect_modified(Self);
+   if (old_pinned) old_bitmap->unpin(true);
+   if (old_image) FreeResource(old_image);
+}
+
+//********************************************************************************************************************
+
+static ERR replace_image_file(extImageFX *Self, std::string_view Path, FOM Mode)
+{
+   auto image = load_filter_image(Path, Mode);
+   if (not image) return ERR::CreateObject;
+
+   if (auto error = check_image_bitmap(Self, image->Bitmap, Mode); error != ERR::Okay) {
+      FreeResource(image);
+      return error;
+   }
+
+   replace_image_source(Self, image, image->Bitmap);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Read one height sample.  The caller clamps taps to the selected view box.
 
 static double image_height_sample(objBitmap &Bitmap, MCH Channel, int X, int Y)
 {
-   const int x = std::clamp(X, 0, Bitmap.Width - 1);
-   const int y = std::clamp(Y, 0, Bitmap.Height - 1);
    if ((Bitmap.Flags & BMF::GREYSCALE) != BMF::NIL) {
       uint16_t sample;
-      std::memcpy(&sample, Bitmap.Data + std::ptrdiff_t(y) * Bitmap.LineWidth + std::ptrdiff_t(x) * 2, sizeof(sample));
+      std::memcpy(&sample, Bitmap.Data + std::ptrdiff_t(Y) * Bitmap.LineWidth + std::ptrdiff_t(X) * 2, sizeof(sample));
       return sample * (1.0 / 65535.0);
    }
 
    RGB8 pixel {};
-   Bitmap.ReadUCRPixel(&Bitmap, x, y, &pixel);
+   Bitmap.ReadUCRPixel(&Bitmap, X, Y, &pixel);
    switch (Channel) {
       case MCH::GREEN: return pixel.Green * (1.0 / 255.0);
       case MCH::BLUE:  return pixel.Blue * (1.0 / 255.0);
@@ -92,11 +171,13 @@ static double image_height_sample(objBitmap &Bitmap, MCH Channel, int X, int Y)
 
 //********************************************************************************************************************
 
-static ERR draw_image_height(extImageFX *Self)
+static ERR draw_image_height(extImageFX *Self, const TClipRectangle<int> &Crop)
 {
    auto &bitmap = *Self->Bitmap;
+   const int width = Crop.width(), height = Crop.height();
    agg::trans_affine forward, inverse;
-   if (auto error = filter_image_transform(Self, bitmap, Self->AspectRatio, forward, inverse); error != ERR::Okay) {
+   if (auto error = filter_image_transform(Self, width, height, Self->AspectRatio, forward, inverse);
+       error != ERR::Okay) {
       return (error IS ERR::NothingDone) ? ERR::Okay : error;
    }
 
@@ -104,7 +185,7 @@ static ERR draw_image_height(extImageFX *Self)
    float *data;
    if (auto error = get_numeric_target(Self, layout, data); error != ERR::Okay) return error;
 
-   TClipRectangle<double> bounds { 0, 0, double(bitmap.Width), double(bitmap.Height) };
+   TClipRectangle<double> bounds { 0, 0, double(width), double(height) };
    if (not transform_filter_region(bounds, forward)) return ERR::OutOfRange;
    const auto &clip = layout.Valid;
    const int left = int(std::clamp(std::floor(bounds.left), double(clip.left), double(clip.right)));
@@ -116,7 +197,10 @@ static ERR draw_image_height(extImageFX *Self)
    const bool nearest = method IS VSM::NEIGHBOUR;
    const bool bilinear = (method IS VSM::BILINEAR) or (method IS VSM::AUTO);
    const auto kernel = (nearest or bilinear) ? nullptr : &get_filter(method, inverse);
-   auto tap = [&](int X, int Y) { return image_height_sample(bitmap, Self->HeightChannel, X, Y); };
+   auto tap = [&](int X, int Y) {
+      return image_height_sample(bitmap, Self->HeightChannel,
+         Crop.left + std::clamp(X, 0, width - 1), Crop.top + std::clamp(Y, 0, height - 1));
+   };
 
    for (int y = top; y < bottom; y++) {
       auto row = data + std::ptrdiff_t(y) * (layout.Stride / sizeof(float));
@@ -124,7 +208,7 @@ static ERR draw_image_height(extImageFX *Self)
          double sx, sy;
          map_filter_pixel_centre(inverse, x, y, sx, sy);
          // Pixels outside the image (including letterboxing) retain the surface's invalid sample.
-         if (not ((sx >= 0) and (sx < bitmap.Width) and (sy >= 0) and (sy < bitmap.Height))) continue;
+         if (not ((sx >= 0) and (sx < width) and (sy >= 0) and (sy < height))) continue;
          if (nearest) {
             row[x] = float(tap(int(sx), int(sy)));
             continue;
@@ -175,33 +259,34 @@ Draw: Render the effect to the target bitmap.
 static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
 {
    if (not active_filter_step(Self)) return ERR::InvalidState;
-   if (Self->OutputMode IS FOM::HEIGHT) return draw_image_height(Self);
-   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod);
+   if (not Self->Bitmap) return ERR::Okay; // A missing source produces transparent pixels.
+
+   ScopedObjectAccess access(Self->Bitmap);
+   if (not access.granted()) return access.error;
+
+   // The bitmap can be resized after the crop was validated, so the crop is checked on every draw.
+
+   TClipRectangle<int> crop;
+   if (auto error = image_crop(Self->ViewBox, *Self->Bitmap, crop); error != ERR::Okay) return error;
+
+   if (Self->OutputMode IS FOM::HEIGHT) return draw_image_height(Self, crop);
+   const bool cropped = has_view_box(Self->ViewBox);
+   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->ResampleMethod, cropped ? &crop : nullptr);
 }
 
-
 //********************************************************************************************************************
+// A source is optional at this stage; one can be assigned to Bitmap or Path after initialisation.  A child
+// bitmap is only validated here because it is attached before its own initialisation.
 
 static ERR IMAGEFX_Init(extImageFX *Self)
 {
-   kt::Log log;
+   if (not Self->Bitmap) return ERR::Okay;
 
-   if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
-
-   if (not Self->Bitmap->initialised()) {
+   if (auto error = check_image_bitmap(Self, Self->Bitmap, Self->OutputMode); error != ERR::Okay) {
       if (Self->BitmapPinned) { Self->Bitmap->unpin(); Self->BitmapPinned = false; }
-      return log.warning(ERR::NotInitialised);
+      Self->Bitmap = nullptr;
+      return error;
    }
-
-   if (Self->OutputMode IS FOM::HEIGHT) {
-      if (not (Self->Bitmap->Data and Self->Bitmap->ReadUCRPixel)) return log.warning(ERR::InvalidValue);
-   }
-   else if (Self->Bitmap->BytesPerPixel != 4) {
-      log.warning("The source bitmap #%d has %d bytes per pixel; 4 are required.", Self->Bitmap->UID,
-         Self->Bitmap->BytesPerPixel);
-      return ERR::InvalidValue;
-   }
-
    return ERR::Okay;
 }
 
@@ -213,7 +298,6 @@ static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
    kt::Log log;
    if (Args->Object->classID() IS CLASSID::BITMAP) {
       if ((Self->initialised()) or (Self->Bitmap)) log.warning(ERR::AlreadyDefined);
-      else if (Self->Bitmap) log.warning(ERR::AlreadyDefined);
       else {
          Self->Bitmap = (objBitmap *)Args->Object;
          Self->Bitmap->pin();
@@ -230,6 +314,9 @@ static ERR IMAGEFX_NewChild(extImageFX *Self, struct acNewChild *Args)
 AspectRatio: SVG compliant aspect ratio settings.
 Lookup: ARF
 
+Controls how the source image, or the section of it selected by #ViewBox, is aligned and scaled to fit the
+primitive subregion.  The default is `X_MID|Y_MID|MEET`.
+
 *********************************************************************************************************************/
 
 static ERR IMAGEFX_SET_AspectRatio(extImageFX *Self, ARF Value)
@@ -244,11 +331,32 @@ static ERR IMAGEFX_SET_AspectRatio(extImageFX *Self, ARF Value)
 -FIELD-
 Bitmap: The @Bitmap being used as the image source.
 
-Reading the Bitmap field will return the @Bitmap that is being used as the image source.  A custom Bitmap is
-assigned by making the ImageFX object its owner prior to initialisation, as described in the class overview.
+Reading the Bitmap field returns the @Bitmap that is being used as the image source.  If an image has been loaded
+from #Path, the Bitmap refers to the content of that image.
 
-If an image has been processed by setting the #Path, the Bitmap will refer to the content that has been
-processed.
+Writing to the Bitmap field replaces the current source with a client-supplied @Bitmap.  The field can be set before
+or after initialisation, and buffered viewports that use the filter are redrawn on their next draw.  Any image
+previously loaded from #Path is released, and #Path reads as empty from then on.
+
+The ImageFX pins the bitmap so that it remains valid while it is the source.  An attempt to free the bitmap in the
+meantime is deferred until it is replaced or the ImageFX is freed.  The ImageFX does not detect changes to the
+bitmap's pixels; call Refresh() after editing them.
+
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_SET_Bitmap(extImageFX *Self, objBitmap *Value)
+{
+   if (not Value) return ERR::InvalidValue;
+   if (Value->classID() != CLASSID::BITMAP) return ERR::WrongClass;
+   if (Value IS Self->Bitmap) return ERR::Okay;
+   if (auto error = check_image_bitmap(Self, Value, Self->OutputMode); error != ERR::Okay) return error;
+
+   replace_image_source(Self, nullptr, Value);
+   Self->ImageHref.clear();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 HeightChannel: Selects the stored channel to read in height mode.
@@ -281,6 +389,11 @@ static ERR IMAGEFX_SET_ImageHref(extImageFX *Self, const std::string_view &Value
 OutputMode: Selects image or floating-point height output.
 Lookup: FOM
 
+The default `IMAGE` mode renders the source as colour.  The `HEIGHT` mode produces a floating-point map from the
+channel selected by #HeightChannel, for consumption by effects such as @LightingFX.  The mode can only be set before
+initialisation.  If an image has already been loaded from #Path, it is loaded again in the format that the new mode
+requires.
+
 *********************************************************************************************************************/
 
 static ERR IMAGEFX_SET_OutputMode(extImageFX *Self, FOM Value)
@@ -294,11 +407,7 @@ static ERR IMAGEFX_SET_OutputMode(extImageFX *Self, FOM Value)
    if (Self->Image) {
       std::string_view path;
       if (auto error = Self->Image->getPath(path); error != ERR::Okay) return error;
-      auto image = load_filter_image(path, Value);
-      if (not image) return ERR::CreateObject;
-      FreeResource(Self->Image);
-      Self->Image = image;
-      Self->Bitmap = image->Bitmap;
+      if (auto error = replace_image_file(Self, path, Value); error != ERR::Okay) return error;
    }
 
    Self->OutputMode = Value;
@@ -310,7 +419,11 @@ static ERR IMAGEFX_SET_OutputMode(extImageFX *Self, FOM Value)
 -FIELD-
 Path: Path to an image file supported by the @Image class.
 
-Set this field before initialisation.  SVG export requires a path relative to the document folder.
+Setting the Path loads the referenced file as the image source, replacing any existing source.  The path can be set
+before or after initialisation.  The image is converted to the format that #OutputMode requires.
+
+Reading the Path returns an empty string if the source is a client bitmap.  SVG export requires a path relative to
+the document folder.
 
 *********************************************************************************************************************/
 
@@ -323,13 +436,112 @@ static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
 
 static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
 {
-   if ((Self->Bitmap) or (Self->Image)) return ERR::Immutable;
+   if (Value.empty()) return ERR::InvalidValue;
+   if (auto error = replace_image_file(Self, Value, Self->OutputMode); error != ERR::Okay) return error;
+   Self->ImageHref.clear();
+   return ERR::Okay;
+}
 
-   if ((Self->Image = load_filter_image(Value, Self->OutputMode))) {
-      Self->Bitmap = Self->Image->Bitmap;
-      return ERR::Okay;
+/*********************************************************************************************************************
+
+-METHOD-
+Reload: Reloads the image file referenced by #Path.
+
+Reload reads the file at #Path again and replaces the current image with its new content.  Use it when the file has
+been modified since it was loaded.  The #ViewBox, #OutputMode and the document-relative reference used for SVG
+export are retained.
+
+If the file cannot be loaded, or the #ViewBox does not fit inside the new image, the previous image remains active.
+
+-RESULT-
+Okay:
+FieldNotSet: The source is not a file, either because #Path has not been set or because a bitmap was assigned to #Bitmap.
+CreateObject: The file could not be loaded.
+InvalidValue: The image format is not supported by the #OutputMode.
+OutOfRange: The #ViewBox does not fit inside the reloaded image.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_Reload(extImageFX *Self, APTR Void)
+{
+   if (not Self->Image) return ERR::FieldNotSet;
+
+   std::string_view path;
+   if (auto error = Self->Image->getPath(path); error != ERR::Okay) return error;
+
+   return replace_image_file(Self, path, Self->OutputMode);
+}
+
+/*********************************************************************************************************************
+
+-ACTION-
+Refresh: Redraws filter clients after the pixels of the source bitmap are changed.
+
+The ImageFX cannot detect edits to the pixels of its source @Bitmap.  Call Refresh after editing them so that
+buffered viewports that use the filter discard their cached content.  Changes to the fields of the ImageFX are
+detected automatically and do not need a Refresh.
+
+Refresh does not read the source file again; use #Reload() for that.  It also does not schedule drawing.
+-END-
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_Refresh(extImageFX *Self, APTR Void)
+{
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+ViewBox: Selects a section of the source bitmap, in pixels.
+
+By default the entire source bitmap is rendered.  Set ViewBox to an array of four values, `{ x, y, width, height }`,
+to render only a section of it, such as one cell of an image atlas.  The section is fitted to the primitive subregion
+according to #AspectRatio, as if it were the whole image.  Unlike the `viewBox` of an SVG viewport, the section is a
+strict crop: resampling clamps to its edges, so pixels outside of it never contribute to the result.
+
+All values must be whole numbers, the width and height must be greater than zero, and the rectangle must lie inside
+the current source bitmap if one is set.  Otherwise the new value is rejected with `ERR::OutOfRange` and the current
+rectangle is retained.  An array that does not have four values is rejected with `ERR::InvalidValue`.
+
+Set an empty array, or a zero width and height, to clear the rectangle.  Reading the field returns an empty array
+when no rectangle is set.
+
+If the source bitmap shrinks after the rectangle is set so that it no longer fits, drawing the effect fails with
+`ERR::OutOfRange`.
+
+In SVG, the equivalent attribute is `kotuku:viewBox="x y width height"` on the `feImage` element.
+
+*********************************************************************************************************************/
+
+static ERR IMAGEFX_GET_ViewBox(extImageFX *Self, std::span<double> &Array)
+{
+   Array = view_box_field(Self->ViewBox);
+   return ERR::Okay;
+}
+
+static ERR IMAGEFX_SET_ViewBox(extImageFX *Self, std::span<const double> &Array)
+{
+   view_box rect;
+   if (auto error = read_view_box(Array, rect); error != ERR::Okay) return error;
+
+   if (has_view_box(rect)) {
+      for (double value : rect) {
+         if (std::trunc(value) != value) return ERR::OutOfRange;
+      }
+
+      if (Self->Bitmap) {
+         TClipRectangle<int> crop;
+         if (auto error = image_crop(rect, *Self->Bitmap, crop); error != ERR::Okay) return error;
+      }
    }
-   else return ERR::CreateObject;
+
+   Self->ViewBox = rect;
+   effect_modified(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -359,16 +571,21 @@ XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
 static ERR image_xml(extImageFX &Effect, filter_xml_element &Element)
 {
    std::string_view reference = Effect.ImageHref;
+
    if (reference.empty()) {
       if (auto error = IMAGEFX_GET_Path(&Effect, reference); error != ERR::Okay) return error;
    }
+
    if ((not safe_filter_path(reference)) or reference.starts_with('#')) return ERR::NoSupport;
 
    Element.Name = "feImage";
    Element.attribute("xlink:href", reference);
    write_filter_xml_aspect(Element, Effect.AspectRatio);
+   write_filter_xml_view_box(Element, Effect.ViewBox);
+
    if (Effect.ResampleMethod IS VSM::LANCZOS) Element.attribute("image-rendering", "optimizeQuality");
    else write_filter_xml_resampling(Element, Effect.ResampleMethod);
+
    if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
    write_filter_xml_channel(Element, "kotuku:heightChannel", Effect.HeightChannel);
    return ERR::Okay;
@@ -378,20 +595,16 @@ static ERR image_xml(extImageFX &Effect, filter_xml_element &Element)
 
 #include "filter_image_def.c"
 
-// Keep the private field after the generated ImageFX accessors' indexed fields in the dictionary.
-static_assert(kt::fieldhash("ImageHref") > kt::fieldhash("AspectRatio"));
-
-//********************************************************************************************************************
-
 static const FieldArray clImageFXFields[] = {
    { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_AspectRatio, &clAspectRatio },
    { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_ResampleMethod, &clImageFXVSM },
-   { "Bitmap",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
+   { "Bitmap",         FDF_OBJECT|FDF_RW, nullptr, IMAGEFX_SET_Bitmap, CLASSID::BITMAP },
    { "OutputMode",     FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, IMAGEFX_SET_OutputMode, &clImageFXFOM },
    { "HeightChannel",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGEFX_SET_HeightChannel, &clImageFXMCH },
-   { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
+   { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
+   { "ViewBox",     FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, IMAGEFX_GET_ViewBox, IMAGEFX_SET_ViewBox },
    { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
-   { "ImageHref",      FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, IMAGEFX_SET_ImageHref },
+   { "ImageHref",      FDF_VIRTUAL|FDF_SYSTEM|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, IMAGEFX_SET_ImageHref },
    END_FIELD
 };
 
@@ -405,6 +618,7 @@ ERR init_imagefx(void)
       fl::Name("ImageFX"),
       fl::Category(CCF::GRAPHICS),
       fl::Actions(clImageFXActions),
+      fl::Methods(clImageFXMethods),
       fl::Fields(clImageFXFields),
       fl::Size(sizeof(extImageFX)),
       fl::Path(MOD_PATH));

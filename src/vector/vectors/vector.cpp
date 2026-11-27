@@ -2500,6 +2500,15 @@ double extVector::fixed_stroke_width()
 //********************************************************************************************************************
 
 extVector::~extVector() {
+   if (Scene and (not Scene->collecting())) {
+      for (auto node = this; node; node = get_parent(node)) {
+         if (node->FilterSourceRefs) {
+            invalidate_filter_source_clients((extVectorScene *)Scene);
+            break;
+         }
+      }
+   }
+
    if (KeyboardHandle) gfx::UnsubscribeKeyboard(KeyboardHandle);
    if (KeyboardOwners) {
       for (auto &[code, owner] : *KeyboardOwners) owner.unpin();

@@ -145,6 +145,10 @@
     { id=18, name='SetLight' }
   })
 
+  methods('ImageFX', 'IFX', {
+    { id=10, name='Reload' }
+  })
+
   klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM', 'FOM', 'MCH' } }, [[
     ~int(VSM) ResampleMethod
     ~int(ARF) AspectRatio

@@ -848,7 +848,7 @@ class extVector : public objVector {
    JTYPE InputMask;
    int   KeyboardHandle = 0;
    int   PathLength;
-   RC    Dirty;
+   uint32_t FilterSourceRefs = 0;  // SourceFX instances using this branch.
    uint16_t  TabOrder;
    uint16_t  InputDispatchDepth = 0; // Active send_input_events() calls on this vector, including nested calls
    uint16_t  Isolated:1;
@@ -860,6 +860,7 @@ class extVector : public objVector {
    uint16_t  ValidState:1;         // Can be set to false during path generation if the shape is invalid
    uint16_t  RequiresRedraw:1;
    uint16_t  InputSubscriptionsDirty:1 = 0; // InputSubscriptions holds cleared entries awaiting compaction
+   RC    Dirty;
    uint8_t   PaintOrder = 0;       // A VPO value, stored as a byte to avoid growing the structure
 
    extVector(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVector(ClassPtr, ObjectID) {
@@ -1322,16 +1323,27 @@ TClipRectangle<T> get_bounds(VertexSource &vs, const unsigned path_id = 0)
 // If a scene contains buffered viewports, they must be marked for refresh when the state of one or more of their
 // children is changed.
 
-static void mark_buffers_for_refresh(extVector *Vector)
+inline static void invalidate_filter_source_clients(extVectorScene *Scene)
 {
-   if (Vector->Scene) ((extVectorScene *)Vector->Scene)->SubtreeDirty = true;
+   auto host = Scene->HostScene ? (extVectorScene *)Scene->HostScene : Scene;
+   host->ShareVersion++;
+}
 
+static void mark_buffers_for_refresh(extVector *Vector, bool NotifyFilterSources = true)
+{
+   auto scene = (extVectorScene *)Vector->Scene;
+   if (scene) scene->SubtreeDirty = true;
+
+   bool source_changed = false;
    for (auto node=Vector; node; ) {
       node->ClipCache.reset();
+      source_changed |= node->FilterSourceRefs != 0;
 
       if ((!node->Parent) or (node->Parent->Class->BaseClassID != CLASSID::VECTOR)) break;
       node = (extVector *)node->Parent;
    }
+
+   if (NotifyFilterSources and scene and source_changed) invalidate_filter_source_clients(scene);
 
    if (extVectorViewport *parent_view = (Vector->classID() IS CLASSID::VECTORVIEWPORT) ?
       (extVectorViewport *)Vector : Vector->ParentView) {
