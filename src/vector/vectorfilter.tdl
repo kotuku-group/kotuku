@@ -204,7 +204,7 @@
     ~struct(FRGB) Colour
   ]])
 
-  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX', 'LOF', 'NMC', 'MCH', 'LightOptions', 'LightGeometry', 'LS' } }, [[
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT', 'LFX', 'LOF', 'NMC', 'MCH', 'MTC', 'LightOptions', 'LightGeometry', 'LS' } }, [[
     ~struct(FRGB) Colour
     ~int(LT) Type
     ~int(LFX) Features
@@ -212,6 +212,7 @@
     ~int(NMC) NormalConvention
     ~int(MCH) OcclusionChannel
     ~int(MCH) RoughnessChannel
+    ~int(MTC) MatcapMode
   ]])
 
   klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[

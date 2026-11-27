@@ -675,7 +675,8 @@ static void row_toksvig(const float *__restrict X0, const float *__restrict X1, 
 // reflectance does not depend on the light, so it is applied to the sum of the specular light.  Ambient light and the
 // matcap are added once, and the result is composed and encoded once, so only the final output is clamped.  Cavity
 // occludes the light of each light source, and Indirect, the cavity multiplied by the ambient occlusion map, occludes
-// the ambient light and the matcap.  Gain scales the specular light of every light for a roughness map.
+// the ambient light and the matcap.  Gain scales the specular light of every light for a roughness map.  A LIGHT
+// matcap replaces the diffuse light of every light, and takes the shadow of the first light, the key light.
 
 inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const point3 &Normal, const point3 &Mean,
    double Exponent, double Gain, const albedo_sample &Albedo, int X, int Y, float Height, float Cavity, float Indirect,
@@ -687,6 +688,7 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
    const double kd = Material ? Constant * (1.0 - Metalness) : Constant;
    const double ks = SpecularConstant * Gain;
    double dr = 0, dg = 0, db = 0, sr = 0, sg = 0, sb = 0;
+   double key_nl = 1.0; // N.L of the key light, for a LIGHT matcap
 
    for (const auto &light : Surface.lights) {
       point3 stl, half;
@@ -703,9 +705,16 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
          if (light.range > 0) {
             const double d2 = stl.dot(stl);
             falloff = light.attenuation(d2);
-            if (falloff <= 0) continue;
+            const bool matcap_key = (LitSphere) and (&light IS Surface.lights.data());
+            if ((falloff <= 0) and (not matcap_key)) continue;
             if (d2 < LIGHT_COINCIDENCE_SQUARED) stl = point3(0, 0, 1);
             else stl.normalise();
+
+            // The key light's direction still fades the matcap shadow outside its direct lighting range.
+            if (falloff <= 0) {
+               key_nl = Normal.dot(stl);
+               continue;
+            }
          }
          else stl.normalise();
 
@@ -717,7 +726,11 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
       const double nl = Normal.dot(stl);
       double diffuse;
 
-      if (Material) {
+      if (LitSphere) {
+         if (&light IS Surface.lights.data()) key_nl = nl;
+         diffuse = 0;
+      }
+      else if (Material) {
          double diffuse_occlusion = occlusion;
          if ((light.wrap_shadows) and (nl < light.wrap_blend)) {
             const double raised = double(light.raised ? Cavity * light.raised[offset] : Cavity) * falloff;
@@ -760,7 +773,17 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
       sg *= fg;
       sb *= fb;
 
-      if ((MatcapTexels) and (coverage > 0)) {
+      if (LitSphere) {
+         const auto &key = Surface.lights.front();
+         alignas(16) float light[4];
+         sample_matcap(Normal, light);
+         const double shadow = key.shadow ? double(key.shadow[offset]) : 1.0;
+         const double scale = kd * indirect * lit_sphere_shadow(shadow, key_nl, key.wrap_blend);
+         dr = light[0] * scale;
+         dg = light[1] * scale;
+         db = light[2] * scale;
+      }
+      else if ((MatcapTexels) and (coverage > 0)) {
          alignas(16) float matcap[4];
          sample_matcap(Mean, matcap);
 
@@ -1087,7 +1110,7 @@ void extLightingFX::render_enhanced(int StartY, int EndY, const lit_surface &Sur
             if (Material) {
                const double lifted = double(raised ? cavity[x] * raised[x] : cavity[x]) * falloff;
                enhanced_material(normal, mean, exponent, gain, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
-                  indirect[x], lifted);
+                  indirect[x], lifted, shadow ? double(shadow[x]) : 1.0);
             }
             else {
                enhanced_combined(normal, mean, exponent, gain, stl, Tint(stl), sample, dptr, R, G, B, A, occlusion,
@@ -1270,6 +1293,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    if ((Material) and (Matcap)) {
       if (auto error = prepare_matcap(); error != ERR::Okay) return error;
    }
+   LitSphere = (MatcapTexels) and (MatcapMode IS MTC::LIGHT);
 
    float *raw;
    if (auto error = get_filter_scratch(this, size, raw); error != ERR::Okay) return error;
@@ -1443,8 +1467,11 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
          SpotHeight * (1.0 / 255.0), pool);
       if (error != ERR::Okay) return error;
       light.shadow = shadow;
+      light.wrap_blend = sin(std::min(Penumbra * DEG2RAD, elevation * 0.5));
 
-      light.wrap_shadows = (Material) and (Wrap > 0);
+      // A LIGHT matcap replaces the diffuse light that Wrap would extend, so it needs no raised shadows.
+
+      light.wrap_shadows = (Material) and (Wrap > 0) and (not LitSphere);
       if (light.wrap_shadows) {
          const double lifted = elevation + asin(Wrap);
          if (lifted < 89.0 * DEG2RAD) {
@@ -1456,7 +1483,6 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
             if (error != ERR::Okay) return error;
             light.raised = raised;
          }
-         light.wrap_blend = sin(std::min(Penumbra * DEG2RAD, elevation * 0.5));
       }
    }
 
@@ -1521,7 +1547,8 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
          // As for distant lights, with the elevation seen at the anchor
 
          const double elevation = local_shadows::anchor_elevation(lt.x, lt.y, lt.z, anchor_x, anchor_y, 0);
-         light.wrap_shadows = (Material) and (Wrap > 0) and (elevation > 0);
+         if (elevation > 0) light.wrap_blend = sin(std::min(penumbra, elevation * 0.5));
+         light.wrap_shadows = (Material) and (Wrap > 0) and (elevation > 0) and (not LitSphere);
          if (light.wrap_shadows) {
             const double lift = asin(Wrap);
             if (elevation + lift < 89.0 * DEG2RAD) {
@@ -1530,7 +1557,6 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
                   penumbra, lift), raised); error != ERR::Okay) return error;
                light.raised = raised;
             }
-            light.wrap_blend = sin(std::min(penumbra, elevation * 0.5));
          }
       }
    }

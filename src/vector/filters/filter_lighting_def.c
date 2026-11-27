@@ -43,6 +43,12 @@ static const struct FieldDef clLightingFXMCH[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clLightingFXMTC[] = {
+   { "Reflect", 0x00000000 },
+   { "Light", 0x00000001 },
+   { nullptr, 0 }
+};
+
 static const struct FieldDef clLightingFXLS[] = {
    { "Distant", 0x00000000 },
    { "Spot", 0x00000001 },

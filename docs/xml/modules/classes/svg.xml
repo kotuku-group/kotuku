@@ -217,6 +217,8 @@ The default is 0, which brushes along the X axis.  Sets <class name="LightingFX"
 such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
 warning is logged and the surface is drawn without it.  Sets <class name="LightingFX" field="MatcapPath">LightingFX.MatcapPath</class>.</li>
+<li><code>matcapMode</code>: <code>reflect</code> (the default) adds the matcap to the specular light as a reflection.  <code>light</code> uses it as
+the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Sets <class name="LightingFX" field="MatcapMode">_LightingFX.MatcapMode_</class>.</li>
 </list>
 <p>The element accepts any number of light source elements, which light the surface together in document order. Their light is added before the result is limited to full strength, so a key light and fill lights can share one primitive.  <code>desc</code>, <code>title</code> and <code>metadata</code> children are ignored, and without a light source the default light is used.  The standard lighting primitives keep the SVG rule of one light source, their first child; combine separate primitives with <code>feComposite</code> to light a standard document with several sources.  The element is drawn whatever the document's compliance, but other renderers do not draw it.</p>
 <pre>&lt;kotuku:feLighting in=&quot;SourceAlpha&quot; in2=&quot;paint&quot; surfaceScale=&quot;6&quot; specularConstant=&quot;0.6&quot; specularExponent=&quot;24&quot;&gt;

@@ -56,6 +56,10 @@ struct KeyValue;
     "ALPHA: The alpha channel.",
     "LUMINANCE: The luminance of the stored red, green and blue values, weighted 0.2126, 0.7152 and 0.0722.")
 
+  enums("MTC", { type="int", start=0, comment="Uses of the matcap of LightingFX's COMBINED type; refer to LightingFX.MatcapMode." },
+    "REFLECT: Add the matcap to the specular light as a reflection of the environment.  This is the default.",
+    "LIGHT: Use the matcap as the diffuse light, in place of the diffuse light of the light sources.")
+
   flags("LFX", { comment="Enhanced lighting features for the LightingFX class.  These apply only when the enhanced pipeline is in use; refer to LightingFX.Features." },
     "DEQUANTISE: Smooth areas that vary by no more than one alpha level, removing the terraces of 8-bit heights.",
     "SHARPEN: Measure slopes with a 4th-order gradient that keeps more of the detail in narrow features.  If not set, the SVG Sobel kernel is used.",
