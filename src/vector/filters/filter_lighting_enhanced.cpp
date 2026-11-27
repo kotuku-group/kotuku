@@ -29,10 +29,11 @@ replaces the gradient stage only; normals, kernel units and the light models are
    the highlight is shaded with their mean and a reduced exponent, so that it spreads over the variation instead of
    sparkling.
 8. The combined type evaluates the diffuse and specular light together and applies them to an albedo, with ambient
-   light, clamping once on output.  Material terms (metalness, Fresnel, wrap and a matcap) select enhanced_material()
-   for the draw; with all of them at their defaults enhanced_combined() is used, so the result is unchanged.  A matcap
-   is converted once per draw to premultiplied colour in the filter's colour space, and sampled with the shading
-   normal.
+   light, clamping once on output.  Material terms (metalness, Fresnel, wrap, anisotropy and a matcap) select
+   enhanced_material() for the draw; with all of them at their defaults enhanced_combined() is used, so the result is
+   unchanged.  A matcap is converted once per draw to premultiplied colour in the filter's colour space, and sampled
+   with the shading normal.  Anisotropy varies the specular exponent with the direction of the half vector about a
+   brush direction that is uniform over the effect.
 9. Several lights (combined type only) share the surface analysis: normals, cavity and the Toksvig rows are computed
    once per row, and enhanced_lights() accumulates the light of each one before the albedo, ambient light and matcap
    are applied and the result is encoded once.  A single light keeps the specialised path above.
@@ -727,7 +728,8 @@ inline void extLightingFX::enhanced_lights(const lit_surface &Surface, const poi
       }
       else diffuse = kd * std::max(0.0, nl) * occlusion;
 
-      const double specular = ks * std::pow(std::max(0.0, Mean.dot(half)), Exponent) * occlusion;
+      const double exponent = Anisotropic ? anisotropic_exponent(Mean, half, Exponent) : Exponent;
+      const double specular = ks * std::pow(std::max(0.0, Mean.dot(half)), exponent) * occlusion;
       dr += diffuse * colour.Red;
       dg += diffuse * colour.Green;
       db += diffuse * colour.Blue;
@@ -1233,6 +1235,18 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    Strength = first.strength;
    Material = has_material();
    WrapScale = 1.0 / (1.0 + Wrap);
+
+   // An anisotropic highlight keeps the geometric mean of its exponents, so its area changes little with Anisotropy.
+   // The squared aspect ratio 1 - 0.9a limits the stretch to a factor of 10 at full strength.
+
+   Anisotropic = (Material) and (Anisotropy > 0);
+   if (Anisotropic) {
+      const double aspect = 1.0 - (0.9 * Anisotropy);
+      BrushX = cos(AnisotropyAngle * DEG2RAD);
+      BrushY = sin(AnisotropyAngle * DEG2RAD);
+      AlongScale = 1.0 / aspect;
+      AcrossScale = aspect;
+   }
 
    // Ambient light in the filter's colour space, scaled by its alpha.
 

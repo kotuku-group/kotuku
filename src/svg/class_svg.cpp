@@ -327,6 +327,10 @@ highlights on steep slopes and edges; 0.04 suits most dielectrics.  The default 
 @LightingFX.Fresnel.</li>
 <li>`wrap`: 0 to 1, default 0.  Extends diffuse light past the terminator, for wax, paper and skin.  Sets
 @LightingFX.Wrap.</li>
+<li>`anisotropy`: 0 to 1, default 0.  Stretches highlights into streaks at right angles to the brush direction, for
+brushed metal; at 1 they are ten times as long as they are wide.  Sets @LightingFX.Anisotropy.</li>
+<li>`anisotropyAngle`: the direction of the brushing in degrees, measured as the `azimuth` of `feDistantLight` is.
+The default is 0, which brushes along the X axis.  Sets @LightingFX.AnisotropyAngle.</li>
 <li>`matcap`: the path of a matcap image, an image of a sphere that reflects an environment, which adds reflections
 such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
