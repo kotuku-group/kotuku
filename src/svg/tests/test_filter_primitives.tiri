@@ -1186,36 +1186,42 @@ end
 -- attributes, with or without the prefix.
 
 @Test function LightingMaterialAttributes()
-   local svg <close> = combinedDocument('metalness="0.75" fresnel="0.04" wrap="0.5"')
+   local svg <close> = combinedDocument('metalness="0.75" fresnel="0.04" wrap="0.5" anisotropy="0.6" ' ..
+      'anisotropyAngle="30"')
    local fx = lightingFX(svg)
    assert((fx.metalness is 0.75) and (fx.fresnel is 0.04) and (fx.wrap is 0.5),
       f'Material attributes must be read (got {fx.metalness}, {fx.fresnel}, {fx.wrap})')
+   assert((fx.anisotropy is 0.6) and (fx.anisotropyAngle is 30),
+      f'Anisotropy attributes must be read (got {fx.anisotropy}, {fx.anisotropyAngle})')
    local doc <close> = draw(svg, 64)
 
    local plain <close> = combinedDocument()
    local api = lightingFX(plain)
-   api.{ metalness=0.75, fresnel=0.04, wrap=0.5 }
+   api.{ metalness=0.75, fresnel=0.04, wrap=0.5, anisotropy=0.6, anisotropyAngle=30 }
    local diff = imageDifference(doc, draw(plain, 64))
    assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
    assert(imageDifference(doc, draw(combinedDocument(), 64)) > 0, 'The attributes must change the default render')
 
-   local prefixed <close> = combinedDocument('kotuku:metalness="1" kotuku:wrap="0.25"')
+   local prefixed <close> = combinedDocument('kotuku:metalness="1" kotuku:wrap="0.25" kotuku:anisotropy="1"')
    fx = lightingFX(prefixed)
-   assert((fx.metalness is 1) and (fx.wrap is 0.25), 'The prefixed attributes must be accepted on kotuku:feLighting')
+   assert((fx.metalness is 1) and (fx.wrap is 0.25) and (fx.anisotropy is 1),
+      'The prefixed attributes must be accepted on kotuku:feLighting')
 
    for _, attribs in array<str> {
-      'metalness="1.5" fresnel="-0.1" wrap="2"', 'metalness="bad" fresnel="0.04x" wrap=""'
+      'metalness="1.5" fresnel="-0.1" wrap="2" anisotropy="1.01" anisotropyAngle="inf"',
+      'metalness="bad" fresnel="0.04x" wrap="" anisotropy="-0.5" anisotropyAngle="bad"'
    } do
       local invalid <close> = combinedDocument(attribs)
       fx = lightingFX(invalid)
-      assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0),
-         f'Invalid values must leave the defaults: {attribs}')
+      assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0) and (fx.anisotropy is 0) and
+         (fx.anisotropyAngle is 0), f'Invalid values must leave the defaults: {attribs}')
    end
 
-   local standard <close> = lightingDocument('kotuku:metalness="1" kotuku:fresnel="0.5" kotuku:wrap="1"')
+   local standard <close> = lightingDocument('kotuku:metalness="1" kotuku:fresnel="0.5" kotuku:wrap="1" ' ..
+      'kotuku:anisotropy="1" kotuku:anisotropyAngle="45"')
    fx = lightingFX(standard)
-   assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0),
-      'feDiffuseLighting must ignore the material attributes')
+   assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0) and (fx.anisotropy is 0) and
+      (fx.anisotropyAngle is 0), 'feDiffuseLighting must ignore the material attributes')
    local diff_standard = imageDifference(draw(standard, 64), draw(lightingDocument(), 64))
    assert(diff_standard is 0, f'The material attributes must not change feDiffuseLighting ({diff_standard})')
 end
@@ -1226,12 +1232,13 @@ end
    local defaults <close> = combinedDocument()
    local _, filter:any = check defaults.scene.mtFindDef('f')
    local xml:str = filter.effectXML
-   for _, name in array<str> { 'metalness', 'fresnel', 'wrap' } do
+   for _, name in array<str> { 'metalness', 'fresnel', 'wrap', 'anisotropy' } do
       assert(xml.find(name, 0, true) is nil, f'Default material terms must not be written: {xml}')
    end
 
    for _, attribs in array<str> { 'metalness="0.6"', 'fresnel="0.04" specularConstant="12"', 'wrap="0.35"',
-      'metalness="1" fresnel="0.25" wrap="1" ambient="#202020"' } do
+      'metalness="1" fresnel="0.25" wrap="1" ambient="#202020"', 'anisotropy="0.8" anisotropyAngle="-30"',
+      'anisotropyAngle="45"' } do
       local svg <close> = combinedDocument(attribs)
       local original <close> = draw(svg, 64)
       _, filter = check svg.scene.mtFindDef('f')
@@ -1240,7 +1247,8 @@ end
       local diff = imageDifference(original, draw(loaded, 64))
       assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
       local a, b = lightingFX(svg), lightingFX(loaded)
-      assert((a.metalness is b.metalness) and (a.fresnel is b.fresnel) and (a.wrap is b.wrap),
+      assert((a.metalness is b.metalness) and (a.fresnel is b.fresnel) and (a.wrap is b.wrap) and
+         (a.anisotropy is b.anisotropy) and (a.anisotropyAngle is b.anisotropyAngle),
          f'XMLDef must preserve the material fields: {xml}')
    end
 end

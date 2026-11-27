@@ -2206,6 +2206,12 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             else if ((combined and (local IS "wrap")) or (local IS "combinedWrap")) {
                set_light_number("wrap", val, &objLightingFX::setWrap);
             }
+            else if ((combined and (local IS "anisotropy")) or (local IS "combinedAnisotropy")) {
+               set_light_number("anisotropy", val, &objLightingFX::setAnisotropy);
+            }
+            else if ((combined and (local IS "anisotropyAngle")) or (local IS "combinedAnisotropyAngle")) {
+               set_light_number("anisotropyAngle", val, &objLightingFX::setAnisotropyAngle);
+            }
             else if (local IS "albedo") parse_input_mix(Self, fx, val);
             else if ((combined and (local IS "matcap")) or (local IS "combinedMatcap")) {
                std::string path;

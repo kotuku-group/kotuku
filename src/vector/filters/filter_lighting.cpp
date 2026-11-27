@@ -169,6 +169,12 @@ faces the viewer and strongly at grazing angles, and scatters diffuse light in i
 diffuse light and reflects in its albedo's colour.  Wrap lets diffuse light reach past the terminator, as on wax and
 skin, and changes the brightness of flat surfaces.
 
+#Anisotropy stretches the highlights into streaks at right angles to a brush direction set by #AnisotropyAngle, as on
+brushed metal.  The specular exponent then depends on the direction of H: it is the lobe of Ashikhmin and Shirley
+without its normalisation, `(et * (H.T)^2 + eb * (H.B)^2) / (1 - (N.H)^2)`, where T is the brush direction in the plane
+of the surface, `B = N x T`, and the exponents et along the brushing and eb across it have #Exponent as their geometric
+mean.
+
 A matcap adds reflections of an environment that the light model cannot produce, such as those of chrome, glass or
 glazed ceramic.  It is an image of a lit sphere, set with #MatcapPath or #Matcap, and each pixel takes the colour of
 the point on the sphere that faces the same way as the surface.  The reflection is added to the specular light as
@@ -462,7 +468,13 @@ class extLightingFX : public extFilterEffect {
    double Wrap = 0;                    // COMBINED: extends diffuse light past the terminator
    double WrapScale = 1.0;             // 1 / (1 + Wrap), set per draw
    double WrapBlend = 0;               // N.L below which faces take the raised shadow, set per draw
+   double Anisotropy = 0;              // COMBINED: stretches the highlight across the brush direction, 0 - 1
+   double AnisotropyAngle = 0;         // COMBINED: direction of the brushing in degrees, measured as an azimuth
+   double BrushX = 1.0, BrushY = 0;    // Unit vector of AnisotropyAngle in image axes, set per draw
+   double AlongScale = 1.0;            // Multiplies the exponent along the brush direction, set per draw
+   double AcrossScale = 1.0;           // Multiplies the exponent across the brush direction, set per draw
    bool   Material = false;            // True if any material term is in use, set per draw
+   bool   Anisotropic = false;         // True if the material has an anisotropic highlight, set per draw
    bool   WrapShadows = false;         // True if wrapped faces take shadows from the raised light, set per draw
 
    // MATCAP (COMBINED type only)
@@ -714,7 +726,28 @@ class extLightingFX : public extFilterEffect {
    // that the result is unchanged.
 
    bool has_material() const {
-      return (Type IS LT::COMBINED) and ((Metalness != 0) or (Fresnel != 0) or (Wrap != 0) or (Matcap));
+      return (Type IS LT::COMBINED) and ((Metalness != 0) or (Fresnel != 0) or (Wrap != 0) or (Matcap) or
+         (Anisotropy != 0));
+   }
+
+   // The exponent of an anisotropic highlight at the shading normal Mean and the half vector Half (see Anisotropy).
+   // This is the lobe of Ashikhmin and Shirley without its normalisation, (e_t (H.T)^2 + e_b (H.B)^2) / (1 - (H.N)^2),
+   // for a tangent T along the brushing and B = N x T.  T is the brush direction projected into the surface's tangent
+   // plane, and (H.B)^2 = 1 - (H.N)^2 - (H.T)^2 removes B, so the exponent blends from e_b to e_t with the squared
+   // cosine of the angle between T and H in that plane.  Where H is parallel to N the angle is undefined, but the
+   // highlight is at its peak whatever the exponent.  A normal that lies along the brush direction has no tangent
+   // and takes e_b.
+
+   LIGHT_INLINE double anisotropic_exponent(const point3 &Mean, const point3 &Half, double Exponent) const {
+      const double hn = Mean.dot(Half);
+      const double dn = (BrushX * Mean.x) + (BrushY * Mean.y);
+      const double denominator = (1.0 - (hn * hn)) * (1.0 - (dn * dn));
+      double along = 0;
+      if (denominator > 1e-12) {
+         const double ht = (BrushX * Half.x) + (BrushY * Half.y) - (dn * hn);
+         along = std::min((ht * ht) / denominator, 1.0);
+      }
+      return Exponent * (AcrossScale + ((AlongScale - AcrossScale) * along));
    }
 
    // True if fine detail receives extra relief, given the radius of the base layer's blur in pixels.
@@ -1032,6 +1065,7 @@ inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 
 // With Fresnel set, the reflectance rises towards 1 as the shading normal turns away from the eye: Schlick's term on
 // Mean.z, the cosine between the normal and the fixed eye vector.  Metalness removes the diffuse light, and Wrap
 // replaces N.L with (N.L + w) / (1 + w).  Ambient light and the output rule are those of enhanced_combined().
+// With Anisotropy, the specular exponent varies with the direction of the half vector (see anisotropic_exponent()).
 //
 // Raised is the occlusion with shadows cast by the light raised by the wrap angle (see WrapShadows).  The diffuse light
 // of a face that turns away from the light takes it in place of Occlusion, so that the face is not darkened by its own
@@ -1056,7 +1090,8 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
 
    const double lit = std::max(0.0, (nl + Wrap) * WrapScale);
    const double diffuse = Constant * (1.0 - Metalness) * lit * diffuse_occlusion;
-   const double specular = SpecularConstant * Gain * std::pow(std::max(0.0, Mean.dot(half_dir)), Exponent) *
+   const double exponent = Anisotropic ? anisotropic_exponent(Mean, half_dir, Exponent) : Exponent;
+   const double specular = SpecularConstant * Gain * std::pow(std::max(0.0, Mean.dot(half_dir)), exponent) *
       Occlusion;
 
    const double coverage = Albedo.a;
@@ -2052,6 +2087,74 @@ static ERR LIGHTINGFX_SET_Ambient(extLightingFX *Self, FRGB *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Anisotropy: Stretches the highlights of the `COMBINED` type across a brush direction.
+
+Brushed and machined metals are covered in fine parallel grooves.  The surface varies across the grooves but not along
+them, so a highlight is drawn out into a streak at right angles to the brushing, as on a brushed steel panel or across
+the circular grooves of a disc.  This field sets the strength of the effect and #AnisotropyAngle sets the direction of
+the brushing.
+
+At 0, the default, highlights are round.  At a value `a`, the specular exponent is divided by `1 - 0.9a` along the
+brush direction and multiplied by it across, so a highlight is `1 / (1 - 0.9a)` times as long as it is wide: about twice
+at 0.55 and ten times at 1.  Between the two directions the exponent blends with the squared cosine of the angle from
+the brush direction, measured in the plane of the surface.  The geometric mean of the two exponents is #Exponent, so
+the area of a highlight changes little with this field.  Exponents from a #RoughnessMap and the widening of the
+`SPECULAR_AA` feature are stretched in the same way.
+
+Only the highlights of the lights are affected.  The diffuse light, the Fresnel term and the reflection of a #Matcap
+are unchanged.  For brushed metal, combine this field with #Metalness and a height that carries the brush marks, such
+as noise from @TurbulenceFX with a low frequency along the brush direction.
+
+The value must be between 0 and 1.  The diffuse and specular types ignore this field.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_Anisotropy(extLightingFX *Self, double &Value)
+{
+   Value = Self->Anisotropy;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_Anisotropy(extLightingFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0) or (Value > 1.0)) return ERR::OutOfRange;
+   Self->Anisotropy = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+AnisotropyAngle: The direction of the brushing for #Anisotropy, in degrees.
+
+The angle is measured in the same way as the azimuth of a distant light: 0 runs along the X axis of the image, and
+angles increase towards its Y axis, which points down, so 90 brushes vertically.  Highlights are stretched at right
+angles to this direction, so horizontal brushing gives vertical streaks.  An angle and the same angle plus 180 are
+equivalent.  Like the direction of a distant light, the direction is fixed in the image and does not turn with the
+client's transform.
+
+The default is 0, and any finite value is accepted.  The field has no effect while #Anisotropy is 0.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_AnisotropyAngle(extLightingFX *Self, double &Value)
+{
+   Value = Self->AnisotropyAngle;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_AnisotropyAngle(extLightingFX *Self, double Value)
+{
+   if (not std::isfinite(Value)) return ERR::OutOfRange;
+   Self->AnisotropyAngle = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Cavity: Strength of the darkening applied to creases and pits by the `CAVITY` feature.
 
 Concave areas of the surface receive less light in proportion to their curvature, multiplied by this value.  The
@@ -2899,12 +3002,12 @@ attributes when they differ from their defaults.  These include `kotuku:features
 `kotuku:normalStrength` for #NormalConvention and #NormalStrength, `kotuku:occlusionChannel` and
 `kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, `kotuku:roughnessChannel` for
 #RoughnessChannel, and `kotuku:ambient` for #Ambient.  The
-`COMBINED` type also writes `metalness`, `fresnel` and `wrap` for #Metalness, #Fresnel and #Wrap when they are not
-zero.  An SVG-loaded matcap keeps its original relative reference so the image can be reloaded from the same
-document folder.  For API-loaded images #MatcapPath must be document-relative.  A matcap supplied as a #Matcap
-bitmap returns `ERR::NoSupport` during serialisation.  The attributes of `kotuku:feLighting` and `kotuku:feNormalMap`
-are written without the prefix because the elements are in the Kōtuku namespace.  The document must declare the
-prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
+`COMBINED` type also writes `metalness`, `fresnel`, `wrap`, `anisotropy` and `anisotropyAngle` for #Metalness, #Fresnel,
+#Wrap, #Anisotropy and #AnisotropyAngle when they are not zero.  An SVG-loaded matcap keeps its original relative
+reference so the image can be reloaded from the same document folder.  For API-loaded images #MatcapPath must be
+document-relative.  A matcap supplied as a #Matcap bitmap returns `ERR::NoSupport` during serialisation.  The attributes
+of `kotuku:feLighting` and `kotuku:feNormalMap` are written without the prefix because the elements are in the Kōtuku
+namespace.  The document must declare the prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
 
 Each light is written as a child element, in the order in which the lights were added.  The options of
 #SetLightOptions() are written on the light's element as `kotuku:colour`, `kotuku:intensity`, `kotuku:range` and
@@ -2976,6 +3079,12 @@ static ERR lighting_xml(const extLightingFX &Effect, filter_xml_element &Element
    }
    if (Effect.Fresnel != 0) Element.attribute(combined ? "fresnel" : prefix + "combinedFresnel", Effect.Fresnel);
    if (Effect.Wrap != 0) Element.attribute(combined ? "wrap" : prefix + "combinedWrap", Effect.Wrap);
+   if (Effect.Anisotropy != 0) {
+      Element.attribute(combined ? "anisotropy" : prefix + "combinedAnisotropy", Effect.Anisotropy);
+   }
+   if (Effect.AnisotropyAngle != 0) {
+      Element.attribute(combined ? "anisotropyAngle" : prefix + "combinedAnisotropyAngle", Effect.AnisotropyAngle);
+   }
    if (Effect.Matcap) {
       const auto &reference = Effect.MatcapRef.empty() ? Effect.MatcapPath : Effect.MatcapRef;
       if (not safe_filter_path(reference)) return ERR::NoSupport;
@@ -3041,6 +3150,8 @@ static const FieldArray clLightingFXFields[] = {
    { "Metalness",  FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Metalness, LIGHTINGFX_SET_Metalness },
    { "Fresnel",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Fresnel, LIGHTINGFX_SET_Fresnel },
    { "Wrap",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Wrap, LIGHTINGFX_SET_Wrap },
+   { "Anisotropy", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Anisotropy, LIGHTINGFX_SET_Anisotropy },
+   { "AnisotropyAngle", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_AnisotropyAngle, LIGHTINGFX_SET_AnisotropyAngle },
    { "Matcap",     FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Matcap, LIGHTINGFX_SET_Matcap, CLASSID::BITMAP },
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
    { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },
