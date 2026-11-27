@@ -656,7 +656,7 @@ enum class VFA : int {
    NONE = 1,
 };
 
-// Filter source types - these are used internally
+// Filter source types.
 
 enum class VSF : int {
    NIL = 0,
@@ -717,6 +717,19 @@ enum class OP : int {
    MINUS = 20,
    SUBTRACT = 20,
    OVERLAY = 21,
+};
+
+// Remap transfer function.
+
+enum class RFT : int {
+   NIL = 0,
+   IDENTITY = 0,
+   DISCRETE = 1,
+   LINEAR = 2,
+   GAMMA = 3,
+   TABLE = 4,
+   INVERT = 5,
+   MASK = 6,
 };
 
 // Convolution divisor policy.
@@ -2527,6 +2540,25 @@ struct MergeSource {
   MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
 };
 
+struct MergeLayer {
+   VSF    SourceType; // Input source type.
+   int    EffectID;   // Object ID of the producer for REFERENCE.
+   double Opacity;    // Normalised layer opacity.
+   int    Enabled;    // Set to TRUE to render the layer.
+};
+
+struct RemapTransfer {
+   double Values[1024];    // Samples for TABLE and DISCRETE.
+   int    Count;           // Number of active samples.
+   RFT    Type;            // Transfer function.
+   double Slope;           // LINEAR coefficient.
+   double Intercept;       // LINEAR offset.
+   double Amplitude;       // GAMMA amplitude.
+   double Exponent;        // GAMMA exponent.
+   double Offset;          // GAMMA offset.
+   int    Mask;            // MASK bit mask in [0, 255].
+};
+
 struct LightOptions {
    struct FRGB Colour;    // Colour of the light if Flags includes COLOUR, in the colour space of LightingFX.Colour.  Alpha is ignored.
    double Intensity;      // Multiplies the colour of the light.  Zero or greater; 1 leaves the light unchanged.
@@ -2863,8 +2895,18 @@ class objCompositeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(OP &Value) noexcept {
-      Value = *((OP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
+      Value = *((OP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 40));
       return ERR::Okay;
+   }
+
+   inline ERR getAmount(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
+      return ERR::Okay;
+   }
+
+   inline ERR getAmountMask(objFilterEffect * &Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getK1(double &Value) noexcept {
@@ -2896,8 +2938,18 @@ class objCompositeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const OP Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setAmount(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setAmountMask(objFilterEffect * Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, 0x08100309, Value);
    }
 
    inline ERR setK1(const double Value) noexcept {
@@ -2911,7 +2963,7 @@ class objCompositeFX : public objFilterEffect {
    }
 
    inline ERR setK3(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3666,6 +3718,11 @@ class objMergeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getSourceList(std::span<struct MergeSource> &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getLayers(std::span<struct MergeLayer> &Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->GetValue(this, &Value);
    }
@@ -3679,6 +3736,11 @@ class objMergeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setSourceList(std::span<const struct MergeSource> Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, 0x00101318, &Value);
+   }
+
+   inline ERR setLayers(std::span<const struct MergeLayer> Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
@@ -3877,6 +3939,38 @@ class objRemapFX : public objFilterEffect {
 
    // Customised field getting
 
+   inline ERR getRedTransfer(struct RemapTransfer * &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getGreenTransfer(struct RemapTransfer * &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getBlueTransfer(struct RemapTransfer * &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getAlphaTransfer(struct RemapTransfer * &Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->GetValue(this, &Value);
@@ -3884,6 +3978,26 @@ class objRemapFX : public objFilterEffect {
 
 
    // Customised field setting
+
+   inline ERR setRedTransfer(const struct RemapTransfer & Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
+
+   inline ERR setGreenTransfer(const struct RemapTransfer & Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
+
+   inline ERR setBlueTransfer(const struct RemapTransfer & Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
+
+   inline ERR setAlphaTransfer(const struct RemapTransfer & Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
 
 };
 

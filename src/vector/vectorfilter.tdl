@@ -3,7 +3,7 @@
      "MEET: Scale X/Y values independently and in relation to the width/height of the bounding box.",
      "NONE: Scale X/Y values on a `1:1` basis, in relation to the normalised diagonal of the bounding box.")
 
-  enums("VSF", { type="int", start=0, comment="Filter source types - these are used internally", restrict="c" },
+  enums("VSF", { type="int", start=0, comment="Filter source types." },
     "IGNORE|NONE: The filter does not require an input source.",
     "GRAPHIC: Represents the graphics elements that were the original input into the filter element.",
     "ALPHA: As for `GRAPHIC` except that only the alpha channel is used.",
@@ -69,6 +69,28 @@
   ]],
   [[
   MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
+  ]])
+
+  structdef('MergeLayer', { comment='Weighted input source for MergeFX.' }, [[
+    int(VSF) SourceType  # Input source type.
+    int      EffectID    # Object ID of the producer for REFERENCE.
+    double   Opacity     # Normalised layer opacity.
+    int      Enabled     # Set to TRUE to render the layer.
+  ]])
+
+  enums('RFT', { type='int', start=0, comment='Remap transfer function.' },
+    'IDENTITY', 'DISCRETE', 'LINEAR', 'GAMMA', 'TABLE', 'INVERT', 'MASK')
+
+  structdef('RemapTransfer', { comment='Mathematical configuration of a RemapFX channel.' }, [[
+    array(double,1024) Values # Samples for TABLE and DISCRETE.
+    int      Count            # Number of active samples.
+    int(RFT) Type             # Transfer function.
+    double   Slope            # LINEAR coefficient.
+    double   Intercept        # LINEAR offset.
+    double   Amplitude        # GAMMA amplitude.
+    double   Exponent         # GAMMA exponent.
+    double   Offset           # GAMMA offset.
+    int      Mask             # MASK bit mask in [0, 255].
   ]])
 
   methods('RemapFX', 'RF', {
@@ -140,6 +162,8 @@
 
   klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true, references={ 'OP'  } }, [[
     ~int(OP) Operator
+    ~double Amount
+    ~obj(FilterEffect) AmountMask
   ]])
 
   enums('CDM', { type='int', start=0, comment='Convolution divisor policy.' },
@@ -179,6 +203,7 @@
 
   klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[
     ~array(struct(MergeSource)) SourceList
+    ~array(struct(MergeLayer)) Layers
   ]])
 
   klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
@@ -190,7 +215,12 @@
     ~int(VSM) ResampleMethod
   ]])
 
-  klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
+  klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true }, [[
+    ~struct(RemapTransfer) RedTransfer
+    ~struct(RemapTransfer) GreenTransfer
+    ~struct(RemapTransfer) BlueTransfer
+    ~struct(RemapTransfer) AlphaTransfer
+  ]])
 
   klass('TileFX',         { base='FilterEffect', src='filters/filter_tile.cpp', output='filters/filter_tile_def.c', comment='Tile filter support class.', extended=true })
 

@@ -376,7 +376,7 @@ function samples(Effects:str, Content:str, Points:table):table
    return result
 end
 
-function assertRGBA(P:table, Red:num, Green:num, Blue:num, Alpha:num, Message:str)
+function assertRGBA(P:any, Red:num, Green:num, Blue:num, Alpha:num, Message:str)
    assert((P.red is Red) and (P.green is Green) and (P.blue is Blue) and (P.alpha is Alpha),
       f'{Message}: got {P.red},{P.green},{P.blue},{P.alpha}')
 end
@@ -3105,4 +3105,184 @@ end
    local file <close> = obj.new('file', { flags=FL_WRITE|FL_NEW|FL_BUFFER })
    assert(exporter.acSaveToObject(file, 0) is ERR_NoSupport, 'An in-memory image must fail export explicitly')
    assert(file.size is 0, 'A failed filter export must leave the destination unwritten')
+end
+
+@Test function RemapTransferRecordsShareStateWithSelectMethods()
+   local svg <close> = document([[<feFlood flood-color="#804020"/>
+      <feComponentTransfer><feFuncR type="linear" slope=".5" intercept=".125"/></feComponentTransfer>]], nil, 64)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('RemapFX')[0])
+   local red:any = fx.redTransfer
+   assert((red.type is RFT_LINEAR) and (red.slope is 0.5) and (red.intercept is 0.125),
+      'SVG import must preserve the linear coefficients')
+   red.slope = 2
+   assert(fx.redTransfer.slope is 0.5, 'An edited record must be assigned back before it changes the effect')
+   assert(fx.alphaTransfer.type is RFT_IDENTITY, 'Unspecified channels must default to identity')
+
+   local table_transfer = struct<RemapTransfer> { type=RFT_TABLE, count=2, values=array<double> { 0.25, 0.75 } }
+   fx.redTransfer = table_transfer
+   check fx.mtSelectGamma(CMP_GREEN, 1, 0, 2)
+   check fx.mtSelectMask(CMP_BLUE, 0xf0)
+   fx.alphaTransfer = struct<RemapTransfer> { type=RFT_LINEAR, slope=0.5 }
+   red = fx.redTransfer
+   assert((red.type is RFT_TABLE) and (red.count is 2) and (red.values[0] is 0.25) and (red.values[1] is 0.75),
+      'Readback must preserve the authored values')
+   assert((fx.greenTransfer.exponent is 2) and (fx.blueTransfer.mask is 0xf0),
+      'Select methods must update the same records')
+   local invalid = struct<RemapTransfer> { type=RFT_TABLE, count=1025 }
+   try
+      fx.redTransfer = invalid
+   except e when ERR_InvalidValue
+   success
+      raise 'An oversized table must fail'
+   end
+   assert(fx.redTransfer.count is 2, 'An invalid record must preserve the table')
+
+   local edited <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(edited, 20, 20)
+   assert((math.abs(p.red - 127) <= 1) and (math.abs(p.green - 16) <= 1) and (p.alpha is 127),
+      f'The edited transfers must affect the rendered pixel, got {p.red},{p.green},{p.blue},{p.alpha}')
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local restored <close> = draw(loaded, 64)
+   assert(imageDifference(edited, restored) is 0, 'The transfer records must survive SVG export')
+end
+
+@Test function CompositeAmountInterpolatesPremultipliedColour()
+   local svg <close> = document([[<feFlood flood-color="red" flood-opacity=".5" result="red"/>
+      <feFlood flood-color="blue" flood-opacity=".5" result="blue"/>
+      <feComposite operator="in" in="red" in2="blue" kotuku:amount=".5"/>]], nil, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('CompositeFX')[0])
+   assert(fx.amount is 0.5, 'The namespaced strength must be imported')
+   assert(fx.set('amount', 1.5) is ERR_InvalidValue, 'Out-of-range strengths must be rejected')
+   local intermediate <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(intermediate, 20, 20)
+   assert((math.abs(p.red - 85) <= 1) and (math.abs(p.blue - 170) <= 1) and (p.alpha is 96),
+      f'Expected a premultiplied interpolation, got {p.red},{p.blue},{p.alpha}')
+
+   fx.amount = 0
+   local base <close> = draw(svg, 64)
+   assertRGBA(mGfx.ReadRGBPixel(base, 20, 20), 0, 0, 255, 127, 'Zero strength must return the backdrop')
+   fx.amount = 1
+   local full <close> = draw(svg, 64)
+   assertRGBA(mGfx.ReadRGBPixel(full, 20, 20), 255, 0, 0, 64, 'Full strength must return the IN result')
+end
+
+@Test function CompositeAmountMaskAcceptsAlphaAndScalarSurfaces()
+   local effects = [[<feFlood flood-color="red" result="red"/>
+      <feFlood flood-color="blue" result="blue"/>
+      <feFlood width="32" height="64" flood-opacity=".5" result="alpha"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0" kotuku:outputMode="height" result="height"/>
+      <feBlend mode="normal" in="red" in2="blue" color-interpolation-filters="linearRGB" kotuku:amountMask="alpha"/>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS, 'primitiveUnits="userSpaceOnUse"')
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('CompositeFX')[0])
+   assert(fx.amountMask.id is filter.children('FloodFX')[2], 'The SVG mask must resolve to the alpha producer')
+   local original <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(original, 20, 20)
+   assert((math.abs(p.red - 188) <= 1) and (math.abs(p.blue - 188) <= 1) and (p.alpha is 255),
+      f'Half mask coverage must interpolate in linear light, got {p.red},{p.blue},{p.alpha}')
+   assertRGBA(mGfx.ReadRGBPixel(original, 40, 20), 0, 0, 255, 255, 'Outside the mask the backdrop must pass through')
+
+   fx.amountMask = obj.find(filter.children('TurbulenceFX')[0])
+   local scalar <close> = draw(svg, 64)
+   p = mGfx.ReadRGBPixel(scalar, 40, 20)
+   assert((math.abs(p.red - 188) <= 1) and (math.abs(p.blue - 188) <= 1) and (p.alpha is 255),
+      'A constant scalar mask must mix the colours across the region')
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local restored <close> = draw(loaded, 64)
+   assert(imageDifference(scalar, restored) is 0, 'The named scalar mask must survive SVG export')
+
+   fx.amountMask = nil
+   local cleared <close> = draw(svg, 64)
+   assertRGBA(mGfx.ReadRGBPixel(cleared, 40, 20), 255, 0, 0, 255, 'Clearing the mask must restore full strength')
+end
+
+@Test function WeightedMergeLayersReplaceLegacyBindingsAndRoundTrip()
+   local effects = [[<feFlood flood-color="red" result="red"/><feFlood flood-color="blue" result="blue"/>
+      <feMerge result="lower"><feMergeNode in="red"/></feMerge>
+      <feMerge><feMergeNode in="lower"/><feMergeNode in="blue" kotuku:opacity=".25"/>
+         <feMergeNode in="blue" kotuku:enabled="false"/></feMerge>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   local fx = obj.find(filter.children('MergeFX')[1])
+   local layers = fx.layers
+   assert((#layers is 3) and (layers[1].opacity is 0.25) and (layers[2].enabled is 0),
+      'Import must preserve layer order, weight and visibility')
+   local original <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(original, 20, 20)
+   assert((math.abs(p.red - 191) <= 1) and (math.abs(p.blue - 64) <= 1) and (p.alpha is 255),
+      f'Only the weighted blue layer must composite, got {p.red},{p.blue},{p.alpha}')
+
+   local blue = obj.find(filter.children('FloodFX')[1])
+   local layer = struct<MergeLayer> { sourceType=VSF_REFERENCE, effectID=blue.id, opacity=0.5, enabled=1 }
+   fx.layers = { layer }
+   local weighted <close> = draw(svg, 64)
+   assertRGBA(mGfx.ReadRGBPixel(weighted, 20, 20), 0, 0, 255, 128, 'The first layer must also apply opacity')
+   local invalid = struct<MergeLayer> { sourceType=VSF_REFERENCE, effectID=blue.id, opacity=-1, enabled=1 }
+   try
+      fx.layers = { invalid }
+   except e when ERR_InvalidValue
+   success
+      raise 'Negative opacity must fail'
+   end
+   try
+      fx.layers = { struct<MergeLayer> { sourceType=VSF_REFERENCE, opacity=1, enabled=1 } }
+   except e when ERR_DoesNotExist
+   success
+      raise 'An active reference layer must require a producer ID'
+   end
+   try
+      fx.layers = array<int> { 1 }
+   except e when ERR_SetValueNotStruct
+   success
+      raise 'Layers must reject arrays of a different element type'
+   end
+   assert(fx.layers[0].opacity is 0.5, 'Rejected layers must preserve the previous configuration')
+
+   fx.layers = layers
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local restored <close> = draw(loaded, 64)
+   assert(imageDifference(original, restored) is 0, 'Nested merge order, opacity and visibility must survive reload')
+
+   fx.sourceList = { struct<MergeSource> { sourceType=VSF_REFERENCE, effect=blue } }
+   assert((#fx.layers is 1) and (fx.layers[0].opacity is 1) and (fx.layers[0].enabled is 1),
+      'A legacy replacement must reset layer controls')
+   local legacy <close> = draw(svg, 64)
+   assertRGBA(mGfx.ReadRGBPixel(legacy, 20, 20), 0, 0, 255, 255, 'The legacy source list must still render')
+
+   fx.sourceList = { struct<MergeSource> { sourceType=VSF_REFERENCE } }
+   assert((fx.layers[0].sourceType is VSF_REFERENCE) and (fx.layers[0].effectID is 0),
+      'The legacy setter must still accept an unresolved reference')
+end
+
+@Test function WeightedMergePreservesColourAtLowAlpha()
+   local p = pixel([[<feFlood flood-color="red" result="red"/><feFlood flood-color="blue" result="blue"/>
+      <feMerge xmlns:k="http://www.kotuku.dev/xmlns/svg">
+         <feMergeNode in="red" k:opacity=".004"/><feMergeNode in="blue" k:opacity=".004"/>
+      </feMerge>]])
+   assertRGBA(p, 126, 0, 129, 2, 'Low-alpha layers must use unrounded weights when mixing colours')
+end
+
+@Test function SVGMergeWithAnUnknownActiveInputRejectsTheFilter()
+   local p = pixel([[<feFlood flood-color="red" result="red"/>
+      <feMerge><feMergeNode in="red"/><feMergeNode in="missing"/></feMerge>]])
+   assertRGBA(p, 0, 0, 0, 255, 'An unresolved active merge input must invalidate the filter')
+end
+
+@Test function InactiveMergeLayersExportAfterProducerRemoval()
+   local effects = [[<feFlood flood-color="red" result="red"/><feFlood flood-color="blue" result="blue"/>
+      <feMerge><feMergeNode in="red"/><feMergeNode in="blue" kotuku:enabled="false"/>
+         <feMergeNode in="blue" kotuku:opacity="0"/></feMerge>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS)
+   local _, filter = check svg.scene.mtFindDef('f')
+   obj.find(filter.children('FloodFX')[1]).free()
+   local original <close> = draw(svg, 64)
+   local loaded <close> = obj.new('SVG', { statement=saveFilterDocument(svg) })
+   local restored <close> = draw(loaded, 64)
+   assert(imageDifference(original, restored) is 0, 'Inactive references must round-trip after producer removal')
+   local _, loaded_filter = check loaded.scene.mtFindDef('f')
+   local layers = obj.find(loaded_filter.children('MergeFX')[0]).layers
+   assert((#layers is 3) and (layers[1].enabled is 0) and (layers[2].opacity is 0),
+      'Export and reload must preserve both ways of making a layer inactive')
 end

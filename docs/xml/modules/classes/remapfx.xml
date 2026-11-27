@@ -150,6 +150,66 @@
 
   <fields>
     <field>
+      <name>AlphaTransfer</name>
+      <comment>The alpha channel's transfer configuration. See <fl>RedTransfer</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct RemapTransfer</type>
+      <description>
+<p>-ERRORS- Okay: NullArgs: InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.</p>
+      </description>
+      <tags>caller-owns-result</tags>
+    </field>
+
+    <field>
+      <name>BlueTransfer</name>
+      <comment>The blue channel's transfer configuration. See <fl>RedTransfer</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct RemapTransfer</type>
+      <description>
+<p>-ERRORS- Okay: NullArgs: InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.</p>
+      </description>
+      <tags>caller-owns-result</tags>
+    </field>
+
+    <field>
+      <name>GreenTransfer</name>
+      <comment>The green channel's transfer configuration. See <fl>RedTransfer</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct RemapTransfer</type>
+      <description>
+<p>-ERRORS- Okay: NullArgs: InvalidValue: The Type is unrecognised or a parameter used by the Type is invalid.</p>
+      </description>
+      <tags>caller-owns-result</tags>
+    </field>
+
+    <field>
+      <name>RedTransfer</name>
+      <comment>The red channel's transfer configuration.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct RemapTransfer</type>
+      <description>
+<p>Each channel of a RemapFX has a transfer function that maps the channel's input value to an output value.  The RedTransfer, <fl>GreenTransfer</fl>, <fl>BlueTransfer</fl> and <fl>AlphaTransfer</fl> fields read and write the complete configuration of that function as a RemapTransfer structure.  The function of every channel is <code>IDENTITY</code> by default.</p>
+<struct lookup="RemapTransfer"/>
+<p>The Type determines which of the other fields are used.  In the following, <code>C</code> is the input value and <code>C'</code> is the output value, both in the range 0 - 1.</p>
+<list type="bullet">
+<li><code>IDENTITY</code>: <code>C' = C</code>.</li>
+<li><code>LINEAR</code>: <code>C' = Slope * C + Intercept</code>.</li>
+<li><code>GAMMA</code>: <code>C' = Amplitude * pow(C, Exponent) + Offset</code>.</li>
+<li><code>TABLE</code>: The Count entries of Values define a piecewise linear function over equal intervals, between which
+<code>C</code> is interpolated.</li>
+<li><code>DISCRETE</code>: The Count entries of Values define a step function of equal intervals, and <code>C'</code> is the entry of the
+interval containing <code>C</code>.</li>
+<li><code>INVERT</code>: <code>C' = 1 - C</code>.</li>
+<li><code>MASK</code>: The 8-bit channel value is combined with Mask using a bitwise AND.</li>
+</list>
+<p>The result is limited to the range 0 - 1.  The function applies to non-premultiplied channel values.  When the effect's colour space is linear RGB, the red, green and blue functions apply to linear values; the alpha function is never converted.  Fully transparent pixels are treated as transparent black before the functions are applied, so an alpha function can make them visible.</p>
+<p>Writing this field validates the members used by the Type and discards the rest, so reading the field back returns zero for unused members.  Each Values entry and each parameter must be finite, Count must be between 1 and 1024 for <code>TABLE</code> and <code>DISCRETE</code>, and Mask must be between 0 and 255.  An invalid configuration leaves the channel unchanged. Reading the field returns a copy of the configuration that is allocated as a resource.</p>
+<p>The <method>SelectIdentity</method>, <method>SelectLinear</method> and other Select methods offer an alternative means of configuring a channel.</p>
+      </description>
+      <tags>caller-owns-result</tags>
+    </field>
+
+    <field>
       <name>XMLDef</name>
       <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
@@ -167,7 +227,29 @@
       <const name="RED">The red colour channel.</const>
     </constants>
 
+    <constants lookup="RFT" comment="Remap transfer function.">
+      <const name="DISCRETE"/>
+      <const name="GAMMA"/>
+      <const name="IDENTITY"/>
+      <const name="INVERT"/>
+      <const name="LINEAR"/>
+      <const name="MASK"/>
+      <const name="TABLE"/>
+    </constants>
+
   </types>
   <structs>
+    <struct name="RemapTransfer" comment="Mathematical configuration of a RemapFX channel.">
+      <field name="Values" type="DOUBLE" size="1024">Samples for TABLE and DISCRETE.</field>
+      <field name="Count" type="INT">Number of active samples.</field>
+      <field name="Type" type="RFT" lookup="RFT">Transfer function.</field>
+      <field name="Slope" type="DOUBLE">LINEAR coefficient.</field>
+      <field name="Intercept" type="DOUBLE">LINEAR offset.</field>
+      <field name="Amplitude" type="DOUBLE">GAMMA amplitude.</field>
+      <field name="Exponent" type="DOUBLE">GAMMA exponent.</field>
+      <field name="Offset" type="DOUBLE">GAMMA offset.</field>
+      <field name="Mask" type="INT">MASK bit mask in [0, 255].</field>
+    </struct>
+
   </structs>
 </book>
