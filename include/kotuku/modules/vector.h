@@ -3771,6 +3771,11 @@ class objOffsetFX : public objFilterEffect {
 
    // Customised field getting
 
+   inline ERR getResampleMethod(VSM &Value) noexcept {
+      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
+      return ERR::Okay;
+   }
+
    inline ERR getXOffset(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
@@ -3789,13 +3794,18 @@ class objOffsetFX : public objFilterEffect {
 
    // Customised field setting
 
-   inline ERR setXOffset(const double Value) noexcept {
+   inline ERR setResampleMethod(const VSM Value) noexcept {
       auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setXOffset(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setYOffset(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
