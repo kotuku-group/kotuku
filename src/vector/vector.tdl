@@ -250,7 +250,7 @@ struct KeyValue;
     "NOISE: Use the fractal noise function.")
 
   enums("VSM", { type="int", start=0, comments="Options for the VectorScene SampleMethod." },
-    "AUTO: The default option is chosen by the system.  This will typically be `BILINEAR`, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.",
+    "AUTO: Selects a resampling method automatically.  The choice depends on the operation.",
     "NEIGHBOUR: Nearest neighbour is the fastest sampler at the cost of poor quality.",
     "BILINEAR: Bilinear is a common algorithm that produces a reasonable quality image quickly.",
     "BICUBIC: Produces a similar result to `BILINEAR` at a slightly higher CPU cost and a marginally sharper after-effect.",

@@ -185,7 +185,10 @@
     ~int(MOP) Operator
   ]])
 
-  klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
+  klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c',
+    comment='Offset filter support class.', extended=true, references={ 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+  ]])
 
   klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 

@@ -2723,6 +2723,32 @@ end
    assert(mGfx.ReadRGBPixel(original, 17, 14).green is 255, 'The tiled flood must be drawn')
 end
 
+@Test function OffsetUsesAffineVector()
+   local settings = 'filterUnits="userSpaceOnUse"'
+   for transform in values(array<str> { 'matrix(0 1 -1 0 56 3)', 'matrix(1 .5 1 1 4 3)' }) do
+      local actual_svg <close> = document('<feOffset dx="6" dy="-2"/>',
+         f'<rect x="12" y="16" width="8" height="6" fill="red" transform="{transform}" filter="url(#f)"/>',
+         64, nil, settings)
+      local expected_svg <close> = document('<feOffset/>',
+         f'<rect x="18" y="14" width="8" height="6" fill="red" transform="{transform}" filter="url(#f)"/>',
+         64, nil, settings)
+      local actual <close> = draw(actual_svg, 64)
+      local expected <close> = draw(expected_svg, 64)
+      assert(imageDifference(actual, expected) is 0, f'Offset must follow the linear part of {transform}')
+   end
+end
+
+@Test function FractionalOffsetChainCapturesOffPageTaps()
+   local svg <close> = obj.new('svg', { statement=f'<svg xmlns="http://www.w3.org/2000/svg" {KOTUKU_NS} ' ..
+      'width="64" height="64"><filter id="f" filterUnits="userSpaceOnUse" x="-4" y="0" width="68" height="64">' ..
+      '<feOffset dx=".25" kotuku:resampleMethod="2"/><feOffset dx=".25" kotuku:resampleMethod="2"/>' ..
+      '</filter><rect x="-2" y="20" width="1" height="8" fill="red" filter="url(#f)"/></svg>' })
+   local bmp <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(bmp, 0, 24)
+   assert((p.red is 255) and (math.abs(p.alpha - 16) <= 1),
+      f'Two quarter-pixel shifts should carry one sixteenth coverage onto the page, got {p.red},{p.alpha}')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- feMorphology radii are lengths in the primitive units, so they scale with the client transform as blur deviations
 -- and displacement scales do, and objectBoundingBox radii are fractions of the bounding box.  Chrome scales the radius
@@ -2823,6 +2849,31 @@ function saveFilterDocument(SVG:obj!):str
    local _, size = check file.acRead(content)
    assert(size is file.size, 'The complete saved SVG must be readable')
    return content
+end
+
+@Test function OffsetBilinearRoundTripsAndCanBeEdited()
+   local settings = 'filterUnits="userSpaceOnUse"'
+   local content = '<rect x="20" y="20" width="8" height="8" fill="red" filter="url(#f)"/>'
+   local svg <close> = document('<feOffset dx=".25" dy="-.5"/>', content, 64, KOTUKU_NS, settings)
+   local nearest <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(nearest, 20, 19).alpha is 255, 'Default rounding moves the source up one pixel')
+   assert(mGfx.ReadRGBPixel(nearest, 28, 19).alpha is 0, 'Default rounding keeps the horizontal offset at zero')
+   assert(not effectXML(svg).find('resampleMethod'), 'Default feOffset should use standard SVG attributes')
+
+   local _, filter = check svg.scene.mtFindDef('f')
+   local offset = obj.find(filter.children('OffsetFX')[0])
+   offset.resampleMethod = VSM_BILINEAR
+   local fractional <close> = draw(svg, 64)
+   local p = mGfx.ReadRGBPixel(fractional, 28, 19)
+   assert((p.red is 255) and (p.green is 0) and (p.blue is 0) and (math.abs(p.alpha - 32) <= 1),
+      f'The corner should have one eighth coverage and full red, got {p.red},{p.green},{p.blue},{p.alpha}')
+   assert(mGfx.ReadRGBPixel(fractional, 24, 24).alpha is 255, 'The interior remains opaque')
+
+   local xml = saveFilterDocument(svg)
+   assert(xml.find('kotuku:resampleMethod="2"'), f'Expected a namespaced resampling attribute in {xml}')
+   local loaded <close> = obj.new('svg', { statement=xml })
+   local reloaded <close> = draw(loaded, 64)
+   assert(imageDifference(fractional, reloaded) is 0, 'Fractional output must survive SVG round-trip')
 end
 
 @Test function FilterGraphSurvivesSaveAndReload()
