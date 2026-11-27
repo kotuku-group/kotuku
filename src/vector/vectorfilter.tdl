@@ -244,9 +244,12 @@
     ~int(FOM) OutputMode
   ]])
 
-  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
+  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', references={ 'FOM', 'WFN', 'VSM' }, extended=true }, [[
     ~vector(struct(GradientStop)) Stops
     ~int(ARF) AspectRatio
+    ~int(FOM) OutputMode
+    ~int(WFN) Normalisation
+    ~int(VSM) ResampleMethod
   ]])
 
   klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[

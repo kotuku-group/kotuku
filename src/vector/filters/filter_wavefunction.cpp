@@ -1,23 +1,19 @@
 /*********************************************************************************************************************
 
 -CLASS-
-WaveFunctionFX: A filter effect that plots the probability distribution of a quantum wave function.
+WaveFunctionFX: Generates decorative wave-function plots as colour images or scalar fields.
 
-This filter effect uses a quantum wave function algorithm to generate a plot of electron probability density.
-Ignoring its scientific value, the formula can be exploited for its aesthetic qualities.  It can be
-used as an alternative to the radial gradient for generating more interesting shapes for example.
+#N, #L, #M and #Scale shape the plot.  #CentreX and #CentreY position its centre in the square generation domain.
+Use #OutputMode to send the field to a numerical consumer such as enhanced @LightingFX or a @CompositeFX amount mask.
+The formula produces an aesthetic magnitude.
 
-The rendering of the wave function is controlled by its parameters #N, #L and #M.  A #Scale is also provided to deal
-with situations where the generated plot would otherwise be too large for its bounds.
-
-The parameter values are clamped according to the rules `N &gt;= 1`, `0 &lt;= L &lt; N`, `0 &lt;= M &lt;= L`.
-Check that the values are assigned and clamped correctly if the wave function is not rendering as expected.
+Drawing clamps the quantum numbers to `N &gt;= 1`, `0 &lt;= L &lt; N` and `0 &lt;= M &lt;= L`.
+Samples that cannot be computed as finite values are zero.  The double-precision formula yields a zero field
+when the clamped N + L exceeds 170.
 
 -END-
 
 *********************************************************************************************************************/
-
-#include <complex>
 
 class extWaveFunctionFX : public extFilterEffect {
    public:
@@ -26,20 +22,31 @@ class extWaveFunctionFX : public extFilterEffect {
    using create = kt::Create<extWaveFunctionFX>;
 
    // The exported fields are declared first so that their concrete offsets line up with the field table.
-   // The 8-byte aligned members precede the narrower int fields to avoid padding before a direct-access field.
+   // Keep the direct-access fields aligned without padding between them.
    std::string ColourMap;
    double Scale = 1.0;
    kt::vector<GradientStop> Stops;
    ARF  AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // Aspect ratio flags.
    int N = 1, L = 0, M = 1, Resolution = 0;
+   FOM OutputMode = FOM::IMAGE;
+   WFN Normalisation = WFN::MAXIMUM;
+   VSM ResampleMethod = VSM::AUTO;
+   double CentreX = 0.5, CentreY = 0.5;
 
-   std::vector<std::vector<double>> psi;
+   std::unique_ptr<double[]> Samples;
    std::unique_ptr<GradientColours> Colours;
    objBitmap *Bitmap = nullptr;
    double Max = 0;
+   int CachedResolution = 0;
    bool Dirty = true;
 
-   void compute_wavefunction(int);
+   ERR compute_wavefunction(int Resolution, int Width, int Height);
+
+   void clear_colours() {
+      ColourMap.clear();
+      Stops.clear();
+      Colours.reset();
+   }
 
    extWaveFunctionFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
@@ -51,41 +58,50 @@ class extWaveFunctionFX : public extFilterEffect {
 };
 
 //********************************************************************************************************************
-// Wave function generator.  Note that only the top-left quadrant is generated for max efficiency.
+// Generate one half on each centred axis and mirror it at lookup time.
 
-inline int plot(int X, int W) { return -W + (X<<1); }
-
-void extWaveFunctionFX::compute_wavefunction(int Resolution)
+ERR extWaveFunctionFX::compute_wavefunction(int Resolution, int Width, int Height)
 {
-   constexpr double BOHR_RADIUS = 5.29177210903e-11 * 1e+12; // in picometers
+   constexpr double BOHR_RADIUS = 5.29177210903e-11 * 1e+12; // in picometres
+   const size_t count = size_t(Width) * Height;
+   Samples.reset();
+   Samples.reset(new (std::nothrow) double[count]);
+   if (not Samples) return ERR::AllocMemory;
 
    Max = 0;
-   Dirty = false;
-   psi = std::vector<std::vector<double>>(Resolution>>1, std::vector<double>(Resolution>>1));
+   if ((N > 170) or (N + L > 170)) std::fill_n(Samples.get(), count, 0.0);
+   else {
+      const double radius = N * (Scale * BOHR_RADIUS);
+      const double radial_factor = std::sqrt(std::pow(2.0 / radius, 3) * tgamma(N - L) /
+         (2.0 * N * tgamma(N + L + 1)));
+      const double angular_factor = std::pow(-1, M) * std::sqrt(
+         (2 * L + 1) * tgamma(L - M + 1) / (4 * agg::pi * tgamma(L + M + 1)));
 
-   for (int dy = 0; dy < Resolution>>1; ++dy) {
-      for (int dx = 0; dx < Resolution>>1; ++dx) {
-         // Compute the radius value
-
-         const double r = std::sqrt(plot(dy, Resolution) * plot(dy, Resolution) + plot(dx, Resolution) * plot(dx, Resolution));
-         const double p = 2.0 * r / (N * (Scale * BOHR_RADIUS));
-         const double constant_factor = std::sqrt(
-            std::pow(2.0 / (N * (Scale * BOHR_RADIUS)), 3) * tgamma(N - L) / (2.0 * N * tgamma(N + L + 1))
-         );
-         const double laguerre = std::assoc_laguerre(N - L - 1, 2.0 * L + 1.0, p);
-         const double rv = constant_factor * std::exp(-p * 0.5) * std::pow(p, L) * laguerre;
-
-         // Angular function
-
-         const double theta = std::atan2(plot(dy, Resolution), plot(dx, Resolution)); // Polar angle
-         const double af_constant_factor = std::pow(-1, M) * std::sqrt(
-            (2 * L + 1) * tgamma(L - std::abs(M) + 1) / (4 * agg::pi * tgamma(L + std::abs(M) + 1))
-         );
-
-         psi[dy][dx] = std::abs(rv * af_constant_factor * std::assoc_legendre(L, M, std::cos(theta)));
-         if (psi[dy][dx] > Max) Max = psi[dy][dx];
+      // The half-sample bias retains the original mirrored grid at the default centre.
+      const double centre_x = CentreX * Resolution, centre_y = CentreY * Resolution;
+      for (int y = 0; y < Height; y++) {
+         const double py = -2.0 * (std::abs(y + 0.5 - centre_y) + 0.5);
+         for (int x = 0; x < Width; x++) {
+            const double px = -2.0 * (std::abs(x + 0.5 - centre_x) + 0.5);
+            const double r = std::sqrt(px * px + py * py);
+            const double p = 2.0 * r / radius;
+            double magnitude = 0;
+            if (std::isfinite(p) and std::isfinite(radial_factor)) {
+               const double laguerre = std::assoc_laguerre(N - L - 1, 2.0 * L + 1.0, p);
+               const double radial = radial_factor * std::exp(-p * 0.5) * std::pow(p, L) * laguerre;
+               // Retain the angular orientation of the original plot.
+               const double theta = std::atan2(px, py);
+               magnitude = std::abs(radial * angular_factor * std::assoc_legendre(L, M, std::cos(theta)));
+               if (not std::isfinite(magnitude)) magnitude = 0;
+            }
+            Samples[size_t(y) * Width + x] = magnitude;
+            Max = std::max(Max, magnitude);
+         }
       }
    }
+   CachedResolution = Resolution;
+   Dirty = false;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -100,25 +116,54 @@ this will be reflected in the object once the method returns.
 
 static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
 {
-   if (not active_filter_step(Self)) return ERR::InvalidState;
+   const auto step = active_filter_step(Self);
+   if (not step) return ERR::InvalidState;
+   const auto &render = *Self->Filter->Render;
+   const bool scalar = step->Format IS filter_surface_format::SCALAR_F32;
 
-   int resolution = Self->Resolution & (~1);
+   int resolution = Self->Resolution & ~1;
    if (not resolution) {
-      const auto &render = *Self->Filter->Render;
       const double size = std::min(render.FilterRegion.width(), render.FilterRegion.height());
       if (size < 2) return ERR::Okay;
       if (size > 0xffff) return ERR::OutOfRange;
       resolution = int(size) & ~1;
    }
-   const int half_res = resolution>>1;
 
-   if (Self->N < 1) Self->N = 1;
+   const int half_res = resolution / 2;
+   const bool mirror_x = Self->CentreX IS 0.5, mirror_y = Self->CentreY IS 0.5;
+   const int width = mirror_x ? half_res : resolution, height = mirror_y ? half_res : resolution;
+   const size_t sample_bytes = size_t(width) * height * sizeof(double);
+   const size_t bitmap_bytes = scalar ? 0 : size_t(resolution) * resolution * 4;
+   if (sample_bytes + bitmap_bytes > MAX_FILTER_SURFACE_BYTES - render.LiveBytes) return ERR::AllocMemory;
+
+   Self->N = std::max(Self->N, 1);
    Self->L = std::clamp(Self->L, 0, Self->N - 1);
    Self->M = std::clamp(Self->M, 0, Self->L);
-   if (Self->Scale <= 0.0) return ERR::InvalidValue;
 
-   if (!Self->Bitmap) {
-      if (!(Self->Bitmap = objBitmap::create::local(fl::Name("wavefunction_bmp"),
+   if (Self->Dirty or (resolution != Self->CachedResolution) or (not Self->Samples)) {
+      if (auto error = Self->compute_wavefunction(resolution, width, height); error != ERR::Okay) return error;
+   }
+
+   const double divisor = ((Self->Normalisation IS WFN::MAXIMUM) and (Self->Max > 0.0)) ? Self->Max : 1.0;
+   const auto method = Self->ResampleMethod IS VSM::AUTO ? Self->Filter->Scene->SampleMethod : Self->ResampleMethod;
+   auto sample = [&](int X, int Y) {
+      const int sx = mirror_x ? std::min(X, resolution - 1 - X) : X;
+      const int sy = mirror_y ? std::min(Y, resolution - 1 - Y) : Y;
+      return Self->Samples[size_t(sy) * width + sx] / divisor;
+   };
+
+   if (scalar) {
+      if (Self->Bitmap) {
+         FreeResource(Self->Bitmap);
+         Self->Bitmap = nullptr;
+      }
+      const double maximum = (Self->Normalisation IS WFN::MAXIMUM) ? 1.0 : std::numeric_limits<float>::max();
+      return render_scalar_to_filter(Self, resolution, resolution, Self->AspectRatio, method, maximum,
+         [&](int X, int Y) { return std::min(sample(X, Y), maximum); });
+   }
+
+   if (not Self->Bitmap) {
+      if (not (Self->Bitmap = objBitmap::create::local(fl::Name("wavefunction_bmp"),
          fl::Width(resolution),
          fl::Height(resolution),
          fl::BitsPerPixel(32),
@@ -130,34 +175,19 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
       if (auto error = Self->Bitmap->resize(resolution, resolution); error != ERR::Okay) return error;
    }
 
-   // The wave function is symmetrical on all four corners, so the top-left quadrant is duplicated to the others.
-
-   if ((Self->Dirty) or (resolution>>1 != std::ssize(Self->psi))) Self->compute_wavefunction(resolution);
-
-   for (int y = 0; y < half_res; ++y) {
-      auto top          = (uint32_t *)(Self->Bitmap->Data + (Self->Bitmap->LineWidth * y));
-      auto bottom       = (uint32_t *)(Self->Bitmap->Data + (((half_res<<1) - y - 1) * Self->Bitmap->LineWidth));
-      auto top_right    = (uint32_t *)(top + (((half_res<<1) - 1)));
-      auto bottom_right = (uint32_t *)(bottom + (((half_res<<1) - 1)));
-
-      for (int x = 0; x < half_res; ++x, top++, bottom++, top_right--, bottom_right--) {
-         uint8_t grey = 0;
-         if (Self->Max > 0.0) grey = int(Self->psi[x][y] / Self->Max * 255.0);
-         uint32_t col;
+   for (int y = 0; y < resolution; y++) {
+      auto row = (uint32_t *)(Self->Bitmap->Data + std::ptrdiff_t(y) * Self->Bitmap->LineWidth);
+      for (int x = 0; x < resolution; x++) {
+         const auto grey = uint8_t(std::min(sample(x, y), 1.0) * 255.0);
          if (Self->Colours) {
-            auto &rgb = Self->Colours->table[grey];
-            col = Self->Bitmap->packPixel(rgb.r, rgb.g, rgb.b, rgb.a);
+            const auto &rgb = Self->Colours->table[grey];
+            row[x] = Self->Bitmap->packPixel(rgb.r, rgb.g, rgb.b, rgb.a);
          }
-         else col = Self->Bitmap->packPixel(grey, grey, grey, 255);
-
-         top[0] = col;
-         bottom[0] = col;
-         top_right[0] = col;
-         bottom_right[0] = col;
+         else row[x] = Self->Bitmap->packPixel(grey, grey, grey, 255);
       }
    }
 
-   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, Self->Filter->Scene->SampleMethod);
+   return render_to_filter(Self, Self->Bitmap, Self->AspectRatio, method);
 }
 
 /*********************************************************************************************************************
@@ -171,8 +201,50 @@ Lookup: ARF
 static ERR WAVEFUNCTIONFX_SET_AspectRatio(extWaveFunctionFX *Self, ARF Value)
 {
    Self->AspectRatio = Value;
-   Self->Dirty = true;
    effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CentreX: Positions the plot centre from the left of the generation domain.
+
+The value is a finite fraction in [0, 1] and defaults to 0.5.
+
+*********************************************************************************************************************/
+
+static ERR WAVEFUNCTIONFX_SET_CentreX(extWaveFunctionFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0.0) or (Value > 1.0)) return ERR::OutOfRange;
+
+   if (Self->CentreX != Value) {
+      Self->CentreX = Value;
+      Self->Dirty = true;
+      effect_modified(Self);
+   }
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CentreY: Positions the plot centre from the top of the generation domain.
+
+The value is a finite fraction in [0, 1] and defaults to 0.5.
+
+*********************************************************************************************************************/
+
+static ERR WAVEFUNCTIONFX_SET_CentreY(extWaveFunctionFX *Self, double Value)
+{
+   if ((not std::isfinite(Value)) or (Value < 0.0) or (Value > 1.0)) return ERR::OutOfRange;
+
+   if (Self->CentreY != Value) {
+      Self->CentreY = Value;
+      Self->Dirty = true;
+      effect_modified(Self);
+   }
    return ERR::Okay;
 }
 
@@ -189,13 +261,17 @@ We currently support the following established colourmaps from the matplotlib an
 `cmap:flare`, `cmap:icefire`, `cmap:inferno`, `cmap:magma`, `cmap:mako`, `cmap:plasma`, `cmap:rocket`,
 `cmap:viridis`.
 
-The use of colourmaps and custom stops are mutually exclusive.
+Setting a colourmap replaces custom stops.  Set an empty string to clear the active ramp and draw in greyscale.
 
 *********************************************************************************************************************/
 
 static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::string_view &Value)
 {
-   if (Value.empty()) return ERR::NoData;
+   if (Value.empty()) {
+      Self->clear_colours();
+      effect_modified(Self);
+      return ERR::Okay;
+   }
 
    if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
       auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, 1));
@@ -203,7 +279,6 @@ static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::stri
       Self->Colours = std::move(colours);
       Self->ColourMap = Value;
       Self->Stops.clear();
-      Self->Dirty = true;
       effect_modified(Self);
       return ERR::Okay;
    }
@@ -215,7 +290,7 @@ static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::stri
 -FIELD-
 L: Azimuthal quantum number.
 
-This value is clamped by `0 &lt;= L &lt; N`.
+Writes accept non-negative integers.  Drawing clamps the value to the range `0 &lt;= L &lt; N`.
 
 *********************************************************************************************************************/
 
@@ -235,7 +310,7 @@ static ERR WAVEFUNCTIONFX_SET_L(extWaveFunctionFX *Self, int Value)
 -FIELD-
 M: Magnetic quantum number.
 
-This value is clamped by `0 &lt;= M &lt;= L`.
+Writes accept any integer.  Drawing clamps the value to the range `0 &lt;= M &lt;= L`.
 
 *********************************************************************************************************************/
 
@@ -252,7 +327,7 @@ static ERR WAVEFUNCTIONFX_SET_M(extWaveFunctionFX *Self, int Value)
 -FIELD-
 N: Principal quantum number.
 
-This value is clamped by `N &gt;= 1`.
+Writes accept positive integers.  For the range of the wave formula, see @WaveFunctionFX.
 
 *********************************************************************************************************************/
 
@@ -270,20 +345,76 @@ static ERR WAVEFUNCTIONFX_SET_N(extWaveFunctionFX *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Normalisation: Controls scaling of the generated magnitude before resampling.
+Lookup: WFN
+
+*********************************************************************************************************************/
+
+static ERR WAVEFUNCTIONFX_SET_Normalisation(extWaveFunctionFX *Self, WFN Value)
+{
+   if ((Value != WFN::MAXIMUM) and (Value != WFN::RAW)) return ERR::OutOfRange;
+   Self->Normalisation = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+OutputMode: Selects a colour image or a floating-point scalar surface.
+Lookup: FOM
+
+`IMAGE` is the default.  `HEIGHT` emits unquantised samples and ignores the active colour ramp.
+`NATIVE` is unsupported.
+
+*********************************************************************************************************************/
+
+static ERR WAVEFUNCTIONFX_SET_OutputMode(extWaveFunctionFX *Self, FOM Value)
+{
+   if ((Value != FOM::IMAGE) and (Value != FOM::HEIGHT)) return ERR::OutOfRange;
+
+   if (Self->OutputMode != Value) {
+      Self->OutputMode = Value;
+      if (Self->Filter) Self->Filter->GraphRevision++;
+      effect_modified(Self);
+   }
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+ResampleMethod: Selects the interpolation used when fitting the plot to the primitive.
+Lookup: VSM
+
+`AUTO` (the default) uses @VectorScene.SampleMethod.
+
+*********************************************************************************************************************/
+
+static ERR WAVEFUNCTIONFX_SET_ResampleMethod(extWaveFunctionFX *Self, VSM Value)
+{
+   if ((Value < VSM::AUTO) or (Value > VSM::BLACKMAN)) return ERR::OutOfRange;
+   Self->ResampleMethod = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Resolution: The pixel resolution of the internally rendered wave function.
 
-By default the resolution of the wave function will match the smallest dimension of the filter target region, which
-gives the best looking result at the cost of performance.
-
-Setting the Resolution field will instead fix the resolution to that size permanently, and the final result will be
-scaled to fit the target region.  This can give a considerable performance increase, especially when the filter is
-redrawn it will not be necessary to redraw the wave function if its parameters are constant.
+Values from 2 to 65535 fix the generation resolution.  Odd values round down to an even number for drawing.
+Values 0 (the default) and 1 use the smaller filter-region dimension, rounded down to an even number.
+Fixed resolution allows reuse of the generated samples when the target size changes.  The render must fit the filter
+surface budget.
 
 *********************************************************************************************************************/
 
 static ERR WAVEFUNCTIONFX_SET_Resolution(extWaveFunctionFX *Self, int Value)
 {
-   if (Value >= 0) {
+   if ((Value >= 0) and (Value <= 0xffff)) {
       Self->Resolution = Value;
       Self->Dirty = true;
       effect_modified(Self);
@@ -295,13 +426,13 @@ static ERR WAVEFUNCTIONFX_SET_Resolution(extWaveFunctionFX *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Scale: Multiplier that affects the scale of the plot.
+Scale: A finite positive multiplier that affects the scale of the plot.
 
 *********************************************************************************************************************/
 
 static ERR WAVEFUNCTIONFX_SET_Scale(extWaveFunctionFX *Self, double Value)
 {
-   if (Value > 0) {
+   if ((Value > 0) and std::isfinite(Value)) {
       Self->Scale = Value;
       Self->Dirty = true;
       effect_modified(Self);
@@ -318,12 +449,18 @@ Stops: Defines the colours to use for the wave function.
 The colours that will be used for drawing a wave function can be defined by the Stops array.  At least two stops are
 required to define a start and end point for interpolating the gradient colours.
 
-If no stops are defined, the wave function will be drawn in greyscale.
--END-
+Setting stops replaces any named colourmap.  Set an empty array to clear the active ramp and draw in greyscale.
+
 *********************************************************************************************************************/
 
 static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const GradientStop> &Value)
 {
+   if (Value.empty()) {
+      Self->clear_colours();
+      effect_modified(Self);
+      return ERR::Okay;
+   }
+
    if (Value.size() < 2) return ERR::InvalidValue;
 
    kt::vector<GradientStop> stops;
@@ -335,7 +472,6 @@ static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const Gra
    Self->Stops = std::move(stops);
    Self->Colours = std::move(colours);
    Self->ColourMap.clear();
-   Self->Dirty = true;
    effect_modified(Self);
    return ERR::Okay;
 }
@@ -356,7 +492,15 @@ static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element 
    Element.attribute("m", Effect.M);
    Element.attribute("scale", Effect.Scale);
    Element.attribute("resolution", Effect.Resolution);
+
    write_filter_xml_aspect(Element, Effect.AspectRatio);
+
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+   if (Effect.Normalisation IS WFN::RAW) Element.attribute("kotuku:normalisation", "raw");
+   if (Effect.ResampleMethod != VSM::AUTO) Element.attribute("kotuku:resampleMethod", int(Effect.ResampleMethod));
+   if (Effect.CentreX != 0.5) Element.attribute("kotuku:centreX", Effect.CentreX);
+   if (Effect.CentreY != 0.5) Element.attribute("kotuku:centreY", Effect.CentreY);
+
    if (not Effect.ColourMap.empty()) Element.attribute("colormap", Effect.ColourMap);
    else {
       double last_offset = 0;
@@ -368,6 +512,7 @@ static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element 
          last_offset = stop.Offset;
       }
    }
+
    return ERR::Okay;
 }
 
@@ -376,15 +521,20 @@ static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element 
 #include "filter_wavefunction_def.c"
 
 static const FieldArray clWaveFunctionFXFields[] = {
-   { "ColourMap",   FDF_CPPSTRING|FDF_RW,        nullptr, WAVEFUNCTIONFX_SET_ColourMap },
-   { "Scale",       FDF_DOUBLE|FDF_RW,           nullptr, WAVEFUNCTIONFX_SET_Scale },
-   { "Stops",       FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_Stops, "GradientStop" },
-   { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW,   nullptr, WAVEFUNCTIONFX_SET_AspectRatio, &clAspectRatio },
-   { "N",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_N },
-   { "L",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_L },
-   { "M",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_M },
-   { "Resolution",  FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_Resolution },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
+   { "ColourMap",      FDF_CPPSTRING|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_ColourMap },
+   { "Scale",          FDF_DOUBLE|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_Scale },
+   { "Stops",          FDF_VECTOR|FDF_STRUCT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_Stops, "GradientStop" },
+   { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_AspectRatio, &clAspectRatio },
+   { "N",              FDF_INT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_N },
+   { "L",              FDF_INT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_L },
+   { "M",              FDF_INT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_M },
+   { "Resolution",     FDF_INT|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_Resolution },
+   { "OutputMode",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_OutputMode, &clWaveFunctionFXFOM },
+   { "Normalisation",  FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_Normalisation, &clWaveFunctionFXWFN },
+   { "ResampleMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_ResampleMethod, &clWaveFunctionFXVSM },
+   { "CentreX",        FDF_DOUBLE|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_CentreX },
+   { "CentreY",        FDF_DOUBLE|FDF_RW, nullptr, WAVEFUNCTIONFX_SET_CentreY },
+   { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

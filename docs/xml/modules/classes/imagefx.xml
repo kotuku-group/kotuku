@@ -86,7 +86,6 @@
       <description>
 <p>Reading the Bitmap field returns the <class name="Bitmap">Bitmap</class> that is being used as the image source.  If an image has been loaded from <fl>Path</fl>, the Bitmap refers to the content of that image.</p>
 <p>Writing to the Bitmap field replaces the current source with a client-supplied <class name="Bitmap">Bitmap</class>.  The field can be set before or after initialisation, and buffered viewports that use the filter are redrawn on their next draw.  Any image previously loaded from <fl>Path</fl> is released, and <fl>Path</fl> reads as empty from then on.</p>
-<p>The bitmap must be initialised (<code>ERR::NotInitialised</code>).  In the default <code>IMAGE</code> output mode it must have 32 bits per pixel (<code>ERR::InvalidValue</code>), and if <fl>ViewBox</fl> is set, the rectangle must lie inside the bitmap (<code>ERR::OutOfRange</code>). If any of these checks fails, the previous source remains active.  A null value is rejected with <code>ERR::NullArgs</code>.</p>
 <p>The ImageFX pins the bitmap so that it remains valid while it is the source.  An attempt to free the bitmap in the meantime is deferred until it is replaced or the ImageFX is freed.  The ImageFX does not detect changes to the bitmap's pixels; call Refresh() after editing them.</p>
       </description>
     </field>
@@ -170,8 +169,8 @@
       <const name="Y_MIN">Align to the top.</const>
     </constants>
 
-    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX and BlurFX.">
-      <const name="HEIGHT">Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.</const>
+    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX, BlurFX and WaveFunctionFX.">
+      <const name="HEIGHT">Produce a linear floating-point scalar surface for numerical filter inputs.</const>
       <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
       <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
     </constants>

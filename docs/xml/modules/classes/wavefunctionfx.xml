@@ -6,16 +6,15 @@
     <name>WaveFunctionFX</name>
     <type>class</type>
     <module>Vector</module>
-    <comment>A filter effect that plots the probability distribution of a quantum wave function.</comment>
+    <comment>Generates decorative wave-function plots as colour images or scalar fields.</comment>
     <version>1</version>
     <id>37b24361</id>
     <idstring>WAVEFUNCTIONFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>This filter effect uses a quantum wave function algorithm to generate a plot of electron probability density. Ignoring its scientific value, the formula can be exploited for its aesthetic qualities.  It can be used as an alternative to the radial gradient for generating more interesting shapes for example.</p>
-<p>The rendering of the wave function is controlled by its parameters <fl>N</fl>, <fl>L</fl> and <fl>M</fl>.  A <fl>Scale</fl> is also provided to deal with situations where the generated plot would otherwise be too large for its bounds.</p>
-<p>The parameter values are clamped according to the rules <code>N &gt;= 1</code>, <code>0 &lt;= L &lt; N</code>, <code>0 &lt;= M &lt;= L</code>. Check that the values are assigned and clamped correctly if the wave function is not rendering as expected.</p></description>
+<p><fl>N</fl>, <fl>L</fl>, <fl>M</fl> and <fl>Scale</fl> shape the plot.  <fl>CentreX</fl> and <fl>CentreY</fl> position its centre in the square generation domain. Use <fl>OutputMode</fl> to send the field to a numerical consumer such as enhanced <class name="LightingFX">LightingFX</class> or a <class name="CompositeFX">CompositeFX</class> amount mask. The formula produces an aesthetic magnitude.</p>
+<p>Drawing clamps the quantum numbers to <code>N &gt;= 1</code>, <code>0 &lt;= L &lt; N</code> and <code>0 &lt;= M &lt;= L</code>. Samples that cannot be computed as finite values are zero.  The double-precision formula yields a zero field when the clamped N + L exceeds 170.</p></description>
     <source>
       <file path="filters/">filter_wavefunction.cpp</file>
     </source>
@@ -52,6 +51,26 @@
     </field>
 
     <field>
+      <name>CentreX</name>
+      <comment>Positions the plot centre from the left of the generation domain.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value is a finite fraction in [0, 1] and defaults to 0.5.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CentreY</name>
+      <comment>Positions the plot centre from the top of the generation domain.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value is a finite fraction in [0, 1] and defaults to 0.5.</p>
+      </description>
+    </field>
+
+    <field>
       <name>ColourMap</name>
       <comment>Assigns a pre-defined colourmap to the wave function.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -59,7 +78,7 @@
       <description>
 <p>An alternative to defining colour <fl>Stops</fl> in a wave function is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the wave function's gradient with the colours defined in the map.</p>
 <p>We currently support the following established colourmaps from the matplotlib and seaborn projects: <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
-<p>The use of colourmaps and custom stops are mutually exclusive.</p>
+<p>Setting a colourmap replaces custom stops.  Set an empty string to clear the active ramp and draw in greyscale.</p>
       </description>
     </field>
 
@@ -69,7 +88,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>This value is clamped by <code>0 &lt;= L &lt; N</code>.</p>
+<p>Writes accept non-negative integers.  Drawing clamps the value to the range <code>0 &lt;= L &lt; N</code>.</p>
       </description>
     </field>
 
@@ -79,7 +98,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>This value is clamped by <code>0 &lt;= M &lt;= L</code>.</p>
+<p>Writes accept any integer.  Drawing clamps the value to the range <code>0 &lt;= M &lt;= L</code>.</p>
       </description>
     </field>
 
@@ -89,7 +108,39 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>This value is clamped by <code>N &gt;= 1</code>.</p>
+<p>Writes accept positive integers.  For the range of the wave formula, see <class name="WaveFunctionFX">WaveFunctionFX</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Normalisation</name>
+      <comment>Controls scaling of the generated magnitude before resampling.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="WFN">WFN</type>
+      <description>
+<types lookup="WFN"/>
+      </description>
+    </field>
+
+    <field>
+      <name>OutputMode</name>
+      <comment>Selects a colour image or a floating-point scalar surface.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FOM">FOM</type>
+      <description>
+<p><code>IMAGE</code> is the default.  <code>HEIGHT</code> emits unquantised samples and ignores the active colour ramp. <code>NATIVE</code> is unsupported.</p>
+<types lookup="FOM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>ResampleMethod</name>
+      <comment>Selects the interpolation used when fitting the plot to the primitive.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="VSM">VSM</type>
+      <description>
+<p><code>AUTO</code> (the default) uses <class name="VectorScene" field="SampleMethod">VectorScene.SampleMethod</class>.</p>
+<types lookup="VSM"/>
       </description>
     </field>
 
@@ -99,14 +150,13 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>By default the resolution of the wave function will match the smallest dimension of the filter target region, which gives the best looking result at the cost of performance.</p>
-<p>Setting the Resolution field will instead fix the resolution to that size permanently, and the final result will be scaled to fit the target region.  This can give a considerable performance increase, especially when the filter is redrawn it will not be necessary to redraw the wave function if its parameters are constant.</p>
+<p>Values from 2 to 65535 fix the generation resolution.  Odd values round down to an even number for drawing. Values 0 (the default) and 1 use the smaller filter-region dimension, rounded down to an even number. Fixed resolution allows reuse of the generated samples when the target size changes.  The render must fit the filter surface budget.</p>
       </description>
     </field>
 
     <field>
       <name>Scale</name>
-      <comment>Multiplier that affects the scale of the plot.</comment>
+      <comment>A finite positive multiplier that affects the scale of the plot.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
@@ -118,7 +168,7 @@
       <type>kt::vector&lt;GradientStop&gt;</type>
       <description>
 <p>The colours that will be used for drawing a wave function can be defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
-<p>If no stops are defined, the wave function will be drawn in greyscale.</p>
+<p>Setting stops replaces any named colourmap.  Set an empty array to clear the active ramp and draw in greyscale.</p>
       </description>
     </field>
 
@@ -142,6 +192,33 @@
       <const name="Y_MAX">Align to the bottom.</const>
       <const name="Y_MID">Align to the vertical center.</const>
       <const name="Y_MIN">Align to the top.</const>
+    </constants>
+
+    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX, BlurFX and WaveFunctionFX.">
+      <const name="HEIGHT">Produce a linear floating-point scalar surface for numerical filter inputs.</const>
+      <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+      <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
+    </constants>
+
+    <constants lookup="VSM">
+      <const name="AUTO">Selects a resampling method automatically.  The choice depends on the operation.</const>
+      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
+      <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
+      <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
+      <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
+      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
+      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
+      <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
+      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
+      <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
+      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
+      <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
+      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
+    </constants>
+
+    <constants lookup="WFN" comment="WaveFunctionFX normalisation.">
+      <const name="MAXIMUM">Scales the largest generated sample to one. This is the default.</const>
+      <const name="RAW">Preserve the magnitude of the generated samples.</const>
     </constants>
 
   </types>

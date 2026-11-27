@@ -2581,6 +2581,24 @@ ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   if (const auto value = find_kotuku_attrib(Self, Tag, "outputMode"); value and iequals(*value, "height")) {
+      fx->setOutputMode(FOM::HEIGHT);
+   }
+   if (const auto value = find_kotuku_attrib(Self, Tag, "normalisation"); value and iequals(*value, "raw")) {
+      fx->setNormalisation(WFN::RAW);
+   }
+   for (const auto name : { "centreX", "centreY" }) {
+      if (const auto value = find_kotuku_attrib(Self, Tag, name)) {
+         const auto text = kt::font_traits::trim(std::string_view(*value));
+         double centre;
+         const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), centre);
+         if ((error IS std::errc()) and (end IS text.data() + text.size())) {
+            if (std::string_view(name) IS "centreX") fx->setCentreX(centre);
+            else fx->setCentreY(centre);
+         }
+      }
+   }
+   parse_filter_resampling(Self, Tag, fx);
    apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
