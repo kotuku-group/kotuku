@@ -138,7 +138,7 @@
     </constants>
 
     <constants lookup="VSM">
-      <const name="AUTO">The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</const>
+      <const name="AUTO">Selects a resampling method automatically.  The choice depends on the operation.</const>
       <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
       <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
       <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>

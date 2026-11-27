@@ -1613,6 +1613,7 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
+   parse_filter_resampling(Self, Tag, fx);
    apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
