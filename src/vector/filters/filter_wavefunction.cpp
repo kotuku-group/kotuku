@@ -3,13 +3,25 @@
 -CLASS-
 WaveFunctionFX: Generates decorative wave-function plots as colour images or scalar fields.
 
-#N, #L, #M and #Scale shape the plot.  #CentreX and #CentreY position its centre in the square generation domain.
-Use #OutputMode to send the field to a numerical consumer such as enhanced @LightingFX or a @CompositeFX amount mask.
-The formula produces an aesthetic magnitude.
+The WaveFunctionFX class is a source effect that plots the magnitude of a hydrogen-like atomic orbital.  It takes no
+input, and the result is intended for decorative patterns and textures rather than scientific visualisation.
 
-Drawing clamps the quantum numbers to `N &gt;= 1`, `0 &lt;= L &lt; N` and `0 &lt;= M &lt;= L`.
-Samples that cannot be computed as finite values are zero.  The double-precision formula yields a zero field
-when the clamped N + L exceeds 170.
+The quantum numbers #N, #L and #M select the shape of the orbital, and #Scale sets its size.  Drawing clamps them to
+`N &gt;= 1`, `0 &lt;= L &lt; N` and `0 &lt;= M &lt;= L`, and the clamped values are written back to the object.  If the
+clamped N + L exceeds 170, the formula cannot be evaluated in double precision and the field is zero.  Samples that
+cannot be computed as finite values are also zero.
+
+The plot is generated in a square domain of #Resolution pixels and fitted to the primitive subregion according to
+#AspectRatio and #ResampleMethod.  #CentreX and #CentreY position the centre of the orbital within the domain.
+The generated samples are retained until a field that changes them is modified, so a fixed #Resolution avoids
+regenerating the plot when only the size of the target changes.
+
+By default the magnitude is scaled so that the largest sample is one; see #Normalisation.  In `IMAGE` mode the
+samples are drawn in greyscale, or through the colour ramp defined by #ColourMap or #Stops.  Set #OutputMode to
+`HEIGHT` to produce a floating-point scalar field for numerical inputs, such as the height map of an enhanced
+@LightingFX or the amount mask of a @CompositeFX.
+
+SVG documents can use the effect with the `kotuku:feWaveFunction` element.
 
 -END-
 
