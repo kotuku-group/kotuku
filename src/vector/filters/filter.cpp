@@ -161,6 +161,9 @@ struct filter_named_input {
 struct filter_effect_extension {
    std::span<filter_named_input> Inputs = {}; // Named input slots, owned by the effect
    filter_surface_format Format = filter_surface_format::RGBA8; // Format of the effect's result
+   // Optional.  Returns false for a slot that the effect's current settings do not read, which the planner then
+   // treats as unset so that its binding is neither validated nor drawn for.  Null if every slot is read.
+   bool (*Active)(const extFilterEffect *, size_t Slot) = nullptr;
 };
 
 enum class filter_alpha { STRAIGHT, PREMULTIPLIED };
@@ -422,6 +425,7 @@ static ERR get_source_bitmap(extFilterEffect *, const objBitmap **, filter_input
 static ERR get_source_graphic(extVectorFilter *, filter_surface_view &);
 static ERR get_numeric_target(extFilterEffect *, filter_surface_view &, float *&);
 static ERR get_named_filter_bitmap(extFilterEffect *, std::string_view, filter_surface_view &);
+static const filter_input * planned_named_input(const extFilterEffect *, std::string_view);
 static ERR working_input(extFilterEffect *, const filter_surface_view &, CS, filter_alpha, filter_surface_view &);
 static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
 static ERR draw_filter_capture(const extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
@@ -1685,10 +1689,11 @@ static ERR prepare_filter_plan(extVectorFilter *Filter, filter_plan &Plan)
       }
 
       if (auto extension = effect->FilterExtension; extension) {
-         size_t slot = 0;
-         for (const auto &input : extension->Inputs) {
-            if (auto error = add_input(input.Source, input.Reference, filter_input_role::NAMED, slot++,
-                input.Contract); error != ERR::Okay) return error;
+         for (size_t slot = 0; slot < extension->Inputs.size(); slot++) {
+            const auto &input = extension->Inputs[slot];
+            const bool active = (not extension->Active) or extension->Active(effect, slot);
+            if (auto error = add_input(active ? input.Source : VSF::NONE, active ? input.Reference : nullptr,
+                filter_input_role::NAMED, slot, input.Contract); error != ERR::Okay) return error;
          }
       }
 
@@ -3131,7 +3136,8 @@ static filter_positions filter_xml_positions(std::span<extFilterEffect * const> 
 //********************************************************************************************************************
 
 static ERR bind_filter_xml_input(filter_xml_element &Element, CSTRING Attribute, VSF Source, objFilterEffect *Producer,
-   const filter_positions &Positions, size_t Consumer, std::span<filter_xml_element> Graph)
+   const filter_positions &Positions, size_t Consumer, std::span<filter_xml_element> Graph,
+   std::string_view ReferencePrefix = {})
 {
    switch (Source) {
       case VSF::GRAPHIC: Element.attribute(Attribute, "SourceGraphic"); break;
@@ -3146,7 +3152,7 @@ static ERR bind_filter_xml_input(filter_xml_element &Element, CSTRING Attribute,
          if ((position IS Positions.end()) or (position->second >= Consumer)) return ERR::InvalidValue;
          const auto name = "effect" + std::to_string(position->second);
          if (not Graph.empty()) Graph[position->second].Result = name;
-         Element.attribute(Attribute, name);
+         Element.attribute(Attribute, std::string(ReferencePrefix) + name);
          break;
       }
       case VSF::NONE: return ERR::FieldNotSet;
@@ -3184,8 +3190,8 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
       auto effect = Effects[i];
       auto &element = Elements[i];
 
-      auto bind = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer) {
-         return bind_filter_xml_input(element, Attribute, Source, Producer, positions, i, Elements);
+      auto bind = [&](CSTRING Attribute, VSF Source, objFilterEffect *Producer, std::string_view Prefix = {}) {
+         return bind_filter_xml_input(element, Attribute, Source, Producer, positions, i, Elements, Prefix);
       };
 
       const auto operation = describe_filter_operation(effect);
@@ -3213,14 +3219,20 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
       }
       else if (effect->FilterExtension) {
          if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;
-         constexpr CSTRING attributes[] = { "xvg:normalMap", "xvg:occlusionMap", "xvg:roughnessMap" };
+         const bool combined = ((const extLightingFX *)effect)->Type IS LT::COMBINED;
+         const CSTRING attributes[] = { "xvg:normalMap", "xvg:occlusionMap", "xvg:roughnessMap",
+            combined ? "xvg:matcap" : "xvg:combinedMatcap" };
          const auto inputs = effect->FilterExtension->Inputs;
          if (inputs.size() != std::size(attributes)) return ERR::NoSupport;
          for (size_t slot = 0; slot < inputs.size(); slot++) {
             const auto &input = inputs[slot];
             if (input.Source IS VSF::NONE) continue;
             if (input.Source != VSF::REFERENCE) return ERR::NoSupport;
-            if (auto error = bind(attributes[slot], input.Source, input.Reference); error != ERR::Okay) return error;
+            // The matcap attribute also accepts a path, so its result reference takes a '#' prefix.
+            const std::string_view prefix = (&input IS &((const extLightingFX *)effect)->MatcapEffect) ? "#" : "";
+            if (auto error = bind(attributes[slot], input.Source, input.Reference, prefix); error != ERR::Okay) {
+               return error;
+            }
          }
       }
       if (effect->ColourSpace IS VCS::SRGB) element.attribute("color-interpolation-filters", "sRGB");
