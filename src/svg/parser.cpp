@@ -2220,16 +2220,25 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             }
             else if (local IS "albedo") parse_input_mix(Self, fx, val);
             else if ((combined and (local IS "matcap")) or (local IS "combinedMatcap")) {
-               std::string path;
-               auto error = resolve_matcap_path(Self, val, path);
-               if (error IS ERR::Okay) error = fx->setMatcapPath(path);
-               if (error IS ERR::Okay) {
-                  const auto field = FindField(fx, kt::fieldhash("MatcapRef"), nullptr);
-                  error = field ? fx->set(field, val) : ERR::UnsupportedField;
+               // '#name' refers to the result of an earlier primitive; any other value is a path.
+               if (val.starts_with('#')) {
+                  const auto input = Self->Effects.find(val.substr(1));
+                  if ((input IS Self->Effects.end()) or (fx->setMatcapEffect(input->second) != ERR::Okay)) {
+                     log.warning("Invalid matcap result '%s' on %s.", val.c_str(), Tag.name());
+                  }
                }
+               else {
+                  std::string path;
+                  auto error = resolve_matcap_path(Self, val, path);
+                  if (error IS ERR::Okay) error = fx->setMatcapPath(path);
+                  if (error IS ERR::Okay) {
+                     const auto field = FindField(fx, kt::fieldhash("MatcapRef"), nullptr);
+                     error = field ? fx->set(field, val) : ERR::UnsupportedField;
+                  }
 
-               if (error != ERR::Okay) {
-                  log.warning("Failed to load matcap '%s': %s", val.c_str(), GetErrorMsg(error));
+                  if (error != ERR::Okay) {
+                     log.warning("Failed to load matcap '%s': %s", val.c_str(), GetErrorMsg(error));
+                  }
                }
             }
             else if (local IS "ambient") {

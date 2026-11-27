@@ -176,8 +176,9 @@ of the surface, `B = N x T`, and the exponents et along the brushing and eb acro
 mean.
 
 A matcap adds reflections of an environment that the light model cannot produce, such as those of chrome, glass or
-glazed ceramic.  It is an image of a lit sphere, set with #MatcapPath or #Matcap, and each pixel takes the colour of
-the point on the sphere that faces the same way as the surface.  The reflection is added to the specular light as
+glazed ceramic.  It is an image of a lit sphere, set with #MatcapPath or #Matcap or built by other effects in the
+filter and bound with #MatcapEffect, and each pixel takes the colour of the point on the sphere that faces the same
+way as the surface.  The reflection is added to the specular light as
 `matcap * F * albedo.alpha`, where F is the reflectance above, computed with the albedo's colour.  It is reduced by
 `CAVITY` but not by shadows, and it is independent of the light, so it remains if #SpecularConstant is zero.  With
 #MatcapMode set to `LIGHT`, the matcap is the diffuse light instead: `albedo * kd * (1 - m) * matcap(N)` replaces the
@@ -479,7 +480,8 @@ class extLightingFX : public extFilterEffect {
    bool   Anisotropic = false;         // True if the material has an anisotropic highlight, set per draw
    bool   WrapShadows = false;         // True if wrapped faces take shadows from the raised light, set per draw
 
-   // MATCAP (COMBINED type only)
+   // MATCAP (COMBINED type only).  The matcap is a bitmap, from MatcapImage or the client, or the result of the
+   // effect bound to the MatcapEffect slot.  Only one source is set at a time.
    objBitmap *Matcap = nullptr;         // Matcap image, from MatcapImage or the client
    objImage *MatcapImage = nullptr;     // Owns Matcap if it was loaded from MatcapPath
    std::string MatcapPath;              // Path used to load the image
@@ -492,7 +494,7 @@ class extLightingFX : public extFilterEffect {
 
    // Named input slots.  The planner keeps their order, and the members below refer to them by name.
 
-   std::array<filter_named_input, 3> MapInputs = {{
+   std::array<filter_named_input, 4> MapInputs = {{
       { "NormalMap", { .ContributesRegion = false, .Optional = true } },
       { "OcclusionMap", { .Kind = filter_input_kind::SCALAR_MAP, .ContributesRegion = false, .Optional = true,
          .XChannel = filter_map_channel::RED, .Transfer = filter_map_transfer::STORED, .Fallback = { 1.0f, 0.0f },
@@ -500,12 +502,23 @@ class extLightingFX : public extFilterEffect {
       // The fallback is replaced per draw with the roughness of the Exponent field (see exponent_roughness()).
       { "RoughnessMap", { .Kind = filter_input_kind::SCALAR_MAP, .ContributesRegion = false, .Optional = true,
          .XChannel = filter_map_channel::RED, .Transfer = filter_map_transfer::STORED, .Fallback = { 0.0f, 0.0f },
-         .TransparentFallback = true } }
+         .TransparentFallback = true } },
+      // Every output pixel can read any part of the matcap, so the producer's entire subregion must be rendered.
+      { "Matcap", { .ContributesRegion = false, .Optional = true,
+         .Sampling = { filter_access::FULL_INPUT, filter_sampling::UNBOUNDED, filter_sampling::UNBOUNDED, true } } }
    }};
    filter_named_input &NormalMap = MapInputs[0];
    filter_named_input &OcclusionMap = MapInputs[1];
    filter_named_input &RoughnessMap = MapInputs[2];
-   filter_effect_extension Extension = { std::span(MapInputs) };
+   filter_named_input &MatcapEffect = MapInputs[3];
+   filter_effect_extension Extension = { std::span(MapInputs), filter_surface_format::RGBA8, &slot_active };
+
+   // Only the COMBINED type reads the matcap, so a binding on another type is ignored when planning.
+
+   static bool slot_active(const extFilterEffect *Effect, size_t Slot) {
+      const auto self = (const extLightingFX *)Effect;
+      return (&self->MapInputs[Slot] != &self->MatcapEffect) or (self->Type IS LT::COMBINED);
+   }
 
    NMC    NormalConvention = NMC::Y_DOWN; // Axis convention of NormalMap's green channel
    double NormalStrength = 1.0;           // Multiplies the X and Y components of NormalMap before normalisation
@@ -537,6 +550,12 @@ class extLightingFX : public extFilterEffect {
       Matcap = nullptr;
       MatcapPath.clear();
       MatcapRef.clear();
+   }
+
+   // Clears the binding of MatcapEffect, which the matcap bitmap replaces.
+
+   void unbind_matcap_effect() {
+      if (MatcapEffect.Source != VSF::NONE) set_named_filter_input(this, MatcapEffect.Name, VSF::NONE);
    }
 
    // Shift matrix components to the left, as we advance pixels to the right.
@@ -711,13 +730,19 @@ class extLightingFX : public extFilterEffect {
 
    bool reads_occlusion() const {
       return OcclusionMap.Reference and (OcclusionStrength > 0) and
-         (has_ambient() or ((Type IS LT::COMBINED) and Matcap));
+         (has_ambient() or ((Type IS LT::COMBINED) and has_matcap()));
    }
 
    // A roughness map varies the specular highlight, so only the specular and combined types read it.
 
    bool reads_roughness() const {
       return RoughnessMap.Reference and ((Type IS LT::SPECULAR) or (Type IS LT::COMBINED));
+   }
+
+   // True if a matcap bitmap is set or an effect is bound to supply one.
+
+   bool has_matcap() const {
+      return Matcap or MatcapEffect.Reference;
    }
 
    // True if the effect reads an albedo from its Mix input.
@@ -730,7 +755,7 @@ class extLightingFX : public extFilterEffect {
    // that the result is unchanged.
 
    bool has_material() const {
-      return (Type IS LT::COMBINED) and ((Metalness != 0) or (Fresnel != 0) or (Wrap != 0) or (Matcap) or
+      return (Type IS LT::COMBINED) and ((Metalness != 0) or (Fresnel != 0) or (Wrap != 0) or has_matcap() or
          (Anisotropy != 0));
    }
 
@@ -2445,11 +2470,13 @@ reflection alone, set #SpecularConstant to zero.  The diffuse and specular types
 
 Set #MatcapMode to `LIGHT` to use the matcap as the diffuse light instead of as a reflection.
 
-Setting this field to a bitmap replaces any matcap that was loaded from #MatcapPath, and clears #MatcapPath.  The
-bitmap must be initialised and use 32 bits per pixel; otherwise `ERR::InvalidValue` is returned and the field is
-unchanged.  The bitmap is pinned until it is replaced or the effect is freed, so an attempt to free it earlier is
-deferred.  Changes to its content are used on the next draw of the filter.  Set the field to `NULL`, or #MatcapPath
-to an empty string, to remove the matcap.
+Setting this field to a bitmap replaces any matcap that was loaded from #MatcapPath or bound with #MatcapEffect, and
+clears both of those fields.  The bitmap must be initialised and use 32 bits per pixel; otherwise
+`ERR::InvalidValue` is returned and the field is unchanged.  The bitmap is pinned until it is replaced or the effect
+is freed, so an attempt to free it earlier is deferred.  Changes to its content are used on the next draw of the
+filter.  Set the field to `NULL`, or #MatcapPath to an empty string, to remove the matcap from any of these sources.
+
+To build the matcap from other effects in the same filter, bind the last of them to #MatcapEffect instead.
 
 When the matcap was loaded from #MatcapPath, reading this field returns the loaded bitmap.  A client-supplied bitmap
 cannot be written by #XMLDef.
@@ -2468,6 +2495,7 @@ static ERR LIGHTINGFX_SET_Matcap(extLightingFX *Self, objBitmap *Value)
 
    if (not Value) {
       Self->release_matcap();
+      Self->unbind_matcap_effect();
       effect_modified(Self);
       return ERR::Okay;
    }
@@ -2483,6 +2511,7 @@ static ERR LIGHTINGFX_SET_Matcap(extLightingFX *Self, objBitmap *Value)
 
    Value->pin();
    Self->release_matcap();
+   Self->unbind_matcap_effect();
    Self->Matcap = Value;
    Self->MatcapPinned = true;
    effect_modified(Self);
@@ -2496,8 +2525,9 @@ MatcapPath: Loads a matcap image for the `COMBINED` type from a file.
 
 Set this field to the path of an image file that the @Image class supports to use it as the #Matcap.  The image is
 loaded immediately and converted to 32 bits per pixel with an alpha channel.  If it cannot be loaded, the error is
-returned and the current matcap, if any, is kept.  Setting the field to an empty string removes the matcap.  Setting
-#Matcap clears this field.
+returned and the current matcap, if any, is kept.  A successful load replaces a matcap that was bound with
+#MatcapEffect.  Setting the field to an empty string removes the matcap.  Setting #Matcap or #MatcapEffect clears this
+field.
 
 Matcaps are usually square images of 256 x 256 pixels or more.  Refer to #Matcap for details of how the image is
 used.
@@ -2516,6 +2546,7 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
 
    if (Value.empty()) {
       Self->release_matcap();
+      Self->unbind_matcap_effect();
       effect_modified(Self);
       return ERR::Okay;
    }
@@ -2528,6 +2559,7 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
 
    auto loaded = image.detach();
    Self->release_matcap();
+   Self->unbind_matcap_effect();
    Self->MatcapImage = loaded;
    Self->Matcap = loaded->Bitmap;
    Self->MatcapPath = Value;
@@ -2538,6 +2570,53 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
 static ERR LIGHTINGFX_SET_MatcapRef(extLightingFX *Self, const std::string_view &Value)
 {
    Self->MatcapRef = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+MatcapEffect: An earlier effect in the same filter whose result is the matcap of the `COMBINED` type.
+
+Bind an earlier image-producing effect in the same filter to build the #Matcap from filter primitives, for instance
+floods, @TurbulenceFX noise, an image drawn by @ImageFX, or a blur or composite of these.  The result is used exactly
+as a #Matcap bitmap would be, including its alpha channel and #MatcapMode.  Its frame is the producer's primitive
+subregion, so set @FilterEffect.X, @FilterEffect.Y, @FilterEffect.Width and @FilterEffect.Height on the producer to
+the square that holds the sphere.  A producer whose subregion is unset is framed by the filter region.  The frame is
+measured in device pixels, so the matcap's resolution follows the display scale of the client, and under a rotated
+or skewed transform it is the bounding box of the transformed subregion.
+
+The matcap can be read at any output pixel, so binding it makes the filter process its entire region where the
+surface for it can be allocated, rather than the page and a margin.  This raises the cost of a filter whose region
+extends far beyond the page.  Any part of the frame that lies outside of the processed area is cropped.  A frame
+that is empty, because the subregion has no area or lies entirely outside of that area, supplies no matcap, so the
+`LIGHT` mode then keeps the direct diffuse light.  Types other than `COMBINED` ignore the binding: the producer is not
+validated or required for them, and the filter is not made to process its entire region.
+
+The matcap is rebuilt from the result on every draw, so the producer may change at any time.  Binding an effect
+removes any matcap that was set with #Matcap or #MatcapPath, and setting either of those fields clears this binding.
+Freeing the producer also clears it.  A producer with a numerical result, such as a `HEIGHT` output, is incompatible:
+the filter then fails to plan with `ERR::NoSupport`, which is logged, and its client is skipped when drawn.
+
+In SVG, the `matcap` attribute of `xvg:feLighting` refers to the result of an earlier primitive as `#name`.  Any other
+value is a path.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_MatcapEffect(extLightingFX *Self, objFilterEffect **Value)
+{
+   *Value = Self->MatcapEffect.Reference;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_MatcapEffect(extLightingFX *Self, objFilterEffect *Value)
+{
+   if (not Value) return set_named_filter_input(Self, Self->MatcapEffect.Name, VSF::NONE);
+   if (Value IS Self->MatcapEffect.Reference) return ERR::Okay;
+
+   if (auto error = set_named_filter_input(Self, Self->MatcapEffect.Name, VSF::REFERENCE, Value);
+       error != ERR::Okay) return error;
+   Self->release_matcap();
    return ERR::Okay;
 }
 
@@ -3082,7 +3161,9 @@ attributes when they differ from their defaults.  These include `xvg:features` i
 #Wrap, #Anisotropy and #AnisotropyAngle when they are not zero, and `matcapMode="light"` if #MatcapMode is `LIGHT`.
 The standard elements carry these settings as `xvg:combinedMetalness` and similar.  An SVG-loaded matcap keeps its
 original relative reference so the image can be reloaded from the same document folder.  For API-loaded images #MatcapPath must be
-document-relative.  A matcap supplied as a #Matcap bitmap returns `ERR::NoSupport` during serialisation.  The attributes
+document-relative.  A matcap supplied as a #Matcap bitmap returns `ERR::NoSupport` during serialisation.  A
+#MatcapEffect binding is written by @VectorFilter.EffectXML as `xvg:matcap="#name"`, or `xvg:combinedMatcap` on the
+standard elements, where `name` is the producer's result.  The attributes
 of `xvg:feLighting` and `xvg:feNormalMap` are written without the prefix because the elements are in the Kōtuku
 namespace.  The document must declare the prefix, for example `xmlns:xvg="http://www.kotuku.dev/xmlns/svg"`.
 
@@ -3233,6 +3314,7 @@ static const FieldArray clLightingFXFields[] = {
    { "Anisotropy", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Anisotropy, LIGHTINGFX_SET_Anisotropy },
    { "AnisotropyAngle", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_AnisotropyAngle, LIGHTINGFX_SET_AnisotropyAngle },
    { "Matcap",     FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Matcap, LIGHTINGFX_SET_Matcap, CLASSID::BITMAP },
+   { "MatcapEffect", FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapEffect, LIGHTINGFX_SET_MatcapEffect, CLASSID::FILTEREFFECT },
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
    { "MatcapMode", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapMode, LIGHTINGFX_SET_MatcapMode, &clLightingFXMTC },
    { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },

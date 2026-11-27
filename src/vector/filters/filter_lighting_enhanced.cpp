@@ -554,32 +554,76 @@ static void colour_table(std::array<float, 256> &Table, bool LinearSource, bool 
 
 //********************************************************************************************************************
 // Converts the matcap to premultiplied RGB in the filter's colour space, for sample_matcap(), with four floats per
-// texel.  The bitmap is read in full on each draw, so that changes to a client's bitmap are seen.  A bitmap without
-// an alpha channel is opaque.
+// texel.  The source is read in full on each draw, so that changes to a client's bitmap or to the producer of
+// MatcapEffect are seen.  A bitmap without an alpha channel is opaque.
 
 ERR extLightingFX::prepare_matcap()
 {
    MatcapTexels = nullptr;
-   const auto bmp = Matcap;
-   if ((not bmp) or (bmp->BytesPerPixel != 4) or (bmp->Width < 1) or (bmp->Height < 1) or (not bmp->Data)) {
-      return ERR::Okay;
+
+   const uint8_t *data;
+   int stride, width, height;
+   bool linear, has_alpha, premul;
+   const ColourFormat *fmt;
+
+   if (MatcapEffect.Reference) {
+      // The frame is the producer's subregion in device pixels, limited to the pixels that it rendered.  An empty
+      // subregion, or one that cannot be transformed, leaves the effect without a matcap.
+
+      const auto input = planned_named_input(this, MatcapEffect.Name);
+      if ((not input) or (not input->Producer)) return ERR::InvalidState;
+      auto bounds = input->Producer->Subregion;
+      if ((not bounds.valid()) or (not transform_filter_region(bounds, Filter->Render->Transform))) return ERR::Okay;
+
+      filter_surface_view view;
+      if (auto error = get_named_filter_bitmap(this, MatcapEffect.Name, view); error != ERR::Okay) return error;
+      if ((not view.Bitmap) or (view.Bitmap->BytesPerPixel != 4)) return ERR::InvalidState;
+
+      // Pixels are clamped to the surface first, so that the conversion to int cannot overflow.
+
+      const auto &valid = view.Valid;
+      const auto clamp_x = [&](double X) { return int(std::clamp(X, double(valid.left), double(valid.right))); };
+      const auto clamp_y = [&](double Y) { return int(std::clamp(Y, double(valid.top), double(valid.bottom))); };
+      const TClipRectangle<int> frame = { clamp_x(std::floor(bounds.left)), clamp_y(std::floor(bounds.top)),
+         clamp_x(std::ceil(bounds.right)), clamp_y(std::ceil(bounds.bottom)) };
+      if (not frame.valid()) return ERR::Okay;
+
+      data      = view.row(frame.top) + std::ptrdiff_t(frame.left) * 4;
+      stride    = view.Stride;
+      width     = frame.width();
+      height    = frame.height();
+      linear    = view.Encoding IS CS::LINEAR_RGB;
+      has_alpha = true;
+      premul    = view.Alpha IS filter_alpha::PREMULTIPLIED;
+      fmt       = view.Bitmap->ColourFormat;
+   }
+   else {
+      const auto bmp = Matcap;
+      if ((not bmp) or (bmp->BytesPerPixel != 4) or (bmp->Width < 1) or (bmp->Height < 1) or (not bmp->Data)) {
+         return ERR::Okay;
+      }
+
+      data      = bmp->Data;
+      stride    = bmp->LineWidth;
+      width     = bmp->Width;
+      height    = bmp->Height;
+      linear    = bmp->ColourSpace IS CS::LINEAR_RGB;
+      has_alpha = (bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL;
+      premul    = (bmp->Flags & BMF::PREMUL) != BMF::NIL;
+      fmt       = bmp->ColourFormat;
    }
 
-   const int width = bmp->Width, height = bmp->Height;
    float *texels;
    if (auto error = get_filter_scratch(this, size_t(width) * height * 4, texels); error != ERR::Okay) return error;
 
    std::array<float, 256> lut;
-   colour_table(lut, bmp->ColourSpace IS CS::LINEAR_RGB, Linear);
+   colour_table(lut, linear, Linear);
 
-   const auto fmt = bmp->ColourFormat;
    const uint8_t R = fmt->RedPos>>3, G = fmt->GreenPos>>3, B = fmt->BluePos>>3, A = fmt->AlphaPos>>3;
-   const bool has_alpha = (bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL;
-   const bool premul = (bmp->Flags & BMF::PREMUL) != BMF::NIL;
 
    float *out = texels;
    for (int y=0; y < height; y++) {
-      const uint8_t *pixel = bmp->Data + (std::ptrdiff_t(y) * bmp->LineWidth);
+      const uint8_t *pixel = data + (std::ptrdiff_t(y) * stride);
       for (int x=0; x < width; x++, pixel += 4, out += 4) {
          const int alpha = has_alpha ? pixel[A] : 255;
          out[3] = 0;
@@ -1290,7 +1334,7 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    // The matcap's colour, for the combined type.
 
    MatcapTexels = nullptr;
-   if ((Material) and (Matcap)) {
+   if ((Material) and (has_matcap())) {
       if (auto error = prepare_matcap(); error != ERR::Okay) return error;
    }
    LitSphere = (MatcapTexels) and (MatcapMode IS MTC::LIGHT);

@@ -334,7 +334,10 @@ The default is 0, which brushes along the X axis.  Sets @LightingFX.AnisotropyAn
 <li>`matcap`: the path of a matcap image, an image of a sphere that reflects an environment, which adds reflections
 such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
-warning is logged and the surface is drawn without it.  Sets @LightingFX.MatcapPath.</li>
+warning is logged and the surface is drawn without it.  Sets @LightingFX.MatcapPath.  A value of `#name` instead
+refers to the primitive with `result="name"`, which must precede this element.  Its result is the matcap, framed by
+its primitive subregion, so that a matcap can be built from floods, turbulence, an image or a blur in the same
+filter.  Sets @LightingFX.MatcapEffect.</li>
 <li>`matcapMode`: `reflect` (the default) adds the matcap to the specular light as a reflection.  `light` uses it as
 the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Sets @LightingFX.MatcapMode.</li>
 </list>
