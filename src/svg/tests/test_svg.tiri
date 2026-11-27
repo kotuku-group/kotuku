@@ -408,6 +408,7 @@ end
 @Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x70c6859b) end
 @Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2422ae17) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0x15eb44f3) end
+@Test global function Cellular()           hashTestSVG('filters/cellular.svg', 0x9ac6d63e) end
 
 @Test global function Transformations()   hashTestSVG('transforms/transformations.svg', 0xe9dfef80) end
 @Test global function W3AspectRatio()     hashTestSVG('transforms/w3-aspectratio.svg', 0xa81f7400) end

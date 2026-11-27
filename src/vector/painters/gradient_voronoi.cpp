@@ -239,6 +239,7 @@ WorleyMode: Field mode for the Voronoi gradient.
 Lookup: WLF
 
 WorleyMode selects how distances to feature points are converted into the scalar field that feeds the colour ramp.
+The `CELL` mode is supported by @CellularFX only, and is rejected here with `ERR::OutOfRange`.
 
 -END-
 *********************************************************************************************************************/

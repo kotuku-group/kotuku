@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CellularFX through xvg:feCellular.
+
+Row 1: the F1, F2, F2-F1 and WEIGHTED modes.  F1 is the plain greyscale distance field; the others use colour ramps
+because their ranges extend past 1.
+Row 2: the PEAKS and CELL modes, then F1 under the Manhattan metric with anisotropic cells and under the Chebyshev
+metric with a rotated, half-jittered lattice.
+Row 3: a four-octave stack, a 55 x 55 periodic subregion repeated by feTile (no seams may be visible), F2-F1 output as
+a height field for lighting, and a regular (jitter 0) lattice rotated by 45 degrees.
+
+Each tile is a 220 x 220 filter region in its own user space, so the default cell size of 12.5% gives eight cells
+across. -->
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="980" height="740"
+  viewBox="0 0 980 740">
+  <defs>
+    <filter id="f1" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="1"/>
+    </filter>
+
+    <filter id="f2" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="2" mode="f2" colormap="cmap:viridis"/>
+    </filter>
+
+    <filter id="cracks" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="3" mode="f2-f1">
+        <stop offset="0" stop-color="#3a3028"/>
+        <stop offset="0.06" stop-color="#3a3028"/>
+        <stop offset="0.1" stop-color="#c8b89a"/>
+        <stop offset="1" stop-color="#f0e6d0"/>
+      </xvg:feCellular>
+    </filter>
+
+    <filter id="weighted" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="4" mode="weighted" heightMin="-0.25" heightMax="0.5" colormap="cmap:magma"/>
+    </filter>
+
+    <filter id="peaks" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="5" mode="peaks" heightMin="0.4" heightMax="1" colormap="cmap:mako"/>
+    </filter>
+
+    <filter id="cell" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="6" mode="cell" colormap="cmap:icefire"/>
+    </filter>
+
+    <filter id="manhattan" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="7" metric="manhattan" cellSize="20% 10%"/>
+    </filter>
+
+    <filter id="chebyshev" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="8" metric="chebyshev" jitter="0.5" angle="30" origin="110 110"/>
+    </filter>
+
+    <filter id="octaves" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="9" cellSize="25%" numOctaves="4" persistence="0.6" colormap="cmap:inferno"/>
+    </filter>
+
+    <filter id="periodic" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="10" mode="f2-f1" cellSize="13.75" period="4" numOctaves="2" lacunarity="2"
+        x="0" y="0" width="55" height="55">
+        <stop offset="0" stop-color="#102030"/>
+        <stop offset="0.08" stop-color="#102030"/>
+        <stop offset="0.14" stop-color="#40a0c0"/>
+        <stop offset="1" stop-color="#e0f4ff"/>
+      </xvg:feCellular>
+      <feTile/>
+    </filter>
+
+    <filter id="stone" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="11" mode="f2-f1" cellSize="18%" xvg:outputMode="height" result="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="12" diffuseConstant="1" specularConstant="0.3"
+        specularExponent="12" ambient="#303030">
+        <feDistantLight azimuth="225" elevation="40"/>
+      </xvg:feLighting>
+    </filter>
+
+    <filter id="lattice" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="12" jitter="0" angle="45" cellSize="20%" origin="110 110" mode="f2"
+        colormap="cmap:flare"/>
+    </filter>
+  </defs>
+
+  <rect width="100%" height="100%" fill="#808080"/>
+
+  <g transform="translate(20 20)"><rect width="220" height="220" filter="url(#f1)"/></g>
+  <g transform="translate(260 20)"><rect width="220" height="220" filter="url(#f2)"/></g>
+  <g transform="translate(500 20)"><rect width="220" height="220" filter="url(#cracks)"/></g>
+  <g transform="translate(740 20)"><rect width="220" height="220" filter="url(#weighted)"/></g>
+
+  <g transform="translate(20 260)"><rect width="220" height="220" filter="url(#peaks)"/></g>
+  <g transform="translate(260 260)"><rect width="220" height="220" filter="url(#cell)"/></g>
+  <g transform="translate(500 260)"><rect width="220" height="220" filter="url(#manhattan)"/></g>
+  <g transform="translate(740 260)"><rect width="220" height="220" filter="url(#chebyshev)"/></g>
+
+  <g transform="translate(20 500)"><rect width="220" height="220" filter="url(#octaves)"/></g>
+  <g transform="translate(260 500)"><rect width="220" height="220" filter="url(#periodic)"/></g>
+  <g transform="translate(500 500)"><rect width="220" height="220" fill="#b8a080" filter="url(#stone)"/></g>
+  <g transform="translate(740 500)"><rect width="220" height="220" filter="url(#lattice)"/></g>
+</svg>

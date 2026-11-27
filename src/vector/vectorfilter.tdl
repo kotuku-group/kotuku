@@ -165,6 +165,13 @@
     ~int(FOM) OutputMode
   ]])
 
+  klass('CellularFX',     { base='FilterEffect', src='filters/filter_cellular.cpp', output='filters/filter_cellular_def.c', comment='Cellular noise filter support class.', extended=true, references={ 'WLF', 'WLM', 'FOM' } }, [[
+    ~vector(struct(GradientStop)) Stops
+    ~int(WLF) WorleyMode
+    ~int(WLM) WorleyMetric
+    ~int(FOM) OutputMode
+  ]])
+
   methods('ColourFX', 'CFX', {
     { id=10, name='SetAdjustment' }
   })

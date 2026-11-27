@@ -2680,6 +2680,28 @@ As a metal's highlights take the albedo's colour, they do not extend over transp
 #Fresnel is set, the reflectance at normal incidence blends from #Fresnel to the albedo's colour, and the highlights of
 a metal still turn white at grazing angles.
 
+A metal's albedo is its reflectance at normal incidence, which is much brighter than the colour that the metal appears
+to have in shade.  A diffuse-style colour such as `#b5893a` for brass gives a dark metal with dim highlights.  The
+following albedos are physically based in a `LINEAR_RGB` filter, the default for SVG documents.  Each is the sRGB
+encoding of the linear reflectance that follows it, from published measurements (Hoffman, as tabulated in
+Real-Time Rendering, 4th edition).
+
+<types type="Metal">
+<type name="Silver">`#fcfaf5`: 0.972, 0.960, 0.915</type>
+<type name="Aluminium">`#f5f6f6`: 0.913, 0.922, 0.924</type>
+<type name="Gold">`#ffe59e`: 1.000, 0.782, 0.344</type>
+<type name="Copper">`#fad1c2`: 0.955, 0.638, 0.538</type>
+<type name="Brass">`#f5e4ae`: 0.910, 0.778, 0.423</type>
+<type name="Nickel">`#d4cdc0`: 0.660, 0.609, 0.526</type>
+<type name="Iron">`#c6c6c8`: 0.562, 0.565, 0.578</type>
+<type name="Chromium">`#c4c5c4`: 0.549, 0.556, 0.554</type>
+<type name="Titanium">`#c2bbb3`: 0.542, 0.497, 0.449</type>
+</types>
+
+As a metal has no diffuse light, its surface between highlights shows only the ambient light and any #Matcap
+reflection, which carry most of its appearance.  An `SRGB` filter computes light on the encoded values, so these
+colours are not physically based there and shade darker between the highlights.
+
 The default is 0, and the value must be between 0 and 1.  The diffuse and specular types ignore this field.
 
 *********************************************************************************************************************/

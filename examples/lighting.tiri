@@ -41,7 +41,13 @@ to a metal, whose highlights take the albedo's colour; Fresnel sets the reflecta
 past the terminator, as on wax.  The Matcap combobox adds the reflection of an environment, which is weak where the
 surface faces the viewer if Fresnel is set, and takes the albedo's colour as metalness rises.  The matcap is set on the
 effect as LightingFX.MatcapPath after the document is parsed, because the matcap attribute of a document only accepts
-paths that are relative to the document's folder.
+paths that are relative to the document's folder.  The lit-sphere matcaps, where available, are the diffuse light
+instead of a reflection (MatcapMode LIGHT).
+
+The Material combobox selects combined lighting and sets the albedo, the lighting and material sliders, the ambient
+light and the matcap together, for brushed brass, chrome, glazed ceramic, wax and clay.  Brushed brass suits the
+Brushed metal surface, and chrome the Smooth relief.  The metals use physically based albedos: a metal's albedo is its
+reflectance, which is much brighter than the colour it appears to have in shade (see LightingFX.Metalness).
 
 Surfaces are chosen from the presets in the Surface combobox, or entered in the editor beneath the preview.  Edits are
 applied after a short pause in typing.  Point and spot lights are positioned by clicking or dragging in the preview;
@@ -67,10 +73,12 @@ ambient settings selects standard SVG lighting.
    local glThemeXML -- Colours of the editor
    local glControls -- Scrollable page that holds the controls on the left
    local glMatcapBox:table, glAlbedoBox:table -- Comboboxes that apply to the combined mode only
+   local glLightingBox:table, glAmbientBox:table -- Comboboxes that material presets update
    EXAMPLE_FOLDER <const> = obj.find('self').workingPath
 
    glWidgets = array<table> -- Strong references keep the widgets alive, as their callbacks hold weak references
    glSliders = { }          -- Sliders by parameter name, so that those that do not apply can be disabled
+   glCaptions = { }         -- Functions that redraw a slider's caption, by parameter name
 
    glY             = 0
    glRenderCount   = 0     -- Gives each render a unique filter ID
@@ -103,6 +111,7 @@ ambient settings selects standard SVG lighting.
       intensity = 1,
       ambient   = nil,  -- Colour of the ambient light, or nil for none
       matcap    = nil,  -- Path of the matcap image, or nil for none (combined mode only)
+      matcapLight = false, -- True if the matcap is a lit sphere (MatcapMode LIGHT) rather than a reflection
       albedo    = 0     -- Index into ALBEDOS
    }
 
@@ -130,17 +139,28 @@ ambient settings selects standard SVG lighting.
       { label = 'Bright', value = '#505050' }
    }
 
+   -- The path of a matcap in the example's data folder or the SVG tests, or nil if neither has it.
+
    function matcapPath(Name:str):str
-      local err, path = mSys.ResolvePath(EXAMPLE_FOLDER .. 'data/' .. Name)
-      if err is ERR_Okay then return path end
-      return EXAMPLE_FOLDER .. '../src/svg/tests/filters/matcaps/' .. Name
+      local folders = array<str> { EXAMPLE_FOLDER .. 'data/', EXAMPLE_FOLDER .. '../src/svg/tests/filters/matcaps/' }
+      for _, folder in folders do
+         local err, path = mSys.ResolvePath(folder .. Name)
+         if err is ERR_Okay then return path end
+      end
+      return nil
    end
 
-   MATCAPS <const> = array<table> {
-      { label = 'None' },
+   -- Matcaps whose images are missing are left out.  Light marks a lit sphere, which is the diffuse light.
+
+   MATCAPS <const> = array<table> { { label = 'None' } }
+   for _, matcap in array<table> {
       { label = 'Studio',  path = matcapPath('studio.png') },
-      { label = 'Softbox', path = matcapPath('softbox.png') }
-   }
+      { label = 'Softbox', path = matcapPath('softbox.png') },
+      { label = 'Clay (lit sphere)', path = matcapPath('clay.png'), light = true },
+      { label = 'Toon (lit sphere)', path = matcapPath('toon.png'), light = true }
+   } do
+      if matcap.path then MATCAPS.push(matcap) end
+   end
 
    -- Surface colours for the combined mode.  Gradients are defined in the document and referenced by the fill.
 
@@ -156,7 +176,38 @@ ambient settings selects standard SVG lighting.
       { label = 'Copper', fill = '#b87333' },
       { label = 'Jade',   fill = '#3f8f6f' },
       { label = 'Slate',  fill = '#5a6670' },
-      { label = 'White',  fill = '#ffffff' }
+      { label = 'White',  fill = '#ffffff' },
+      -- Metals, as the sRGB encoding of their linear reflectance (see LightingFX.Metalness)
+      { label = 'Brass (metal)',    fill = '#f5e4ae' },
+      { label = 'Gold (metal)',     fill = '#ffe59e' },
+      { label = 'Copper (metal)',   fill = '#fad1c2' },
+      { label = 'Chromium (metal)', fill = '#c4c5c4' },
+      -- Dielectrics of the material presets
+      { label = 'Ceramic', fill = '#efe9dc' },
+      { label = 'Wax',     fill = '#e8c29a' },
+      { label = 'Clay',    fill = '#c08a6a' }
+   }
+
+   -- Material presets for the combined mode, from the material references of src/vector/tests/lighting_harness.tiri.
+   -- Each names an albedo, an ambient light and a matcap by label, and sets the sliders that it lists.  A matcap that
+   -- is not available is replaced by None.
+
+   MATERIALS <const> = array<table> {
+      { label = 'Brushed brass', albedo = 'Brass (metal)', ambient = 'Dim', matcap = 'Studio', sliders = {
+         constant = 0.9, specularConstant = 0.8, exponent = 60, metalness = 1, fresnel = 0, wrap = 0,
+         elevation = 40, azimuth = 225 } },
+      { label = 'Chrome', albedo = 'Chromium (metal)', ambient = 'Dim', matcap = 'Studio', sliders = {
+         constant = 0.9, specularConstant = 0.1, exponent = 60, metalness = 1, fresnel = 0, wrap = 0,
+         elevation = 40, azimuth = 225 } },
+      { label = 'Glazed ceramic', albedo = 'Ceramic', ambient = 'Dim', matcap = 'Softbox', sliders = {
+         constant = 0.85, specularConstant = 4, exponent = 120, metalness = 0, fresnel = 0.04, wrap = 0,
+         elevation = 35, azimuth = 225 } },
+      { label = 'Wax', albedo = 'Wax', ambient = 'Dim', matcap = 'None', sliders = {
+         constant = 0.9, specularConstant = 0.15, exponent = 8, metalness = 0, fresnel = 0, wrap = 0.5,
+         elevation = 15, azimuth = 0 } },
+      { label = 'Clay', albedo = 'Clay', ambient = 'Dim', matcap = 'Clay (lit sphere)', sliders = {
+         constant = 0.9, specularConstant = 0.15, exponent = 12, metalness = 0, fresnel = 0, wrap = 0,
+         elevation = 30, azimuth = 225 } }
    }
 
    FEATURES <const> = array<table> {
@@ -294,6 +345,7 @@ function lightingPrimitive():str
       for _, name in array<str> { 'metalness', 'fresnel', 'wrap' } do
          if p[name] > 0 then common ..= f' {name}="{fmt(p[name])}"' end
       end
+      if p.matcap and p.matcapLight then common ..= ' matcapMode="light"' end
       return f'<xvg:feLighting in2="SourceGraphic" diffuseConstant="{fmt(p.constant)}" ' ..
          f'specularConstant="{fmt(p.specularConstant)}" specularExponent="{fmt(p.exponent)}" ' ..
          f'{common}>\n  {lightSource()}\n</xvg:feLighting>'
@@ -459,7 +511,7 @@ end
 
 function addSlider(Name:str, Label:str, Min:num, Max:num, Step:num, Places:num)
    caption_format = f'%s: %.{Places}f'
-   caption = glControls.new('VectorText', {
+   local caption = glControls.new('VectorText', {
       x = 16, y = glY + 14,
       fontStyle = gui.fontStyle(table.merge(gui.getTheme(glControls).window.text, { size = '10pt' })),
       string = string.format(caption_format, Label, glParams[Name])
@@ -478,7 +530,62 @@ function addSlider(Name:str, Label:str, Min:num, Max:num, Step:num, Places:num)
    })
    glWidgets.push(slider)
    glSliders[Name] = slider
+   glCaptions[Name] = function(Value:num)
+      caption.string = string.format(caption_format, Label, Value)
+   end
    glY += 52
+end
+
+-- Moves a slider without reporting an activate event, and stores its value.
+
+function setSlider(Name:str!, Value:num!)
+   local slider = glSliders[Name]
+   slider.setValue(Value, true)
+   glParams[Name] = slider.value
+   glCaptions[Name](slider.value)
+end
+
+-- Selects an item of a combobox by label: Items holds the item tables, and Apply receives the item that matches.
+
+function selectItem(Box:table!, Items:array<table>!, Label:str!, Apply:func!)
+   for _, item in Items do
+      if item.label is Label then
+         Box.setText(Label)
+         Apply(item)
+         return
+      end
+   end
+end
+
+-- Applies a material preset, which selects the combined mode.
+
+function applyMaterial(Material:table!)
+   glParams.lighting = 'combined'
+   glLightingBox.setText('combined')
+
+   for i, albedo in ALBEDOS do
+      if albedo.label is Material.albedo then
+         glParams.albedo = i
+         glAlbedoBox.setText(albedo.label)
+      end
+   end
+
+   selectItem(glAmbientBox, AMBIENTS, Material.ambient, function(Item:table!)
+      glParams.ambient = Item.value
+   end)
+
+   glParams.matcap = nil
+   glParams.matcapLight = false
+   glMatcapBox.setText(MATCAPS[0].label)
+   selectItem(glMatcapBox, MATCAPS, Material.matcap, function(Item:table!)
+      glParams.matcap = Item.path
+      glParams.matcapLight = Item.light ?? false
+   end)
+
+   for name, value in Material.sliders do setSlider(name, value) end
+
+   updateLightingSliders()
+   scheduleRender()
 end
 
 function addCombobox(Label:str, Text:str, Items:array<table>, Activate:func):table
@@ -504,7 +611,7 @@ function buildControls()
 
    glY = glWindow.margins.top
 
-   addCombobox('Lighting:', glParams.lighting,
+   glLightingBox = addCombobox('Lighting:', glParams.lighting,
       array<table> { { label = 'diffuse' }, { label = 'specular' }, { label = 'combined' } },
       function(Item:table!)
          glParams.lighting = Item.label
@@ -534,7 +641,7 @@ function buildControls()
    ambient_items = array<table>
    for _, ambient in AMBIENTS do ambient_items.push({ label = ambient.label }) end
 
-   addCombobox('Ambient light:', AMBIENTS[0].label, ambient_items, function(Item:table!)
+   glAmbientBox = addCombobox('Ambient light:', AMBIENTS[0].label, ambient_items, function(Item:table!)
       for _, ambient in AMBIENTS do
          if ambient.label is Item.label then glParams.ambient = ambient.value end
       end
@@ -546,9 +653,21 @@ function buildControls()
 
    glMatcapBox = addCombobox('Matcap:', MATCAPS[0].label, matcap_items, function(Item:table!)
       for _, matcap in MATCAPS do
-         if matcap.label is Item.label then glParams.matcap = matcap.path end
+         if matcap.label is Item.label then
+            glParams.matcap = matcap.path
+            glParams.matcapLight = matcap.light ?? false
+         end
       end
       scheduleRender()
+   end)
+
+   material_items = array<table> { { label = 'Custom' } }
+   for _, material in MATERIALS do material_items.push({ label = material.label }) end
+
+   addCombobox('Material:', material_items[0].label, material_items, function(Item:table!)
+      for _, material in MATERIALS do
+         if material.label is Item.label then applyMaterial(material) end
+      end
    end)
 
    glY += 4

@@ -1668,3 +1668,25 @@ static bool read_positive_number_pair(std::string_view Value, double &X, double 
    Y = (count > 1) ? values[1] : X;
    return true;
 }
+
+//********************************************************************************************************************
+// Splits a list of one or two values separated by white-space or commas.  The second value defaults to the first.
+// Returns false if the list is malformed.
+
+static bool read_value_pair(std::string_view Value, std::string_view &First, std::string_view &Second) noexcept
+{
+   constexpr std::string_view separators = " \t\r\n,";
+   Value = kt::font_traits::trim(Value);
+   const auto end = Value.find_first_of(separators);
+   First = Value.substr(0, end);
+   if (First.empty()) return false;
+
+   if (end IS std::string_view::npos) {
+      Second = First;
+      return true;
+   }
+
+   Second = kt::font_traits::trim(Value.substr(end));
+   if (Second.starts_with(',')) Second = kt::font_traits::trim(Second.substr(1));
+   return (not Second.empty()) and (Second.find_first_of(separators) IS std::string_view::npos);
+}

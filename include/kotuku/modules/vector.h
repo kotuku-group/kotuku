@@ -32,6 +32,7 @@ class objFilterEffect;
 class objImageFX;
 class objSourceFX;
 class objBlurFX;
+class objCellularFX;
 class objColourFX;
 class objCompositeFX;
 class objConvolveFX;
@@ -441,7 +442,7 @@ enum class VPF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VPF)
 
-// Output modes for ImageFX, TurbulenceFX, BlurFX and WaveFunctionFX.
+// Output modes for ImageFX, TurbulenceFX, BlurFX, WaveFunctionFX and CellularFX.
 
 enum class FOM : int {
    NIL = 0,
@@ -629,6 +630,7 @@ enum class WLF : int {
    F2 = 2,
    WEIGHTED = 3,
    PEAKS = 4,
+   CELL = 5,
 };
 
 // Worley distance metrics.
@@ -2873,6 +2875,230 @@ class objBlurFX : public objFilterEffect {
    inline ERR setSY(const double Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+};
+
+// CellularFX class definition
+
+#define VER_CELLULARFX (1.000000)
+
+class objCellularFX : public objFilterEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::CELLULARFX;
+   static constexpr CSTRING CLASS_NAME = "CellularFX";
+
+   using create = kt::Create<objCellularFX>;
+   objCellularFX(objMetaClass *pClass, OBJECTID pUID) noexcept : objFilterEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR draw() noexcept { return Action(AC::Draw, this, nullptr); }
+   inline ERR drawArea(int X, int Y, int Width, int Height) noexcept {
+      struct acDraw args = { X, Y, Width, Height };
+      return Action(AC::Draw, this, &args);
+   }
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getStops(std::span<GradientStop> &Value) noexcept {
+      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32);
+      Value = std::span<GradientStop>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
+
+   inline ERR getWorleyMode(WLF &Value) noexcept {
+      Value = *((WLF *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 176));
+      return ERR::Okay;
+   }
+
+   inline ERR getWorleyMetric(WLM &Value) noexcept {
+      Value = *((WLM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 180));
+      return ERR::Okay;
+   }
+
+   inline ERR getOutputMode(FOM &Value) noexcept {
+      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 196));
+      return ERR::Okay;
+   }
+
+   inline ERR getColourMap(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
+      return ERR::Okay;
+   }
+
+   inline ERR getSeed(int64_t &Value) noexcept {
+      Value = *((int64_t *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 56));
+      return ERR::Okay;
+   }
+
+   inline ERR getCellWidth(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 64));
+      return ERR::Okay;
+   }
+
+   inline ERR getCellHeight(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 80));
+      return ERR::Okay;
+   }
+
+   inline ERR getOriginX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 96));
+      return ERR::Okay;
+   }
+
+   inline ERR getOriginY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 112));
+      return ERR::Okay;
+   }
+
+   inline ERR getAngle(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 128));
+      return ERR::Okay;
+   }
+
+   inline ERR getJitter(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 136));
+      return ERR::Okay;
+   }
+
+   inline ERR getHeightMin(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 144));
+      return ERR::Okay;
+   }
+
+   inline ERR getHeightMax(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 152));
+      return ERR::Okay;
+   }
+
+   inline ERR getPersistence(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 160));
+      return ERR::Okay;
+   }
+
+   inline ERR getLacunarity(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 168));
+      return ERR::Okay;
+   }
+
+   inline ERR getOctaves(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 184));
+      return ERR::Okay;
+   }
+
+   inline ERR getPeriodX(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 188));
+      return ERR::Okay;
+   }
+
+   inline ERR getPeriodY(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 192));
+      return ERR::Okay;
+   }
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->GetValue(this, &Value);
+   }
+
+
+   // Customised field setting
+
+   inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
+      auto field = &this->Class->Dictionary[36];
+      return field->WriteValue(this, field, 0x00001310, &Value);
+   }
+
+   inline ERR setWorleyMode(const WLF Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setWorleyMetric(const WLM Value) noexcept {
+      auto field = &this->Class->Dictionary[32];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOutputMode(const FOM Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setColourMap(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setSeed(const int64_t Value) noexcept {
+      auto field = &this->Class->Dictionary[33];
+      return field->WriteValue(this, field, FD_INT64, &Value);
+   }
+
+   inline ERR setCellWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[35];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCellHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setOriginX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setOriginY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setAngle(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setJitter(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setHeightMin(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setHeightMax(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setPersistence(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setLacunarity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setOctaves(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[31];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPeriodX(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPeriodY(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };

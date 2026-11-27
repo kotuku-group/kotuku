@@ -86,6 +86,7 @@ flute_test(vector_fill_layers "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_fill_layer
 flute_test(vector_parse_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parse_transform.tiri")
 flute_test(vector_push "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_push.tiri")
 flute_test(vector_filter_bounds "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_filter_bounds.tiri")
+flute_test(vector_filter_cellular "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_filter_cellular.tiri")
 flute_test(vector_apply_path "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_apply_path.tiri")
 flute_test(vector_clip_mask_cache "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clip_mask_cache.tiri")
 flute_test(vector_gouraud_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gouraud_gradient.tiri")

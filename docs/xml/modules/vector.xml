@@ -16,6 +16,7 @@
     </source>
     <classes>
       <class>BlurFX</class>
+      <class>CellularFX</class>
       <class>ColourFX</class>
       <class>CompositeFX</class>
       <class>ConvolveFX</class>

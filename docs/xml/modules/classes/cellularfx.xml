@@ -1,0 +1,287 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>CellularFX</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Generates cellular (Worley) noise for stone, foam, cracks, cells and similar textures.</comment>
+    <version>1</version>
+    <id>e4ba7db9</id>
+    <idstring>CELLULARFX</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>CellularFX is a source effect that takes no input.  It places one feature point in every cell of an unbounded lattice and derives each output sample from the distances between the sample and its nearest features.  The result fills the primitive subregion, and every sample depends only on its position in primitive units.  Clipped, partial and full redraws therefore produce identical values.</p>
+<p>The lattice is defined by <fl>CellWidth</fl> and <fl>CellHeight</fl>, positioned by <fl>OriginX</fl> and <fl>OriginY</fl>, and rotated by <fl>Angle</fl>. Percentages in these fields refer to the filter region, so <code>CellWidth = 12.5%</code> gives eight cells across it.  Each feature is displaced from its cell centre by up to <fl>Jitter</fl>, and the positions, heights and cell values are chosen by <fl>Seed</fl>.  Distances are measured in lattice units, in which one cell measures 1 &amp;times; 1, and <fl>WorleyMetric</fl> selects the distance function.</p>
+<p><fl>WorleyMode</fl> selects how the distances are converted to a value.  <code>F1</code>, <code>F2</code> and <code>F2_F1</code> produce distances to the nearest features, <code>WEIGHTED</code> and <code>PEAKS</code> combine distances with the seeded feature heights from <fl>HeightMin</fl> to <fl>HeightMax</fl>, and <code>CELL</code> gives each cell a constant seeded value in [0, 1).  Values are not normalised against the drawn area, and the range of each mode is described in <fl>WorleyMode</fl>.</p>
+<p><fl>Octaves</fl> sums independently seeded layers, each sampled <fl>Lacunarity</fl> times more finely than the last and weighted by <fl>Persistence</fl>.  The sum is divided by the total weight, so several octaves stay within the range of a single octave. <fl>PeriodX</fl> and <fl>PeriodY</fl> make the pattern repeat after a whole number of cells.</p>
+<p>In <code>IMAGE</code> mode, values are clamped to [0, 1] and drawn as opaque greyscale, or through the colour ramp of <fl>ColourMap</fl> or <fl>Stops</fl>.  Set <fl>OutputMode</fl> to <code>HEIGHT</code> to produce an unclamped floating-point scalar field for numerical inputs, such as the height map of an enhanced <class name="LightingFX">LightingFX</class> or the amount mask of a <class name="CompositeFX">CompositeFX</class>.  Prefer <code>HEIGHT</code> for lighting, because the 8-bit greyscale of <code>IMAGE</code> output produces visible terraces.</p>
+<p>Greyscale output is written in the effect's colour space.  In a linear RGB filter, which is the SVG default, values are therefore treated as linear light and appear brighter once they are converted for display.  For example, 0.25 is displayed as 135 rather than 64.  Draw the effect in an sRGB filter to display values directly.  Colour ramps are drawn as authored in either colour space.</p>
+<p>Some combinations of fields can only be checked when the effect is drawn, because fields may be set in any order. <code>CELL</code> with more than one octave, a period with an <fl>Angle</fl> that is not a multiple of 360, and a periodic octave stack with a non-integer <fl>Lacunarity</fl> each cause the effect to draw nothing.  <code>Draw</code> then logs a warning and returns <code>ERR::InvalidValue</code>.  <code>Draw</code> also returns <code>ERR::OutOfRange</code> if the lattice coordinates of the drawn area would exceed 2^52, beyond which cell positions are not exact.</p>
+<p>Samples are taken once at each pixel centre, so the hard edges of <code>CELL</code> and <code>F2_F1</code> output are not antialiased.</p>
+<p>SVG documents can use the effect with the <code>xvg:feCellular</code> element.  Refer to the <class name="SVG">SVG</class> class for its attributes.</p></description>
+    <source>
+      <file path="filters/">filter_cellular.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Draw</name>
+      <comment>Render the effect to the target bitmap.</comment>
+      <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="X">The X position of the region to be drawn.</param>
+        <param type="INT" name="Y">The Y position of the region to be drawn.</param>
+        <param type="INT" name="Width">The width of the region to be drawn.</param>
+        <param type="INT" name="Height">The height of the region to be drawn.</param>
+      </input>
+      <description>
+<p>Draw fails with <code>ERR::InvalidValue</code> if <code>CELL</code> mode is combined with more than one octave, if a periodic pattern is rotated, or if a periodic pattern of several octaves has a fractional <fl>Lacunarity</fl>.  It fails with <code>ERR::OutOfRange</code> if the drawn area lies so far from the origin, at the finest octave, that cell indices can no longer be represented exactly.</p>
+      </description>
+    </action>
+
+  </actions>
+
+  <fields>
+    <field>
+      <name>Angle</name>
+      <comment>Rotates the lattice clockwise about its origin, in degrees.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The rotation is applied about the point given by <fl>OriginX</fl> and <fl>OriginY</fl>.  The value must be finite and defaults to 0. A periodic pattern cannot be rotated: if <fl>PeriodX</fl> or <fl>PeriodY</fl> is set, the Angle must be a multiple of 360 or the effect will fail to draw.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CellHeight</name>
+      <comment>The vertical spacing of the base lattice.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and greater than zero.  A percentage refers to the height of the filter region.  The default is 12.5%, which gives eight rows of cells within the filter region.</p>
+<p>Distances are measured in cell units, so cells of different width and height stretch the distance metric with them.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CellWidth</name>
+      <comment>The horizontal spacing of the base lattice.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and greater than zero.  A percentage refers to the width of the filter region.  The default is 12.5%, which gives eight columns of cells within the filter region.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ColourMap</name>
+      <comment>Draws <code>IMAGE</code> output through a pre-defined colour ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The clamped value of each sample selects a colour from the named colourmap, from the first colour at 0 to the last at 1.  The following colourmaps from the matplotlib and seaborn projects are supported: <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
+<p>Setting a colourmap replaces custom <fl>Stops</fl>.  Set an empty string to clear the ramp and draw in greyscale.  <code>HEIGHT</code> output ignores the ramp.  Unknown names fail with <code>ERR::NotFound</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>HeightMax</name>
+      <comment>The highest seeded feature height, for the <code>WEIGHTED</code> and <code>PEAKS</code> modes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each feature is given a height between <fl>HeightMin</fl> and HeightMax, in cell units.  The value must lie in the range [-4, 4] and defaults to 1.  If HeightMax is lower than <fl>HeightMin</fl>, the two are swapped when drawing.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>HeightMin</name>
+      <comment>The lowest seeded feature height, for the <code>WEIGHTED</code> and <code>PEAKS</code> modes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value must lie in the range [-4, 4] and defaults to 0.  See <fl>HeightMax</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Jitter</name>
+      <comment>The maximum displacement of each feature from its cell centre, as a fraction of the cell.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>A value of 0 places every feature at its cell centre, giving a regular grid of square or rectangular cells.  A value of 1, the default, allows a feature to lie anywhere within its cell.  The value must lie in the range [0, 1].</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Lacunarity</name>
+      <comment>The frequency multiplier between octaves.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each octave samples the lattice Lacunarity times more finely than the previous one.  The value must lie in the range [1, 8] and defaults to 2.  A periodic pattern of more than one octave requires an integer value, or the effect will fail to draw.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Octaves</name>
+      <comment>The number of independently seeded layers.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>Each octave is sampled at <fl>Lacunarity</fl> times the frequency of the previous one and weighted by <fl>Persistence</fl> relative to it.  The weighted sum is divided by the total weight, so several octaves stay within the range of one.  The value must lie in the range [1, 12] and defaults to 1.  The <code>CELL</code> mode supports one octave only.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OriginX</name>
+      <comment>The horizontal origin of the lattice, relative to the left edge of the filter region.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>A percentage refers to the width of the filter region.  The value must be finite and defaults to 0.  Moving the origin translates the pattern without changing it, and <fl>Angle</fl> rotates the lattice about this point.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OriginY</name>
+      <comment>The vertical origin of the lattice, relative to the top edge of the filter region.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>A percentage refers to the height of the filter region.  The value must be finite and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OutputMode</name>
+      <comment>Selects an image or a floating-point scalar result.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FOM">FOM</type>
+      <description>
+<p><code>IMAGE</code>, the default, draws clamped greyscale or colour-mapped pixels.  <code>HEIGHT</code> writes the unclamped field values to a scalar surface for numerical inputs and ignores the colour ramp.  A height cannot be the final result of a filter, so a <code>HEIGHT</code> effect must be read by a later effect.  <code>NATIVE</code> is unsupported.</p>
+<types lookup="FOM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>PeriodX</name>
+      <comment>Repeats the pattern horizontally after this number of base cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The pattern repeats exactly every <code>PeriodX * CellWidth</code>, with no seam.  The value must lie in the range [0, 1048576], and 0, the default, disables horizontal repetition.  A periodic pattern cannot be rotated, and a periodic pattern of several octaves requires an integer <fl>Lacunarity</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PeriodY</name>
+      <comment>Repeats the pattern vertically after this number of base cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The value must lie in the range [0, 1048576], and 0, the default, disables vertical repetition.  See <fl>PeriodX</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Persistence</name>
+      <comment>The weight of each octave relative to the previous one.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Octave <code>k</code> is weighted by <code>Persistence^k</code>.  The value must lie in the range [0, 1] and defaults to 0.5.  A value of 0 leaves only the first octave.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Seed</name>
+      <comment>Selects the feature positions, heights and cell values.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>Any 64-bit value is accepted, including 0, which is the default.  The same seed always produces the same pattern.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Stops</name>
+      <comment>Draws <code>IMAGE</code> output through a custom colour ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;GradientStop&gt;</type>
+      <description>
+<p>The clamped value of each sample selects a colour from the gradient defined by the stops.  At least two stops are required, or the setter fails with <code>ERR::InvalidValue</code>.</p>
+<p>Setting stops replaces any named <fl>ColourMap</fl>.  Set an empty array to clear the ramp and draw in greyscale.  <code>HEIGHT</code> output ignores the ramp.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>WorleyMetric</name>
+      <comment>Selects the distance metric.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="WLM">WLM</type>
+      <description>
+<p><code>EUCLIDEAN</code> (the default) gives rounded cells, <code>MANHATTAN</code> gives diamond-shaped contours and <code>CHEBYSHEV</code> gives square contours.  Distances are measured in cell units.</p>
+<types lookup="WLM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>WorleyMode</name>
+      <comment>Selects how distances to the nearest features are converted to a value.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="WLF">WLF</type>
+      <description>
+<p>Distances are in cell units and are not normalised against the drawn area.  With <code>F1</code> the distance to the nearest feature is used, and with <code>F2</code> the distance to the second-nearest.  <code>F2_F1</code> is their difference, which is zero on the boundaries between cells and suits cracks and mortar.  <code>WEIGHTED</code> is the minimum over all features of the distance less the feature's height, and <code>PEAKS</code> is the maximum of the height less the distance.  <code>CELL</code> gives every sample the seeded value of its nearest feature, which is constant within each cell and lies in [0, 1).</p>
+<p>With the default <fl>Jitter</fl> of 1, <code>F1</code> rarely exceeds 0.8 under the Euclidean metric, and <code>F2</code> can exceed 1.  On a regular grid (Jitter 0), <code>F1</code> reaches about 0.707, 1 or 0.5 at cell corners under the Euclidean, Manhattan and Chebyshev metrics, and <code>F2</code> is 1 at a cell centre under every metric.  <code>WEIGHTED</code> and <code>PEAKS</code> may be negative.  <code>IMAGE</code> output clamps every mode to [0, 1]; use a colour ramp, <class name="RemapFX">RemapFX</class> or <code>HEIGHT</code> output to work with other ranges.</p>
+<p>The <code>CELL</code> mode supports one octave only.</p>
+<types lookup="WLF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX, BlurFX, WaveFunctionFX and CellularFX.">
+      <const name="HEIGHT">Produce a linear floating-point scalar surface for numerical filter inputs.</const>
+      <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+      <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
+    </constants>
+
+    <constants lookup="WLF" comment="Worley field modes.">
+      <const name="CELL">Seeded value of the nearest point, constant within each cell.  Supported by CellularFX only.</const>
+      <const name="F1">Distance to nearest point.</const>
+      <const name="F2">Distance to second-nearest point.</const>
+      <const name="F2_F1">Distance between the nearest and second-nearest points.</const>
+      <const name="PEAKS">Additive peaks or terrain using per-point heights.</const>
+      <const name="WEIGHTED">Additively-weighted Voronoi using per-point heights.</const>
+    </constants>
+
+    <constants lookup="WLM" comment="Worley distance metrics.">
+      <const name="CHEBYSHEV"/>
+      <const name="EUCLIDEAN"/>
+      <const name="MANHATTAN"/>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
+      <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
+      <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
+  </structs>
+</book>
