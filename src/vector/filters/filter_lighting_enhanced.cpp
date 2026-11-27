@@ -1242,8 +1242,9 @@ ERR extLightingFX::draw_enhanced(const filter_surface_view &Source, const filter
    Anisotropic = (Material) and (Anisotropy > 0);
    if (Anisotropic) {
       const double aspect = 1.0 - (0.9 * Anisotropy);
-      BrushX = cos(AnisotropyAngle * DEG2RAD);
-      BrushY = sin(AnisotropyAngle * DEG2RAD);
+      const double angle = std::fmod(AnisotropyAngle, 180.0) * DEG2RAD;
+      BrushX = cos(angle);
+      BrushY = sin(angle);
       AlongScale = 1.0 / aspect;
       AcrossScale = aspect;
    }
