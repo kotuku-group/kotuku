@@ -2588,6 +2588,15 @@ end
       f'Expected uniform brightness near {ideal}, got {mean} (range {range}, deviation {deviation})')
    for x in {12 to 244} do assertSame(bmp, bmp, x, 24, x + 256, 24) end
 
+   fx.viewBox = array<double> { 32, 0, 64, 24 }
+   fx.aspectRatio = 0
+   local cropped <close> = draw(svg, 512)
+   local crop_range, crop_mean = heightRampSpread(cropped)
+   local crop_slope = slope * 0.5
+   local crop_ideal = 255 * (1 - crop_slope) / math.sqrt(2 * (1 + crop_slope * crop_slope))
+   assert((crop_range <= 1) and (math.abs(crop_mean - crop_ideal) <= 1),
+      f'Expected the cropped height slope to produce brightness near {crop_ideal}, got {crop_mean}')
+
    -- Changing construction field order must select the same decode mode.
    local other = filter.new('ImageFX')
    other.path = png_path

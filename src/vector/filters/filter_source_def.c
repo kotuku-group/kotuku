@@ -15,6 +15,7 @@ static const struct ActionArray clSourceFXActions[] = {
    { AC::Free, SOURCEFX_Free },
    { AC::Init, SOURCEFX_Init },
    { AC::New, SOURCEFX_New },
+   { AC::Refresh, SOURCEFX_Refresh },
    { AC::NIL, nullptr }
 };
 

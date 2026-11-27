@@ -13,8 +13,10 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The SourceFX class will render a named vector into a given rectangle within the current user coordinate system.</p>
-<p>Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by the primitive subregion: the <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code> fields of the effect.  The referenced vector is drawn at its own size, with the origin of its user space at the top-left corner of the subregion, and it is clipped to the subregion.  The viewport has no view box, so the <fl>AspectRatio</fl> field does not scale the vector.  This is how web browsers place an element referenced by the SVG <code>feImage</code> primitive.</p>
+<p>SourceFX renders a vector branch into the filter primitive subregion.  The branch is selected with <fl>Source</fl>, or with <fl>SourceName</fl> for a definition registered in the scene.  The vector must belong to the same <class name="VectorScene">VectorScene</class> as the filter.  Either field can be set at any time, including after initialisation, to replace the branch.</p>
+<p>Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by the primitive subregion set by the <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code> fields.  By default the branch is drawn at its original size with its origin at the top-left corner of the subregion, and it is clipped to the subregion.  The viewport has no view box in this case, so the <fl>AspectRatio</fl> field does not scale the vector.  This is how web browsers place an element referenced by the SVG <code>feImage</code> primitive.</p>
+<p>Set <fl>ViewBox</fl> to render a section of the branch, such as one cell of a vector atlas.  The section, given in the user coordinates of the source vector, becomes the view box of the viewport and is fitted to the subregion according to <fl>AspectRatio</fl>.  Artwork outside the section is clipped.</p>
+<p>Changes to the source branch, including its destruction, are detected automatically and cause buffered viewports that use the filter to be redrawn.</p>
 <p>If the subregion is not set, it defaults to the filter region.  The vector then moves with the filtered element: with a filter region that starts at (40, 40), a vector point at (0, 0) is drawn at (40, 40).  Maps drawn by other routes, such as a pattern fill, will not line up with it.  To draw the vector in the user space of the filtered element, set <code>X</code> and <code>Y</code> to 0 and set <code>Width</code> and <code>Height</code> so that the subregion covers the filter region.  This applies when the filter's primitive units are user space, which is the default.  In SVG:</p>
 <pre>&lt;feImage href=&quot;#heightMap&quot; x=&quot;0&quot; y=&quot;0&quot; width=&quot;1000&quot; height=&quot;600&quot;/&gt;
 </pre></description>
@@ -37,6 +39,17 @@
       </input>
     </action>
 
+    <action>
+      <name>Refresh</name>
+      <comment>Redraws filter clients after an undetected change to the source.</comment>
+      <prototype>ERR acRefresh(*Object)</prototype>
+      <tiriPrototype>err = Object.acRefresh()</tiriPrototype>
+      <description>
+<p>Changes made through the fields and actions of the <fl>Source</fl> vector are detected automatically.  Call Refresh after a change that the vector cannot detect, such as new content in a bitmap that one of its fills refers to, so that buffered viewports that use the filter discard their cached content.</p>
+<p>Refresh does not schedule drawing.</p>
+      </description>
+    </action>
+
   </actions>
 
   <fields>
@@ -46,6 +59,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="ARF">ARF</type>
       <description>
+<p>AspectRatio applies only when <fl>ViewBox</fl> is set, and controls how the selected section is fitted to the primitive subregion.  Without a <fl>ViewBox</fl> the source vector is drawn at its original size.  The default is <code>X_MID|Y_MID|MEET</code>.</p>
 <types lookup="ARF"/>
       </description>
     </field>
@@ -53,21 +67,35 @@
     <field>
       <name>Source</name>
       <comment>The source <class name="Vector">Vector</class> that will be rendered.</comment>
-      <access read="G" write="I">Get/Init</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
-<p>Set Source before initialisation to select the <class name="Vector">Vector</class> to render in the filter pipeline.  The vector must belong to the same <class name="VectorScene">VectorScene</class> as the filter.</p>
+<p>Set Source to select the <class name="Vector">Vector</class> branch that is rendered by the effect.  The field can be set before or after initialisation.  The vector must belong to the same <class name="VectorScene">VectorScene</class> as the filter, or <code>ERR::Mismatch</code> is returned, and a vector that is being destroyed is rejected with <code>ERR::MarkedForDeletion</code>.  The previous source remains active if the new value is rejected.</p>
+<p>The effect holds a weak reference to the vector, so it does not keep the vector alive.  Setting the field to null, or destroying the vector, makes the effect produce transparent output.  Changes to the vector or its children cause buffered viewports that use the filter to be redrawn.</p>
       </description>
     </field>
 
     <field>
       <name>SourceName</name>
       <comment>Name of a source definition to be rendered.</comment>
-      <access write="I">Init</access>
+      <access write="S">Set</access>
       <type>STRING</type>
       <description>
-<p>Set SourceName before initialisation to select a registered scene definition for <fl>Source</fl>.  An unregistered name returns <code>ERR::Search</code>.  The named object must be derived from the <class name="Vector">Vector</class> class.</p>
+<p>Setting SourceName looks up a definition registered with the filter's <class name="VectorScene">VectorScene</class> and assigns it to <fl>Source</fl>.  The field can be set before or after initialisation, but the effect must already belong to a <class name="VectorFilter">VectorFilter</class>.  An unknown name returns <code>ERR::Search</code>, and the definition must be derived from the <class name="Vector">Vector</class> class.  If the lookup or validation fails, the previous source remains active.  Set an empty string to clear the source.</p>
 <p>Vectors are registered via the <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> method.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ViewBox</name>
+      <comment>Selects a section of the source vector, in its user coordinates.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE []</type>
+      <description>
+<p>By default the source vector is drawn at its original size.  Set ViewBox to four values, <code>{ x, y, width, height }</code>, to render only a section of it, such as one cell of a vector atlas.  The section, given in the user coordinates of the <fl>Source</fl> vector, is fitted to the primitive subregion according to <fl>AspectRatio</fl>, in the same way as the <code>viewBox</code> of an SVG viewport.  Artwork outside the section is clipped, including in the margins that a <code>MEET</code> aspect ratio leaves.</p>
+<p>The width and height must be greater than zero and all values must be finite, or <code>ERR::OutOfRange</code> is returned and the current rectangle is retained.  An array that does not have four values is rejected with <code>ERR::InvalidValue</code>.</p>
+<p>Set an empty array, or a zero width and height, to clear the rectangle.  Reading the field returns an empty array when no rectangle is set.</p>
+<p>In SVG, the equivalent attribute is <code>kotuku:viewBox=&quot;x y width height&quot;</code> on the <code>feImage</code> element.</p>
       </description>
     </field>
 

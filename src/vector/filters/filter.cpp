@@ -423,7 +423,7 @@ static ERR get_numeric_target(extFilterEffect *, filter_surface_view &, float *&
 static ERR get_named_filter_bitmap(extFilterEffect *, std::string_view, filter_surface_view &);
 static ERR working_input(extFilterEffect *, const filter_surface_view &, CS, filter_alpha, filter_surface_view &);
 static ERR premultiplied_input(extFilterEffect *, const filter_surface_view &, CS, filter_surface_view &);
-static ERR draw_filter_capture(extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
+static ERR draw_filter_capture(const extVectorFilter *, extVectorScene *, extVector *, objBitmap *, int, int);
 static ERR get_filter_bitmap(extVectorFilter *, filter_surface *&, objBitmap *&);
 template<class T> static ERR get_filter_scratch(extFilterEffect *, size_t, T *&);
 static void release_filter_surfaces(extVectorFilter *, filter_surface *&, const filter_surface * = nullptr);
@@ -542,12 +542,25 @@ static void apply_filter_coverage(agg::rgba8 *Colours, const agg::int8u *Covers,
 }
 
 //********************************************************************************************************************
+// A crop is a view into the original bitmap.  The sampler addresses it from (0,0) and clamps to its edges.
+
+static void filter_source_pixels(agg::pixfmt_psl &Pixels, objBitmap &Bitmap, const TClipRectangle<int> *Crop)
+{
+   Pixels.setBitmap(Bitmap);
+   if (Crop) {
+      Pixels.mData = Pixels.row_ptr(Crop->top) + std::ptrdiff_t(Crop->left) * Pixels.mBytesPerPixel;
+      Pixels.mWidth = Crop->width();
+      Pixels.mHeight = Crop->height();
+   }
+}
+
+//********************************************************************************************************************
 // Resamples Bitmap into Target with a pure scale transform, splitting rows across worker threads when the region is
 // large enough to benefit.  Dest is the image's rectangle in Target pixels.  The source is read with clamped edges and
 // pixels that Dest covers in part receive that coverage in their alpha, as an anti-aliased rectangle would.
 
 static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const agg::trans_affine &Transform,
-   const agg::image_filter_lut &Filter, const TClipRectangle<double> &Dest)
+   const agg::image_filter_lut &Filter, const TClipRectangle<double> &Dest, const TClipRectangle<int> *Crop)
 {
    // The image can extend beyond the integer range even when its visible region is small.
    const auto &clip = Target.Clip;
@@ -575,7 +588,8 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
    // The destination rectangle covers every pixel in the span.  Generate one full span per row, as the rasteriser
    // does, so the sampler keeps the same interpolation endpoints and edge behaviour.
    auto render_rows = [&](int StartY, int EndY) {
-      agg::pixfmt_psl pix_source(Bitmap), pix_dest(Target);
+      agg::pixfmt_psl pix_source, pix_dest(Target);
+      filter_source_pixels(pix_source, Bitmap, Crop);
       agg::span_interpolator_linear<> interpolator(Transform);
       agg::span_clamp<agg::pixfmt_psl> source(pix_source);
       agg::span_image_filter_rgba<decltype(source), decltype(interpolator)>
@@ -614,7 +628,7 @@ static void render_bilinear_upscale(objBitmap &Bitmap, objBitmap &Target, const 
 //********************************************************************************************************************
 // Fits a bitmap to the primitive subregion and maps its pixel coordinates to the filter's local surface.
 
-static ERR filter_image_transform(extFilterEffect *Effect, const objBitmap &Bitmap, ARF AspectRatio,
+static ERR filter_image_transform(extFilterEffect *Effect, int Width, int Height, ARF AspectRatio,
    agg::trans_affine &Forward, agg::trans_affine &Inverse)
 {
    const auto step = active_filter_step(Effect);
@@ -630,7 +644,7 @@ static ERR filter_image_transform(extFilterEffect *Effect, const objBitmap &Bitm
    if ((p_width <= 0) or (p_height <= 0)) return ERR::NothingDone;
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
-   calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Bitmap.Width, Bitmap.Height, align_x, align_y,
+   calc_aspectratio("align_filter", AspectRatio, p_width, p_height, Width, Height, align_x, align_y,
       x_scale, y_scale);
 
    p_x += std::round(align_x);
@@ -647,10 +661,14 @@ static ERR filter_image_transform(extFilterEffect *Effect, const objBitmap &Bitm
 // Render a filter's bitmap without blending.  Sampling clamps to the source edges, and coverage of the
 // transformed image rectangle is applied to alpha only.  Colour conversion waits until post-processing.
 
-static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod)
+static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF AspectRatio, VSM SampleMethod,
+   const TClipRectangle<int> *Crop = nullptr)
 {
+   const int width = Crop ? Crop->width() : Bitmap->Width;
+   const int height = Crop ? Crop->height() : Bitmap->Height;
    agg::trans_affine forward, img_transform;
-   if (auto error = filter_image_transform(Self, *Bitmap, AspectRatio, forward, img_transform); error != ERR::Okay) {
+   if (auto error = filter_image_transform(Self, width, height, AspectRatio, forward, img_transform);
+       error != ERR::Okay) {
       return (error IS ERR::NothingDone) ? ERR::Okay : error;
    }
    const auto &clip = Self->Target->Clip;
@@ -660,16 +678,17 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
       return ERR::OutOfRange;
    }
 
-   if (img_transform.is_complex()) {
+   if (Crop or img_transform.is_complex()) {
       // The transform maps destination pixels back to the source, so upscale factors are at most one.
       if (((SampleMethod IS VSM::BILINEAR) or (SampleMethod IS VSM::AUTO)) and
           (img_transform.shx IS 0.0) and (img_transform.shy IS 0.0) and
           (img_transform.sx > 0.0) and (img_transform.sx <= 1.0) and
           (img_transform.sy > 0.0) and (img_transform.sy <= 1.0)) {
-         TClipRectangle<double> dest { 0, 0, double(Bitmap->Width), double(Bitmap->Height) };
+         TClipRectangle<double> dest { 0, 0, double(width), double(height) };
          forward.transform(&dest.left, &dest.top);
          forward.transform(&dest.right, &dest.bottom);
-         render_bilinear_upscale(*Bitmap, *Self->Target, img_transform, get_filter(SampleMethod, img_transform), dest);
+         render_bilinear_upscale(*Bitmap, *Self->Target, img_transform, get_filter(SampleMethod, img_transform),
+            dest, Crop);
          return ERR::Okay;
       }
 
@@ -679,8 +698,8 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
       raster.clip_box(clip.Left, clip.Top, clip.Right, clip.Bottom);
 
       const double corners[4][2] = {
-         { 0, 0 }, { double(Bitmap->Width), 0 },
-         { double(Bitmap->Width), double(Bitmap->Height) }, { 0, double(Bitmap->Height) }
+         { 0, 0 }, { double(width), 0 },
+         { double(width), double(height) }, { 0, double(height) }
       };
       for (int i=0; i < 4; i++) {
          double x = corners[i][0], y = corners[i][1];
@@ -692,7 +711,8 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
 
       agg::renderer_base<agg::pixfmt_psl> render_base;
       agg::pixfmt_psl pix_dest(*Self->Target);
-      agg::pixfmt_psl pix_source(*Bitmap);
+      agg::pixfmt_psl pix_source;
+      filter_source_pixels(pix_source, *Bitmap, Crop);
       render_base.attach(pix_dest);
       render_base.clip_box(clip.Left, clip.Top, clip.Right - 1, clip.Bottom - 1);
 
@@ -730,7 +750,7 @@ static ERR render_to_filter(extFilterEffect *Self, objBitmap *Bitmap, ARF Aspect
          render(spangen);
       }
    }
-   else return gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height,
+   else return gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, width, height,
       -img_transform.tx, -img_transform.ty);
 
    return ERR::Okay;
@@ -845,6 +865,61 @@ static void write_filter_xml_colour(filter_xml_element &Element, std::string_vie
    if (Colour.Alpha != 1.0f) value += " / " + Element.number(double(Colour.Alpha));
    value += ')';
    Element.attribute(Name, value);
+}
+
+//********************************************************************************************************************
+
+// View boxes for ImageFX and SourceFX are stored as { x, y, width, height }.  A view box is active when it
+// has an area; a zero width and height selects the entire source.
+
+using view_box = std::array<double, 4>;
+enum { VB_X, VB_Y, VB_WIDTH, VB_HEIGHT };
+
+static bool has_view_box(const view_box &Rect)
+{
+   return (Rect[VB_WIDTH] > 0) and (Rect[VB_HEIGHT] > 0);
+}
+
+// The ViewBox field reads as an empty array when no rectangle is set.
+
+static std::span<double> view_box_field(view_box &Rect)
+{
+   if (has_view_box(Rect)) return std::span<double>(Rect);
+   return std::span<double>{};
+}
+
+// Normalises a client-supplied ViewBox array.  An empty array or a zero width and height clears the rectangle;
+// any other value must have four finite values with a positive width and height.
+
+static ERR read_view_box(std::span<const double> Array, view_box &Result)
+{
+   if (Array.empty()) {
+      Result = view_box { 0, 0, 0, 0 };
+      return ERR::Okay;
+   }
+
+   if (Array.size() != 4) return ERR::InvalidValue;
+
+   if ((Array[VB_WIDTH] IS 0) and (Array[VB_HEIGHT] IS 0)) {
+      Result = view_box { 0, 0, 0, 0 };
+      return ERR::Okay;
+   }
+
+   for (double value : Array) {
+      if (not std::isfinite(value)) return ERR::OutOfRange;
+   }
+   if ((Array[VB_WIDTH] <= 0) or (Array[VB_HEIGHT] <= 0)) return ERR::OutOfRange;
+
+   std::copy(Array.begin(), Array.end(), Result.begin());
+   return ERR::Okay;
+}
+
+static void write_filter_xml_view_box(filter_xml_element &Element, const view_box &Rect)
+{
+   if (has_view_box(Rect)) {
+      Element.attribute("kotuku:viewBox", Element.number(Rect[VB_X]) + ' ' + Element.number(Rect[VB_Y]) + ' ' +
+         Element.number(Rect[VB_WIDTH]) + ' ' + Element.number(Rect[VB_HEIGHT]));
+   }
 }
 
 //********************************************************************************************************************
@@ -2159,10 +2234,10 @@ static ERR premultiplied_input(extFilterEffect *Effect, const filter_surface_vie
 // Suppress only this pipeline in the private scene that is drawing its raw input.  A request from any other
 // scene will still detect an active instance, including indirect recursion through another filter.
 
-static ERR draw_filter_capture(extVectorFilter *Filter, extVectorScene *Scene, extVector *Root,
+static ERR draw_filter_capture(const extVectorFilter *Suppressed, extVectorScene *Scene, extVector *Root,
    objBitmap *Bitmap, int X, int Y)
 {
-   filter_capture capture { Filter, Root };
+   filter_capture capture { Suppressed, Root };
    auto saved_capture = std::exchange(Scene->FilterCapture, &capture);
    auto saved_bitmap = std::exchange(Scene->Bitmap, Bitmap);
    auto saved_x = std::exchange(Scene->RenderOriginX, X);

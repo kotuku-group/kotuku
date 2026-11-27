@@ -3039,6 +3039,31 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 }
 
 //********************************************************************************************************************
+// Reads the kotuku:viewBox="x y width height" extension of feImage.  Values may be separated by whitespace or
+// commas.
+
+template<class Effect>
+static ERR parse_filter_view_box(extSVG *Self, const XTag &Tag, Effect *FX)
+{
+   const auto attr = find_kotuku_attrib(Self, Tag, "viewBox");
+   if (not attr) return ERR::Okay;
+
+   std::string_view value(*attr);
+   double fields[4] = { 0, 0, 0, 0 };
+   for (auto &field : fields) {
+      value = next_value(value);
+      if (value.empty()) return ERR::InvalidValue;
+      auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), field);
+      if (error != std::errc()) return ERR::InvalidValue;
+      value.remove_prefix(end - value.data());
+      if ((not value.empty()) and (value.front() > 0x20) and (value.front() != ',')) return ERR::InvalidValue;
+   }
+   if (not next_value(value).empty()) return ERR::InvalidValue;
+
+   return FX->setViewBox(std::span<const double>(fields));
+}
+
+//********************************************************************************************************************
 // This code replaces feImage elements where the href refers to a resource name.
 
 ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_view Reference) noexcept
@@ -3052,7 +3077,6 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_vi
    bool required = false;
    std::string result_name;
 
-   ERR error = ERR::Okay;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
       if (val.empty()) continue;
@@ -3068,8 +3092,13 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_vi
       }
    }
 
+   auto error = parse_filter_view_box(Self, Tag, fx);
    objVector *vector = nullptr;
    OBJECTPTR def = nullptr;
+   if (error != ERR::Okay) {
+      FreeResource(fx);
+      return required ? log.warning(error) : ERR::Okay;
+   }
    if (!Reference.empty()) {
       if (Self->Scene->findDef(Reference, &def) IS ERR::Okay) vector = (objVector *)def;
       else {
@@ -3086,9 +3115,12 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag, std::string_vi
       }
 
       if (vector) {
-         fx->setSourceName(Reference);
-         apply_primitive_colour_space(fx, Tag);
-         if (error = fx->init(); !error) {
+         error = fx->setSourceName(Reference);
+         if (error IS ERR::Okay) {
+            apply_primitive_colour_space(fx, Tag);
+            error = fx->init();
+         }
+         if (error IS ERR::Okay) {
             if (!result_name.empty()) parse_result(Self, fx, result_name);
             return ERR::Okay;
          }
@@ -3166,8 +3198,8 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
       }
    }
 
-   ERR error = ERR::Okay;
-   if (not reference.empty()) {
+   auto error = parse_filter_view_box(Self, Tag, fx);
+   if ((error IS ERR::Okay) and (not reference.empty())) {
       if (not safe_filter_path(reference)) {
          FreeResource(fx);
          return log.warning(ERR::InvalidValue);
