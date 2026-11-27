@@ -439,6 +439,7 @@ enum class FOM : int {
    NIL = 0,
    IMAGE = 0,
    HEIGHT = 1,
+   NATIVE = 2,
 };
 
 enum class TB : int {
@@ -678,6 +679,23 @@ enum class MOP : int {
    NIL = 0,
    ERODE = 0,
    DILATE = 1,
+};
+
+// MorphologyFX kernel shapes.
+
+enum class MKS : int {
+   NIL = 0,
+   RECTANGLE = 0,
+   ELLIPSE = 1,
+   CROSS = 2,
+};
+
+// MorphologyFX channel modes for bitmap input.
+
+enum class MCM : int {
+   NIL = 0,
+   COMPONENTS = 0,
+   ALPHA = 1,
 };
 
 // Filter input edge addressing modes.
@@ -3775,6 +3793,16 @@ class objMorphologyFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getKernelShape(MKS &Value) noexcept {
+      Value = *((MKS *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 20));
+      return ERR::Okay;
+   }
+
+   inline ERR getChannelMode(MCM &Value) noexcept {
+      Value = *((MCM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
+      return ERR::Okay;
+   }
+
    inline ERR getRadiusX(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
@@ -3794,17 +3822,27 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const MOP Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setKernelShape(const MKS Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setChannelMode(const MCM Value) noexcept {
       auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRadiusX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setRadiusY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

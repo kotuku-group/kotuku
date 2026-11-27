@@ -15,9 +15,7 @@
     <description>
 <p>The MorphologyFX class performs &quot;fattening&quot; or &quot;thinning&quot; of artwork.  It is particularly useful for fattening or thinning an alpha channel.</p>
 <p>The radii are measured in the filter's primitive units.  When <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> is <code>BOUNDING_BOX</code>, the radii scale with the dimensions of the filtered vector's bounding box by default.  If <class name="VectorFilter" field="AspectRatio">VectorFilter.AspectRatio</class> is <code>NONE</code>, both radii scale with the normalised diagonal of the bounding box.  The renderer applies the magnitude of the vector's transform scale on each axis and converts the resulting radii to whole pixels.  The kernel stays aligned to the bitmap axes.  Its width and height are twice the respective pixel radii plus one.</p>
-<p>In dilation, the output pixel is the individual component-wise maximum of the corresponding R,G,B,A values in the input image's kernel rectangle.  In erosion, the output pixel is the individual component-wise minimum of the corresponding R,G,B,A values in the input image's kernel rectangle.</p>
-<p>Frequently this operation will take place on alpha-only images, such as that produced by the built-in input, SourceAlpha.  In that case, the implementation might want to optimize the single channel case.</p>
-<p>Because the algorithm operates on premultiplied colour values, it will always result in colour values less than or equal to the alpha channel.</p></description>
+<p>Dilation takes the maximum value in the kernel and erosion takes the minimum.  The default bitmap mode applies the operator to each component independently.  Alpha-only mode retains the straight RGB of the centre pixel and changes only its alpha.  Numerical inputs retain their scalar or vector float format and use component-wise minima or maxima without colour conversion.  Invalid numerical samples are skipped.  An empty numerical neighbourhood yields an invalid sample.</p></description>
     <source>
       <file path="filters/">filter_morphology.cpp</file>
     </source>
@@ -40,6 +38,26 @@
   </actions>
 
   <fields>
+    <field>
+      <name>ChannelMode</name>
+      <comment>Selects the bitmap channels to process.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="MCM">MCM</type>
+      <description>
+<types lookup="MCM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>KernelShape</name>
+      <comment>Selects the morphology neighbourhood.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="MKS">MKS</type>
+      <description>
+<types lookup="MKS"/>
+      </description>
+    </field>
+
     <field>
       <name>Operator</name>
       <comment>Set to either <code>ERODE</code> or <code>DILATE</code>.</comment>
@@ -80,6 +98,17 @@
 
   </fields>
   <types>
+    <constants lookup="MCM" comment="MorphologyFX channel modes for bitmap input.">
+      <const name="ALPHA">Apply the operator to alpha and retain straight RGB from the centre sample.</const>
+      <const name="COMPONENTS">Apply the operator to each component independently.</const>
+    </constants>
+
+    <constants lookup="MKS" comment="MorphologyFX kernel shapes.">
+      <const name="CROSS">Use only the centre row and centre column.</const>
+      <const name="ELLIPSE">Use the samples within the ellipse defined by the two radii.</const>
+      <const name="RECTANGLE">Use the entire rectangular neighbourhood.</const>
+    </constants>
+
     <constants lookup="MOP" comment="MorphologyFX options.">
       <const name="DILATE">Dilate (fatten) the input source.</const>
       <const name="ERODE">Erode (thin) the input source.</const>

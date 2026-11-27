@@ -619,6 +619,35 @@ static double height_reference_blur(auto Read, int Centre, double Radius, int Co
    return std::lerp(integral(r), integral(r + 1), Radius - r);
 }
 
+static bool test_filter_native_blur_range()
+{
+   const std::array<float, 12> samples { 1, 0x1p60f, 1, 1, 1, 1, 1, 1, -0x1p120f, 2, 2, 2 };
+   const int count = int(samples.size());
+   const auto sample = [&](int Index) { return (Index < 0) ? 0.0f : samples[Index]; };
+
+   for (const auto mode : { FEM::TRANSPARENT, FEM::CLAMP, FEM::REPEAT, FEM::MIRROR }) {
+      for (const double radius : { 0.5, 1.0, 1.25, 2.0, double(MAX_BLUR_RADIUS) }) {
+         for (const bool vertical : { false, true }) {
+            std::array<float, samples.size() * 2> result;
+            const int width = vertical ? 1 : count, height = vertical ? count : 1;
+            blur_numeric_axis([&](int X, int Y) { return sample(vertical ? Y : X); },
+               result.data() + 1, width, height, width * 2, 2, vertical, radius, { 0, count, mode }, false);
+            for (int i=0; i < count; ++i) {
+               const auto expected = float(height_reference_blur([&](int Index) { return double(sample(Index)); },
+                  i, radius, count, mode));
+               const float actual = result[i * 2 + 1];
+               if (not (std::abs(actual - expected) <= std::max(1.0f, std::abs(expected)) * 1e-6f)) {
+                  kt::Log("FilterTest").warning("Native blur mode %d at sample %d (radius %g): %.9g expected %.9g",
+                     int(mode), i, radius, actual, expected);
+                  return false;
+               }
+            }
+         }
+      }
+   }
+   return true;
+}
+
 static bool test_filter_height_blur()
 {
    auto fixture_class = register_filter_test_class<extFilterSurfaceTest>();
@@ -674,6 +703,94 @@ static bool test_filter_height_blur()
             if (scene.draw(output) != ERR::Okay) return false;
          }
       }
+   }
+   return true;
+}
+
+static bool test_filter_numeric_neighbourhoods(filter_surface_format Format)
+{
+   const filter_effect_extension producer_extension { {}, Format };
+   filter_test_scene scene;
+   auto fixture_class = register_filter_test_class<extFilterSurfaceTest>();
+   if ((not fixture_class.ok()) or (not scene.ready())) return false;
+
+   const auto owner = fl::Owner(scene.Filter->UID);
+   auto producer = extFilterSurfaceTest::create::local(owner);
+   auto blur = extBlurFX::create::local(owner, fl::Input(producer),
+      FieldValue("OutputMode", int(FOM::NATIVE)));
+   constexpr double identity[] { 1 };
+   auto convolve = extConvolveFX::create::local(owner, fl::Input(blur), fl::MatrixColumns(1), fl::MatrixRows(1),
+      FieldValue(kt::fieldhash("Matrix"), std::span<const double>(identity)));
+   auto morph = extMorphologyFX::create::local(owner, fl::Input(producer),
+      FieldValue("KernelShape", int(MKS::ELLIPSE)));
+   auto probe = extFilterSurfaceTest::create::local(owner);
+   if ((not producer) or (not blur) or (not convolve) or (not morph) or (not probe)) return false;
+
+   constexpr double kernel[] { 1, -1 };
+   if (set_convolution_kernel(convolve, 2, 1, kernel, 2, 0, 0) != ERR::Okay) return false;
+   convolve->Bias = -0.125;
+   blur->SX = blur->SY = 0.5;
+   morph->RadiusX = morph->RadiusY = 2;
+
+   const int components = filter_components(Format);
+   producer->FilterExtension = &producer_extension;
+   producer->DrawRoutine = [=](extFilterEffect *Effect) {
+      filter_surface_view layout;
+      float *data;
+      if (auto error = get_numeric_target(Effect, layout, data); error != ERR::Okay) return error;
+      const auto &clip = layout.Valid;
+      for (int y=clip.top; y < clip.bottom; ++y) {
+         auto row = (float *)((uint8_t *)data + std::ptrdiff_t(y) * layout.Stride);
+         for (int x=clip.left; x < clip.right; ++x) {
+            const bool impulse = (x + layout.OriginX IS 3) and (y + layout.OriginY IS 2);
+            row[x * components] = impulse ? -8.0f : 0.0f;
+            if (components IS 2) row[x * components + 1] = impulse ? 4.25f : 0.0f;
+         }
+      }
+      return ERR::Okay;
+   };
+
+   const filter_input_contract native { .Kind = filter_input_kind_of(Format), .NativeOnly = true };
+   filter_named_input inputs[] { { "Blur", native }, { "Convolution", native }, { "Morphology", native } };
+   const filter_effect_extension probe_extension { inputs };
+   probe->FilterExtension = &probe_extension;
+   if ((set_named_filter_input(probe, "Blur", VSF::REFERENCE, blur) != ERR::Okay) or
+       (set_named_filter_input(probe, "Convolution", VSF::REFERENCE, convolve) != ERR::Okay) or
+       (set_named_filter_input(probe, "Morphology", VSF::REFERENCE, morph) != ERR::Okay)) return false;
+
+   bool fractional = false;
+   probe->DrawRoutine = [&](extFilterEffect *Effect) {
+      filter_map_view blurred, convolved, shaped;
+      if (auto error = get_filter_map(Effect, "Blur", blurred); error != ERR::Okay) return error;
+      if (auto error = get_filter_map(Effect, "Convolution", convolved); error != ERR::Okay) return error;
+      if (auto error = get_filter_map(Effect, "Morphology", shaped); error != ERR::Okay) return error;
+      const auto centre = blurred.sample(3.5, 2.5), diagonal = blurred.sample(4.5, 3.5);
+      const auto derivative = convolved.sample(2.5, 2.5);
+      const auto expected = fractional ? filter_map_value { -0.375f, 0.0078125f } :
+         filter_map_value { -0.625f, 0.140625f };
+
+      if (not filter_test_expect((centre[0] IS -2.0f) and (diagonal[0] IS -0.5f) and
+          ((components IS 1) or ((centre[1] IS 1.0625f) and (diagonal[1] IS 0.265625f))),
+          "Blur changed a signed float or mixed components.")) return ERR::InvalidValue;
+      if (not filter_test_expect((derivative[0] IS expected[0]) and
+          ((components IS 1) or (derivative[1] IS expected[1])),
+          "Convolution failed to preserve the signed derivative, divisor, bias or fractional tap.")) {
+         return ERR::InvalidValue;
+      }
+      const float inner = (morph->KernelShape IS MKS::CROSS) ? 0.0f : -8.0f;
+      const float outer = (morph->KernelShape IS MKS::RECTANGLE) ? -8.0f : 0.0f;
+      if (not filter_test_expect((shaped.sample(4.5, 3.5)[0] IS inner) and (shaped.sample(5.5, 3.5)[0] IS outer),
+          "Float erosion failed to preserve the signed extreme or kernel footprint.")) return ERR::InvalidValue;
+      return ERR::Okay;
+   };
+
+   filter_render_result output;
+   if (scene.draw(output) != ERR::Okay) return false;
+   fractional = true;
+   if (CONVOLVEFX_SET_UnitX(convolve, 0.5) != ERR::Okay) return false;
+   for (const auto shape : { MKS::ELLIPSE, MKS::RECTANGLE, MKS::CROSS }) {
+      if (MORPHOLOGYFX_SET_KernelShape(morph, shape) != ERR::Okay) return false;
+      if (scene.draw(output) != ERR::Okay) return false;
    }
    return true;
 }
@@ -880,7 +997,9 @@ void vector_filter_unit_tests(std::string_view Options, int &Passed, int &Total)
    else if (Options IS "filter:height") {
       Total += 4;
       if (test_filter_primary_height()) Passed++;
-      if (test_filter_height_blur()) Passed++;
+      if (test_filter_native_blur_range() and test_filter_height_blur() and
+          test_filter_numeric_neighbourhoods(filter_surface_format::SCALAR_F32) and
+          test_filter_numeric_neighbourhoods(filter_surface_format::VECTOR_F32)) Passed++;
       if (test_filter_height_turbulence()) Passed++;
       if (test_filter_blurred_alpha_edge()) Passed++;
    }

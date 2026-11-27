@@ -243,7 +243,8 @@ struct KeyValue;
 
   enums("FOM", { type="int", start=0, comment="Output modes for ImageFX, TurbulenceFX and BlurFX." },
     "IMAGE: Produce the usual RGBA image.  This is the default.",
-    "HEIGHT: Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.")
+    "HEIGHT: Produce a linear floating-point height between 0 and 1 for enhanced lighting or height-mode blur.",
+    "NATIVE: BlurFX preserves its input format, including scalar and vector floats.")
 
   enums("TB", { type="int", start=0, "Function identifier for TurbulenceFX." },
     "TURBULENCE: Use the standard turbulence function.",

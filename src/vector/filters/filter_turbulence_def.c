@@ -9,6 +9,7 @@ static const struct FieldDef clTurbulenceFXTB[] = {
 static const struct FieldDef clTurbulenceFXFOM[] = {
    { "Image", 0x00000000 },
    { "Height", 0x00000001 },
+   { "Native", 0x00000002 },
    { nullptr, 0 }
 };
 

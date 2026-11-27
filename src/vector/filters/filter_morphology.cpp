@@ -17,15 +17,11 @@ is `NONE`, both radii scale with the normalised diagonal of the bounding box.  T
 of the vector's transform scale on each axis and converts the resulting radii to whole pixels.  The kernel stays
 aligned to the bitmap axes.  Its width and height are twice the respective pixel radii plus one.
 
-In dilation, the output pixel is the individual component-wise maximum of the corresponding R,G,B,A values in the
-input image's kernel rectangle.  In erosion, the output pixel is the individual component-wise minimum of the
-corresponding R,G,B,A values in the input image's kernel rectangle.
-
-Frequently this operation will take place on alpha-only images, such as that produced by the built-in input,
-SourceAlpha.  In that case, the implementation might want to optimize the single channel case.
-
-Because the algorithm operates on premultiplied colour values, it will always result in colour values less than or
-equal to the alpha channel.
+Dilation takes the maximum value in the kernel and erosion takes the minimum.  The default bitmap mode applies
+the operator to each component independently.  Alpha-only mode retains the straight RGB of the centre pixel and
+changes only its alpha.  Numerical inputs retain their scalar or vector float format and use component-wise
+minima or maxima without colour conversion.  Invalid numerical samples are skipped.  An empty numerical
+neighbourhood yields an invalid sample.
 
 -END-
 
@@ -46,6 +42,8 @@ class extMorphologyFX : public extFilterEffect {
 
    double RadiusX = 0, RadiusY = 0;
    MOP Operator = MOP::ERODE;
+   MKS KernelShape = MKS::RECTANGLE;
+   MCM ChannelMode = MCM::COMPONENTS;
 
    extMorphologyFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
 
@@ -146,12 +144,13 @@ static void morph_span_sse2(const uint8_t *Start, const uint8_t *End, int Step, 
 
 static constexpr int VHGW_MIN_RADIUS = 7;
 
-template <bool Dilate> static inline uint8_t morph_op(uint8_t A, uint8_t B)
+template <bool Dilate, class T> static inline T morph_op(T A, T B)
 {
    if constexpr (Dilate) return std::max(A, B);
    else return std::min(A, B);
 }
 
+//********************************************************************************************************************
 // Out = op(A, B) for Bytes bytes.  Out may be A or B, or may trail B in the same row.
 
 template <bool Dilate> static void morph_combine(const uint8_t *A, const uint8_t *B, uint8_t *Out, size_t Bytes)
@@ -167,6 +166,8 @@ template <bool Dilate> static void morph_combine(const uint8_t *A, const uint8_t
 #endif
    for (; i < Bytes; i++) Out[i] = morph_op<Dilate>(A[i], B[i]);
 }
+
+//********************************************************************************************************************
 
 template <bool Dilate> static inline void morph_pixel(const uint8_t *A, const uint8_t *B, uint8_t *Out)
 {
@@ -185,6 +186,7 @@ template <bool Dilate> static inline void morph_pixel(const uint8_t *A, const ui
 #endif
 }
 
+//********************************************************************************************************************
 // Horizontal van Herk/Gil-Werman pass over one row of Width pixels.  Suffix is a row buffer of Width pixels.
 // Radius must be less than Width.
 
@@ -221,6 +223,7 @@ static void morph_row_vhgw(const uint8_t *In, uint8_t *Out, uint8_t *Suffix, int
    }
 }
 
+//********************************************************************************************************************
 // Vertical van Herk/Gil-Werman pass.  Rows are combined whole, so the work vectorises across the row.  Suffix may be
 // Src, in which case the source is overwritten.  Radius must be less than Height.
 
@@ -263,6 +266,207 @@ static void morph_columns_vhgw(const uint8_t *Src, int SrcStride, uint8_t *Dest,
    }
 }
 
+//********************************************************************************************************************
+// A monotonic queue visits each input sample at most once. Destination coordinates are expressed in the source
+// coordinate system, so a window can also have no overlap with the input.
+
+template<class T> struct morph_queue_entry {
+   int Index;
+   T Value;
+};
+
+template<bool Dilate, class T, class Read, class Write>
+static void morph_line(int SourceStart, int SourceEnd, int DestStart, int DestEnd, int Radius, T Neutral,
+   morph_queue_entry<T> *Queue, Read ReadSample, Write WriteSample)
+{
+   int head = 0, tail = 0;
+   int next = std::max(SourceStart, DestStart - Radius);
+
+   for (int i=DestStart; i < DestEnd; ++i) {
+      const int first = i - Radius, last = std::min(i + Radius, SourceEnd - 1);
+      while ((head < tail) and (Queue[head].Index < first)) ++head;
+      for (; next <= last; ++next) {
+         const T value = ReadSample(next);
+         while ((head < tail) and (morph_op<Dilate>(value, Queue[tail - 1].Value) IS value)) --tail;
+         Queue[tail++] = { next, value };
+      }
+      WriteSample(i, (head < tail) ? Queue[head].Value : Neutral);
+   }
+}
+
+//********************************************************************************************************************
+
+static int ellipse_span(int RadiusX, int RadiusY, int Offset)
+{
+   const double fraction = double(Offset) / RadiusY;
+   return int(std::floor(RadiusX * std::sqrt(1.0 - fraction * fraction) + 1e-9));
+}
+
+//********************************************************************************************************************
+
+template<bool Dilate, class T>
+static ERR draw_morphology_channels(extMorphologyFX *Self, const filter_surface_view &Source,
+   const filter_surface_view &Target, T *Dest, int RadiusX, int RadiusY, int Alpha)
+{
+   const auto &valid = Source.Valid;
+   const auto &clip = Target.Valid;
+   const int dx = Target.OriginX - Source.OriginX, dy = Target.OriginY - Source.OriginY;
+   constexpr bool bitmap = std::is_same_v<T, uint8_t>;
+   constexpr T neutral = bitmap ? (Dilate ? T(0) : std::numeric_limits<T>::max()) :
+      (Dilate ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity());
+   const int components = bitmap ? 4 : filter_components(Source.Format);
+   const int first_channel = (Alpha >= 0) ? Alpha : 0;
+   const int end_channel = (Alpha >= 0) ? Alpha + 1 : components;
+
+   const int width = clip.width();
+   const int left = clip.left + dx, right = clip.right + dx;
+   const int top = clip.top + dy, bottom = clip.bottom + dy;
+   const bool cross = (Self->KernelShape IS MKS::CROSS) and RadiusX and RadiusY;
+   // When even the farthest corner fits inside the ellipse, the separable pass gives the same result.
+   const int far_x = std::max(right - 1 - valid.left, valid.right - 1 - left);
+   const int far_y = std::max(bottom - 1 - valid.top, valid.bottom - 1 - top);
+   const bool ellipse = (Self->KernelShape IS MKS::ELLIPSE) and RadiusX and RadiusY and
+      ((far_y > RadiusY) or (ellipse_span(RadiusX, RadiusY, far_y) < far_x));
+   if (ellipse) {
+      // Sliding extrema remove the horizontal radius from the cost. Bound the remaining work across row pairs.
+      constexpr size_t max_ellipse_work = 128u * 1024u * 1024u;
+      const size_t rows = std::min(valid.height(), 2 * RadiusY + 1);
+      const size_t row_work = size_t(std::min(valid.width(), width + 2 * RadiusX)) + width;
+      if (rows * clip.height() * row_work * (end_channel - first_channel) > max_ellipse_work) {
+         return ERR::OutOfRange;
+      }
+   }
+
+   morph_queue_entry<T> *queue;
+   if (auto error = get_filter_scratch(Self, std::max(valid.width(), valid.height()), queue); error != ERR::Okay) {
+      return error;
+   }
+
+   int *spans = nullptr;
+   T *horizontal = nullptr;
+   if (ellipse) {
+      if (auto error = get_filter_scratch(Self, size_t(RadiusY) + 1, spans); error != ERR::Okay) return error;
+      for (int offset=0; offset <= RadiusY; ++offset) {
+         spans[offset] = ellipse_span(RadiusX, RadiusY, offset);
+      }
+   }
+   else if (RadiusX and RadiusY and (not cross)) {
+      if (auto error = get_filter_scratch(Self, size_t(width) * valid.height(), horizontal); error != ERR::Okay) {
+         return error;
+      }
+   }
+
+   const auto dest_pixel = [&](int X, int Y) {
+      return (T *)((uint8_t *)Dest + std::ptrdiff_t(Y - dy) * Target.Stride) + std::ptrdiff_t(X - dx) * components;
+   };
+
+   if (Alpha >= 0) {
+      for (int y=top; y < bottom; ++y) {
+         for (int x=left; x < right; ++x) {
+            auto out = dest_pixel(x, y);
+            if (valid.hit_test(x, y)) {
+               const auto in = (const T *)Source.row(y) + std::ptrdiff_t(x) * components;
+               std::copy_n(in, components, out);
+            }
+            else std::fill_n(out, components, T(0));
+         }
+      }
+   }
+
+   for (int c=first_channel; c < end_channel; ++c) {
+      const auto read = [&](int X, int Y) -> T {
+         if constexpr (bitmap) return Source.row(Y)[std::ptrdiff_t(X) * 4 + c];
+         else {
+            filter_map_value value;
+            return read_numeric_sample(Source, X, Y, value) ? value[c] : neutral;
+         }
+      };
+
+      if (ellipse) {
+         for (int y=top; y < bottom; ++y) {
+            auto out = dest_pixel(left, y) + c;
+            for (int x=left; x < right; ++x) out[std::ptrdiff_t(x - left) * components] = neutral;
+
+            const int first = std::max(valid.top, y - RadiusY), last = std::min(valid.bottom, y + RadiusY + 1);
+            for (int sy=first; sy < last; ++sy) {
+               morph_line<Dilate>(valid.left, valid.right, left, right, spans[std::abs(sy - y)], neutral, queue,
+                  [&](int X) { return read(X, sy); },
+                  [&](int X, T Value) {
+                     auto &pixel = out[std::ptrdiff_t(X - left) * components];
+                     pixel = morph_op<Dilate>(pixel, Value);
+                  });
+            }
+         }
+      }
+      else if (horizontal) {
+         for (int y=valid.top; y < valid.bottom; ++y) {
+            auto row = horizontal + std::ptrdiff_t(y - valid.top) * width;
+            morph_line<Dilate>(valid.left, valid.right, left, right, RadiusX, neutral, queue,
+               [&](int X) { return read(X, y); }, [&](int X, T Value) { row[X - left] = Value; });
+         }
+         for (int x=left; x < right; ++x) {
+            morph_line<Dilate>(valid.top, valid.bottom, top, bottom, RadiusY, neutral, queue,
+               [&](int Y) { return horizontal[std::ptrdiff_t(Y - valid.top) * width + x - left]; },
+               [&](int Y, T Value) { dest_pixel(x, Y)[c] = Value; });
+         }
+      }
+      else {
+         if (RadiusX or (not RadiusY)) {
+            for (int y=top; y < bottom; ++y) {
+               morph_line<Dilate>(valid.left, valid.right, left, right, RadiusX, neutral, queue,
+                  [&](int X) { return ((y >= valid.top) and (y < valid.bottom)) ? read(X, y) : neutral; },
+                  [&](int X, T Value) { dest_pixel(X, y)[c] = Value; });
+            }
+         }
+         if (RadiusY) {
+            for (int x=left; x < right; ++x) {
+               morph_line<Dilate>(valid.top, valid.bottom, top, bottom, RadiusY, neutral, queue,
+                  [&](int Y) { return ((x >= valid.left) and (x < valid.right)) ? read(x, Y) : neutral; },
+                  [&](int Y, T Value) {
+                     auto &pixel = dest_pixel(x, Y)[c];
+                     pixel = cross ? morph_op<Dilate>(pixel, Value) : Value;
+                  });
+            }
+         }
+      }
+
+      if constexpr (not bitmap) {
+         for (int y=top; y < bottom; ++y) {
+            for (int x=left; x < right; ++x) {
+               auto &pixel = dest_pixel(x, y)[c];
+               if (pixel IS neutral) pixel = INVALID_FILTER_SAMPLE;
+            }
+         }
+      }
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR draw_shaped_morphology(extMorphologyFX *Self, const filter_surface_view &Source, int RadiusX, int RadiusY)
+{
+   const bool dilate = Self->Operator IS MOP::DILATE;
+   if (Source.Format IS filter_surface_format::RGBA8) {
+      const auto bmp = Self->Target;
+      const filter_surface_view target { .Width = bmp->Width, .Height = bmp->Height, .Stride = bmp->LineWidth,
+         .OriginX = Source.OriginX, .OriginY = Source.OriginY,
+         .Valid = { bmp->Clip.Left, bmp->Clip.Top, bmp->Clip.Right, bmp->Clip.Bottom } };
+      if (size_t(target.Valid.width()) * target.Valid.height() > 4096u * 4096u) return ERR::OutOfRange;
+
+      const int alpha = (Self->ChannelMode IS MCM::ALPHA) ? Source.Bitmap->ColourFormat->AlphaPos >> 3 : -1;
+      if (dilate) return draw_morphology_channels<true>(Self, Source, target, bmp->Data, RadiusX, RadiusY, alpha);
+      return draw_morphology_channels<false>(Self, Source, target, bmp->Data, RadiusX, RadiusY, alpha);
+   }
+
+   filter_surface_view target;
+   float *dest;
+   if (auto error = get_numeric_target(Self, target, dest); error != ERR::Okay) return error;
+   if (size_t(target.Valid.width()) * target.Valid.height() > 4096u * 4096u) return ERR::OutOfRange;
+   if (dilate) return draw_morphology_channels<true>(Self, Source, target, dest, RadiusX, RadiusY, -1);
+   return draw_morphology_channels<false>(Self, Source, target, dest, RadiusX, RadiusY, -1);
+}
+
 /*********************************************************************************************************************
 -ACTION-
 Draw: Render the effect to the target bitmap.
@@ -271,15 +475,19 @@ Draw: Render the effect to the target bitmap.
 
 static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
 {
+   filter_surface_view source;
+   if (auto error = get_source_view(Self, source, filter_input_role::INPUT); error != ERR::Okay) return error;
+
+   const auto [radius_x, radius_y] = Self->pixel_radii();
+   if ((source.Format != filter_surface_format::RGBA8) or (Self->KernelShape != MKS::RECTANGLE)) {
+      return draw_shaped_morphology(Self, source, radius_x, radius_y);
+   }
+
    const int canvasWidth = Self->Target->Clip.Right - Self->Target->Clip.Left;
    const int canvasHeight = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
 
-   if (canvasWidth * canvasHeight > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
-
-   const objBitmap *in_bmp;
-   if (auto error = get_source_bitmap(Self, &in_bmp, filter_input_role::INPUT); error != ERR::Okay) return error;
-
-   const auto [radius_x, radius_y] = Self->pixel_radii();
+   if (size_t(canvasWidth) * canvasHeight > 4096u * 4096u) return ERR::OutOfRange;
+   const auto in_bmp = source.Bitmap;
 
    if ((radius_x <= 0) and (radius_y <= 0)) {
       BAF copy_flags = (effect_colour_space(Self) IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
@@ -306,7 +514,9 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       if (auto error = get_filter_scratch(Self, scratch_bytes, scratch); error != ERR::Okay) {
          // Retry with only the intermediate image required by the two-axis pass. Its storage also serves
          // as the vertical suffix buffer, so the vertical fast path can still run when both axes apply.
+
          if ((error != ERR::AllocMemory) or (both_axes and not vhgw_x)) return error;
+
          vhgw_x = false;
          if (both_axes) {
             if (auto retry = get_filter_scratch(Self, image_bytes, scratch); retry != ERR::Okay) return retry;
@@ -417,6 +627,54 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
       }
    }
 
+   if (Self->ChannelMode IS MCM::ALPHA) {
+      // Reuse the separable rectangle pass for coverage and restore the centre RGB from the straight input.
+      const int alpha = in_bmp->ColourFormat->AlphaPos >> 3;
+      const auto target = Self->Target;
+      auto dest = target->Data + std::ptrdiff_t(target->Clip.Top) * target->LineWidth + target->Clip.Left * 4;
+      for (int y=0; y < canvasHeight; ++y) {
+         const auto in = input + std::ptrdiff_t(y) * in_bmp->LineWidth;
+         const auto out = dest + std::ptrdiff_t(y) * target->LineWidth;
+         for (int x=0; x < canvasWidth; ++x) {
+            const auto coverage = out[x * 4 + alpha];
+            std::copy_n(in + x * 4, 4, out + x * 4);
+            out[x * 4 + alpha] = coverage;
+         }
+      }
+   }
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+ChannelMode: Selects the bitmap channels to process.
+Lookup: MCM
+
+*********************************************************************************************************************/
+
+static ERR MORPHOLOGYFX_SET_ChannelMode(extMorphologyFX *Self, MCM Value)
+{
+   if ((Value != MCM::COMPONENTS) and (Value != MCM::ALPHA)) return ERR::OutOfRange;
+   Self->ChannelMode = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+KernelShape: Selects the morphology neighbourhood.
+Lookup: MKS
+
+*********************************************************************************************************************/
+
+static ERR MORPHOLOGYFX_SET_KernelShape(extMorphologyFX *Self, MKS Value)
+{
+   if ((Value < MKS::RECTANGLE) or (Value > MKS::CROSS)) return ERR::OutOfRange;
+   Self->KernelShape = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -490,6 +748,12 @@ static ERR morphology_xml(const extMorphologyFX &Effect, filter_xml_element &Ele
    Element.Name = "feMorphology";
    Element.attribute("operator", Effect.Operator IS MOP::ERODE ? "erode" : "dilate");
    Element.attribute("radius", Element.number(Effect.RadiusX) + ' ' + Element.number(Effect.RadiusY));
+
+   if (Effect.KernelShape IS MKS::ELLIPSE) Element.attribute("kotuku:kernelShape", "ellipse");
+   else if (Effect.KernelShape IS MKS::CROSS) Element.attribute("kotuku:kernelShape", "cross");
+
+   if (Effect.ChannelMode IS MCM::ALPHA) Element.attribute("kotuku:channelMode", "alpha");
+
    return ERR::Okay;
 }
 
@@ -498,10 +762,12 @@ static ERR morphology_xml(const extMorphologyFX &Effect, filter_xml_element &Ele
 #include "filter_morphology_def.c"
 
 static const FieldArray clMorphologyFXFields[] = {
-   { "RadiusX",  FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
-   { "RadiusY",  FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
-   { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
+   { "RadiusX",     FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
+   { "RadiusY",     FDF_DOUBLE|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
+   { "Operator",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_Operator, &clMorphologyFXMOP },
+   { "KernelShape", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_KernelShape, &clMorphologyFXMKS },
+   { "ChannelMode", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, MORPHOLOGYFX_SET_ChannelMode, &clMorphologyFXMCM },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 
