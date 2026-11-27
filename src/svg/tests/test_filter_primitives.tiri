@@ -1187,41 +1187,47 @@ end
 
 @Test function LightingMaterialAttributes()
    local svg <close> = combinedDocument('metalness="0.75" fresnel="0.04" wrap="0.5" anisotropy="0.6" ' ..
-      'anisotropyAngle="30"')
+      'anisotropyAngle="30" matcapMode=" Light "')
    local fx = lightingFX(svg)
    assert((fx.metalness is 0.75) and (fx.fresnel is 0.04) and (fx.wrap is 0.5),
       f'Material attributes must be read (got {fx.metalness}, {fx.fresnel}, {fx.wrap})')
    assert((fx.anisotropy is 0.6) and (fx.anisotropyAngle is 30),
       f'Anisotropy attributes must be read (got {fx.anisotropy}, {fx.anisotropyAngle})')
+   assert(fx.matcapMode is MTC_LIGHT, f'matcapMode must be read without regard to case (got {fx.matcapMode})')
    local doc <close> = draw(svg, 64)
 
    local plain <close> = combinedDocument()
    local api = lightingFX(plain)
-   api.{ metalness=0.75, fresnel=0.04, wrap=0.5, anisotropy=0.6, anisotropyAngle=30 }
+   api.{ metalness=0.75, fresnel=0.04, wrap=0.5, anisotropy=0.6, anisotropyAngle=30, matcapMode=MTC_LIGHT }
    local diff = imageDifference(doc, draw(plain, 64))
    assert(diff is 0, f'The attributes must render as the API settings (max difference {diff})')
    assert(imageDifference(doc, draw(combinedDocument(), 64)) > 0, 'The attributes must change the default render')
 
-   local prefixed <close> = combinedDocument('kotuku:metalness="1" kotuku:wrap="0.25" kotuku:anisotropy="1"')
+   local prefixed <close> = combinedDocument('kotuku:metalness="1" kotuku:wrap="0.25" kotuku:anisotropy="1" ' ..
+      'kotuku:matcapMode="light"')
    fx = lightingFX(prefixed)
-   assert((fx.metalness is 1) and (fx.wrap is 0.25) and (fx.anisotropy is 1),
+   assert((fx.metalness is 1) and (fx.wrap is 0.25) and (fx.anisotropy is 1) and (fx.matcapMode is MTC_LIGHT),
       'The prefixed attributes must be accepted on kotuku:feLighting')
 
    for _, attribs in array<str> {
-      'metalness="1.5" fresnel="-0.1" wrap="2" anisotropy="1.01" anisotropyAngle="inf"',
-      'metalness="bad" fresnel="0.04x" wrap="" anisotropy="-0.5" anisotropyAngle="bad"'
+      'metalness="1.5" fresnel="-0.1" wrap="2" anisotropy="1.01" anisotropyAngle="inf" matcapMode="lit"',
+      'metalness="bad" fresnel="0.04x" wrap="" anisotropy="-0.5" anisotropyAngle="bad" matcapMode=""'
    } do
       local invalid <close> = combinedDocument(attribs)
       fx = lightingFX(invalid)
       assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0) and (fx.anisotropy is 0) and
-         (fx.anisotropyAngle is 0), f'Invalid values must leave the defaults: {attribs}')
+         (fx.anisotropyAngle is 0) and (fx.matcapMode is MTC_REFLECT), f'Invalid values must leave the defaults: ' ..
+         attribs)
    end
 
    local standard <close> = lightingDocument('kotuku:metalness="1" kotuku:fresnel="0.5" kotuku:wrap="1" ' ..
-      'kotuku:anisotropy="1" kotuku:anisotropyAngle="45"')
+      'kotuku:anisotropy="1" kotuku:anisotropyAngle="45" kotuku:matcapMode="light"')
    fx = lightingFX(standard)
    assert((fx.metalness is 0) and (fx.fresnel is 0) and (fx.wrap is 0) and (fx.anisotropy is 0) and
-      (fx.anisotropyAngle is 0), 'feDiffuseLighting must ignore the material attributes')
+      (fx.anisotropyAngle is 0) and (fx.matcapMode is MTC_REFLECT),
+      'feDiffuseLighting must ignore the material attributes')
+   local carried <close> = lightingDocument('kotuku:combinedMatcapMode="light"')
+   assert(lightingFX(carried).matcapMode is MTC_LIGHT, 'feDiffuseLighting must carry kotuku:combinedMatcapMode')
    local diff_standard = imageDifference(draw(standard, 64), draw(lightingDocument(), 64))
    assert(diff_standard is 0, f'The material attributes must not change feDiffuseLighting ({diff_standard})')
 end
@@ -1232,13 +1238,13 @@ end
    local defaults <close> = combinedDocument()
    local _, filter:any = check defaults.scene.mtFindDef('f')
    local xml:str = filter.effectXML
-   for _, name in array<str> { 'metalness', 'fresnel', 'wrap', 'anisotropy' } do
+   for _, name in array<str> { 'metalness', 'fresnel', 'wrap', 'anisotropy', 'matcapMode' } do
       assert(xml.find(name, 0, true) is nil, f'Default material terms must not be written: {xml}')
    end
 
    for _, attribs in array<str> { 'metalness="0.6"', 'fresnel="0.04" specularConstant="12"', 'wrap="0.35"',
       'metalness="1" fresnel="0.25" wrap="1" ambient="#202020"', 'anisotropy="0.8" anisotropyAngle="-30"',
-      'anisotropyAngle="45"' } do
+      'anisotropyAngle="45"', 'matcapMode="light"' } do
       local svg <close> = combinedDocument(attribs)
       local original <close> = draw(svg, 64)
       _, filter = check svg.scene.mtFindDef('f')
@@ -1248,8 +1254,8 @@ end
       assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
       local a, b = lightingFX(svg), lightingFX(loaded)
       assert((a.metalness is b.metalness) and (a.fresnel is b.fresnel) and (a.wrap is b.wrap) and
-         (a.anisotropy is b.anisotropy) and (a.anisotropyAngle is b.anisotropyAngle),
-         f'XMLDef must preserve the material fields: {xml}')
+         (a.anisotropy is b.anisotropy) and (a.anisotropyAngle is b.anisotropyAngle) and
+         (a.matcapMode is b.matcapMode), f'XMLDef must preserve the material fields: {xml}')
    end
 end
 
@@ -2062,18 +2068,17 @@ end
 
 -- The matcap reflection is indirect light, so a black map removes it.
 
-@Test function OcclusionMapDimsTheMatcap()
+@Test function MatcapOcclusion()
+   local matcap <close> = obj.new('bitmap', { width=9, height=9, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL,
+      bkgd='255,255,255,255' })
+   matcap.acClear()
+
    local function render(Map:str, Matcap:bool):obj
       local svg <close> = document(f'<feFlood flood-color="{Map}" result="ao"/>' ..
          '<kotuku:feLighting in="SourceAlpha" in2="SourceGraphic" surfaceScale="20" diffuseConstant="0" ' ..
          'specularConstant="0" occlusionMap="ao"><feDistantLight elevation="45"/></kotuku:feLighting>',
          COMBINED_CONTENT, 64, KOTUKU_NS)
-      if Matcap then
-         local matcap = obj.new('bitmap', { width=9, height=9, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL,
-            bkgd='255,255,255,255' })
-         matcap.acClear()
-         lightingFX(svg).matcap = matcap
-      end
+      if Matcap then lightingFX(svg).matcap = matcap end
       return draw(svg, 64)
    end
 
@@ -2083,6 +2088,27 @@ end
    assert(imageDifference(none, exposed) > 50, 'An exposed matcap must add its reflection')
    local diff = imageDifference(none, occluded)
    assert(diff is 0, f'A black map must remove the matcap reflection (max difference {diff})')
+
+   -- A ranged key light still supplies the direction for fading its shadow beyond its direct light range.
+   local function renderKeyShadow(Fill:str, Normal:str):num
+      local svg <close> = document('<feFlood x="40" y="0" width="10" height="64" result="block"/>' ..
+         '<feFlood flood-color="white" result="paint"/>' ..
+         f'<feFlood flood-color="{Normal}" result="normals"/>' ..
+         '<kotuku:feLighting in="block" in2="paint" surfaceScale="64" diffuseConstant="1" specularConstant="0" ' ..
+         'normalMap="normals" features="local-shadows" penumbra="0" matcapMode="light">' ..
+         '<fePointLight x="60" y="32" z="65" kotuku:range="25"/>' .. Fill .. '</kotuku:feLighting>',
+         nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+      lightingFX(svg).matcap = matcap
+      local bmp <close> = draw(svg, 64)
+      return mGfx.ReadRGBPixel(bmp, 20, 32).red
+   end
+
+   local fill = '<feDistantLight elevation="90" kotuku:intensity="0"/>'
+   assert(renderKeyShadow('', '#ff8080') is 0, 'The blocker must shadow a normal that faces the key light')
+   local single, multiple = renderKeyShadow('', '#018080'), renderKeyShadow(fill, '#018080')
+   assert((single is 255) and (multiple is single),
+      'The back-facing normal must fade the key shadow outside its range with or without a fill ' ..
+      f'({single}, {multiple})')
 end
 
 @Test function FloodOcclusionPreservesFractionalColourOnExport()

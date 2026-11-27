@@ -179,7 +179,9 @@ A matcap adds reflections of an environment that the light model cannot produce,
 glazed ceramic.  It is an image of a lit sphere, set with #MatcapPath or #Matcap, and each pixel takes the colour of
 the point on the sphere that faces the same way as the surface.  The reflection is added to the specular light as
 `matcap * F * albedo.alpha`, where F is the reflectance above, computed with the albedo's colour.  It is reduced by
-`CAVITY` but not by shadows, and it is independent of the light, so it remains if #SpecularConstant is zero.
+`CAVITY` but not by shadows, and it is independent of the light, so it remains if #SpecularConstant is zero.  With
+#MatcapMode set to `LIGHT`, the matcap is the diffuse light instead: `albedo * kd * (1 - m) * matcap(N)` replaces the
+diffuse light of the light sources, for painted, toon and clay looks.
 
 A #RoughnessMap varies the highlight across the surface for the `SPECULAR` and `COMBINED` types.  Each pixel's
 roughness sets its own specular exponent in place of #Exponent, and smooth areas receive narrower, brighter highlights
@@ -392,7 +394,7 @@ struct lit_light {
    double nearest_term = 1;         // Squared distance to the nearest sample, floored at the coincidence threshold
    bool   reaches = true;           // False if a ranged light reaches no sample of the surface
    bool   wrap_shadows = false;     // True if wrapped faces take shadows from the raised light
-   double wrap_blend = 0;           // N.L below which faces take the raised shadow
+   double wrap_blend = 0;           // N.L below which a face shadows itself, for Wrap and the LIGHT matcap
    const float *shadow = nullptr;   // Fraction of the light reaching each pixel, or nullptr
    const float *raised = nullptr;   // As shadow, with the light raised by the wrap angle
 
@@ -485,6 +487,8 @@ class extLightingFX : public extFilterEffect {
    bool   MatcapPinned = false;         // True if Matcap is a client bitmap that holds our strong pin
    const float *MatcapTexels = nullptr; // Premultiplied RGB0 in the filter's colour space, or nullptr; per draw
    int    MatcapWidth = 0, MatcapHeight = 0; // Dimensions of MatcapTexels, set per draw
+   MTC    MatcapMode = MTC::REFLECT;   // The matcap is a reflection, or the diffuse light
+   bool   LitSphere = false;           // True if MatcapTexels is the diffuse light, set per draw
 
    // Named input slots.  The planner keeps their order, and the members below refer to them by name.
 
@@ -637,7 +641,7 @@ class extLightingFX : public extFilterEffect {
    inline void enhanced_combined(const point3 &, const point3 &, double, double, const point3 &, const FRGB &,
       const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double);
    inline void enhanced_material(const point3 &, const point3 &, double, double, const point3 &, const FRGB &,
-      const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double, double);
+      const albedo_sample &, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t, double, double, double, double);
    inline void enhanced_lights(const struct lit_surface &, const point3 &, const point3 &, double, double,
       const albedo_sample &, int, int, float, float, float, uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t);
    inline void sample_matcap(const point3 &, float *) const;
@@ -748,6 +752,16 @@ class extLightingFX : public extFilterEffect {
          along = std::min((ht * ht) / denominator, 1.0);
       }
       return Exponent * (AcrossScale + ((AlongScale - AcrossScale) * along));
+   }
+
+   // The shadow of the key light on the light of a LIGHT matcap, given the key light's shadow and N.L at the pixel.  A
+   // face that turns away from the key light is shadowed by its own slope, but the matcap lights it, so the shadow is
+   // faded out from N.L = Blend, the sine of the penumbra, to the terminator, as for the raised shadows of Wrap.
+
+   static LIGHT_INLINE double lit_sphere_shadow(double Shadow, double NL, double Blend) {
+      if (NL >= Blend) return Shadow;
+      const double turned = (NL <= 0) ? 1.0 : 1.0 - (NL / Blend);
+      return Shadow + (turned * (1.0 - Shadow));
    }
 
    // True if fine detail receives extra relief, given the radius of the base layer's blur in pixels.
@@ -1074,22 +1088,40 @@ inline void extLightingFX::enhanced_combined(const point3 &Normal, const point3 
 //
 // A matcap adds matcap(Mean) x F x Cavity x coverage to the specular light.  Its F uses the straight albedo, because
 // the term is weighted by the albedo's coverage separately.  It is independent of the light and is not shadowed.
+//
+// A LIGHT matcap (LitSphere) is the diffuse light instead: kd x (1 - Metalness) x matcap(Normal) x Cavity x shadow,
+// where Shadow is the light's shadow alone (see lit_sphere_shadow()).  Wrap has no effect on it.
 
 inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 &Mean, double Exponent, double Gain,
    const point3 &STL, const FRGB &Light, const albedo_sample &Albedo, uint8_t *Output, uint8_t R, uint8_t G,
-   uint8_t B, uint8_t A, double Occlusion, double Cavity, double Raised)
+   uint8_t B, uint8_t A, double Occlusion, double Cavity, double Raised, double Shadow)
 {
    const point3 half_dir = point3::half_vector(STL);
 
    const double nl = Normal.dot(STL);
-   double diffuse_occlusion = Occlusion;
-   if ((WrapShadows) and (nl < WrapBlend)) {
-      const double turned = (nl <= 0) ? 1.0 : 1.0 - (nl / WrapBlend);
-      diffuse_occlusion += turned * (Raised - Occlusion);
+   double dr, dg, db;
+   if (LitSphere) {
+      alignas(16) float light[4];
+      sample_matcap(Normal, light);
+      const double scale = Constant * (1.0 - Metalness) * Cavity * lit_sphere_shadow(Shadow, nl, WrapBlend);
+      dr = light[0] * scale;
+      dg = light[1] * scale;
+      db = light[2] * scale;
+   }
+   else {
+      double diffuse_occlusion = Occlusion;
+      if ((WrapShadows) and (nl < WrapBlend)) {
+         const double turned = (nl <= 0) ? 1.0 : 1.0 - (nl / WrapBlend);
+         diffuse_occlusion += turned * (Raised - Occlusion);
+      }
+
+      const double lit = std::max(0.0, (nl + Wrap) * WrapScale);
+      const double diffuse = Constant * (1.0 - Metalness) * lit * diffuse_occlusion;
+      dr = diffuse * Light.Red;
+      dg = diffuse * Light.Green;
+      db = diffuse * Light.Blue;
    }
 
-   const double lit = std::max(0.0, (nl + Wrap) * WrapScale);
-   const double diffuse = Constant * (1.0 - Metalness) * lit * diffuse_occlusion;
    const double exponent = Anisotropic ? anisotropic_exponent(Mean, half_dir, Exponent) : Exponent;
    const double specular = SpecularConstant * Gain * std::pow(std::max(0.0, Mean.dot(half_dir)), exponent) *
       Occlusion;
@@ -1112,7 +1144,7 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
 
    double sr = specular * fr * Light.Red, sg = specular * fg * Light.Green, sb = specular * fb * Light.Blue;
 
-   if ((MatcapTexels) and (coverage > 0)) {
+   if ((MatcapTexels) and (not LitSphere) and (coverage > 0)) {
       alignas(16) float matcap[4];
       sample_matcap(Mean, matcap);
 
@@ -1136,12 +1168,9 @@ inline void extLightingFX::enhanced_material(const point3 &Normal, const point3 
    }
 
    const double demul = 1.0 / alpha;
-   Output[R] = encode_channel(((Albedo.r * coverage * ((AmbientLight.Red * Cavity) + (diffuse * Light.Red))) + sr)
-      * demul, true);
-   Output[G] = encode_channel(((Albedo.g * coverage * ((AmbientLight.Green * Cavity) + (diffuse * Light.Green))) + sg)
-      * demul, true);
-   Output[B] = encode_channel(((Albedo.b * coverage * ((AmbientLight.Blue * Cavity) + (diffuse * Light.Blue))) + sb)
-      * demul, true);
+   Output[R] = encode_channel(((Albedo.r * coverage * ((AmbientLight.Red * Cavity) + dr)) + sr) * demul, true);
+   Output[G] = encode_channel(((Albedo.g * coverage * ((AmbientLight.Green * Cavity) + dg)) + sg) * demul, true);
+   Output[B] = encode_channel(((Albedo.b * coverage * ((AmbientLight.Blue * Cavity) + db)) + sb) * demul, true);
    Output[A] = uint8_t((alpha * 255.0) + 0.5);
 }
 
@@ -2414,6 +2443,8 @@ and, if #Fresnel is set, it is weak where the surface faces the viewer and stron
 the albedo's alpha, reduced by the `CAVITY` feature, and is not affected by shadows or by the light.  To show the
 reflection alone, set #SpecularConstant to zero.  The diffuse and specular types ignore the matcap.
 
+Set #MatcapMode to `LIGHT` to use the matcap as the diffuse light instead of as a reflection.
+
 Setting this field to a bitmap replaces any matcap that was loaded from #MatcapPath, and clears #MatcapPath.  The
 bitmap must be initialised and use 32 bits per pixel; otherwise `ERR::InvalidValue` is returned and the field is
 unchanged.  The bitmap is pinned until it is replaced or the effect is freed, so an attempt to free it earlier is
@@ -2507,6 +2538,51 @@ static ERR LIGHTINGFX_SET_MatcapPath(extLightingFX *Self, const std::string_view
 static ERR LIGHTINGFX_SET_MatcapRef(extLightingFX *Self, const std::string_view &Value)
 {
    Self->MatcapRef = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+MatcapMode: Selects whether the #Matcap of the `COMBINED` type is a reflection or the diffuse light.
+
+In `REFLECT` mode, the default, the matcap is added to the specular light as a reflection of an environment (refer to
+#Matcap).
+
+In `LIGHT` mode the matcap is a 'lit sphere': an image of a sphere that is lit and shaded as the surface should be,
+often painted by an artist.  It replaces the diffuse light of the light sources, so it gives painted, toon and clay
+looks that the light model cannot produce.  Each pixel's diffuse light is the colour of the matcap at the pixel's own
+normal, which is multiplied by the albedo in place of `N.L` times the light's colour:
+
+<pre>
+albedo * (ambient + kd * (1 - m) * matcap(N) * occlusion) + specular
+</pre>
+
+A flat surface therefore takes the albedo multiplied by #Constant and the colour at the centre of the matcap.  The
+light's #Colour and #Intensity do not affect it, and #Wrap has no effect.  The occlusion is that of the ambient light,
+from the `CAVITY` feature and #OcclusionMap, multiplied by the shadows of the first light, which serves as the key
+light.  The shadows are faded out on faces that turn away from the key light, which would otherwise be shadowed by
+their own slope, so that the matcap's own shading is kept and only shadows cast onto faces that face the light remain.
+Disable the `SHADOWS` and `LOCAL_SHADOWS` features to light the surface with the matcap alone.
+
+The specular light, #Fresnel and #Anisotropy are unchanged, so the light sources still add highlights.  Set
+#SpecularConstant to zero to remove them.  The matcap is not also used as a reflection in this mode.
+
+The field has no effect without a matcap, and the diffuse and specular types ignore it.
+
+*********************************************************************************************************************/
+
+static ERR LIGHTINGFX_GET_MatcapMode(extLightingFX *Self, MTC &Value)
+{
+   Value = Self->MatcapMode;
+   return ERR::Okay;
+}
+
+static ERR LIGHTINGFX_SET_MatcapMode(extLightingFX *Self, MTC Value)
+{
+   if ((Value != MTC::REFLECT) and (Value != MTC::LIGHT)) return ERR::OutOfRange;
+   Self->MatcapMode = Value;
+   effect_modified(Self);
    return ERR::Okay;
 }
 
@@ -3003,8 +3079,9 @@ attributes when they differ from their defaults.  These include `kotuku:features
 `kotuku:occlusionStrength` for #OcclusionChannel and #OcclusionStrength, `kotuku:roughnessChannel` for
 #RoughnessChannel, and `kotuku:ambient` for #Ambient.  The
 `COMBINED` type also writes `metalness`, `fresnel`, `wrap`, `anisotropy` and `anisotropyAngle` for #Metalness, #Fresnel,
-#Wrap, #Anisotropy and #AnisotropyAngle when they are not zero.  An SVG-loaded matcap keeps its original relative
-reference so the image can be reloaded from the same document folder.  For API-loaded images #MatcapPath must be
+#Wrap, #Anisotropy and #AnisotropyAngle when they are not zero, and `matcapMode="light"` if #MatcapMode is `LIGHT`.
+The standard elements carry these settings as `kotuku:combinedMetalness` and similar.  An SVG-loaded matcap keeps its
+original relative reference so the image can be reloaded from the same document folder.  For API-loaded images #MatcapPath must be
 document-relative.  A matcap supplied as a #Matcap bitmap returns `ERR::NoSupport` during serialisation.  The attributes
 of `kotuku:feLighting` and `kotuku:feNormalMap` are written without the prefix because the elements are in the Kōtuku
 namespace.  The document must declare the prefix, for example `xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"`.
@@ -3090,6 +3167,9 @@ static ERR lighting_xml(const extLightingFX &Effect, filter_xml_element &Element
       if (not safe_filter_path(reference)) return ERR::NoSupport;
       Element.attribute(combined ? "matcap" : prefix + "combinedMatcap", reference);
    }
+   if (Effect.MatcapMode IS MTC::LIGHT) {
+      Element.attribute(combined ? "matcapMode" : prefix + "combinedMatcapMode", "light");
+   }
 
    const auto &first_light = Effect.Lights.front();
    if (normal and (not Effect.Configured) and (first_light.Intensity IS 1.0) and
@@ -3154,6 +3234,7 @@ static const FieldArray clLightingFXFields[] = {
    { "AnisotropyAngle", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, LIGHTINGFX_GET_AnisotropyAngle, LIGHTINGFX_SET_AnisotropyAngle },
    { "Matcap",     FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_Matcap, LIGHTINGFX_SET_Matcap, CLASSID::BITMAP },
    { "MatcapPath", FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapPath, LIGHTINGFX_SET_MatcapPath },
+   { "MatcapMode", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_MatcapMode, LIGHTINGFX_SET_MatcapMode, &clLightingFXMTC },
    { "MatcapRef",  FDF_SYSTEM|FDF_VIRTUAL|FDF_CPPSTRING|FDF_W|FDF_PURE, nullptr, LIGHTINGFX_SET_MatcapRef },
    { "NormalMap",  FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalMap, LIGHTINGFX_SET_NormalMap, CLASSID::FILTEREFFECT },
    { "NormalConvention",  FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, LIGHTINGFX_GET_NormalConvention, LIGHTINGFX_SET_NormalConvention, &clLightingFXNMC },

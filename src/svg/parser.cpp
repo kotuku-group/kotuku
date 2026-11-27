@@ -2212,6 +2212,12 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
             else if ((combined and (local IS "anisotropyAngle")) or (local IS "combinedAnisotropyAngle")) {
                set_light_number("anisotropyAngle", val, &objLightingFX::setAnisotropyAngle);
             }
+            else if ((combined and (local IS "matcapMode")) or (local IS "combinedMatcapMode")) {
+               const auto mode = kt::font_traits::trim(std::string_view(val));
+               if (iequals(mode, "reflect")) fx->setMatcapMode(MTC::REFLECT);
+               else if (iequals(mode, "light")) fx->setMatcapMode(MTC::LIGHT);
+               else log.warning("Invalid matcapMode '%s' on %s.", val.c_str(), Tag.name());
+            }
             else if (local IS "albedo") parse_input_mix(Self, fx, val);
             else if ((combined and (local IS "matcap")) or (local IS "combinedMatcap")) {
                std::string path;

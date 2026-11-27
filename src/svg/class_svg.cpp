@@ -335,6 +335,8 @@ The default is 0, which brushes along the X axis.  Sets @LightingFX.AnisotropyAn
 such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
 warning is logged and the surface is drawn without it.  Sets @LightingFX.MatcapPath.</li>
+<li>`matcapMode`: `reflect` (the default) adds the matcap to the specular light as a reflection.  `light` uses it as
+the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Sets @LightingFX.MatcapMode.</li>
 </list>
 
 The element accepts any number of light source elements, which light the surface together in document order.
