@@ -393,6 +393,7 @@ template<bool Ascending> class blur_weighted_window {
          }
          BackSum = BackWeighted = 0;
       }
+
       return Front[--FrontCount].Sample;
    }
 
@@ -411,6 +412,7 @@ template<class Read, class Write>
 static void blur_native_line(Read Sample, Write Store, int Count, int Radius)
 {
    // The caller handles radius zero, so both halves always contain a sample.
+
    blur_weighted_window<true> left;
    blur_weighted_window<false> right;
    for (int i=-Radius; i <= 0; ++i) left.push(Sample(i));
@@ -456,6 +458,7 @@ static void blur_numeric_axis(READ Read, float *Dest, int Width, int Height, int
             const double value = HeightMode ? std::clamp(Sum * normalise, 0.0, 1.0) : Sum * normalise;
             out = BlendOutput ? float(std::lerp(double(out), value, Blend)) : float(value);
          };
+
          if (not HeightMode) {
             if (R) blur_native_line(sample, store, count, R);
             else for (int i=0; i < count; ++i) store(i, sample(i));
@@ -660,6 +663,18 @@ The addressing mode applies along each axis with an active blur.
 SVG reads and writes `CLAMP` as `edgeMode="duplicate"` and `REPEAT` as `edgeMode="wrap"`.
 `MIRROR` uses the Kōtuku extension `kotuku:edgeMode="mirror"`.
 
+*********************************************************************************************************************/
+
+static ERR BLURFX_SET_EdgeMode(extBlurFX *Self, FEM Value)
+{
+   if ((Value < FEM::TRANSPARENT) or (Value > FEM::MIRROR)) return ERR::OutOfRange;
+   Self->EdgeMode = Value;
+   effect_modified(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 OutputMode: Selects the output surface format.
 Lookup: FOM
@@ -671,33 +686,7 @@ In `NATIVE` mode, scalar and vector float inputs are blurred component-wise and 
 original surface format.  Missing or invalid samples contribute zero.  Bitmap inputs use the usual RGBA blur.
 SVG represents this mode with `kotuku:outputMode="native"`.
 
--FIELD-
-SX: The standard deviation of the blur on the x axis.
-
-The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
-
-If either value is 0 or less, the effect is disabled on that axis.
-
--FIELD-
-SY: The standard deviation of the blur on the y axis.
-
-The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
-
-If either value is 0 or less, the effect is disabled on that axis.
-
--FIELD-
-XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
--END-
-
 *********************************************************************************************************************/
-
-static ERR BLURFX_SET_EdgeMode(extBlurFX *Self, FEM Value)
-{
-   if ((Value < FEM::TRANSPARENT) or (Value > FEM::MIRROR)) return ERR::OutOfRange;
-   Self->EdgeMode = Value;
-   effect_modified(Self);
-   return ERR::Okay;
-}
 
 static ERR BLURFX_SET_OutputMode(extBlurFX *Self, FOM Value)
 {
@@ -710,29 +699,16 @@ static ERR BLURFX_SET_OutputMode(extBlurFX *Self, FOM Value)
    return ERR::Okay;
 }
 
-static ERR blur_xml(const extBlurFX &Effect, filter_xml_element &Element)
-{
-   Element.Name = "feGaussianBlur";
-   Element.attribute("stdDeviation", Element.number(Effect.SX) + ' ' + Element.number(Effect.SY));
-   switch (Effect.EdgeMode) {
-      case FEM::CLAMP: Element.attribute("edgeMode", "duplicate"); break;
-      case FEM::REPEAT: Element.attribute("edgeMode", "wrap"); break;
-      case FEM::MIRROR: Element.attribute("kotuku:edgeMode", "mirror"); break;
-      case FEM::TRANSPARENT: break;
-      default: return ERR::InvalidValue;
-   }
-   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
-   else if (Effect.OutputMode IS FOM::NATIVE) Element.attribute("kotuku:outputMode", "native");
-   return ERR::Okay;
-}
+/*********************************************************************************************************************
 
-//********************************************************************************************************************
+-FIELD-
+SX: The standard deviation of the blur on the x axis.
 
-#include "filter_blur_def.c"
+The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
 
-//********************************************************************************************************************
-// Writable fields that would otherwise be written directly report their changes, so that buffered viewports redraw
-// the filter's clients.
+If either value is 0 or less, the effect is disabled on that axis.
+
+*********************************************************************************************************************/
 
 static ERR BLURFX_SET_SX(extBlurFX *Self, double Value)
 {
@@ -741,6 +717,17 @@ static ERR BLURFX_SET_SX(extBlurFX *Self, double Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+
+-FIELD-
+SY: The standard deviation of the blur on the y axis.
+
+The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.
+
+If either value is 0 or less, the effect is disabled on that axis.
+
+*********************************************************************************************************************/
+
 static ERR BLURFX_SET_SY(extBlurFX *Self, double Value)
 {
    Self->SY = Value;
@@ -748,7 +735,35 @@ static ERR BLURFX_SET_SY(extBlurFX *Self, double Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+
+-FIELD-
+XMLDef: Describes the primitive using the @FilterEffect.XMLDef format.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR blur_xml(const extBlurFX &Effect, filter_xml_element &Element)
+{
+   Element.Name = "feGaussianBlur";
+   Element.attribute("stdDeviation", Element.number(Effect.SX) + ' ' + Element.number(Effect.SY));
+
+   switch (Effect.EdgeMode) {
+      case FEM::CLAMP:  Element.attribute("edgeMode", "duplicate"); break;
+      case FEM::REPEAT: Element.attribute("edgeMode", "wrap"); break;
+      case FEM::MIRROR: Element.attribute("kotuku:edgeMode", "mirror"); break;
+      case FEM::TRANSPARENT: break;
+      default: return ERR::InvalidValue;
+   }
+
+   if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("kotuku:outputMode", "height");
+   else if (Effect.OutputMode IS FOM::NATIVE) Element.attribute("kotuku:outputMode", "native");
+   return ERR::Okay;
+}
+
 //********************************************************************************************************************
+
+#include "filter_blur_def.c"
 
 static const FieldArray clBlurFXFields[] = {
    { "SX",         FDF_DOUBLE|FDF_RW, nullptr, BLURFX_SET_SX },
