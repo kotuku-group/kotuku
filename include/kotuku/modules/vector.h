@@ -433,13 +433,21 @@ enum class VPF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VPF)
 
-// Output modes for ImageFX, TurbulenceFX and BlurFX.
+// Output modes for ImageFX, TurbulenceFX, BlurFX and WaveFunctionFX.
 
 enum class FOM : int {
    NIL = 0,
    IMAGE = 0,
    HEIGHT = 1,
    NATIVE = 2,
+};
+
+// WaveFunctionFX normalisation.
+
+enum class WFN : int {
+   NIL = 0,
+   MAXIMUM = 0,
+   RAW = 1,
 };
 
 enum class TB : int {
@@ -4243,6 +4251,21 @@ class objWaveFunctionFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getOutputMode(FOM &Value) noexcept {
+      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 84));
+      return ERR::Okay;
+   }
+
+   inline ERR getNormalisation(WFN &Value) noexcept {
+      Value = *((WFN *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 88));
+      return ERR::Okay;
+   }
+
+   inline ERR getResampleMethod(VSM &Value) noexcept {
+      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 92));
+      return ERR::Okay;
+   }
+
    inline ERR getColourMap(std::string_view &Value) noexcept {
       Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
@@ -4273,6 +4296,16 @@ class objWaveFunctionFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getCentreX(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 96));
+      return ERR::Okay;
+   }
+
+   inline ERR getCentreY(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 104));
+      return ERR::Okay;
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->GetValue(this, &Value);
@@ -4282,43 +4315,68 @@ class objWaveFunctionFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setOutputMode(const FOM Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setNormalisation(const WFN Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setResampleMethod(const VSM Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setN(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setL(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setM(const int Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setResolution(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+   inline ERR setM(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setResolution(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setCentreX(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setCentreY(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

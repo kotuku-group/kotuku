@@ -173,81 +173,10 @@ static double image_height_sample(objBitmap &Bitmap, MCH Channel, int X, int Y)
 
 static ERR draw_image_height(extImageFX *Self, const TClipRectangle<int> &Crop)
 {
-   auto &bitmap = *Self->Bitmap;
-   const int width = Crop.width(), height = Crop.height();
-   agg::trans_affine forward, inverse;
-   if (auto error = filter_image_transform(Self, width, height, Self->AspectRatio, forward, inverse);
-       error != ERR::Okay) {
-      return (error IS ERR::NothingDone) ? ERR::Okay : error;
-   }
-
-   filter_surface_view layout;
-   float *data;
-   if (auto error = get_numeric_target(Self, layout, data); error != ERR::Okay) return error;
-
-   TClipRectangle<double> bounds { 0, 0, double(width), double(height) };
-   if (not transform_filter_region(bounds, forward)) return ERR::OutOfRange;
-   const auto &clip = layout.Valid;
-   const int left = int(std::clamp(std::floor(bounds.left), double(clip.left), double(clip.right)));
-   const int right = int(std::clamp(std::ceil(bounds.right), double(clip.left), double(clip.right)));
-   const int top = int(std::clamp(std::floor(bounds.top), double(clip.top), double(clip.bottom)));
-   const int bottom = int(std::clamp(std::ceil(bounds.bottom), double(clip.top), double(clip.bottom)));
-
-   const auto method = Self->ResampleMethod;
-   const bool nearest = method IS VSM::NEIGHBOUR;
-   const bool bilinear = (method IS VSM::BILINEAR) or (method IS VSM::AUTO);
-   const auto kernel = (nearest or bilinear) ? nullptr : &get_filter(method, inverse);
-   auto tap = [&](int X, int Y) {
-      return image_height_sample(bitmap, Self->HeightChannel,
-         Crop.left + std::clamp(X, 0, width - 1), Crop.top + std::clamp(Y, 0, height - 1));
-   };
-
-   for (int y = top; y < bottom; y++) {
-      auto row = data + std::ptrdiff_t(y) * (layout.Stride / sizeof(float));
-      for (int x = left; x < right; x++) {
-         double sx, sy;
-         map_filter_pixel_centre(inverse, x, y, sx, sy);
-         // Pixels outside the image (including letterboxing) retain the surface's invalid sample.
-         if (not ((sx >= 0) and (sx < width) and (sy >= 0) and (sy < height))) continue;
-         if (nearest) {
-            row[x] = float(tap(int(sx), int(sy)));
-            continue;
-         }
-
-         sx -= 0.5;
-         sy -= 0.5;
-         const int ix = int(std::floor(sx)), iy = int(std::floor(sy));
-         const double fx = sx - ix, fy = sy - iy;
-         if (bilinear) {
-            if ((fx IS 0.0) and (fy IS 0.0)) {
-               row[x] = float(tap(ix, iy));
-               continue;
-            }
-            const double a = std::lerp(tap(ix, iy), tap(ix + 1, iy), fx);
-            const double b = std::lerp(tap(ix, iy + 1), tap(ix + 1, iy + 1), fx);
-            row[x] = float(std::lerp(a, b, fy));
-         }
-         else {
-            // Use the image kernel weights, accumulating the height itself without integer rounding.
-            const auto weights = kernel->weight_array();
-            const int start = kernel->start(), diameter = kernel->diameter();
-            constexpr int subpixel_scale = agg::image_subpixel_scale;
-            const int phase_x = agg::image_subpixel_mask - int(fx * subpixel_scale);
-            const int phase_y = agg::image_subpixel_mask - int(fy * subpixel_scale);
-            double height = 0;
-            for (int ky = 0; ky < diameter; ky++) {
-               const double wy = weights[phase_y + ky * subpixel_scale];
-               for (int kx = 0; kx < diameter; kx++) {
-                  const double wx = weights[phase_x + kx * subpixel_scale];
-                  height += wx * wy * tap(ix + start + kx, iy + start + ky);
-               }
-            }
-            constexpr double scale = agg::image_filter_scale;
-            row[x] = float(std::clamp(height / (scale * scale), 0.0, 1.0));
-         }
-      }
-   }
-   return ERR::Okay;
+   return render_scalar_to_filter(Self, Crop.width(), Crop.height(), Self->AspectRatio, Self->ResampleMethod, 1.0,
+      [&](int X, int Y) {
+         return image_height_sample(*Self->Bitmap, Self->HeightChannel, Crop.left + X, Crop.top + Y);
+      });
 }
 
 /*********************************************************************************************************************

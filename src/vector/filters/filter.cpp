@@ -1016,6 +1016,86 @@ static TClipRectangle<int> filter_input_region(const extFilterEffect *Effect, co
 }
 
 //********************************************************************************************************************
+// Fit a scalar grid like a bitmap, retaining float precision and leaving uncovered pixels invalid.
+
+template<class Sample>
+static ERR render_scalar_to_filter(extFilterEffect *Effect, int Width, int Height, ARF AspectRatio,
+   VSM Method, double Maximum, Sample Tap)
+{
+   agg::trans_affine forward, inverse;
+   if (auto error = filter_image_transform(Effect, Width, Height, AspectRatio, forward, inverse);
+       error != ERR::Okay) {
+      return (error IS ERR::NothingDone) ? ERR::Okay : error;
+   }
+
+   filter_surface_view layout;
+   float *data;
+   if (auto error = get_numeric_target(Effect, layout, data); error != ERR::Okay) return error;
+
+   TClipRectangle<double> bounds { 0, 0, double(Width), double(Height) };
+   if (not transform_filter_region(bounds, forward)) return ERR::OutOfRange;
+   const auto &clip = layout.Valid;
+   const int left = int(std::clamp(std::floor(bounds.left), double(clip.left), double(clip.right)));
+   const int right = int(std::clamp(std::ceil(bounds.right), double(clip.left), double(clip.right)));
+   const int top = int(std::clamp(std::floor(bounds.top), double(clip.top), double(clip.bottom)));
+   const int bottom = int(std::clamp(std::ceil(bounds.bottom), double(clip.top), double(clip.bottom)));
+
+   const bool nearest = Method IS VSM::NEIGHBOUR;
+   const bool bilinear = (Method IS VSM::BILINEAR) or (Method IS VSM::AUTO);
+   const auto kernel = (nearest or bilinear) ? nullptr : &get_filter(Method, inverse);
+   auto tap = [&](int X, int Y) {
+      return Tap(std::clamp(X, 0, Width - 1), std::clamp(Y, 0, Height - 1));
+   };
+
+   for (int y = top; y < bottom; y++) {
+      auto row = data + std::ptrdiff_t(y) * (layout.Stride / sizeof(float));
+      for (int x = left; x < right; x++) {
+         double sx, sy;
+         map_filter_pixel_centre(inverse, x, y, sx, sy);
+         // Pixels outside the image (including letterboxing) retain the surface's invalid sample.
+         if (not ((sx >= 0) and (sx < Width) and (sy >= 0) and (sy < Height))) continue;
+         if (nearest) {
+            row[x] = float(tap(int(sx), int(sy)));
+            continue;
+         }
+
+         sx -= 0.5;
+         sy -= 0.5;
+         const int ix = int(std::floor(sx)), iy = int(std::floor(sy));
+         const double fx = sx - ix, fy = sy - iy;
+         if (bilinear) {
+            if ((fx IS 0.0) and (fy IS 0.0)) {
+               row[x] = float(tap(ix, iy));
+               continue;
+            }
+            const double a = std::lerp(tap(ix, iy), tap(ix + 1, iy), fx);
+            const double b = std::lerp(tap(ix, iy + 1), tap(ix + 1, iy + 1), fx);
+            row[x] = float(std::lerp(a, b, fy));
+         }
+         else {
+            // Use the image kernel weights, accumulating the height itself without integer rounding.
+            const auto weights = kernel->weight_array();
+            const int start = kernel->start(), diameter = kernel->diameter();
+            constexpr int subpixel_scale = agg::image_subpixel_scale;
+            const int phase_x = agg::image_subpixel_mask - int(fx * subpixel_scale);
+            const int phase_y = agg::image_subpixel_mask - int(fy * subpixel_scale);
+            double height = 0;
+            for (int ky = 0; ky < diameter; ky++) {
+               const double wy = weights[phase_y + ky * subpixel_scale];
+               for (int kx = 0; kx < diameter; kx++) {
+                  const double wx = weights[phase_x + kx * subpixel_scale];
+                  height += wx * wy * tap(ix + start + kx, iy + start + ky);
+               }
+            }
+            constexpr double scale = agg::image_filter_scale;
+            row[x] = float(std::clamp(height / (scale * scale), 0.0, Maximum));
+         }
+      }
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 
 #include "filter_effect.cpp"
 #include "filter_blur.cpp"
@@ -1298,7 +1378,11 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
          };
 
       case CLASSID::WAVEFUNCTIONFX:
-         return { GENERATOR };
+         return {
+            .Inputs = GENERATOR,
+            .Format = ((const extWaveFunctionFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+                      filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8
+         };
 
       default:
          return {
