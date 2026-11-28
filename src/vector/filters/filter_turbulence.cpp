@@ -24,6 +24,15 @@ and A.
 
 -END-
 
+TODO: Support ParameterMaps (a filter input that varies a field per sample) for Persistence, Amplitude, Offset and
+Phase, once a binding facility shared by the filter classes has been designed (CellularFX has the same TODO).  Draw
+fixes these values once per draw: noise_sum() takes Persistence as its octave ratio, the mapping holds Amplitude,
+Offset and the Normalise total derived from Persistence, and Phase is reduced by PhasePeriod and range-checked before
+a zero phase is dispatched to noise2().  They must become per-sample arguments.  A Phase map must force the
+animated noise3() path, which accepts a per-pixel phase at no extra cost, and the OutOfRange check must use the
+largest phase that the map can supply in the drawn area.  A mapped field counts as an extension under Compliance,
+and the mapping's Extended flag must be set whenever Amplitude or Offset is mapped.
+
 *********************************************************************************************************************/
 
 #include "filter_colour_ramp.h"

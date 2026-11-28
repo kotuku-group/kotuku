@@ -239,6 +239,38 @@
     ~int(VSM) ResampleMethod
   ]])
 
+  enums('LAY', { type='int', start=0, comment='Arrangement styles for PavingFX.' },
+    'RUNNING: Horizontal courses shifted by RowOffset per row.',
+    'STACK: Regular axis-aligned grid of rectangular elements.',
+    'BASKET_WEAVE: Alternating horizontal and vertical packs of elements in square macro-cells.',
+    'HERRINGBONE: Interlocking perpendicular elements in a zig-zag weave.',
+    'CHECKER: Regular grid with alternating ElementColour and AlternateColour parity.')
+
+  enums('LMD', { type='int', start=0, comment='Content modes for PavingFX.' },
+    'COLOUR: Draw coloured elements and joints, with optional ElementMap, JointMap and OKLCH variation.',
+    'HEIGHT: Output the bevelled surface height field.',
+    'MASK: Output element coverage (1 inside elements, 0 in joints).',
+    'ID: Output a deterministic per-element hash in [0, 1), and 0 in joints.')
+
+  enums('LFM', { type='int', start=0, comment='Texture coordinate modes for PavingFX.ElementMap.' },
+    'LOCAL: Map ElementMap across each element in its own local coordinates, rotating with the element.',
+    'CONTINUOUS: Sample ElementMap continuously in output coordinates across the pattern.')
+
+  klass('PavingFX',       { base='FilterEffect', src='filters/filter_paving.cpp', output='filters/filter_paving_def.c', comment='Procedural masonry, paving, tile and checker filter class.', extended=true, references={ 'LAY', 'LMD', 'LFM', 'GEZ', 'FOM', 'VSM' } }, [[
+    ~vector(struct(GradientStop)) Stops
+    ~struct(FRGB) ElementColour
+    ~struct(FRGB) JointColour
+    ~struct(FRGB) AlternateColour
+    ~int(LAY) Layout
+    ~int(LMD) Mode
+    ~int(LFM) FillMode
+    ~int(GEZ) BevelProfile
+    ~int(FOM) OutputMode
+    ~int(VSM) ResampleMethod
+    ~obj(FilterEffect) ElementMap
+    ~obj(FilterEffect) JointMap
+  ]])
+
   klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true }, [[
     ~struct(RemapTransfer) RedTransfer
     ~struct(RemapTransfer) GreenTransfer

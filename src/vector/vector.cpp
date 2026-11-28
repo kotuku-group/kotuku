@@ -30,7 +30,7 @@ OBJECTPTR clVectorSpiral = nullptr, clVectorShape = nullptr, clVectorTransition 
 OBJECTPTR clBlurFX = nullptr, clColourFX = nullptr, clCompositeFX = nullptr, clConvolveFX = nullptr, clFilterEffect = nullptr;
 OBJECTPTR clFloodFX = nullptr, clMergeFX = nullptr, clMorphologyFX = nullptr, clOffsetFX = nullptr, clTurbulenceFX = nullptr;
 OBJECTPTR clSourceFX = nullptr, clRemapFX = nullptr, clLightingFX = nullptr, clDisplacementFX = nullptr, clWaveFunctionFX = nullptr;
-OBJECTPTR clTileFX = nullptr, clCellularFX = nullptr;
+OBJECTPTR clTileFX = nullptr, clCellularFX = nullptr, clPavingFX = nullptr;
 
 static OBJECTPTR modDisplay = nullptr;
 static OBJECTPTR modFont = nullptr;
@@ -118,6 +118,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if ((error = init_displacementfx()) != ERR::Okay) return error;
    if ((error = init_wavefunctionfx()) != ERR::Okay) return error;
    if ((error = init_cellularfx()) != ERR::Okay) return error;
+   if ((error = init_pavingfx()) != ERR::Okay) return error;
 
    // Mount the pattern collection used by url(#pattern:Name) paint references.  Caller-owned mappings are preserved,
    // even when their destination is currently unavailable.
@@ -222,6 +223,7 @@ static ERR MODExpunge(void)
    if (clDisplacementFX)   { FreeResource(clDisplacementFX);   clDisplacementFX = nullptr; }
    if (clWaveFunctionFX)   { FreeResource(clWaveFunctionFX);   clWaveFunctionFX = nullptr; }
    if (clCellularFX)       { FreeResource(clCellularFX);       clCellularFX = nullptr; }
+   if (clPavingFX)         { FreeResource(clPavingFX);         clPavingFX = nullptr; }
 
    // Base-classes
 

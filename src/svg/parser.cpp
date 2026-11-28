@@ -2735,6 +2735,213 @@ ERR svgState::parse_fe_cellular(objVectorFilter *Filter, XTag &Tag) noexcept
 }
 
 //********************************************************************************************************************
+// <xvg:fePaving> generates procedural brickwork, paving, tile and checker arrangements.  Class attributes are
+// unprefixed; the output mode is a shared extension attribute in the Kōtuku namespace.  Invalid values are reported
+// and leave the field's default in place.
+
+ERR svgState::parse_fe_paving(objVectorFilter *Filter, XTag &Tag) noexcept
+{
+   kt::Log log(__FUNCTION__);
+   objPavingFX *fx;
+
+   if (NewObject(CLASSID::PAVINGFX, &fx) != ERR::Okay) return ERR::NewObject;
+   SetOwner(fx, Filter);
+
+   auto set_number = [&](std::string_view Value, auto Setter) {
+      const auto number = kt::font_traits::parse_number(Value);
+      return number and ((fx->*Setter)(*number) IS ERR::Okay);
+   };
+
+   auto read_length = [&](std::string_view Value, Unit &Length) {
+      if (not valid_effect_length(Value)) return false;
+      Length = SVGUnit(Value);
+      return std::isfinite(Length.Value);
+   };
+
+   auto set_unit = [&](std::string_view Value, auto Setter) {
+      Unit length;
+      const auto text = kt::font_traits::trim(Value);
+      return read_length(text, length) and ((fx->*Setter)(length) IS ERR::Okay);
+   };
+
+   auto set_units = [&](std::string_view Value, auto SetX, auto SetY, bool Positive) {
+      std::string_view x, y;
+      Unit length_x, length_y;
+      if ((not read_value_pair(Value, x, y)) or (not read_length(x, length_x)) or (not read_length(y, length_y))) {
+         return false;
+      }
+      if (Positive and ((length_x.Value <= 0) or (length_y.Value <= 0))) return false;
+      return ((fx->*SetX)(length_x) IS ERR::Okay) and ((fx->*SetY)(length_y) IS ERR::Okay);
+   };
+
+   auto read_colour = [this](std::string_view Value, FRGB &Colour) -> bool {
+      const auto text = kt::font_traits::trim(Value);
+      if (text.empty() or iequals("none", text)) return false;
+      if (iequals("currentColor", text)) return current_colour(Self->Scene->Viewport, Colour);
+
+      VectorPainter painter;
+      if (vec::ReadPainter(nullptr, text, &painter, nullptr) != ERR::Okay) return false;
+      Colour = painter.Colour;
+      return true;
+   };
+
+   auto set_colour = [&](std::string_view Value, auto Setter) {
+      FRGB colour;
+      return read_colour(Value, colour) and ((fx->*Setter)(colour) IS ERR::Okay);
+   };
+
+   std::string result_name;
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      bool valid = true;
+      switch(strhash(Tag.Attribs[a].Name)) {
+         case SVF_layout: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("running", text)) fx->setLayout(LAY::RUNNING);
+            else if (iequals("stack", text)) fx->setLayout(LAY::STACK);
+            else if (iequals("basketWeave", text)) fx->setLayout(LAY::BASKET_WEAVE);
+            else if (iequals("herringbone", text)) fx->setLayout(LAY::HERRINGBONE);
+            else if (iequals("checker", text)) fx->setLayout(LAY::CHECKER);
+            else valid = false;
+            break;
+         }
+
+         case SVF_mode: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("colour", text) or iequals("color", text)) fx->setMode(LMD::COLOUR);
+            else if (iequals("height", text)) fx->setMode(LMD::HEIGHT);
+            else if (iequals("mask", text)) fx->setMode(LMD::MASK);
+            else if (iequals("id", text)) fx->setMode(LMD::ID);
+            else valid = false;
+            break;
+         }
+
+         case SVF_seed: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            int64_t seed;
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
+            valid = (error IS std::errc()) and (end IS text.data() + text.size()) and (fx->setSeed(seed) IS ERR::Okay);
+            break;
+         }
+
+         case SVF_elementSize:
+            valid = set_units(val, &objPavingFX::setElementWidth, &objPavingFX::setElementHeight, true);
+            break;
+
+         case SVF_origin:
+            valid = set_units(val, &objPavingFX::setOriginX, &objPavingFX::setOriginY, false);
+            break;
+
+         case SVF_jointWidth:      valid = set_unit(val, &objPavingFX::setJointWidth); break;
+         case SVF_bevelWidth:      valid = set_unit(val, &objPavingFX::setBevelWidth); break;
+
+         case SVF_bevelProfile: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("linear", text)) fx->setBevelProfile(GEZ::LINEAR);
+            else if (iequals("in", text)) fx->setBevelProfile(GEZ::IN);
+            else if (iequals("out", text)) fx->setBevelProfile(GEZ::OUT);
+            else if (iequals("inOut", text)) fx->setBevelProfile(GEZ::IN_OUT);
+            else if (iequals("cubicIn", text)) fx->setBevelProfile(GEZ::CUBIC_IN);
+            else if (iequals("cubicOut", text)) fx->setBevelProfile(GEZ::CUBIC_OUT);
+            else if (iequals("cubicInOut", text)) fx->setBevelProfile(GEZ::CUBIC_IN_OUT);
+            else if (iequals("circleIn", text)) fx->setBevelProfile(GEZ::CIRCLE_IN);
+            else if (iequals("circleOut", text)) fx->setBevelProfile(GEZ::CIRCLE_OUT);
+            else if (iequals("circleInOut", text)) fx->setBevelProfile(GEZ::CIRCLE_IN_OUT);
+            else valid = false;
+            break;
+         }
+
+         case SVF_angle:           valid = set_number(val, &objPavingFX::setAngle); break;
+         case SVF_rowOffset:       valid = set_number(val, &objPavingFX::setRowOffset); break;
+         case SVF_elementHeight:   valid = set_number(val, &objPavingFX::setElementHeightValue); break;
+         case SVF_jointHeight:     valid = set_number(val, &objPavingFX::setJointHeightValue); break;
+         case SVF_hueVariation:    valid = set_number(val, &objPavingFX::setHueVariation); break;
+         case SVF_chromaVariation: valid = set_number(val, &objPavingFX::setChromaVariation); break;
+         case SVF_lightVariation:  valid = set_number(val, &objPavingFX::setLightVariation); break;
+         case SVF_heightVariation: valid = set_number(val, &objPavingFX::setHeightVariation); break;
+
+         case SVF_elementColor:    valid = set_colour(val, &objPavingFX::setElementColour); break;
+         case SVF_jointColor:      valid = set_colour(val, &objPavingFX::setJointColour); break;
+         case SVF_alternateColor:  valid = set_colour(val, &objPavingFX::setAlternateColour); break;
+
+         case SVF_fillMode: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("local", text)) fx->setFillMode(LFM::LOCAL);
+            else if (iequals("continuous", text)) fx->setFillMode(LFM::CONTINUOUS);
+            else valid = false;
+            break;
+         }
+
+         case SVF_resampleMethod: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("neighbour", text) or iequals("neighbor", text)) fx->setResampleMethod(VSM::NEIGHBOUR);
+            else if (iequals("bilinear", text)) fx->setResampleMethod(VSM::BILINEAR);
+            else valid = false;
+            break;
+         }
+
+         case SVF_period: {
+            std::string_view x, y;
+            int px, py;
+            valid = read_value_pair(val, x, y) and read_effect_period(x, px) and read_effect_period(y, py) and
+               (fx->setPeriodX(px) IS ERR::Okay) and (fx->setPeriodY(py) IS ERR::Okay);
+            break;
+         }
+
+         case SVF_elementMap: {
+            const auto input = Self->Effects.find(val);
+            valid = (input != Self->Effects.end()) and (fx->setElementMap(input->second) IS ERR::Okay);
+            break;
+         }
+
+         case SVF_jointMap: {
+            const auto input = Self->Effects.find(val);
+            valid = (input != Self->Effects.end()) and (fx->setJointMap(input->second) IS ERR::Okay);
+            break;
+         }
+
+         case SVF_colormap: valid = (fx->setColourMap(val) IS ERR::Okay); break;
+         case SVF_x:        fx->setX(SVGUnit(val)); break;
+         case SVF_y:        fx->setY(SVGUnit(val)); break;
+         case SVF_width:    fx->setWidth(SVGUnit(val)); break;
+         case SVF_height:   fx->setHeight(SVGUnit(val)); break;
+         case SVF_result:   result_name = val; break;
+
+         default: {
+            const auto local = kotuku_attrib(Self, Tag, Tag.Attribs[a].Name);
+            if (local IS "outputMode") {
+               const auto text = kt::font_traits::trim(std::string_view(val));
+               if (iequals("height", text)) fx->setOutputMode(FOM::HEIGHT);
+               else if (iequals("image", text)) fx->setOutputMode(FOM::IMAGE);
+               else valid = false;
+            }
+            break;
+         }
+      }
+
+      if (not valid) log.warning("Invalid %s '%s' on %s.", Tag.Attribs[a].Name.c_str(), val.c_str(), Tag.name());
+   }
+
+   apply_primitive_colour_space(fx, Tag);
+   if (!fx->init()) {
+      if (!result_name.empty()) parse_result(Self, fx, result_name);
+
+      if (Tag.hasChildTags()) {
+         auto stops = process_gradient_stops(Tag);
+         if (stops.size() >= 2) fx->setStops(stops);
+      }
+
+      return ERR::Okay;
+   }
+   else {
+      FreeResource(fx);
+      return ERR::Init;
+   }
+}
+
+//********************************************************************************************************************
 
 ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
 {
@@ -3702,6 +3909,14 @@ void svgState::proc_filter(XTag &Tag) noexcept
                case SVF_kotuku_feCellular:
                   if ((child.NamespaceID IS glKotukuNamespace) or (child.NamespaceID IS glKotukuSVGNamespace)) {
                      parse_fe_cellular(filter, child);
+                     break;
+                  }
+                  log.warning("Filter element '%s' not recognised.", child.name());
+                  break;
+
+               case SVF_kotuku_fePaving:
+                  if ((child.NamespaceID IS glKotukuNamespace) or (child.NamespaceID IS glKotukuSVGNamespace)) {
+                     parse_fe_paving(filter, child);
                      break;
                   }
                   log.warning("Filter element '%s' not recognised.", child.name());

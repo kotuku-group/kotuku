@@ -3790,3 +3790,218 @@ end
    local unfiltered <close> = draw(unfiltered_svg, 64)
    assert(imageDifference(rejected, unfiltered) is 0, 'An inherited extension must not draw in an svg2 scene')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- PavingFX through xvg:fePaving.  Declared global because the main chunk is at Tiri's 200-local limit.
+
+global function pavingFX(SVG:obj!, Index:num):obj
+   local _, filter = check SVG.scene.mtFindDef('f')
+   return obj.find(filter.children('PavingFX')[Index ?? 0])
+end
+
+-- A default xvg:fePaving writes no attributes, and invalid or out-of-range attributes log warnings without altering
+-- any default.
+
+@Test global function PavingRejectsInvalidAttributes()
+   local svg <close> = document('<xvg:fePaving/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(svg) is '<xvg:fePaving/>', f'A default element must write no attributes: {effectXML(svg)}')
+
+   local invalid <close> = document('<xvg:fePaving layout="hex" mode="albedo" seed="1.5" elementSize="0" ' ..
+      'origin="1 2 3" jointWidth="-1" bevelWidth="-2px" bevelProfile="bounce" angle="x" rowOffset="nan" ' ..
+      'elementHeight="inf" jointHeight="x" hueVariation="200" chromaVariation="0.5" lightVariation="-0.1" ' ..
+      'heightVariation="101" elementColor="bogus" jointColor="none" alternateColor="bad" fillMode="stretch" ' ..
+      'resampleMethod="cubic" period="-1" elementMap="missing" jointMap="missing" colormap="cmap:unknown" ' ..
+      'xvg:outputMode="vector"/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(invalid) is '<xvg:fePaving/>',
+      f'Invalid attributes must leave every default in place: {effectXML(invalid)}')
+
+   for attr in values(array<str> { 'elementSize="16 -1"', 'elementSize="8pxjunk"', 'elementSize="8,"',
+      'origin="3 bad"', 'origin="3%junk"', 'jointWidth="2pxjunk"', 'bevelWidth="bad"', 'period="4 -1"',
+      'period="4 1048577"', 'period="4 2)"' }) do
+      local malformed <close> = document(f'<xvg:fePaving {attr}/>', nil, 64, KOTUKU_NS)
+      assert(effectXML(malformed) is '<xvg:fePaving/>', f'{attr} must leave every default in place')
+   end
+
+   local unprefixed <close> = document('<xvg:fePaving outputMode="height"/>', nil, 64, KOTUKU_NS)
+   assert(pavingFX(unprefixed).outputMode is FOM_IMAGE, 'The output mode must keep its Kotuku prefix')
+
+   local lengths <close> = document('<xvg:fePaving elementSize="+8px,25%" origin="-2px 3em" jointWidth="+2px" ' ..
+      'bevelWidth="0.5em"/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(lengths) is '<xvg:fePaving elementSize="8 25%" origin="-2 48" jointWidth="2" bevelWidth="8"/>',
+      f'Valid SVG units must be resolved: {effectXML(lengths)}')
+
+   local aliases <close> = document('<xvg:fePaving mode="color" resampleMethod="neighbor" ' ..
+      'elementColor="currentColor"/>', nil, 64, KOTUKU_NS)
+   local fx = pavingFX(aliases)
+   assert((fx.mode is LMD_COLOUR) and (fx.resampleMethod is VSM_NEIGHBOUR),
+      'American spelling aliases must be accepted')
+   assert((fx.elementColour.red is 0) and (fx.elementColour.green is 0) and (fx.elementColour.blue is 0),
+      'currentColor must resolve to the document default colour')
+end
+
+@Test global function PavingRequiresKotukuNamespace()
+   local declarations = 'xmlns:k="http://www.kotuku.dev/xmlns/svg" xmlns:foreign="urn:foreign"'
+   local svg <close> = document('<fePaving seed="1"/><foreign:fePaving seed="2"/>' ..
+      '<xvg:fePaving seed="3"/><k:fePaving seed="4"/>', nil, 64, declarations)
+   assert(effectXML(svg) is '<xvg:fePaving seed="4"/>',
+      f'Only the element bound to the Kotuku namespace must be parsed: {effectXML(svg)}')
+end
+
+-- Every attribute, child stop, colour map, and elementMap/jointMap binding round-trips through EffectXML and an
+-- SVG save/reload to produce identical markup and pixels.
+
+@Test global function PavingXMLDefRoundTrips()
+   local effects = [[
+   <xvg:feCellular seed="3" cellSize="16" colormap="cmap:flare" result="brickTex"/>
+   <feFlood flood-color="#383430" result="mortarTex"/>
+   <xvg:fePaving layout="herringbone" seed="-9007199254740993" elementSize="16 8" origin="3 4.5" jointWidth="2"
+      bevelWidth="3" bevelProfile="circleOut" angle="30" elementColor="#c05030" jointColor="#302820"
+      alternateColor="#506070" hueVariation="15" chromaVariation="0.05" lightVariation="0.1" fillMode="continuous"
+      resampleMethod="neighbour" elementMap="brickTex" jointMap="mortarTex" x="0" y="0" width="32" height="32"
+      result="mapped"/>
+   <xvg:fePaving layout="running" mode="height" seed="11" elementSize="25% 12" rowOffset="0.25" elementHeight="1.5"
+      jointHeight="-0.25" heightVariation="0.2" bevelProfile="cubicInOut" xvg:outputMode="height" result="height"/>
+   <xvg:feLighting in="height" in2="mapped" surfaceScale="6" diffuseConstant="1" result="lit">
+      <feDistantLight azimuth="45" elevation="40"/>
+   </xvg:feLighting>
+   <xvg:fePaving layout="checker" mode="id" seed="5" elementSize="12" period="4 2" colormap="cmap:viridis"
+      x="32" y="0" width="32" height="32" result="ids"/>
+   <xvg:fePaving layout="basketWeave" mode="mask" elementSize="16 8" x="0" y="32" width="64" height="32"
+      result="ramp">
+      <stop offset="0" stop-color="#102030"/>
+      <stop offset="0.5" stop-color="#40a0c0"/>
+      <stop offset="1" stop-color="#e0f4ff"/>
+   </xvg:fePaving>
+   <feMerge><feMergeNode in="lit"/><feMergeNode in="ids"/><feMergeNode in="ramp"/></feMerge>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local _, filter = check svg.scene.mtFindDef('f')
+   local mapped = pavingFX(svg, 0)
+   assert((mapped.elementMap.id is filter.children('CellularFX')[0]) and
+      (mapped.jointMap.id is filter.children('FloodFX')[0]),
+      'elementMap and jointMap must bind to their earlier filter results')
+
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   for _, expected in array<str> { 'layout="herringbone"', 'seed="-9007199254740993"', 'elementSize="16 8"',
+      'origin="3 4.5"', 'jointWidth="2"', 'bevelWidth="3"', 'bevelProfile="circleOut"', 'angle="30"',
+      'elementColor="rgb(192 80 48)"', 'jointColor="rgb(48 40 32)"', 'alternateColor="rgb(80 96 112)"',
+      'hueVariation="15"', 'chromaVariation="0.05"', 'lightVariation="0.1"', 'fillMode="continuous"',
+      'resampleMethod="neighbour"', 'elementMap="', 'jointMap="', 'mode="height"', 'elementSize="25% 12"',
+      'rowOffset="0.25"', 'elementHeight="1.5"', 'jointHeight="-0.25"', 'heightVariation="0.2"',
+      'bevelProfile="cubicInOut"', 'xvg:outputMode="height"', 'layout="checker"', 'mode="id"',
+      'elementSize="12"', 'period="4 2"', 'colormap="cmap:viridis"', 'layout="basketWeave"', 'mode="mask"',
+      '<stop offset="0.5"' } do
+      assert(xml.find(expected, 0, true), f'XMLDef must write {expected}: {xml}')
+   end
+
+   local loaded <close> = document(xml, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   assert(effectXML(loaded) is xml, f'Re-parsed XMLDef must serialise identically: {effectXML(loaded)}')
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+
+   local restored <close> = obj.new('svg', { statement=saveFilterDocument(svg) })
+   assert(effectXML(restored) is xml, 'The paving settings must survive an SVG save and reload')
+   diff = imageDifference(original, draw(restored, 64))
+   assert(diff is 0, f'The saved paving effects must render identically after reload (max difference {diff})')
+   assert(mGfx.ReadRGBPixel(original, 10, 10).alpha is 255, 'The merged paving result must be drawn')
+end
+
+-- Periodic paving repeats seamlessly across one period tile when paired with feTile, across running, basket-weave
+-- and herringbone layouts, and preserves periodic boundaries under whole-turn rotations.
+
+@Test global function PavingPeriodTilesSeamlessly()
+   local filter_units = 'filterUnits="userSpaceOnUse"'
+   for _, case in array<table> {
+      { layout='running', attrs='layout="running" seed="14" elementSize="16 8" rowOffset="0.5" period="2 2" ' ..
+         'jointWidth="2" elementColor="#b85a40" hueVariation="24" lightVariation="0.12"', w=32, h=16 },
+      { layout='basketWeave', attrs='layout="basketWeave" seed="15" elementSize="16 8" period="2 2" ' ..
+         'jointWidth="2" elementColor="#6a8490" hueVariation="24" lightVariation="0.12"', w=32, h=32 },
+      { layout='herringbone', attrs='layout="herringbone" seed="16" elementSize="16 8" period="1 1" ' ..
+         'jointWidth="2" elementColor="#9a7d56" hueVariation="24" lightVariation="0.12"', w=32, h=32 }
+   } do
+      local tiled_svg <close> = document(
+         f'<xvg:fePaving {case.attrs} x="0" y="0" width="{case.w}" height="{case.h}"/><feTile/>',
+         nil, 64, KOTUKU_NS, filter_units)
+      local field_svg <close> = document(f'<xvg:fePaving {case.attrs}/>', nil, 64, KOTUKU_NS, filter_units)
+      local tiled <close> = draw(tiled_svg, 64)
+      local reference <close> = draw(field_svg, 64)
+      local diff = imageDifference(tiled, reference)
+      assert(diff is 0, f'{case.layout}: one tiled period must match the unbounded field (max difference {diff})')
+
+      -- Confirm non-trivial colour variation within the period so the comparison is not vacuously flat.
+      local first = mGfx.ReadRGBPixel(reference, 4, 4)
+      local fr, fg, fb = first.red, first.green, first.blue
+      local varied = false
+      for y in {0 to case.h by 4} do
+         for x in {0 to case.w by 4} do
+            local p = mGfx.ReadRGBPixel(reference, x, y)
+            if (p.red != fr) or (p.green != fg) or (p.blue != fb) then
+               varied = true
+               break
+            end
+         end
+         if varied then break end
+      end
+      assert(varied, f'{case.layout}: the periodic paving field must vary within one period')
+   end
+
+   local field = 'layout="running" seed="9" elementSize="16 8" period="2 2" jointWidth="2" hueVariation="20"'
+   local base_svg <close> = document(f'<xvg:fePaving {field}/>', nil, 64, KOTUKU_NS, filter_units)
+   local base_bmp <close> = draw(base_svg, 64)
+   for angle in values(array<int> { 360, -720 }) do
+      local rot_svg <close> = document(f'<xvg:fePaving {field} angle="{angle}"/>', nil, 64, KOTUKU_NS, filter_units)
+      local rot_bmp <close> = draw(rot_svg, 64)
+      assert(imageDifference(base_bmp, rot_bmp) is 0, f'Angle {angle} must preserve periodic paving boundaries')
+   end
+end
+
+@Test global function PavingThinJointCoverageAndLargeBevelHeights()
+   local filter_units = 'filterUnits="userSpaceOnUse"'
+   local thin_joint = 'elementSize="16" origin="0.5" jointWidth="0.1"'
+   local mask <close> = document(f'<xvg:fePaving {thin_joint} layout="stack" mode="mask"/>',
+      nil, 64, KOTUKU_NS, filter_units)
+   local mask_bmp <close> = draw(mask, 64)
+   local coverage = mGfx.ReadRGBPixel(mask_bmp, 16, 8).red
+   assert(math.abs(coverage - 230) <= 1, f'A 0.1-pixel joint must leave 90% element coverage, got {coverage}')
+
+   local checker <close> = document(f'<xvg:fePaving {thin_joint} layout="checker" elementColor="red" ' ..
+      'alternateColor="blue" jointColor="black"/>', nil, 64, KOTUKU_NS, filter_units)
+   local checker_bmp <close> = draw(checker, 64)
+   local seam = mGfx.ReadRGBPixel(checker_bmp, 16, 8)
+   assert((seam.red is 115) and (seam.blue is 115) and (seam.green is 0),
+      f'The joint must blend both elements, got {seam.red},{seam.green},{seam.blue}')
+
+   local bevel <close> = document('<xvg:fePaving layout="stack" mode="height" elementSize="16" jointWidth="2" ' ..
+      'bevelWidth="4" elementHeight="1e308" jointHeight="-1e308"/>', nil, 64, KOTUKU_NS, filter_units)
+   local bevel_bmp <close> = draw(bevel, 64)
+   assert(mGfx.ReadRGBPixel(bevel_bmp, 8, 2).red is 0, 'The bevel before the midpoint must clamp to black')
+   assert(mGfx.ReadRGBPixel(bevel_bmp, 8, 3).red is 255, 'The bevel after the midpoint must clamp to white')
+end
+
+-- Paired albedo and float-height xvg:fePaving primitives drive xvg:feLighting with directional bevel relief.
+
+@Test global function PavingAlbedoAndHeightDriveLighting()
+   local common = 'seed="21" layout="herringbone" elementSize="24 12" jointWidth="2" bevelWidth="3" angle="45" ' ..
+      'origin="32 32"'
+   local albedo = f'<xvg:fePaving {common} elementColor="#b06848" jointColor="#4a443c" hueVariation="10" ' ..
+      'lightVariation="0.08" result="albedo"/>'
+   local height = f'<xvg:fePaving {common} mode="height" bevelProfile="circleOut" heightVariation="0.2" ' ..
+      'xvg:outputMode="height" result="height"/>'
+   local lighting = '<xvg:feLighting in="height" in2="albedo" surfaceScale="10" diffuseConstant="1" ' ..
+      'specularConstant="0.25" specularExponent="16" ambient="#303030">' ..
+      '<feDistantLight azimuth="225" elevation="40"/></xvg:feLighting>'
+
+   local flat_svg <close> = document(albedo, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local lit_svg <close> = document(albedo .. height .. lighting, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local flat_bmp <close> = draw(flat_svg, 64)
+   local lit_bmp <close> = draw(lit_svg, 64)
+
+   assert(mGfx.ReadRGBPixel(lit_bmp, 32, 32).alpha is 255, 'The lit paving output must be opaque')
+   assert(imageDifference(flat_bmp, lit_bmp) > 16,
+      'Bevelled float-height lighting must visibly shade the paving albedo')
+
+   local restored <close> = obj.new('svg', { statement=saveFilterDocument(lit_svg) })
+   local restored_bmp <close> = draw(restored, 64)
+   assert(imageDifference(lit_bmp, restored_bmp) is 0,
+      'Lit paving filter graph must survive SVG save and reload identically')
+end

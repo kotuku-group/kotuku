@@ -39,6 +39,7 @@
       <class>MergeFX</class>
       <class>MorphologyFX</class>
       <class>OffsetFX</class>
+      <class>PavingFX</class>
       <class>RemapFX</class>
       <class>SourceFX</class>
       <class>TileFX</class>

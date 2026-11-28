@@ -305,6 +305,48 @@ instead.</li>
       normalise=&quot;true&quot; colormap=&quot;cmap:magma&quot;/&gt;
 &lt;/filter&gt;
 </pre>
+<p>The <code>xvg:fePaving</code> element generates structured brickwork, paving, tile and checker arrangements with <class name="PavingFX">PavingFX</class>.  It takes no primary input, though it can sample earlier filter results as optional element or joint textures in <code>colour</code> mode.  Its own attributes are unprefixed:</p>
+<list type="bullet">
+<li><code>layout</code>: <code>running</code> (the default), <code>stack</code>, <code>basketWeave</code>, <code>herringbone</code> or <code>checker</code>.  Sets <class name="PavingFX" field="Layout">PavingFX.Layout</class>.</li>
+<li><code>mode</code>: <code>colour</code> (or <code>color</code>, the default), <code>height</code>, <code>mask</code> or <code>id</code>.  Sets <class name="PavingFX" field="Mode">PavingFX.Mode</class>.</li>
+<li><code>seed</code>: a 64-bit integer that selects deterministic per-element appearance and height variation.  Sets
+<class name="PavingFX" field="Seed">PavingFX.Seed</class>.</li>
+<li><code>elementSize</code>: the nominal element width and optional height before rotation.  The height defaults to the width,
+and a percentage refers to the filter region.  The default is <code>25% 12.5%</code>.  Sets <class name="PavingFX" field="ElementWidth">PavingFX.ElementWidth</class> and
+<class name="PavingFX" field="ElementHeight">PavingFX.ElementHeight</class>.</li>
+<li><code>origin</code>: the X and optional Y position of the pattern lattice, relative to the filter region's top-left corner.
+Y defaults to X.  Sets <class name="PavingFX" field="OriginX">PavingFX.OriginX</class> and <class name="PavingFX" field="OriginY">PavingFX.OriginY</class>.</li>
+<li><code>jointWidth</code> and <code>bevelWidth</code>: lengths for the mortar gap and interior edge bevel (default <code>1%</code> each).  Sets
+<class name="PavingFX" field="JointWidth">PavingFX.JointWidth</class> and <class name="PavingFX" field="BevelWidth">PavingFX.BevelWidth</class>.</li>
+<li><code>bevelProfile</code>: <code>linear</code> (the default), <code>in</code>, <code>out</code>, <code>inOut</code>, <code>cubicIn</code>, <code>cubicOut</code>, <code>cubicInOut</code>, <code>circleIn</code>,
+<code>circleOut</code> or <code>circleInOut</code>.  Sets <class name="PavingFX" field="BevelProfile">PavingFX.BevelProfile</class>.</li>
+<li><code>angle</code>, <code>rowOffset</code>, <code>elementHeight</code>, <code>jointHeight</code>, <code>hueVariation</code>, <code>chromaVariation</code>, <code>lightVariation</code> and
+<code>heightVariation</code>: numbers that set <class name="PavingFX" field="Angle">PavingFX.Angle</class>, <class name="PavingFX" field="RowOffset">PavingFX.RowOffset</class>, <class name="PavingFX" field="ElementHeightValue">PavingFX.ElementHeightValue</class>,
+<class name="PavingFX" field="JointHeightValue">PavingFX.JointHeightValue</class>, <class name="PavingFX" field="HueVariation">PavingFX.HueVariation</class>, <class name="PavingFX" field="ChromaVariation">PavingFX.ChromaVariation</class>, <class name="PavingFX" field="LightVariation">PavingFX.LightVariation</class> and
+<class name="PavingFX" field="HeightVariation">PavingFX.HeightVariation</class>.</li>
+<li><code>elementColor</code>, <code>jointColor</code> and <code>alternateColor</code>: SVG colours (including <code>currentColor</code>) that set
+<class name="PavingFX" field="ElementColour">PavingFX.ElementColour</class>, <class name="PavingFX" field="JointColour">PavingFX.JointColour</class> and <class name="PavingFX" field="AlternateColour">PavingFX.AlternateColour</class>.</li>
+<li><code>elementMap</code> and <code>jointMap</code>: names of earlier filter results sampled inside elements and joints in <code>colour</code> mode.
+Sets <class name="PavingFX" field="ElementMap">PavingFX.ElementMap</class> and <class name="PavingFX" field="JointMap">PavingFX.JointMap</class>.</li>
+<li><code>fillMode</code>: <code>local</code> (the default) or <code>continuous</code>.  Sets <class name="PavingFX" field="FillMode">PavingFX.FillMode</class>.</li>
+<li><code>resampleMethod</code>: <code>bilinear</code> (the default) or <code>neighbour</code> (or <code>neighbor</code>).  Sets <class name="PavingFX" field="ResampleMethod">PavingFX.ResampleMethod</class>.</li>
+<li><code>period</code>: whole numbers of pattern lattice units after which per-element variation repeats horizontally and,
+optionally, vertically.  The vertical period defaults to the horizontal one.  Sets <class name="PavingFX" field="PeriodX">PavingFX.PeriodX</class> and
+<class name="PavingFX" field="PeriodY">PavingFX.PeriodY</class>.</li>
+<li><code>colormap</code>: a named colour map such as <code>cmap:viridis</code> for scalar <code>IMAGE</code> output.  Child <code>stop</code> elements define a
+custom colour ramp instead.</li>
+</list>
+<p>The shared <code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>, <code>result</code> and <code>color-interpolation-filters</code> attributes apply as they do to standard primitives.  <code>xvg:outputMode=&quot;height&quot;</code> produces a floating-point scalar result for enhanced lighting and other numerical consumers, and must keep its prefix.  An invalid value is reported and the field keeps its default.  Some combinations can only be checked when the filter is drawn, and the element then draws nothing: <code>mode=&quot;colour&quot;</code> with <code>xvg:outputMode=&quot;height&quot;</code>, <code>basketWeave</code> or <code>herringbone</code> with a non-integer width-to-height ratio below 2, a <code>period</code> with an <code>angle</code> that is not a multiple of 360, <code>running</code> with a vertical <code>period</code> where <code>periodY * rowOffset</code> is not an integer, and <code>checker</code> or <code>basketWeave</code> with an odd non-zero <code>period</code>.  Other renderers do not draw the element.</p>
+<pre>&lt;filter id=&quot;bricks&quot; xmlns:xvg=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
+  &lt;xvg:fePaving seed=&quot;7&quot; elementSize=&quot;48 24&quot; jointWidth=&quot;3&quot; bevelWidth=&quot;4&quot; elementColor=&quot;#b25a42&quot;
+      jointColor=&quot;#c8c0b4&quot; hueVariation=&quot;8&quot; lightVariation=&quot;0.06&quot; result=&quot;albedo&quot;/&gt;
+  &lt;xvg:fePaving seed=&quot;7&quot; mode=&quot;height&quot; elementSize=&quot;48 24&quot; jointWidth=&quot;3&quot; bevelWidth=&quot;4&quot; bevelProfile=&quot;circleOut&quot;
+      heightVariation=&quot;0.15&quot; xvg:outputMode=&quot;height&quot; result=&quot;height&quot;/&gt;
+  &lt;xvg:feLighting in=&quot;height&quot; in2=&quot;albedo&quot; surfaceScale=&quot;10&quot; specularConstant=&quot;0.2&quot;&gt;
+    &lt;feDistantLight azimuth=&quot;225&quot; elevation=&quot;45&quot;/&gt;
+  &lt;/xvg:feLighting&gt;
+&lt;/filter&gt;
+</pre>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>

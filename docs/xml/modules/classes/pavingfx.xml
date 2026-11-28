@@ -1,0 +1,437 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>PavingFX</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Generates structured masonry, paving, tile and checker arrangements.</comment>
+    <version>1</version>
+    <id>cdfab118</id>
+    <idstring>PAVINGFX</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>PavingFX is a source effect that takes no primary input.  It partitions the pattern plane into rectangular elements separated by joints according to <fl>Layout</fl> (<code>RUNNING</code>, <code>STACK</code>, <code>BASKET_WEAVE</code>, <code>HERRINGBONE</code> or <code>CHECKER</code>), and evaluates each sample solely from its position in primitive units.  Clipped, partial and full redraws therefore produce identical values.</p>
+<p>Element dimensions are given by <fl>ElementWidth</fl> and <fl>ElementHeight</fl>, positioned by <fl>OriginX</fl> and <fl>OriginY</fl>, and rotated about the origin by <fl>Angle</fl>.  Percentages in <fl>ElementWidth</fl> and <fl>OriginX</fl> refer to the width of the filter region, and percentages in <fl>ElementHeight</fl> and <fl>OriginY</fl> refer to its height.  Percentages in <fl>JointWidth</fl> and <fl>BevelWidth</fl> refer to the normalised diagonal of the filter region (<code>sqrt((width^2 + height^2) / 2)</code>), so horizontal and vertical joints and bevels share the same thickness on non-square regions.</p>
+<p><code>BASKET_WEAVE</code> and <code>HERRINGBONE</code> require the resolved <code>ElementWidth / ElementHeight</code> ratio to lie within <code>1e-4</code> of an integer <code>k &gt;= 2</code>.  With the default <code>ElementWidth = 25%</code> and <code>ElementHeight = 12.5%</code>, this holds automatically on square filter regions and in <code>BOUNDING_BOX</code> primitive units.</p>
+<p><fl>Mode</fl> selects the generated field:</p>
+<list type="bullet">
+<li><code>COLOUR</code>: Draws elements using <fl>ElementColour</fl> (and <fl>AlternateColour</fl> for odd-parity cells in <code>CHECKER</code>) or an
+upstream <fl>ElementMap</fl>, separated by joints using <fl>JointColour</fl> or an upstream <fl>JointMap</fl>.  Per-element perceptual OKLCH
+variation is controlled by <fl>HueVariation</fl>, <fl>ChromaVariation</fl>, <fl>LightVariation</fl> and <fl>Seed</fl>.  Edges between elements and
+joints are analytically anti-aliased over one output pixel whenever <fl>JointWidth</fl> is positive.</li>
+<li><code>HEIGHT</code>: Produces a bevelled relief field rising from <fl>JointHeightValue</fl> in joints to <code><fl>ElementHeightValue</fl></code> plus
+seeded <fl>HeightVariation</fl> on element interiors, shaped across <fl>BevelWidth</fl> by <fl>BevelProfile</fl>.</li>
+<li><code>MASK</code>: Produces element coverage in [0, 1], with analytic edge anti-aliasing when <fl>JointWidth</fl> is positive.</li>
+<li><code>ID</code>: Produces a discrete seeded hash in [0, 1) per element, and 0 in joints.</li>
+</list>
+<p>In <code>IMAGE</code> <fl>OutputMode</fl>, scalar modes (<code>HEIGHT</code>, <code>MASK</code> and <code>ID</code>) clamp values to [0, 1] and draw opaque greyscale in the effect's colour space, or through <fl>ColourMap</fl> or <fl>Stops</fl>.  Set <fl>OutputMode</fl> to <code>HEIGHT</code> to emit an unclamped floating-point scalar surface for numerical consumers such as <class name="LightingFX">LightingFX</class> or <class name="CompositeFX">CompositeFX</class>.  <code>Mode = COLOUR</code> cannot be combined with <code>OutputMode = HEIGHT</code>.</p>
+<p><fl>PeriodX</fl> and <fl>PeriodY</fl> wrap element keys so that seeded variation and <code>ID</code> output repeat without seams.  Natural repeat vectors in pattern units are <code>(W, 0)</code> and <code>(RowOffset * W, H)</code> for <code>RUNNING</code>, <code>(W, 0)</code> and <code>(0, H)</code> for <code>STACK</code>, <code>(2W, 0)</code> and <code>(0, 2H)</code> for <code>CHECKER</code>, <code>(2W, 0)</code> and <code>(0, 2W)</code> for <code>BASKET_WEAVE</code>, and <code>(2W, 0)</code> and <code>(0, 2W)</code> (axis-aligned) for <code>HERRINGBONE</code>.  A periodic pattern cannot be rotated (<code>Angle</code> must be a multiple of 360), a periodic <code>RUNNING</code> layout requires <code>PeriodY * RowOffset</code> to be an integer, and periodic <code>CHECKER</code> and <code>BASKET_WEAVE</code> layouts require even non-zero periods.</p>
+<p>SVG documents can use the effect with the <code>xvg:fePaving</code> element.  Refer to the <class name="SVG">SVG</class> class for its attributes.</p></description>
+    <source>
+      <file path="filters/">filter_paving.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Draw</name>
+      <comment>Render the effect to the target bitmap.</comment>
+      <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="X">The X position of the region to be drawn.</param>
+        <param type="INT" name="Y">The Y position of the region to be drawn.</param>
+        <param type="INT" name="Width">The width of the region to be drawn.</param>
+        <param type="INT" name="Height">The height of the region to be drawn.</param>
+      </input>
+      <description>
+<p>Draw fails with <code>ERR::InvalidValue</code> if <code>Mode</code> is <code>COLOUR</code> with <code>OutputMode</code> set to <code>HEIGHT</code>, if <code>BASKET_WEAVE</code> or <code>HERRINGBONE</code> is drawn with a resolved <code>ElementWidth / ElementHeight</code> ratio that is not within <code>1e-4</code> of an integer <code>&gt;= 2</code>, if a periodic pattern is rotated, if a periodic <code>RUNNING</code> layout has a non-integer <code>PeriodY * RowOffset</code>, or if a periodic <code>CHECKER</code> or <code>BASKET_WEAVE</code> layout has an odd period.  It fails with <code>ERR::OutOfRange</code> if pattern coordinates across the drawn area would exceed 2^52.</p>
+      </description>
+    </action>
+
+  </actions>
+
+  <fields>
+    <field>
+      <name>AlternateColour</name>
+      <comment>The colour of odd-parity cells in the <code>CHECKER</code> layout.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>struct FRGB</type>
+      <description>
+<p>Stored in straight sRGB RGBA format with components clamped to [0, 1].  Defaults to <code>#6b635a</code> (opaque).  Ignored by layouts other than <code>CHECKER</code>, and replaced by <fl>ElementMap</fl> when bound.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Angle</name>
+      <comment>Rotates the pattern clockwise about its origin, in degrees.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The rotation is applied about the point given by <fl>OriginX</fl> and <fl>OriginY</fl>.  The value must be finite and defaults to 0. A periodic pattern cannot be rotated: if <fl>PeriodX</fl> or <fl>PeriodY</fl> is set, Angle must be a multiple of 360 or the effect will fail to draw.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>BevelProfile</name>
+      <comment>Shapes the height transition across <fl>BevelWidth</fl>.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="GEZ">GEZ</type>
+      <description>
+<p>Selects the easing curve used to interpolate from <fl>JointHeightValue</fl> to the element interior height in <code>HEIGHT</code> mode. Defaults to <code>LINEAR</code>.</p>
+<types lookup="GEZ"/>
+      </description>
+    </field>
+
+    <field>
+      <name>BevelWidth</name>
+      <comment>Width of the bevel transition inside each element edge, in pattern units.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region. Defaults to <code>1%</code>.  A value of 0 produces a vertical step from <fl>JointHeightValue</fl> to the element height.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ChromaVariation</name>
+      <comment>Maximum seeded per-element OKLCH chroma offset.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each element receives a deterministic offset in <code>[-ChromaVariation, +ChromaVariation]</code>.  The value must lie in the range [0, 0.4] and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ColourMap</name>
+      <comment>Draws scalar <code>IMAGE</code> output through a pre-defined colour ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Applies when <fl>Mode</fl> is <code>HEIGHT</code>, <code>MASK</code> or <code>ID</code> and <fl>OutputMode</fl> is <code>IMAGE</code>.  The clamped value selects a colour from the named colourmap, from 0 to 1.  Setting a colourmap replaces custom <fl>Stops</fl>.  Set an empty string to restore greyscale output.  Unknown names fail with <code>ERR::NotFound</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ElementColour</name>
+      <comment>The base colour of elements when <fl>ElementMap</fl> is not bound.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>struct FRGB</type>
+      <description>
+<p>Stored in straight sRGB RGBA format with components clamped to [0, 1].  Defaults to <code>#a89b8c</code> (opaque).</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ElementHeight</name>
+      <comment>The nominal element thickness, before rotation.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and greater than zero.  A percentage refers to the height of the filter region.  Defaults to <code>12.5%</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ElementHeightValue</name>
+      <comment>The nominal scalar height of element interiors in <code>HEIGHT</code> mode.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value must be finite and defaults to 1.0.  Each element's interior height is offset by up to <fl>HeightVariation</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ElementMap</name>
+      <comment>Optional upstream effect supplying a colour texture for elements.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type class="FilterEffect">*FilterEffect</type>
+      <description>
+<p>Bind an earlier image-producing effect in the same filter to texture elements in <code>COLOUR</code> mode.  <fl>FillMode</fl> selects whether the texture is mapped into each element's local coordinates (<code>LOCAL</code>) or sampled continuously in output coordinates (<code>CONTINUOUS</code>).  Ignored when <fl>Mode</fl> is not <code>COLOUR</code>.  Set to <code>nullptr</code> to restore solid <fl>ElementColour</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ElementWidth</name>
+      <comment>The nominal element length, before rotation.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and greater than zero.  A percentage refers to the width of the filter region.  Defaults to <code>25%</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FillMode</name>
+      <comment>Selects how <fl>ElementMap</fl> is mapped onto elements.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="LFM">LFM</type>
+      <description>
+<p><code>LOCAL</code>, the default, maps the producer's subregion across each element in its own <code>(u, v)</code> coordinates and rotates with vertical elements in <code>BASKET_WEAVE</code> and <code>HERRINGBONE</code>.  <code>CONTINUOUS</code> samples <fl>ElementMap</fl> directly at output coordinates.</p>
+<types lookup="LFM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>HeightVariation</name>
+      <comment>Maximum seeded per-element height offset in <code>HEIGHT</code> mode.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each element's interior height is offset by a deterministic value in <code>[-HeightVariation, +HeightVariation]</code>.  The value must lie in the range [0, 100] and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>HueVariation</name>
+      <comment>Maximum seeded per-element OKLCH hue shift, in degrees.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each element receives a deterministic hue offset in <code>[-HueVariation, +HueVariation]</code>.  For achromatic base colours, a positive HueVariation assigns a uniformly distributed seeded hue when combined with <fl>ChromaVariation</fl>.  The value must lie in the range [0, 180] and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>JointColour</name>
+      <comment>The base colour of joints when <fl>JointMap</fl> is not bound.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>struct FRGB</type>
+      <description>
+<p>Stored in straight sRGB RGBA format with components clamped to [0, 1].  Defaults to <code>#45413c</code> (opaque).</p>
+      </description>
+    </field>
+
+    <field>
+      <name>JointHeightValue</name>
+      <comment>The scalar height of joints in <code>HEIGHT</code> mode.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value must be finite and defaults to 0.0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>JointMap</name>
+      <comment>Optional upstream effect supplying a colour texture for joints.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type class="FilterEffect">*FilterEffect</type>
+      <description>
+<p>Bind an earlier image-producing effect in the same filter to texture joints continuously in output coordinates when <fl>Mode</fl> is <code>COLOUR</code>.  Ignored when <fl>Mode</fl> is not <code>COLOUR</code>.  Set to <code>nullptr</code> to restore solid <fl>JointColour</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>JointWidth</name>
+      <comment>Width of the gap between adjacent elements, in pattern units.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region. Defaults to <code>1%</code>.  A value of 0 removes joints completely without mortar halos.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Layout</name>
+      <comment>Selects the tiling arrangement of elements.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="LAY">LAY</type>
+      <description>
+<p>Supported layouts are <code>RUNNING</code> (the default), <code>STACK</code>, <code>BASKET_WEAVE</code>, <code>HERRINGBONE</code> and <code>CHECKER</code>.</p>
+<types lookup="LAY"/>
+      </description>
+    </field>
+
+    <field>
+      <name>LightVariation</name>
+      <comment>Maximum seeded per-element OKLCH lightness offset.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each element receives a deterministic lightness offset in <code>[-LightVariation, +LightVariation]</code>, clamped to [0, 1]. The value must lie in the range [0, 1] and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Mode</name>
+      <comment>Selects the content produced by the effect.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="LMD">LMD</type>
+      <description>
+<p><code>COLOUR</code>, the default, draws coloured or textured elements and joints.  <code>HEIGHT</code> emits the bevelled surface height field, <code>MASK</code> emits element coverage in [0, 1], and <code>ID</code> emits a discrete seeded hash in [0, 1) per element and 0 in joints.  <code>COLOUR</code> cannot be combined with <fl>OutputMode</fl> <code>HEIGHT</code>.</p>
+<types lookup="LMD"/>
+      </description>
+    </field>
+
+    <field>
+      <name>OriginX</name>
+      <comment>The horizontal origin of the pattern, relative to the left edge of the filter region.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>A percentage refers to the width of the filter region.  The value must be finite and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OriginY</name>
+      <comment>The vertical origin of the pattern, relative to the top edge of the filter region.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>A percentage refers to the height of the filter region.  The value must be finite and defaults to 0.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OutputMode</name>
+      <comment>Selects an image or a floating-point scalar result.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FOM">FOM</type>
+      <description>
+<p><code>IMAGE</code>, the default, writes RGBA8 pixels (coloured in <code>COLOUR</code> mode, or greyscale/colour-mapped for scalar modes). <code>HEIGHT</code> writes unclamped floating-point scalars for <code>HEIGHT</code>, <code>MASK</code> and <code>ID</code> modes, and is rejected at draw time when <fl>Mode</fl> is <code>COLOUR</code>.  A <code>HEIGHT</code> effect cannot be the final step in a filter.  <code>NATIVE</code> is unsupported.</p>
+<types lookup="FOM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>PeriodX</name>
+      <comment>Repeats the pattern horizontally after this number of layout cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>Periods count elements for <code>RUNNING</code>, <code>STACK</code> and <code>CHECKER</code>, square macro-cells of side <code>ElementWidth</code> for <code>BASKET_WEAVE</code>, and <code>2 * ElementWidth</code> fundamental tiles for <code>HERRINGBONE</code>.  The value must lie in [0, 1048576], and 0, the default, disables horizontal repetition.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PeriodY</name>
+      <comment>Repeats the pattern vertically after this number of layout cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The value must lie in [0, 1048576], and 0, the default, disables vertical repetition.  See <fl>PeriodX</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ResampleMethod</name>
+      <comment>Selects interpolation for <fl>ElementMap</fl> in <code>LOCAL</code> fill mode.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="VSM">VSM</type>
+      <description>
+<p>Accepts <code>NEIGHBOUR</code> and <code>BILINEAR</code> (the default).</p>
+<types lookup="VSM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>RowOffset</name>
+      <comment>Horizontal shift between consecutive courses in <code>RUNNING</code> layout, as a fraction of <fl>ElementWidth</fl>.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value must be finite and defaults to 0.5 (half-brick running bond).  Ignored by other layouts.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Seed</name>
+      <comment>Selects deterministic per-element appearance and height variation.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>Any 64-bit integer is accepted, including 0, which is the default.  The same seed always produces the same pattern.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Stops</name>
+      <comment>Draws scalar <code>IMAGE</code> output through a custom colour ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;GradientStop&gt;</type>
+      <description>
+<p>Applies when <fl>Mode</fl> is <code>HEIGHT</code>, <code>MASK</code> or <code>ID</code> and <fl>OutputMode</fl> is <code>IMAGE</code>.  At least two stops are required, or the setter fails with <code>ERR::InvalidValue</code>.  Setting stops replaces any named <fl>ColourMap</fl>; set an empty array to clear the ramp and restore greyscale output.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="FOM" comment="Output modes for ImageFX, TurbulenceFX, BlurFX, WaveFunctionFX and CellularFX.">
+      <const name="HEIGHT">Produce a linear floating-point scalar surface for numerical filter inputs.</const>
+      <const name="IMAGE">Produce the usual RGBA image.  This is the default.</const>
+      <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
+    </constants>
+
+    <constants lookup="GEZ" comment="Gradient easing functions.">
+      <const name="CIRCLE_IN">Circular ease-in, following a quarter circle.  The slope is vertical at the end.</const>
+      <const name="CIRCLE_IN_OUT">Circular ease-in and ease-out.  The slope is vertical at the midpoint.</const>
+      <const name="CIRCLE_OUT">Circular ease-out, following a quarter circle.  The slope is vertical at the start.</const>
+      <const name="CUBIC_IN">Cubic ease-in.</const>
+      <const name="CUBIC_IN_OUT">Cubic ease-in and ease-out.</const>
+      <const name="CUBIC_OUT">Cubic ease-out.</const>
+      <const name="IN">Ease-in (slow start).</const>
+      <const name="IN_OUT">Smoothstep-style ease-in and ease-out.</const>
+      <const name="LINEAR">Linear interpolation (no easing) - the default.</const>
+      <const name="OUT">Ease-out (slow end).</const>
+    </constants>
+
+    <constants lookup="LAY" comment="Arrangement styles for PavingFX.">
+      <const name="BASKET_WEAVE">Alternating horizontal and vertical packs of elements in square macro-cells.</const>
+      <const name="CHECKER">Regular grid with alternating ElementColour and AlternateColour parity.</const>
+      <const name="HERRINGBONE">Interlocking perpendicular elements in a zig-zag weave.</const>
+      <const name="RUNNING">Horizontal courses shifted by RowOffset per row.</const>
+      <const name="STACK">Regular axis-aligned grid of rectangular elements.</const>
+    </constants>
+
+    <constants lookup="LFM" comment="Texture coordinate modes for PavingFX.ElementMap.">
+      <const name="CONTINUOUS">Sample ElementMap continuously in output coordinates across the pattern.</const>
+      <const name="LOCAL">Map ElementMap across each element in its own local coordinates, rotating with the element.</const>
+    </constants>
+
+    <constants lookup="LMD" comment="Content modes for PavingFX.">
+      <const name="COLOUR">Draw coloured elements and joints, with optional ElementMap, JointMap and OKLCH variation.</const>
+      <const name="HEIGHT">Output the bevelled surface height field.</const>
+      <const name="ID">Output a deterministic per-element hash in [0, 1), and 0 in joints.</const>
+      <const name="MASK">Output element coverage (1 inside elements, 0 in joints).</const>
+    </constants>
+
+    <constants lookup="VSM">
+      <const name="AUTO">Selects a resampling method automatically.  The choice depends on the operation.</const>
+      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
+      <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
+      <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
+      <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
+      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
+      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
+      <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
+      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
+      <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
+      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
+      <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
+      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
+      <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
+      <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
+  </structs>
+</book>

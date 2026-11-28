@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PavingFX through xvg:fePaving.
+
+Row 1: running brickwork with OKLCH variation, 45-degree lit herringbone paving, basket-weave tiles with a procedural
+local ElementMap and JointMap, and checkerboard tiles with grout.
+Row 2: bevel profile comparison under lighting (circleIn, linear and circleOut) on stacked tiles, followed by scalar
+height mode mapped through custom gradient stops.
+Row 3: scalar mask mode on herringbone paving, scalar element-ID mode with a colour map, continuous ElementMap
+sampling across stacked marble tiles, and a 55 x 55 periodic running-bond subregion repeated by feTile with no seams.
+
+Each tile is a 220 x 220 filter region in its own user space. -->
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="980" height="740"
+  viewBox="0 0 980 740">
+  <defs>
+    <filter id="bricks" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="7" layout="running" elementSize="55 27.5" period="4 8" jointWidth="3"
+        elementColor="#a84a36" jointColor="#c8bfb2" hueVariation="8" chromaVariation="0.03" lightVariation="0.08"/>
+    </filter>
+
+    <filter id="herringbone" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="11" layout="herringbone" elementSize="44 22" jointWidth="2.5" bevelWidth="4"
+        angle="45" origin="110 110" elementColor="#9b8a76" jointColor="#423d37" hueVariation="6"
+        chromaVariation="0.02" lightVariation="0.07" result="albedo"/>
+      <xvg:fePaving seed="11" layout="herringbone" mode="height" elementSize="44 22" jointWidth="2.5"
+        bevelWidth="4" bevelProfile="circleOut" angle="45" origin="110 110" heightVariation="0.18"
+        xvg:outputMode="height" result="height"/>
+      <xvg:feLighting in="height" in2="albedo" surfaceScale="12" diffuseConstant="1" specularConstant="0.25"
+        specularExponent="14" ambient="#343434">
+        <feDistantLight azimuth="225" elevation="40"/>
+      </xvg:feLighting>
+    </filter>
+
+    <filter id="basket_weave" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise seed="3" type="fractalNoise" baseFrequency="0.02 0.14" numOctaves="3" normalise="true"
+        result="grain">
+        <stop offset="0" stop-color="#6e4a2e"/>
+        <stop offset="0.5" stop-color="#a6754b"/>
+        <stop offset="1" stop-color="#cfa273"/>
+      </xvg:feFractalNoise>
+      <xvg:feCellular seed="4" mode="f1" cellSize="10" result="grout">
+        <stop offset="0" stop-color="#3a352f"/>
+        <stop offset="1" stop-color="#585149"/>
+      </xvg:feCellular>
+      <xvg:fePaving seed="19" layout="basketWeave" elementSize="55 27.5" period="4 4" jointWidth="2.5"
+        fillMode="local" elementMap="grain" jointMap="grout" hueVariation="5" lightVariation="0.05"/>
+    </filter>
+
+    <filter id="checker" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="23" layout="checker" elementSize="27.5" period="8 8" jointWidth="2" elementColor="#e6dfd3"
+        alternateColor="#2f3b44" jointColor="#8a8278" lightVariation="0.04"/>
+    </filter>
+
+    <filter id="bevel_circle_in" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="31" layout="stack" mode="height" elementSize="55" jointWidth="4" bevelWidth="14"
+        bevelProfile="circleIn" xvg:outputMode="height" result="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="14" diffuseConstant="1" specularConstant="0.35"
+        specularExponent="18" ambient="#2c2c2c">
+        <feDistantLight azimuth="225" elevation="38"/>
+      </xvg:feLighting>
+    </filter>
+
+    <filter id="bevel_linear" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="31" layout="stack" mode="height" elementSize="55" jointWidth="4" bevelWidth="14"
+        bevelProfile="linear" xvg:outputMode="height" result="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="14" diffuseConstant="1" specularConstant="0.35"
+        specularExponent="18" ambient="#2c2c2c">
+        <feDistantLight azimuth="225" elevation="38"/>
+      </xvg:feLighting>
+    </filter>
+
+    <filter id="bevel_circle_out" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="31" layout="stack" mode="height" elementSize="55" jointWidth="4" bevelWidth="14"
+        bevelProfile="circleOut" xvg:outputMode="height" result="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="14" diffuseConstant="1" specularConstant="0.35"
+        specularExponent="18" ambient="#2c2c2c">
+        <feDistantLight azimuth="225" elevation="38"/>
+      </xvg:feLighting>
+    </filter>
+
+    <filter id="height_ramp" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="41" layout="running" mode="height" elementSize="44 22" period="5 10" jointWidth="3"
+        bevelWidth="6" bevelProfile="cubicInOut" heightVariation="0.25">
+        <stop offset="0" stop-color="#1a2232"/>
+        <stop offset="0.35" stop-color="#3c6e8c"/>
+        <stop offset="0.8" stop-color="#c2d8a8"/>
+        <stop offset="1" stop-color="#fff4d6"/>
+      </xvg:fePaving>
+    </filter>
+
+    <filter id="mask_mode" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving layout="herringbone" mode="mask" elementSize="55 27.5" period="2 2" jointWidth="3"/>
+    </filter>
+
+    <filter id="id_mode" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="53" layout="running" mode="id" elementSize="55 27.5" rowOffset="0.25" period="4 8"
+        jointWidth="2" colormap="cmap:icefire"/>
+    </filter>
+
+    <filter id="continuous_map" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feCellular seed="8" mode="f2-f1" cellSize="45" numOctaves="3" persistence="0.55" result="marble">
+        <stop offset="0" stop-color="#5c646e"/>
+        <stop offset="0.12" stop-color="#cfd4d8"/>
+        <stop offset="1" stop-color="#f2f0eb"/>
+      </xvg:feCellular>
+      <xvg:fePaving layout="stack" elementSize="55" jointWidth="3" jointColor="#4d5258" fillMode="continuous"
+        elementMap="marble"/>
+    </filter>
+
+    <filter id="periodic" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:fePaving seed="61" layout="running" elementSize="27.5 13.75" period="2 4" jointWidth="2"
+        elementColor="#b05c44" jointColor="#d0c8bc" hueVariation="18" lightVariation="0.1"
+        x="0" y="0" width="55" height="55"/>
+      <feTile/>
+    </filter>
+  </defs>
+
+  <rect width="100%" height="100%" fill="#808080"/>
+
+  <g transform="translate(20 20)"><rect width="220" height="220" filter="url(#bricks)"/></g>
+  <g transform="translate(260 20)"><rect width="220" height="220" filter="url(#herringbone)"/></g>
+  <g transform="translate(500 20)"><rect width="220" height="220" filter="url(#basket_weave)"/></g>
+  <g transform="translate(740 20)"><rect width="220" height="220" filter="url(#checker)"/></g>
+
+  <g transform="translate(20 260)"><rect width="220" height="220" fill="#8898a8" filter="url(#bevel_circle_in)"/></g>
+  <g transform="translate(260 260)"><rect width="220" height="220" fill="#8898a8" filter="url(#bevel_linear)"/></g>
+  <g transform="translate(500 260)"><rect width="220" height="220" fill="#8898a8" filter="url(#bevel_circle_out)"/></g>
+  <g transform="translate(740 260)"><rect width="220" height="220" filter="url(#height_ramp)"/></g>
+
+  <g transform="translate(20 500)"><rect width="220" height="220" filter="url(#mask_mode)"/></g>
+  <g transform="translate(260 500)"><rect width="220" height="220" filter="url(#id_mode)"/></g>
+  <g transform="translate(500 500)"><rect width="220" height="220" filter="url(#continuous_map)"/></g>
+  <g transform="translate(740 500)"><rect width="220" height="220" filter="url(#periodic)"/></g>
+</svg>
