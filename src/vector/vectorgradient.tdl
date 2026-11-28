@@ -41,7 +41,8 @@
     "F2_F1: Distance between the nearest and second-nearest points.",
     "F2: Distance to second-nearest point.",
     "WEIGHTED: Additively-weighted Voronoi using per-point heights.",
-    "PEAKS: Additive peaks or terrain using per-point heights.")
+    "PEAKS: Additive peaks or terrain using per-point heights.",
+    "CELL: Seeded value of the nearest point, constant within each cell.  Supported by CellularFX only.")
 
   enums("WLM", { type="int", start=0, comment="Worley distance metrics." },
     "EUCLIDEAN",

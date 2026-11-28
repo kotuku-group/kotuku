@@ -119,7 +119,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="WLF">WLF</type>
       <description>
-<p>WorleyMode selects how distances to feature points are converted into the scalar field that feeds the colour ramp.</p>
+<p>WorleyMode selects how distances to feature points are converted into the scalar field that feeds the colour ramp. The <code>CELL</code> mode is supported by <class name="CellularFX">CellularFX</class> only, and is rejected here with <code>ERR::OutOfRange</code>.</p>
 <types lookup="WLF"/>
       </description>
     </field>
@@ -127,6 +127,7 @@
   </fields>
   <types>
     <constants lookup="WLF" comment="Worley field modes.">
+      <const name="CELL">Seeded value of the nearest point, constant within each cell.  Supported by CellularFX only.</const>
       <const name="F1">Distance to nearest point.</const>
       <const name="F2">Distance to second-nearest point.</const>
       <const name="F2_F1">Distance between the nearest and second-nearest points.</const>

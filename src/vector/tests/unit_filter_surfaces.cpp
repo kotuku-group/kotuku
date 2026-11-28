@@ -984,6 +984,166 @@ static bool test_filter_blurred_alpha_edge()
    return filter_test_expect((rms < 1e-7) and (rms < byte_rms), "Float blur lost the alpha edge's fractional slopes.");
 }
 
+// Draws a HEIGHT CellularFX through a probe and compares every processed sample with cellular_noise.h, evaluated at
+// a lattice position that Lattice derives independently from the pixel centre in client coordinates.  Pixels outside
+// Covered must be zero.  The filter region is (-2, 0) to (80, 40) in client coordinates.
+
+struct cellular_fixture {
+   CSTRING Name;
+   cellular_params Params;
+   Unit CellWidth, CellHeight, OriginX, OriginY;
+   double Angle = 0;
+   VUNIT PrimitiveUnits = VUNIT::USERSPACE;
+   TClipRectangle<double> Subregion = { 0.0 }; // Client coordinates; empty for the default subregion
+   int PageWidth = 80, PageHeight = 40;
+   std::function<void(double, double, double &, double &)> Lattice;
+   std::function<bool(double, double)> Covered;
+};
+
+static bool test_filter_cellular_case(const cellular_fixture &Case)
+{
+   auto fixture_class = register_filter_test_class<extFilterSurfaceTest>();
+   filter_test_scene scene(80, 40);
+   if ((not fixture_class.ok()) or (not scene.ready())) return false;
+   scene.Filter->PrimitiveUnits = Case.PrimitiveUnits;
+   scene.Scene->PageWidth = Case.PageWidth;
+   scene.Scene->PageHeight = Case.PageHeight;
+
+   const auto owner = fl::Owner(scene.Filter->UID);
+   auto noise = Case.Subregion.valid() and (Case.Subregion.width() > 0) ?
+      extCellularFX::create::local(owner, fl::X(Case.Subregion.left), fl::Y(Case.Subregion.top),
+         fl::Width(Case.Subregion.width()), fl::Height(Case.Subregion.height())) :
+      extCellularFX::create::local(owner);
+   auto probe = extFilterSurfaceTest::create::local(owner);
+   if ((not noise) or (not probe)) return false;
+
+   const auto &p = Case.Params;
+   auto cell_width = Case.CellWidth, cell_height = Case.CellHeight, origin_x = Case.OriginX, origin_y = Case.OriginY;
+   if ((CELLULARFX_SET_Seed(noise, p.Seed) != ERR::Okay) or
+       (CELLULARFX_SET_WorleyMode(noise, WLF(int(p.Mode))) != ERR::Okay) or
+       (CELLULARFX_SET_WorleyMetric(noise, p.Metric) != ERR::Okay) or
+       (CELLULARFX_SET_Jitter(noise, p.Jitter) != ERR::Okay) or
+       (CELLULARFX_SET_HeightMin(noise, p.HeightMin) != ERR::Okay) or
+       (CELLULARFX_SET_HeightMax(noise, p.HeightMax) != ERR::Okay) or
+       (CELLULARFX_SET_Octaves(noise, p.Octaves) != ERR::Okay) or
+       (CELLULARFX_SET_Persistence(noise, p.Persistence) != ERR::Okay) or
+       (CELLULARFX_SET_Lacunarity(noise, p.Lacunarity) != ERR::Okay) or
+       (CELLULARFX_SET_PeriodX(noise, p.PeriodX) != ERR::Okay) or
+       (CELLULARFX_SET_PeriodY(noise, p.PeriodY) != ERR::Okay) or
+       (CELLULARFX_SET_CellWidth(noise, cell_width) != ERR::Okay) or
+       (CELLULARFX_SET_CellHeight(noise, cell_height) != ERR::Okay) or
+       (CELLULARFX_SET_OriginX(noise, origin_x) != ERR::Okay) or
+       (CELLULARFX_SET_OriginY(noise, origin_y) != ERR::Okay) or
+       (CELLULARFX_SET_Angle(noise, Case.Angle) != ERR::Okay) or
+       (CELLULARFX_SET_OutputMode(noise, FOM::HEIGHT) != ERR::Okay)) {
+      kt::Log("FilterTest").warning("%s: a CellularFX field was rejected.", Case.Name);
+      return false;
+   }
+
+   filter_named_input inputs[] { { "Noise", { .Kind = filter_input_kind::SCALAR_MAP } } };
+   const filter_effect_extension probe_extension { inputs };
+   probe->FilterExtension = &probe_extension;
+   if (set_named_filter_input(probe, "Noise", VSF::REFERENCE, noise) != ERR::Okay) return false;
+
+   const cellular_sampler reference(p);
+   int covered = 0;
+   probe->DrawRoutine = [&](extFilterEffect *Effect) {
+      filter_map_view map;
+      if (auto error = get_filter_map(Effect, "Noise", map); error != ERR::Okay) return error;
+      const auto &view = map.Source;
+      for (int y=view.OriginY; y < view.OriginY + view.Height; ++y) {
+         for (int x=view.OriginX; x < view.OriginX + view.Width; ++x) {
+            const double px = x + 0.5, py = y + 0.5;
+            double expected = 0;
+            if (Case.Covered(px, py)) {
+               double lx, ly;
+               Case.Lattice(px, py, lx, ly);
+               expected = reference.sample(lx, ly);
+               covered++;
+            }
+            const float actual = map.sample(px, py)[0];
+            if (std::abs(actual - expected) > 1e-6 * std::max(1.0, std::abs(expected))) {
+               kt::Log("FilterTest").warning("%s: sample at %d,%d was %.9g, expected %.9g.", Case.Name, x, y,
+                  actual, expected);
+               return ERR::InvalidValue;
+            }
+         }
+      }
+      return ERR::Okay;
+   };
+
+   filter_render_result output;
+   if (auto error = scene.draw(output); error != ERR::Okay) {
+      kt::Log("FilterTest").warning("%s: draw failed: %s", Case.Name, GetErrorMsg(error));
+      return false;
+   }
+   return filter_test_expect(covered >= 100, "The CellularFX fixture compared too few covered samples.");
+}
+
+static bool test_filter_cellular()
+{
+   // The filter region spans x = [-2, 80) and y = [0, 40) in client units, which equal scene pixels here.
+
+   constexpr double region_left = -2, region_top = 0, region_width = 82, region_height = 40;
+
+   cellular_fixture offset {
+      .Name = "Offset subregion",
+      .Params = { .Mode = cellular_mode::WEIGHTED, .Seed = -77, .Jitter = 0.8, .HeightMin = 1.5, .HeightMax = -0.5,
+         .Octaves = 2, .Persistence = 0.6, .Lacunarity = 2.5 },
+      .CellWidth = Unit(10.0), .CellHeight = Unit(0.125, FD_SCALED), .OriginX = Unit(3.0), .OriginY = Unit(-2.0),
+      .Subregion = { 6, 3, 56, 33 },
+      .Lattice = [&](double X, double Y, double &LX, double &LY) {
+         LX = (X - (region_left + 3.0)) / 10.0;
+         LY = (Y - (region_top - 2.0)) / (region_height * 0.125);
+      },
+      .Covered = [](double X, double Y) { return (X >= 6) and (X < 56) and (Y >= 3) and (Y < 33); }
+   };
+
+   cellular_fixture rotated {
+      .Name = "Rotated domain",
+      .Params = { .Mode = cellular_mode::F2_F1, .Metric = WLM::MANHATTAN, .Seed = 12345, .Octaves = 3,
+         .Lacunarity = 2.0 },
+      .CellWidth = Unit(7.0), .CellHeight = Unit(9.0), .OriginX = Unit(0.25, FD_SCALED), .OriginY = Unit(10.0),
+      .Angle = 30,
+      .Lattice = [&](double X, double Y, double &LX, double &LY) {
+         const double du = X - (region_left + 0.25 * region_width), dv = Y - (region_top + 10.0);
+         const double c = std::cos(30.0 * agg::pi / 180.0), s = std::sin(30.0 * agg::pi / 180.0);
+         LX = ((c * du) + (s * dv)) / 7.0;
+         LY = ((c * dv) - (s * du)) / 9.0;
+      },
+      .Covered = [&](double X, double Y) {
+         return (X >= region_left) and (X < region_left + region_width) and (Y >= region_top) and
+            (Y < region_top + region_height);
+      }
+   };
+
+   // In BOUNDING_BOX units, primitive coordinates are fractions of the client bounds, (0, 0) to (80, 40).
+
+   cellular_fixture bounding_box {
+      .Name = "Bounding box units",
+      .Params = { .Mode = cellular_mode::PEAKS, .Metric = WLM::CHEBYSHEV, .Seed = 9, .Jitter = 0.5, .HeightMin = -1,
+         .HeightMax = 2, .Octaves = 2, .Persistence = 0.75, .Lacunarity = 3.0, .PeriodX = 4, .PeriodY = 3 },
+      .CellWidth = Unit(0.1), .CellHeight = Unit(0.25, FD_SCALED), .OriginX = Unit(0.05), .OriginY = Unit(0.0),
+      .PrimitiveUnits = VUNIT::BOUNDING_BOX,
+      .Lattice = [&](double X, double Y, double &LX, double &LY) {
+         const double domain_left = region_left / 80.0, domain_height = region_height / 40.0;
+         LX = (X / 80.0 - (domain_left + 0.05)) / 0.1;
+         LY = (Y / 40.0) / (0.25 * domain_height);
+      },
+      .Covered = rotated.Covered
+   };
+
+   // The page limits processing to part of the subregion.  Samples must not depend on the processing area.
+
+   auto clipped = offset;
+   clipped.Name = "Clipped redraw";
+   clipped.PageWidth = 37;
+   clipped.PageHeight = 23;
+
+   return test_filter_cellular_case(offset) and test_filter_cellular_case(rotated) and
+      test_filter_cellular_case(bounding_box) and test_filter_cellular_case(clipped);
+}
+
 void vector_filter_unit_tests(std::string_view Options, int &Passed, int &Total)
 {
    if (Options IS "filter:named") {
@@ -1002,5 +1162,9 @@ void vector_filter_unit_tests(std::string_view Options, int &Passed, int &Total)
           test_filter_numeric_neighbourhoods(filter_surface_format::VECTOR_F32)) Passed++;
       if (test_filter_height_turbulence()) Passed++;
       if (test_filter_blurred_alpha_edge()) Passed++;
+   }
+   else if (Options IS "filter:cellular") {
+      Total++;
+      if (test_filter_cellular()) Passed++;
    }
 }

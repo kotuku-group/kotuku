@@ -82,6 +82,7 @@ extern OBJECTPTR clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX, clTileFX;
+extern OBJECTPTR clCellularFX;
 extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
@@ -1245,6 +1246,7 @@ extern double read_unit(CSTRING &, bool &);
 extern void next_value(std::string_view &);
 extern bool read_transform_unit(std::string_view &, double &);
 extern ERR init_blurfx(void);
+extern ERR init_cellularfx(void);
 extern ERR init_colour(void);
 extern ERR init_colourfx(void);
 extern ERR init_compositefx(void);

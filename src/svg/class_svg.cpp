@@ -403,6 +403,43 @@ map's convention, `y-down` or `y-up`.  The map is then read as signed normal com
 lighting reads it, rather than as colour.  The default, `auto`, does this only for the result of
 `xvg:feNormalMap`.  Sets @DisplacementFX.NormalConvention.
 
+The `xvg:feCellular` element generates a cellular (Worley) texture with @CellularFX, for stone, cracks, cells and
+foam.  It takes no input.  Its own attributes are unprefixed:
+
+<list type="bullet">
+<li>`seed`: a 64-bit integer that selects the feature positions, heights and cell values.  Sets @CellularFX.Seed.</li>
+<li>`cellSize`: the cell width and optional height.  The height defaults to the width, and a percentage refers to the
+filter region.  The default is `12.5%`.  Sets @CellularFX.CellWidth and @CellularFX.CellHeight.</li>
+<li>`origin`: the X and optional Y position of the lattice, relative to the filter region's top-left corner.  Y
+defaults to X.  Sets @CellularFX.OriginX and @CellularFX.OriginY.</li>
+<li>`angle`, `jitter`, `heightMin`, `heightMax`, `persistence` and `lacunarity`: numbers that set
+@CellularFX.Angle, @CellularFX.Jitter, @CellularFX.HeightMin, @CellularFX.HeightMax, @CellularFX.Persistence and
+@CellularFX.Lacunarity.</li>
+<li>`numOctaves`: the number of layers, 1 to 12.  Sets @CellularFX.Octaves.</li>
+<li>`mode`: `f1` (the default), `f2`, `f2-f1`, `weighted`, `peaks` or `cell`.  Sets @CellularFX.WorleyMode.</li>
+<li>`metric`: `euclidean` (the default), `manhattan` or `chebyshev`.  Sets @CellularFX.WorleyMetric.</li>
+<li>`period`: whole numbers of cells after which the pattern repeats horizontally and, optionally, vertically.  The
+vertical period defaults to the horizontal one.  Sets @CellularFX.PeriodX and @CellularFX.PeriodY.</li>
+<li>`colormap`: a named colour map such as `cmap:viridis`.  Child `stop` elements define a custom colour ramp
+instead.</li>
+</list>
+
+The shared `x`, `y`, `width`, `height`, `result` and `color-interpolation-filters` attributes apply as they do to
+standard primitives.  `xvg:outputMode="height"` produces a floating-point height result for enhanced lighting and
+other numerical inputs, and must keep its prefix.  An invalid value is reported and the field keeps its default.
+Some combinations can only be checked when the filter is drawn, and the element then draws nothing: `mode="cell"`
+with more than one octave, a `period` with an `angle` that is not a multiple of 360, and a `period` with several
+octaves and a fractional `lacunarity`.  Other renderers do not draw the element.
+
+<pre>
+&lt;filter id="paving" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"&gt;
+  &lt;xvg:feCellular seed="11" mode="f2-f1" cellSize="18%" xvg:outputMode="height" result="height"/&gt;
+  &lt;xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="12" specularConstant="0.3"&gt;
+    &lt;feDistantLight azimuth="225" elevation="40"/&gt;
+  &lt;/xvg:feLighting&gt;
+&lt;/filter&gt;
+</pre>
+
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
 enhanced programmatic access unique to Kotuku.

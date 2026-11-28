@@ -216,7 +216,10 @@ The default is 0, which brushes along the X axis.  Sets <class name="LightingFX"
 <li><code>matcap</code>: the path of a matcap image, an image of a sphere that reflects an environment, which adds reflections
 such as those of chrome or glass.  The path is relative to the document's folder.  Absolute paths, volume names,
 parent folder components and paths that resolve outside that folder are refused.  If the image cannot be loaded, a
-warning is logged and the surface is drawn without it.  Sets <class name="LightingFX" field="MatcapPath">LightingFX.MatcapPath</class>.</li>
+warning is logged and the surface is drawn without it.  Sets <class name="LightingFX" field="MatcapPath">LightingFX.MatcapPath</class>.  A value of <code>#name</code> instead
+refers to the primitive with <code>result=&quot;name&quot;</code>, which must precede this element.  Its result is the matcap, framed by
+its primitive subregion, so that a matcap can be built from floods, turbulence, an image or a blur in the same
+filter.  Sets <class name="LightingFX" field="MatcapEffect">LightingFX.MatcapEffect</class>.</li>
 <li><code>matcapMode</code>: <code>reflect</code> (the default) adds the matcap to the specular light as a reflection.  <code>light</code> uses it as
 the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Sets <class name="LightingFX" field="MatcapMode">LightingFX.MatcapMode</class>.</li>
 </list>
@@ -250,6 +253,32 @@ the diffuse light instead, as a lit sphere for painted, toon and clay looks.  Se
 &lt;/filter&gt;
 </pre>
 <p>To refract through a normal map loaded by <code>feImage</code>, add <code>xvg:normalConvention</code> to <code>feDisplacementMap</code> with the map's convention, <code>y-down</code> or <code>y-up</code>.  The map is then read as signed normal components in either colour space, as lighting reads it, rather than as colour.  The default, <code>auto</code>, does this only for the result of <code>xvg:feNormalMap</code>.  Sets <class name="DisplacementFX" field="NormalConvention">DisplacementFX.NormalConvention</class>.</p>
+<p>The <code>xvg:feCellular</code> element generates a cellular (Worley) texture with <class name="CellularFX">CellularFX</class>, for stone, cracks, cells and foam.  It takes no input.  Its own attributes are unprefixed:</p>
+<list type="bullet">
+<li><code>seed</code>: a 64-bit integer that selects the feature positions, heights and cell values.  Sets <class name="CellularFX" field="Seed">CellularFX.Seed</class>.</li>
+<li><code>cellSize</code>: the cell width and optional height.  The height defaults to the width, and a percentage refers to the
+filter region.  The default is <code>12.5%</code>.  Sets <class name="CellularFX" field="CellWidth">CellularFX.CellWidth</class> and <class name="CellularFX" field="CellHeight">CellularFX.CellHeight</class>.</li>
+<li><code>origin</code>: the X and optional Y position of the lattice, relative to the filter region's top-left corner.  Y
+defaults to X.  Sets <class name="CellularFX" field="OriginX">CellularFX.OriginX</class> and <class name="CellularFX" field="OriginY">CellularFX.OriginY</class>.</li>
+<li><code>angle</code>, <code>jitter</code>, <code>heightMin</code>, <code>heightMax</code>, <code>persistence</code> and <code>lacunarity</code>: numbers that set
+<class name="CellularFX" field="Angle">CellularFX.Angle</class>, <class name="CellularFX" field="Jitter">CellularFX.Jitter</class>, <class name="CellularFX" field="HeightMin">CellularFX.HeightMin</class>, <class name="CellularFX" field="HeightMax">CellularFX.HeightMax</class>, <class name="CellularFX" field="Persistence">CellularFX.Persistence</class> and
+<class name="CellularFX" field="Lacunarity">CellularFX.Lacunarity</class>.</li>
+<li><code>numOctaves</code>: the number of layers, 1 to 12.  Sets <class name="CellularFX" field="Octaves">CellularFX.Octaves</class>.</li>
+<li><code>mode</code>: <code>f1</code> (the default), <code>f2</code>, <code>f2-f1</code>, <code>weighted</code>, <code>peaks</code> or <code>cell</code>.  Sets <class name="CellularFX" field="WorleyMode">CellularFX.WorleyMode</class>.</li>
+<li><code>metric</code>: <code>euclidean</code> (the default), <code>manhattan</code> or <code>chebyshev</code>.  Sets <class name="CellularFX" field="WorleyMetric">CellularFX.WorleyMetric</class>.</li>
+<li><code>period</code>: whole numbers of cells after which the pattern repeats horizontally and, optionally, vertically.  The
+vertical period defaults to the horizontal one.  Sets <class name="CellularFX" field="PeriodX">CellularFX.PeriodX</class> and <class name="CellularFX" field="PeriodY">CellularFX.PeriodY</class>.</li>
+<li><code>colormap</code>: a named colour map such as <code>cmap:viridis</code>.  Child <code>stop</code> elements define a custom colour ramp
+instead.</li>
+</list>
+<p>The shared <code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>, <code>result</code> and <code>color-interpolation-filters</code> attributes apply as they do to standard primitives.  <code>xvg:outputMode=&quot;height&quot;</code> produces a floating-point height result for enhanced lighting and other numerical inputs, and must keep its prefix.  An invalid value is reported and the field keeps its default. Some combinations can only be checked when the filter is drawn, and the element then draws nothing: <code>mode=&quot;cell&quot;</code> with more than one octave, a <code>period</code> with an <code>angle</code> that is not a multiple of 360, and a <code>period</code> with several octaves and a fractional <code>lacunarity</code>.  Other renderers do not draw the element.</p>
+<pre>&lt;filter id=&quot;paving&quot; xmlns:xvg=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
+  &lt;xvg:feCellular seed=&quot;11&quot; mode=&quot;f2-f1&quot; cellSize=&quot;18%&quot; xvg:outputMode=&quot;height&quot; result=&quot;height&quot;/&gt;
+  &lt;xvg:feLighting in=&quot;height&quot; in2=&quot;SourceGraphic&quot; surfaceScale=&quot;12&quot; specularConstant=&quot;0.3&quot;&gt;
+    &lt;feDistantLight azimuth=&quot;225&quot; elevation=&quot;40&quot;/&gt;
+  &lt;/xvg:feLighting&gt;
+&lt;/filter&gt;
+</pre>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>

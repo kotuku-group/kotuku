@@ -1,0 +1,266 @@
+   include 'vector'
+   module display as mGfx
+
+-- Field ranges, draw-time validation, IMAGE output, HEIGHT consumers and the IMAGE cache of CellularFX.  The
+-- numerical HEIGHT values are compared with the reference implementation by test_filter_cellular_numerics.tiri.
+
+SIZE <const> = 64
+
+function cellScene():<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=SIZE, pageHeight=SIZE, compliance=VSC_NONE })
+   local root = scene.new('VectorViewport', { width=SIZE, height=SIZE, colourSpace=VCS_SRGB })
+   local filter = scene.new('VectorFilter', {
+      units=VUNIT_USERSPACE, primitiveUnits=VUNIT_USERSPACE, x=0, y=0, width=SIZE, height=SIZE,
+      colourSpace=VCS_SRGB
+   })
+   check scene.mtAddDef('cells', filter)
+   root.new('VectorRectangle', { width=SIZE, height=SIZE, fill='white', filter='url(#cells)' })
+   return scene, filter
+end
+
+-- Draws over an opaque blue background, which remains wherever the filter is skipped.  The bitmap does not blend, so
+-- transparent filter output replaces the background.
+
+function drawCells(Scene:obj):obj
+   local bitmap = obj.new('Bitmap', { width=SIZE, height=SIZE, bitsPerPixel=32,
+      flags=BMF_ALPHA_CHANNEL, bkgd='0,0,255,255', blendMode=BLM_NONE })
+   check bitmap.acClear()
+   Scene.bitmap = bitmap
+   check Scene.acDraw()
+   return bitmap
+end
+
+function pixel(Bitmap:obj, X:num, Y:num):table
+   local p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return { red=p.red, green=p.green, blue=p.blue, alpha=p.alpha }
+end
+
+function isBackground(P:table):bool
+   return (P.red is 0) and (P.green is 0) and (P.blue is 255)
+end
+
+function stop(Offset:num, R:num, G:num, B:num):struct<GradientStop>
+   local s = struct<GradientStop>
+   s.offset = Offset
+   s.rgb.red = R
+   s.rgb.green = G
+   s.rgb.blue = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+-- Samples the red channel on a coarse grid, enough to detect any change to the drawn pattern.
+
+function signature(Bitmap:obj):str
+   local result = ''
+   for y in {2 to SIZE by 8} do
+      for x in {2 to SIZE by 8} do
+         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
+         result ..= f'{p.red},{p.green},{p.blue} '
+      end
+   end
+   return result
+end
+
+--------------------------------------------------------------------------------------------------------------------
+
+@Test function FieldsHaveTheDocumentedDefaults()
+   local scene <close>, filter = cellScene()
+   local fx = filter.new('CellularFX', { })
+   assert((fx.seed is 0) and (fx.cellWidth is 0.125) and (fx.cellHeight is 0.125), 'Seed and cell defaults')
+   assert((fx.originX is 0) and (fx.originY is 0) and (fx.angle is 0) and (fx.jitter is 1), 'Domain defaults')
+   assert((fx.heightMin is 0) and (fx.heightMax is 1), 'Height defaults')
+   assert((fx.octaves is 1) and (fx.persistence is 0.5) and (fx.lacunarity is 2), 'Octave defaults')
+   assert((fx.periodX is 0) and (fx.periodY is 0), 'Period defaults')
+   assert((fx.worleyMode is WLF_F1) and (fx.worleyMetric is WLM_EUCLIDEAN) and (fx.outputMode is FOM_IMAGE),
+      'Lookup defaults')
+   assert(fx.xmlDef is 'xvg:feCellular', f'Default fields must not be written to XMLDef, got {fx.xmlDef}')
+end
+
+@Test function SettersAcceptLookupsAndRejectInvalidValues()
+   local scene <close>, filter = cellScene()
+   local fx = filter.new('CellularFX', { })
+
+   fx.worleyMode = 'Cell'
+   assert(fx.worleyMode is WLF_CELL, 'The CELL mode must be selectable by name')
+   fx.worleyMode = 'F2F1'
+   assert(fx.worleyMode is WLF_F2_F1, 'F2_F1 must be selectable by name')
+   fx.worleyMetric = 'Chebyshev'
+   assert(fx.worleyMetric is WLM_CHEBYSHEV, 'Metrics must be selectable by name')
+   fx.outputMode = 'Height'
+   assert(fx.outputMode is FOM_HEIGHT, 'The height mode must be selectable by name')
+   fx.seed = -5000000000
+   assert(fx.seed is -5000000000, 'Seeds must not be truncated to 32 bits')
+
+   local nan = 0 / 0
+   local cases = {
+      { 'cellWidth', 0, ERR_OutOfRange }, { 'cellWidth', '-5%', ERR_OutOfRange },
+      { 'cellWidth', nan, ERR_InvalidValue }, { 'cellHeight', -1, ERR_OutOfRange },
+      { 'originX', nan, ERR_InvalidValue }, { 'originY', 1/0, ERR_InvalidValue },
+      { 'angle', nan, ERR_InvalidValue }, { 'jitter', 1.01, ERR_OutOfRange }, { 'jitter', -0.01, ERR_OutOfRange },
+      { 'jitter', nan, ERR_InvalidValue }, { 'heightMin', -4.01, ERR_OutOfRange },
+      { 'heightMax', 4.01, ERR_OutOfRange }, { 'octaves', 0, ERR_OutOfRange }, { 'octaves', 13, ERR_OutOfRange },
+      { 'persistence', 1.5, ERR_OutOfRange }, { 'lacunarity', 0.99, ERR_OutOfRange },
+      { 'lacunarity', 8.01, ERR_OutOfRange }, { 'periodX', -1, ERR_OutOfRange },
+      { 'periodY', 1048577, ERR_OutOfRange }, { 'worleyMode', 6, ERR_OutOfRange },
+      { 'worleyMetric', 3, ERR_OutOfRange }, { 'outputMode', FOM_NATIVE, ERR_OutOfRange },
+      { 'colourMap', 'cmap:unknown', ERR_NotFound }
+   }
+
+   for _, entry in cases do
+      local field, value, expected = entry[0], entry[1], entry[2]
+      local before = fx.get(field)
+      local error = fx.set(field, value)
+      assert(error is expected, f'{field} = {value} returned {mSys.GetErrorMsg(error)}')
+      assert(fx.get(field) is before, f'A rejected {field} must keep its previous value')
+   end
+
+   try
+      fx.stops = array<struct<GradientStop>> { stop(0, 1, 0, 0) }
+      raise 'A single stop must be rejected'
+   except e when ERR_InvalidValue
+   end
+
+   -- Boundary values are accepted.
+
+   for _, entry in { { 'jitter', 0 }, { 'jitter', 1 }, { 'heightMin', -4 }, { 'heightMax', 4 }, { 'octaves', 12 },
+         { 'persistence', 0 }, { 'lacunarity', 8 }, { 'periodX', 1048576 }, { 'cellWidth', '0.5%' } } do
+      assert(fx.set(entry[0], entry[1]) is ERR_Okay, f'{entry[0]} = {entry[1]} must be accepted')
+   end
+end
+
+@Test function InvalidCombinationsFailAtDrawTime()
+   local scene <close>, filter = cellScene()
+   local fx = filter.new('CellularFX', { worleyMode='Cell', octaves=2 })
+
+   -- Each pair is an invalid combination and the change that repairs it.
+
+   local repairs = {
+      { function() end, function() fx.octaves = 1 end },
+      { function() fx.{ periodX=4, angle=45 } end, function() fx.angle = 360 end },
+      { function() fx.{ worleyMode=WLF_F1, octaves=3, lacunarity=2.5 } end, function() fx.lacunarity = 3 end }
+   }
+
+   for index, repair in repairs do
+      repair[0]()
+      local rejected <close> = drawCells(scene)
+      assert(isBackground(pixel(rejected, 20, 20)), f'Invalid combination {index} must not draw')
+      repair[1]()
+      local repaired <close> = drawCells(scene)
+      assert(not isBackground(pixel(repaired, 20, 20)), f'Repaired combination {index} must draw')
+   end
+end
+
+@Test function ImageIsGreyscaleInsideTheSubregionOnly()
+   local scene <close>, filter = cellScene()
+
+   -- With Jitter 0 the features lie at the centres of 16 x 16 cells, so F1 can be computed directly.
+
+   local fx = filter.new('CellularFX', { x=16, y=8, width=32, height=48, jitter=0, cellWidth=16, cellHeight=16 })
+   local bitmap <close> = drawCells(scene)
+
+   for _, xy in { { 4, 4 }, { 60, 30 }, { 30, 60 }, { 15, 30 }, { 48, 30 } } do
+      assert(pixel(bitmap, xy[0], xy[1]).alpha is 0, f'Pixel {xy[0]},{xy[1]} outside the subregion must be clear')
+   end
+
+   for _, xy in { { 16, 8 }, { 23, 23 }, { 31, 40 }, { 40, 17 }, { 47, 55 } } do
+      local x, y = xy[0], xy[1]
+      local dx = ((x + 0.5) % 16) / 16 - 0.5
+      local dy = ((y + 0.5) % 16) / 16 - 0.5
+      local expected = math.floor(math.sqrt(dx * dx + dy * dy) * 255 + 0.5)
+      local p = pixel(bitmap, x, y)
+      assert((p.red is p.green) and (p.green is p.blue) and (p.alpha is 255), f'Pixel {x},{y} must be opaque grey')
+      assert(math.abs(p.red - expected) <= 1, f'Pixel {x},{y} was {p.red}, expected {expected}')
+   end
+end
+
+@Test function ColourRampsReplaceGreyscale()
+   local scene <close>, filter = cellScene()
+   local fx = filter.new('CellularFX', { jitter=0, cellWidth=16, cellHeight=16 })
+   fx.stops = array<struct<GradientStop>> { stop(0, 0, 0, 0), stop(1, 1, 0, 0) }
+   local ramp <close> = drawCells(scene)
+   local corner = pixel(ramp, 0, 0)
+   local centre = pixel(ramp, 8, 8)
+   assert((corner.green is 0) and (corner.blue is 0) and (corner.red > 150), 'Corners must use the red end of the ramp')
+   assert(centre.red < corner.red, 'Feature centres must use the dark end of the ramp')
+
+   fx.colourMap = 'cmap:viridis'
+   assert(fx.stops is nil or #fx.stops is 0, 'A colourmap must replace the stops')
+   local viridis <close> = drawCells(scene)
+   local p = pixel(viridis, 8, 8)
+   assert((p.blue > p.red) and (p.alpha is 255), 'The low end of viridis must be blue-violet')
+
+   fx.colourMap = ''
+   local grey <close> = drawCells(scene)
+   p = pixel(grey, 0, 0)
+   assert((p.red is p.green) and (p.green is p.blue), 'An empty colourmap must restore greyscale')
+end
+
+@Test function HeightFeedsLightingAndCompositeMasks()
+   local scene <close>, filter = cellScene()
+   local cells = filter.new('CellularFX', { worleyMode='F2F1', cellWidth=16, cellHeight=16, outputMode='Height' })
+   local light = filter.new('LightingFX', { input=cells, type=LT_COMBINED, specularConstant=0, scale=12, features=0 })
+   check light.mtSetDistantLight(45, 45)
+   local lit <close> = drawCells(scene)
+   assert(not isBackground(pixel(lit, 32, 32)), 'Enhanced lighting must render the cellular height')
+
+   -- A regular F1 field mixes blue towards red in proportion to the distance from each cell centre.
+
+   light.free()
+   cells.{ worleyMode=WLF_F1, jitter=0 }
+   local red = filter.new('FloodFX', { colour='1,0,0,1' })
+   local blue = filter.new('FloodFX', { colour='0,0,1,1' })
+   filter.new('CompositeFX', { input=red, mix=blue, operator=OP_OVER, amountMask=cells })
+   local mixed <close> = drawCells(scene)
+   local centre = pixel(mixed, 8, 8)
+   local corner = pixel(mixed, 0, 0)
+   assert((centre.red < 32) and (centre.blue > 223), f'Cell centres must keep the mix, got {centre.red},{centre.blue}')
+   assert((corner.red > 150) and (corner.red > centre.red), f'Cell corners must lean to the input, got {corner.red}')
+   assert(math.abs(corner.red + corner.blue - 255) <= 2, 'The mask must interpolate between the inputs')
+end
+
+@Test function ImageCacheRefreshesAfterEveryFieldChange()
+   local scene <close>, filter = cellScene()
+   local fx = filter.new('CellularFX', { worleyMode='Weighted', octaves=2, cellWidth=20, cellHeight=20 })
+   local first <close> = drawCells(scene)
+   local previous = signature(first)
+   local again <close> = drawCells(scene)
+   assert(signature(again) is previous, 'An unchanged effect must redraw identically')
+
+   local changes = {
+      { 'seed', 3 }, { 'cellWidth', 13 }, { 'cellHeight', '25%' }, { 'originX', 5 }, { 'originY', '10%' },
+      { 'angle', 20 }, { 'jitter', 0.6 }, { 'heightMin', -0.5 }, { 'heightMax', 1.5 }, { 'persistence', 0.9 },
+      { 'lacunarity', 3 }, { 'octaves', 3 }, { 'worleyMetric', WLM_MANHATTAN }, { 'angle', 0 }, { 'periodX', 2 },
+      { 'periodY', 1 }, { 'worleyMode', WLF_PEAKS }, { 'colourMap', 'cmap:magma' },
+      { 'stops', array<struct<GradientStop>> { stop(0, 0, 1, 0), stop(1, 0, 0, 1) } }
+   }
+
+   for _, change in changes do
+      if change[0] is 'stops' then
+         fx.stops = change[1]
+      else
+         check fx.set(change[0], change[1])
+      end
+      local bitmap <close> = drawCells(scene)
+      local current = signature(bitmap)
+      assert(current != previous, f'Changing {change[0]} must refresh the cached image')
+      previous = current
+   end
+end
+
+@Test function XMLDefDescribesNonDefaultFields()
+   local scene <close>, filter = cellScene()
+   local fx = filter.new('CellularFX', {
+      seed=-12, cellWidth=10, cellHeight='20%', originX=2, originY=0, angle=15, jitter=0.5, worleyMode='F2F1',
+      worleyMetric='Manhattan', heightMin=-1, heightMax=2, octaves=3, persistence=0.25, lacunarity=3, periodX=5,
+      periodY=5, outputMode='Height', x=1, width=50
+   })
+   local expected = 'xvg:feCellular seed="-12" cellSize="10 20%" origin="2 0" angle="15" jitter="0.5" mode="f2-f1" ' ..
+      'metric="manhattan" heightMin="-1" heightMax="2" numOctaves="3" persistence="0.25" lacunarity="3" period="5" ' ..
+      'xvg:outputMode="height" x="1" width="50"'
+   assert(fx.xmlDef is expected, f'XMLDef was: {fx.xmlDef}')
+
+   fx.{ cellHeight=10, periodY=0, colourMap='cmap:viridis' }
+   assert(fx.xmlDef.find('cellSize="10" ') and fx.xmlDef.find('period="5 0"') and
+      fx.xmlDef.find('colormap="cmap:viridis"'), f'XMLDef was: {fx.xmlDef}')
+end

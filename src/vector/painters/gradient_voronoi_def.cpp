@@ -6,6 +6,7 @@ static const struct FieldDef clGradientVoronoiWLF[] = {
    { "F2", 0x00000002 },
    { "Weighted", 0x00000003 },
    { "Peaks", 0x00000004 },
+   { "Cell", 0x00000005 },
    { nullptr, 0 }
 };
 

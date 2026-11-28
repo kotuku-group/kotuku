@@ -472,6 +472,19 @@ feature, and point and spot lights with <code>LOCAL_SHADOWS</code>; refer to <fl
       <description>
 <p>A dielectric surface, such as paint or plastic, scatters diffuse light in the colour of its albedo and reflects specular light in the colour of the light.  A metal has no diffuse light and reflects in the colour of its albedo. This field blends between the two: the diffuse light is multiplied by <code>1 - Metalness</code>, and the colour of the specular light is blended from the light's colour towards the albedo's.  Ambient light is unchanged, as it stands in for the reflection of the surroundings, which a metal colours with its albedo.</p>
 <p>As a metal's highlights take the albedo's colour, they do not extend over transparent areas of the albedo.  If <fl>Fresnel</fl> is set, the reflectance at normal incidence blends from <fl>Fresnel</fl> to the albedo's colour, and the highlights of a metal still turn white at grazing angles.</p>
+<p>A metal's albedo is its reflectance at normal incidence, which is much brighter than the colour that the metal appears to have in shade.  A diffuse-style colour such as <code>#b5893a</code> for brass gives a dark metal with dim highlights.  The following albedos are physically based in a <code>LINEAR_RGB</code> filter, the default for SVG documents.  Each is the sRGB encoding of the linear reflectance that follows it, from published measurements (Hoffman, as tabulated in Real-Time Rendering, 4th edition).</p>
+<types type="Metal">
+<type name="Silver"><code>#fcfaf5</code>: 0.972, 0.960, 0.915</type>
+<type name="Aluminium"><code>#f5f6f6</code>: 0.913, 0.922, 0.924</type>
+<type name="Gold"><code>#ffe59e</code>: 1.000, 0.782, 0.344</type>
+<type name="Copper"><code>#fad1c2</code>: 0.955, 0.638, 0.538</type>
+<type name="Brass"><code>#f5e4ae</code>: 0.910, 0.778, 0.423</type>
+<type name="Nickel"><code>#d4cdc0</code>: 0.660, 0.609, 0.526</type>
+<type name="Iron"><code>#c6c6c8</code>: 0.562, 0.565, 0.578</type>
+<type name="Chromium"><code>#c4c5c4</code>: 0.549, 0.556, 0.554</type>
+<type name="Titanium"><code>#c2bbb3</code>: 0.542, 0.497, 0.449</type>
+</types>
+<p>As a metal has no diffuse light, its surface between highlights shows only the ambient light and any <fl>Matcap</fl> reflection, which carry most of its appearance.  An <code>SRGB</code> filter computes light on the encoded values, so these colours are not physically based there and shade darker between the highlights.</p>
 <p>The default is 0, and the value must be between 0 and 1.  The diffuse and specular types ignore this field.</p>
       </description>
     </field>

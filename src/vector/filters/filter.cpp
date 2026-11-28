@@ -1109,6 +1109,7 @@ static ERR render_scalar_to_filter(extFilterEffect *Effect, int Width, int Heigh
 
 #include "filter_effect.cpp"
 #include "filter_blur.cpp"
+#include "filter_cellular.cpp"
 #include "filter_colourmatrix.cpp"
 #include "filter_composite.cpp"
 #include "filter_convolve.cpp"
@@ -1308,6 +1309,13 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
             .Inputs = SINGLE,
             .Sampling = effect_sampling<extBlurFX>,
             .InputFormat = ((const extBlurFX *)Effect)->OutputMode IS FOM::NATIVE
+         };
+
+      case CLASSID::CELLULARFX:
+         return {
+            .Inputs = GENERATOR,
+            .Format = ((const extCellularFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+                      filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8
          };
 
       case CLASSID::COLOURFX:
@@ -3173,6 +3181,7 @@ static ERR describe_filter_xml(extFilterEffect *Effect, filter_xml_element &Elem
    ERR error = ERR::Okay;
    switch (Effect->classID()) {
       case CLASSID::BLURFX:         error = blur_xml(*(extBlurFX *)Effect, Element); break;
+      case CLASSID::CELLULARFX:     error = cellular_xml(*(extCellularFX *)Effect, Element); break;
       case CLASSID::COLOURFX:       error = colour_xml(*(extColourFX *)Effect, Element); break;
       case CLASSID::COMPOSITEFX:    error = composite_xml(*(extCompositeFX *)Effect, Element); break;
       case CLASSID::CONVOLVEFX:     error = convolve_xml(*(extConvolveFX *)Effect, Element); break;

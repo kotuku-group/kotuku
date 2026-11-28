@@ -1,0 +1,223 @@
+#!/usr/bin/env origo
+--[[
+CellularFX Demonstration
+
+CellularFX generates cellular (Worley) textures.  The mode selects how the distances to the nearest features are
+turned into a value, and the metric selects how distance is measured.  The other controls shape the feature lattice
+and stack octaves of it.
+
+Several modes produce values outside [0, 1], which colour output clamps.  A colour map is the simplest way to bring
+them into view.  The Relief style uses the unclamped field as a height map for LightingFX instead.  The clipboard
+button copies the active filter as SVG.
+--]]
+
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider', 'gui/button'
+   include 'vector'
+
+local glWindow, glViewport, glPreview, glSurface, glSVG, glStatus, glClipboard, glStyleCombo
+
+glEffects = array<obj> -- The CellularFX of each filter, which share every setting
+glY       = 0
+glMode    = 0
+glOctaves = 1
+
+PANEL_WIDTH = gui.rpixel('360dp')
+LABEL_WIDTH = gui.rpixel('90dp')
+
+-- The preview filters use bounding box units, so the filter region is the preview rectangle.  Cell sizes are set in
+-- pixels so that cells stay square whatever the shape of the window.
+
+DEFS <const> = [[<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg">
+<filter id="cellular_colour" x="0" y="0" width="1" height="1">
+  <xvg:feCellular seed="1" cellSize="64"/>
+</filter>
+<filter id="cellular_relief" x="0" y="0" width="1" height="1">
+  <xvg:feCellular seed="1" cellSize="64" xvg:outputMode="height" result="height"/>
+  <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="40" diffuseConstant="1" specularConstant="0.4"
+      specularExponent="16" ambient="#303030">
+    <feDistantLight azimuth="225" elevation="35"/>
+  </xvg:feLighting>
+</filter>
+</svg>]]
+
+MODES <const> = array<table> {
+   { label = 'F1', mode = WLF_F1, note = 'Distance to the nearest feature.  0 at each feature, rarely above 0.8.' },
+   { label = 'F2', mode = WLF_F2, note = 'Distance to the second nearest feature.  Exceeds 1 between features.' },
+   { label = 'F2 - F1', mode = WLF_F2_F1, note = 'F2 less F1.  0 on cell boundaries, for cracks and mortar.' },
+   { label = 'Weighted', mode = WLF_WEIGHTED,
+     note = 'Nearest distance less the feature height.  Negative near tall features.' },
+   { label = 'Peaks', mode = WLF_PEAKS, note = 'Highest feature height less its distance.  Negative between peaks.' },
+   { label = 'Cell', mode = WLF_CELL, note = 'A random value in [0, 1) for each cell.  Uses one octave only.' }
+}
+
+METRICS <const> = array<table> {
+   { label = 'Euclidean', metric = WLM_EUCLIDEAN },
+   { label = 'Manhattan', metric = WLM_MANHATTAN },
+   { label = 'Chebyshev', metric = WLM_CHEBYSHEV }
+}
+
+COLOURS <const> = array<str> {
+   'Greyscale', 'Viridis', 'Magma', 'Rocket', 'Mako', 'IceFire', 'Flare', 'Plasma', 'Inferno'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+
+function redraw()
+   glPreview.scene.surface.mtScheduleRedraw()
+end
+
+function apply(Field:str!, Value:any)
+   for _, effect in glEffects do effect[Field] = Value end
+   redraw()
+end
+
+-- CELL mode supports a single octave, so the octave setting is held back while it is active.
+
+function applyMode()
+   apply('worleyMode', MODES[glMode].mode)
+   apply('octaves', (MODES[glMode].mode is WLF_CELL) ? 1 : glOctaves)
+   glStatus.string = MODES[glMode].note
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function addSlider(Label:str!, Value:num, Min:num, Max:num, Step:num, Apply:func)
+   local slider = gui.slider({
+      target = glViewport, x = glWindow.margins.left, y = glY, width = PANEL_WIDTH - (glWindow.margins.left * 2),
+      step = Step, valuePos = 'in-max',
+      min = Min, max = Max, value = Value, labelPos = 'in-min', label = Label,
+      events = {
+         activate = function(Position:num)
+            Apply(Position)
+            redraw()
+         end
+      }
+   })
+
+   glY += slider.viewport.height + gui.sizing.widget.gap
+end
+
+function addCombo(Label:str!, Text:str!, Labels:array<any>, Activate:func):table
+   local items = array<table>
+   for _, label in Labels do items.push({ label = label }) end
+
+   local combo = gui.combobox({
+      target     = glViewport,
+      label      = Label,
+      labelWidth = LABEL_WIDTH,
+      text       = Text,
+      x          = glWindow.margins.left,
+      y          = glY,
+      items      = items,
+      events     = { activate = Activate }
+   })
+
+   glY += combo.viewport.height + gui.sizing.widget.gap
+   return combo
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The copied filter declares the Kotuku namespace itself, so that it can be pasted into any SVG document.
+
+function copyToClipboard()
+   local _, filter = check glViewport.scene.mtFindDef((glStyleCombo.text.string is 'Relief') ?
+      'cellular_relief' : 'cellular_colour')
+   glClipboard ?= obj.new('clipboard')
+   if glClipboard.mtAddText(f'<filter xmlns:xvg="http://www.kotuku.dev/xmlns/svg">{filter.effectXML}</filter>') !=
+      ERR_Okay then
+      print('The filter could not be copied to the clipboard.')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildScene()
+   glY = glWindow.margins.top
+
+   glPreview = glViewport.new('VectorViewport', { x = PANEL_WIDTH, y = 0, xOffset = 0, yOffset = 0,
+      overflow = 'hidden' })
+
+   glSVG = obj.new('svg', { target = glPreview, statement = DEFS })
+   for _, id in array<str> { 'cellular_colour', 'cellular_relief' } do
+      local _, filter = check glViewport.scene.mtFindDef(id)
+      glEffects.push(obj.find(filter.children('CellularFX')[0]))
+   end
+
+   glSurface = glPreview.new('VectorRectangle', {
+      width = '100%', height = '100%', fill = '#c8b490', filter = 'url(#cellular_colour)'
+   })
+
+   local mode_labels = MODES.map(Item => Item.label)
+   addCombo('Mode:', MODES[glMode].label, mode_labels, function(Item:table!)
+      glMode = mode_labels.indexOf(Item.label)
+      applyMode()
+   end)
+
+   addCombo('Metric:', METRICS[0].label, METRICS.map(Item => Item.label), function(Item:table!)
+      apply('worleyMetric', METRICS.find(Metric => Metric.label is Item.label).metric)
+   end)
+
+   addCombo('Colours:', COLOURS[0], COLOURS, function(Item:table!)
+      apply('colourMap', (Item.label is 'Greyscale') ? '' : 'cmap:' .. Item.label.lower())
+   end)
+
+   glStyleCombo = addCombo('Style:', 'Colour', array<str> { 'Colour', 'Relief' }, function(Item:table!)
+      glSurface.filter = (Item.label is 'Relief') ? 'url(#cellular_relief)' : 'url(#cellular_colour)'
+      redraw()
+   end)
+
+   addSlider('Seed', 1, 1, 100, 1, function(Value:num) apply('seed', math.floor(Value)) end)
+
+   addSlider('Cell Size', 64, 8, 240, 1, function(Value:num)
+      apply('cellWidth', Value)
+      apply('cellHeight', Value)
+   end)
+
+   addSlider('Jitter', 1, 0, 1, nil, function(Value:num) apply('jitter', Value) end)
+
+   addSlider('Angle', 0, 0, 90, 1, function(Value:num) apply('angle', Value) end)
+
+   addSlider('Octaves', glOctaves, 1, 6, 1, function(Value:num)
+      glOctaves = math.floor(Value)
+      applyMode()
+   end)
+
+   addSlider('Persistence', 0.5, 0, 1, nil, function(Value:num) apply('persistence', Value) end)
+
+   addSlider('Lacunarity', 2, 1, 4, nil, function(Value:num) apply('lacunarity', Value) end)
+
+   -- The feature heights only affect the Weighted and Peaks modes.
+   addSlider('Height Min', 0, -1, 1, nil, function(Value:num) apply('heightMin', Value) end)
+
+   addSlider('Height Max', 1, 0, 2, nil, function(Value:num) apply('heightMax', Value) end)
+
+   local theme = gui.getTheme(glViewport)
+   glStatus = glViewport.new('VectorText', {
+      x = glWindow.margins.left, y = glY + gui.rpixel('16dp'), fill = theme.window.text.fill ?? 'black',
+      fontSize = gui.rpixel('13dp'), inlineSize = PANEL_WIDTH - (glWindow.margins.left * 2)
+   })
+
+   gui.button({
+      target  = glViewport,
+      icon    = 'items/clipboard',
+      label   = 'Copy SVG',
+      tip     = 'Copy the active filter to the clipboard as SVG',
+      x       = glWindow.margins.left,
+      yOffset = glWindow.margins.bottom,
+      events  = { activate = function() copyToClipboard() end }
+   })
+
+   applyMode()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glWindow = gui.window({
+      title = 'Cellular Texture Demo', insideWidth = 1024, insideHeight = 760, minWidth = 800, minHeight = 600
+   })
+
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
+
+   buildScene()
+   glWindow.show()
+   processing.sleep()

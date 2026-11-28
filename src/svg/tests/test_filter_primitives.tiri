@@ -3226,6 +3226,110 @@ end
    assert(imageDifference(original, reloaded) is 0, 'The wave and vector sources must render identically after reload')
 end
 
+-- The main chunk of this file is at Tiri's limit of 200 locals, so the CellularFX tests are declared global.
+--
+-- Every feCellular attribute is written by XMLDef only when it differs from the default, and the written settings
+-- re-parse and survive an SVG save to render the same pixels.  The seed is beyond 2^53 to prove it is read as int64.
+
+@Test global function CellularXMLDefRoundTrips()
+   local effects = [[
+   <xvg:feCellular seed="-9007199254740993" cellSize="25% 12" origin="3 4.5" angle="30" jitter="0.5" mode="f2-f1"
+      metric="manhattan" heightMin="-1" heightMax="2" numOctaves="3" persistence="0.25" lacunarity="3"
+      xvg:outputMode="height" result="height"/>
+   <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="6" diffuseConstant="1" result="lit">
+      <feDistantLight azimuth="45" elevation="40"/>
+   </xvg:feLighting>
+   <xvg:feCellular seed="4" mode="cell" colormap="cmap:rocket" x="4" y="6" width="20" height="30" result="cells"/>
+   <xvg:feCellular seed="5" mode="peaks" period="4 2" cellSize="8" x="30" y="8" width="30" height="40"
+      result="ramp">
+      <stop offset="0" stop-color="#102030"/>
+      <stop offset="0.5" stop-color="#40a0c0"/>
+      <stop offset="1" stop-color="#e0f4ff"/>
+   </xvg:feCellular>
+   <feMerge><feMergeNode in="lit"/><feMergeNode in="cells"/><feMergeNode in="ramp"/></feMerge>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   for _, expected in array<str> { 'seed="-9007199254740993"', 'cellSize="25% 12"', 'origin="3 4.5"',
+      'angle="30"', 'jitter="0.5"', 'mode="f2-f1"', 'metric="manhattan"', 'heightMin="-1"', 'heightMax="2"',
+      'numOctaves="3"', 'persistence="0.25"', 'lacunarity="3"', 'xvg:outputMode="height"', 'mode="cell"',
+      'colormap="cmap:rocket"', 'mode="peaks"', 'period="4 2"', 'cellSize="8"', '<stop offset="0.5"' } do
+      assert(xml.find(expected, 0, true), f'XMLDef must write {expected}: {xml}')
+   end
+
+   local loaded <close> = document(xml, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   assert(effectXML(loaded) is xml, f'Re-parsed XMLDef must serialise identically: {effectXML(loaded)}')
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+
+   local restored <close> = obj.new('svg', { statement=saveFilterDocument(svg) })
+   assert(effectXML(restored) is xml, 'The cellular settings must survive an SVG save and reload')
+   diff = imageDifference(original, draw(restored, 64))
+   assert(diff is 0, f'The saved cellular effects must render identically after reload (max difference {diff})')
+   assert(mGfx.ReadRGBPixel(original, 10, 20).alpha is 255, 'The merged cellular result must be drawn')
+end
+
+-- A default feCellular writes no attributes, and invalid or out-of-range attributes are rejected without changing
+-- the defaults.
+
+@Test global function CellularRejectsInvalidAttributes()
+   local svg <close> = document('<xvg:feCellular/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(svg) is '<xvg:feCellular/>', f'A default element must write no attributes: {effectXML(svg)}')
+
+   local invalid <close> = document('<xvg:feCellular seed="1.5" cellSize="0" origin="1 2 3" angle="x" ' ..
+      'jitter="2" mode="f3" metric="minkowski" heightMin="5" heightMax="-4.5" numOctaves="13" persistence="1.5" ' ..
+      'lacunarity="0.5" period="-1" xvg:outputMode="vector"/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(invalid) is '<xvg:feCellular/>',
+      f'Invalid attributes must leave every default in place: {effectXML(invalid)}')
+
+   for attr in values(array<str> { 'cellSize="16 -1"', 'origin="3 bad"', 'period="4 -1"', 'period="4 1048577"',
+      'period="4 2)"', 'cellSize="8junk"', 'cellSize="8pxjunk"', 'cellSize="8,"', 'origin="3%junk"' }) do
+      local malformed <close> = document(f'<xvg:feCellular {attr}/>', nil, 64, KOTUKU_NS)
+      assert(effectXML(malformed) is '<xvg:feCellular/>', f'{attr} must leave both axes at their defaults')
+   end
+
+   local lengths <close> = document('<xvg:feCellular cellSize="+8px,25%" origin="-2px 3em"/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(lengths) is '<xvg:feCellular cellSize="8 25%" origin="-2 48"/>',
+      f'Valid SVG units must be resolved: {effectXML(lengths)}')
+end
+
+@Test global function CellularRequiresKotukuNamespace()
+   local declarations = 'xmlns:k="http://www.kotuku.dev/xmlns/svg" xmlns:foreign="urn:foreign"'
+   local svg <close> = document('<feCellular seed="1"/><foreign:feCellular seed="2"/>' ..
+      '<xvg:feCellular seed="3"/><k:feCellular seed="4"/>', nil, 64, declarations)
+   assert(effectXML(svg) is '<xvg:feCellular seed="4"/>',
+      f'Only the element bound to the Kotuku namespace must be parsed: {effectXML(svg)}')
+end
+
+@Test global function CellularFullTurnsPreservePeriodicSamples()
+   local field = 'cellSize="1" origin="0.5" jitter="0" mode="cell" period="4"'
+   local filter_units = 'filterUnits="userSpaceOnUse"'
+   local svg <close> = document(f'<xvg:feCellular {field}/>', nil, 64, KOTUKU_NS, filter_units)
+   local reference <close> = draw(svg, 64)
+   assert(mGfx.ReadRGBPixel(reference, 0, 6).alpha is 255, 'The periodic field must be drawn')
+   for angle in values(array<int> { 360, -720 }) do
+      local rotated <close> = document(f'<xvg:feCellular {field} angle="{angle}"/>', nil, 64, KOTUKU_NS, filter_units)
+      local result <close> = draw(rotated, 64)
+      assert(imageDifference(reference, result) is 0, f'Angle {angle} must preserve periodic cell boundaries')
+   end
+end
+
+-- A periodic field repeats every PeriodX x CellWidth from the filter region's origin, so tiling one period of it
+-- must reproduce the unbounded field.
+
+@Test global function CellularPeriodTilesSeamlessly()
+   local field = 'seed="12" cellSize="8" period="2 3" numOctaves="2"'
+   local tiled_svg <close> = document(f'<xvg:feCellular {field} x="0" y="0" width="16" height="24"/><feTile/>',
+      nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local field_svg <close> = document(f'<xvg:feCellular {field}/>', nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local tiled <close> = draw(tiled_svg, 64)
+   local reference <close> = draw(field_svg, 64)
+   local diff = imageDifference(tiled, reference)
+   assert(diff is 0, f'One tiled period must match the unbounded field (max difference {diff})')
+   assert(mGfx.ReadRGBPixel(reference, 5, 5).red != mGfx.ReadRGBPixel(reference, 5, 21).red,
+      'The field must vary within a period')
+end
+
 @Test function SavingPreservesStrictSVGLighting()
    local effects = [[<feDiffuseLighting surfaceScale="9" lighting-color="#b9c2ff" diffuseConstant=".9">
       <feDistantLight azimuth="30" elevation="50"/></feDiffuseLighting>]]
