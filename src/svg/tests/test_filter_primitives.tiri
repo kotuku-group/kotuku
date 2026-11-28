@@ -3808,7 +3808,7 @@ end
 
    local invalid <close> = document('<xvg:fePaving layout="hex" mode="albedo" seed="1.5" elementSize="0" ' ..
       'origin="1 2 3" jointWidth="-1" bevelWidth="-2px" cornerRadius="-1px" edgeSoftness="-1" ' ..
-      'bevelProfile="bounce" angle="x" ' ..
+      'bevelProfile="bounce" edgeProfile="ease" angle="x" ' ..
       'rowOffset="nan" elementHeight="inf" jointHeight="x" hueVariation="200" chromaVariation="0.5" ' ..
       'lightVariation="-0.1" heightVariation="101" elementColor="bogus" jointColor="none" alternateColor="bad" ' ..
       'fillMode="stretch" resampleMethod="cubic" period="-1" elementMap="missing" jointMap="missing" ' ..
@@ -3818,7 +3818,7 @@ end
 
    for attr in values(array<str> { 'elementSize="16 -1"', 'elementSize="8pxjunk"', 'elementSize="8,"',
       'origin="3 bad"', 'origin="3%junk"', 'jointWidth="2pxjunk"', 'bevelWidth="bad"', 'cornerRadius="3pxjunk"',
-      'edgeSoftness="bad"', 'period="4 -1"', 'period="4 1048577"', 'period="4 2)"' }) do
+      'edgeSoftness="bad"', 'edgeProfile="inout2"', 'period="4 -1"', 'period="4 1048577"', 'period="4 2)"' }) do
       local malformed <close> = document(f'<xvg:fePaving {attr}/>', nil, 64, KOTUKU_NS)
       assert(effectXML(malformed) is '<xvg:fePaving/>', f'{attr} must leave every default in place')
    end
@@ -3858,7 +3858,8 @@ end
    <xvg:feCellular seed="3" cellSize="16" colormap="cmap:flare" result="brickTex"/>
    <feFlood flood-color="#383430" result="mortarTex"/>
    <xvg:fePaving layout="herringbone" seed="-9007199254740993" elementSize="16 8" origin="3 4.5" jointWidth="2"
-      bevelWidth="3" cornerRadius="1.5" edgeSoftness="1.25" bevelProfile="circleOut" angle="30" elementColor="#c05030"
+      bevelWidth="3" cornerRadius="1.5" edgeSoftness="1.25" bevelProfile="circleOut" edgeProfile=" cubicInOut "
+      angle="30" elementColor="#c05030"
       jointColor="#302820" alternateColor="#506070" hueVariation="15" chromaVariation="0.05" lightVariation="0.1"
       fillMode="continuous" resampleMethod="neighbour" elementMap="brickTex" jointMap="mortarTex" x="0" y="0"
       width="32" height="32" result="mapped"/>
@@ -3887,7 +3888,7 @@ end
    local xml = effectXML(svg)
    for _, expected in array<str> { 'layout="herringbone"', 'seed="-9007199254740993"', 'elementSize="16 8"',
       'origin="3 4.5"', 'jointWidth="2"', 'bevelWidth="3"', 'cornerRadius="1.5"', 'edgeSoftness="1.25"',
-      'bevelProfile="circleOut"',
+      'bevelProfile="circleOut"', 'edgeProfile="cubicInOut"',
       'angle="30"', 'elementColor="rgb(192 80 48)"', 'jointColor="rgb(48 40 32)"', 'alternateColor="rgb(80 96 112)"',
       'hueVariation="15"', 'chromaVariation="0.05"', 'lightVariation="0.1"', 'fillMode="continuous"',
       'resampleMethod="neighbour"', 'elementMap="', 'jointMap="', 'mode="height"', 'elementSize="25% 12"',

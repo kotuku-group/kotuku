@@ -2764,6 +2764,21 @@ ERR svgState::parse_fe_paving(objVectorFilter *Filter, XTag &Tag) noexcept
       return read_length(text, length) and ((fx->*Setter)(length) IS ERR::Okay);
    };
 
+   auto parse_profile = [](std::string_view Value) -> std::optional<GEZ> {
+      const auto text = kt::font_traits::trim(Value);
+      if (iequals("linear", text)) return GEZ::LINEAR;
+      else if (iequals("in", text)) return GEZ::IN;
+      else if (iequals("out", text)) return GEZ::OUT;
+      else if (iequals("inOut", text)) return GEZ::IN_OUT;
+      else if (iequals("cubicIn", text)) return GEZ::CUBIC_IN;
+      else if (iequals("cubicOut", text)) return GEZ::CUBIC_OUT;
+      else if (iequals("cubicInOut", text)) return GEZ::CUBIC_IN_OUT;
+      else if (iequals("circleIn", text)) return GEZ::CIRCLE_IN;
+      else if (iequals("circleOut", text)) return GEZ::CIRCLE_OUT;
+      else if (iequals("circleInOut", text)) return GEZ::CIRCLE_IN_OUT;
+      return std::nullopt;
+   };
+
    auto set_units = [&](std::string_view Value, auto SetX, auto SetY, bool Positive) {
       std::string_view x, y;
       Unit length_x, length_y;
@@ -2839,21 +2854,15 @@ ERR svgState::parse_fe_paving(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_cornerRadius:    valid = set_unit(val, &objPavingFX::setCornerRadius); break;
          case SVF_edgeSoftness:    valid = set_unit(val, &objPavingFX::setEdgeSoftness); break;
 
-         case SVF_bevelProfile: {
-            const auto text = kt::font_traits::trim(std::string_view(val));
-            if (iequals("linear", text)) fx->setBevelProfile(GEZ::LINEAR);
-            else if (iequals("in", text)) fx->setBevelProfile(GEZ::IN);
-            else if (iequals("out", text)) fx->setBevelProfile(GEZ::OUT);
-            else if (iequals("inOut", text)) fx->setBevelProfile(GEZ::IN_OUT);
-            else if (iequals("cubicIn", text)) fx->setBevelProfile(GEZ::CUBIC_IN);
-            else if (iequals("cubicOut", text)) fx->setBevelProfile(GEZ::CUBIC_OUT);
-            else if (iequals("cubicInOut", text)) fx->setBevelProfile(GEZ::CUBIC_IN_OUT);
-            else if (iequals("circleIn", text)) fx->setBevelProfile(GEZ::CIRCLE_IN);
-            else if (iequals("circleOut", text)) fx->setBevelProfile(GEZ::CIRCLE_OUT);
-            else if (iequals("circleInOut", text)) fx->setBevelProfile(GEZ::CIRCLE_IN_OUT);
+         case SVF_bevelProfile:
+            if (auto profile = parse_profile(val)) fx->setBevelProfile(*profile);
             else valid = false;
             break;
-         }
+
+         case SVF_edgeProfile:
+            if (auto profile = parse_profile(val)) fx->setEdgeProfile(*profile);
+            else valid = false;
+            break;
 
          case SVF_angle:           valid = set_number(val, &objPavingFX::setAngle); break;
          case SVF_rowOffset:       valid = set_number(val, &objPavingFX::setRowOffset); break;

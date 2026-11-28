@@ -22,12 +22,12 @@
 upstream <fl>ElementMap</fl>, separated by joints using <fl>JointColour</fl> or an upstream <fl>JointMap</fl>.  Per-element perceptual OKLCH
 variation is controlled by <fl>HueVariation</fl>, <fl>ChromaVariation</fl>, <fl>LightVariation</fl> and <fl>Seed</fl>.  Edges between elements and
 joints are analytically anti-aliased when <fl>JointWidth</fl> is positive, and <fl>EdgeSoftness</fl> widens that transition into a
-fringe that blends elements into their joints.  For thin joints, coverage includes the elements on either side of the
-joint and limits the sampling footprint to the shortest element dimension per axis.</li>
+fringe that blends elements into their joints, shaped by <fl>EdgeProfile</fl>.  For thin joints, coverage includes the elements
+on either side of the joint and limits the sampling footprint to the shortest element dimension per axis.</li>
 <li><code>HEIGHT</code>: Produces a bevelled relief field rising from <fl>JointHeightValue</fl> in joints to <code><fl>ElementHeightValue</fl></code> plus
 seeded <fl>HeightVariation</fl> on element interiors, shaped across <fl>BevelWidth</fl> by <fl>BevelProfile</fl>.</li>
 <li><code>MASK</code>: Produces element coverage in [0, 1], with analytic edge anti-aliasing when <fl>JointWidth</fl> is positive,
-widened by <fl>EdgeSoftness</fl>.</li>
+widened by <fl>EdgeSoftness</fl> and shaped by <fl>EdgeProfile</fl>.</li>
 <li><code>ID</code>: Produces a discrete seeded hash in [0, 1) per element, and 0 in joints.</li>
 </list>
 <p>In <code>IMAGE</code> <fl>OutputMode</fl>, scalar modes (<code>HEIGHT</code>, <code>MASK</code> and <code>ID</code>) clamp values to [0, 1] and draw opaque greyscale in the effect's colour space, or through <fl>ColourMap</fl> or <fl>Stops</fl>.  Set <fl>OutputMode</fl> to <code>HEIGHT</code> to emit an unclamped floating-point scalar surface for numerical consumers such as <class name="LightingFX">LightingFX</class> or <class name="CompositeFX">CompositeFX</class>.  <code>Mode = COLOUR</code> cannot be combined with <code>OutputMode = HEIGHT</code>.</p>
@@ -130,12 +130,24 @@ widened by <fl>EdgeSoftness</fl>.</li>
     </field>
 
     <field>
+      <name>EdgeProfile</name>
+      <comment>Shapes the coverage transition between elements and joints.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="GEZ">GEZ</type>
+      <description>
+<p>Selects the easing curve applied to element coverage across the edge in <code>COLOUR</code> and <code>MASK</code> modes.  With the default <code>LINEAR</code> profile, coverage ramps evenly across the band set by <fl>EdgeSoftness</fl>.  <code>IN_OUT</code>, <code>CUBIC_IN_OUT</code> and <code>CIRCLE_IN_OUT</code> hold the element and joint colours longer at either side and blend more steeply through the middle, which gives a softer looking fringe that keeps 50% coverage on the element edge.  The <code>IN</code> profiles keep joint colour over more of the band so that the fringe falls on the element side of the edge, and the <code>OUT</code> profiles move it into the joint instead.</p>
+<p>Where a thin joint is covered by more than one element, the profile shapes their combined coverage and each element keeps its share of the result.  When <fl>EdgeSoftness</fl> is narrower than an output pixel, the profile shapes the one-pixel anti-aliasing ramp instead.  <code>HEIGHT</code> and <code>ID</code> modes are unaffected; see <fl>BevelProfile</fl> for the relief.</p>
+<types lookup="GEZ"/>
+      </description>
+    </field>
+
+    <field>
       <name>EdgeSoftness</name>
       <comment>Width of the fringe over which elements blend into their joints, in pattern units.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>UNIT</type>
       <description>
-<p>By default, element edges are anti-aliased across one output pixel, which leaves a hard boundary between elements and joints when the pattern is magnified.  EdgeSoftness sets a minimum width for that transition.  Element coverage then ramps linearly from 0 to 1 across a band of this width, centred on the element edge, so that in <code>COLOUR</code> mode the element colour blends into the joint colour.  The same widened coverage is produced in <code>MASK</code> mode.  <code>HEIGHT</code> and <code>ID</code> modes are unaffected; shape the relief with <fl>BevelWidth</fl> instead.</p>
+<p>By default, element edges are anti-aliased across one output pixel, which leaves a hard boundary between elements and joints when the pattern is magnified.  EdgeSoftness sets a minimum width for that transition.  Element coverage then ramps from 0 to 1 across a band of this width, centred on the element edge and shaped by <fl>EdgeProfile</fl>, so that in <code>COLOUR</code> mode the element colour blends into the joint colour.  The same widened coverage is produced in <code>MASK</code> mode. <code>HEIGHT</code> and <code>ID</code> modes are unaffected; shape the relief with <fl>BevelWidth</fl> instead.</p>
 <p>The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region. Defaults to 0, which keeps the one-pixel edge.  The band is limited to the shortest element dimension.  If it is wider than <fl>JointWidth</fl>, no part of a joint shows the pure joint colour; keeping the fringe within <fl>BevelWidth</fl> aligns the colour transition with the bevelled relief.</p>
       </description>
     </field>

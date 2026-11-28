@@ -446,6 +446,7 @@ static constexpr auto SVF_dur                 = strhash("dur");
 static constexpr auto SVF_dx                  = strhash("dx");
 static constexpr auto SVF_dy                  = strhash("dy");
 static constexpr auto SVF_edgeMode            = strhash("edgeMode");
+static constexpr auto SVF_edgeProfile         = strhash("edgeProfile");
 static constexpr auto SVF_edgeSoftness        = strhash("edgeSoftness");
 static constexpr auto SVF_elementColor        = strhash("elementColor");
 static constexpr auto SVF_elementHeight       = strhash("elementHeight");
