@@ -61,6 +61,7 @@ struct paving_params {
    double LightVariation = 0;     // OKLCH lightness, [0, 1]
    double HeightVariation = 0;    // Height units, [0, 100]
    GEZ BevelProfile = GEZ::LINEAR;
+   GEZ EdgeProfile = GEZ::LINEAR;   // Shapes the element-to-joint coverage ramp
    int64_t Seed = 0;
    int PeriodX = 0;               // Repeat in layout cells (see paving_sampler); 0 disables
    int PeriodY = 0;
@@ -341,6 +342,13 @@ class paving_sampler {
    int64_t m_row_shift = 0;   // RUNNING: whole elements shifted per vertical period
    int64_t m_wrap_x = 0, m_wrap_y = 0;
    bool m_solid_joint;
+   bool m_shaped_edge;        // EdgeProfile is not LINEAR
+
+   // Map linear box-filtered coverage through EdgeProfile.
+
+   double shape(double Coverage) const {
+      return m_shaped_edge ? std::clamp(paving_ease(m_params.EdgeProfile, Coverage), 0.0, 1.0) : Coverage;
+   }
 
    double element_coverage(double U, double V, double RU, double RV) const {
       auto overlap = [this](double Centre, double Size, double Radius) {
@@ -380,6 +388,7 @@ public:
          m_thickness = m_length / double(m_ratio);
       }
 
+      m_shaped_edge = Params.EdgeProfile != GEZ::LINEAR;
       m_half_joint = Params.JointWidth * 0.5;
       m_solid_joint = Params.JointWidth >= std::min(m_length, m_thickness);
       if (not m_solid_joint) {
@@ -509,13 +518,15 @@ public:
          }
 
          if ((dx + m_half_joint >= ru) and (dy + m_half_joint >= rv)) {
-            const double coverage = element_coverage(Sample.LX, Sample.LY, ru, rv);
+            const double coverage = shape(element_coverage(Sample.LX, Sample.LY, ru, rv));
             if (coverage > 0.0) Visit(Sample, coverage);
             return coverage;
          }
 
          paving_sample seen[4];
-         int count = 0;
+         paving_sample found[4];
+         double weights[4];
+         int count = 0, contributors = 0;
          double coverage = 0.0;
          for (double y : { -ry, ry }) {
             for (double x : { -rx, rx }) {
@@ -535,18 +546,25 @@ public:
                if (weight <= 0.0) continue;
                element.U = std::clamp(u / m_length, 0.0, 1.0);
                element.V = std::clamp(v / m_thickness, 0.0, 1.0);
-               Visit(element, weight);
+               found[contributors] = element;
+               weights[contributors++] = weight;
                coverage += weight;
             }
          }
-         return std::min(coverage, 1.0);
+
+         // EdgeProfile shapes the combined coverage, and each element keeps its linear share of the shaped total.
+
+         const double shaped = shape(std::min(coverage, 1.0));
+         const double scale = (m_shaped_edge and (coverage > 0.0)) ? shaped / coverage : 1.0;
+         for (int i=0; i < contributors; i++) Visit(found[i], weights[i] * scale);
+         return shaped;
       }
 
       // Use the same coverage as the neighbour path.  Only the set of candidate elements changes at the threshold.
 
       const double radius_u = (Sample.Vertical ? m_aa_y : m_aa_x) * 0.5;
       const double radius_v = (Sample.Vertical ? m_aa_x : m_aa_y) * 0.5;
-      const double coverage = element_coverage(Sample.LX, Sample.LY, radius_u, radius_v);
+      const double coverage = shape(element_coverage(Sample.LX, Sample.LY, radius_u, radius_v));
       if (coverage > 0.0) Visit(Sample, coverage);
       return coverage;
    }

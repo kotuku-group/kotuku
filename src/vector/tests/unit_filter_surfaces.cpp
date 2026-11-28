@@ -1663,6 +1663,67 @@ static bool test_paving_profiles()
          }
       }
    }
+
+   // EdgeProfile shapes the soft ramp.  At a thin joint centre the profile applies to the combined coverage of both
+   // neighbours, each of which keeps half of the shaped total.
+
+   struct profile_case {
+      GEZ Profile;
+      double Edge, Inside, JointCentre;   // Coverage at x = 1 (on the edge), x = 2 and x = 0
+   };
+   const profile_case profile_cases[] = {
+      { GEZ::IN_OUT,   0.5,  0.84375,  0.5 },
+      { GEZ::CUBIC_IN, 0.125, 0.421875, 0.125 },
+      { GEZ::OUT,      0.75, 0.9375,   0.75 }
+   };
+
+   params = paving_fixture(STACK, 20, 10);
+   params.JointWidth = 2;
+   params.EdgeSoftness = 4;
+   for (const auto &c : profile_cases) {
+      params.EdgeProfile = c.Profile;
+      const paving_sampler sampler(params, 1.0, 1.0);
+      const double edge = sampler.coverage(sampler.locate(1.0, 5.0));
+      const double inside = sampler.coverage(sampler.locate(2.0, 5.0));
+      if ((std::abs(edge - c.Edge) > 1e-12) or (std::abs(inside - c.Inside) > 1e-12)) {
+         return paving_fail("Profile %d: edge coverage was %.9g and %.9g, expected %.9g and %.9g.", int(c.Profile),
+            edge, inside, c.Edge, c.Inside);
+      }
+
+      int visits = 0;
+      double sum = 0.0;
+      bool balanced = true;
+      const double centre = sampler.visit_coverage(sampler.locate(0.0, 5.0), [&](const paving_sample &, double W) {
+         visits++;
+         sum += W;
+         if (std::abs(W - (c.JointCentre * 0.5)) > 1e-12) balanced = false;
+      });
+      if ((std::abs(centre - c.JointCentre) > 1e-12) or (visits != 2) or (not balanced) or
+          (std::abs(sum - centre) > 1e-12)) {
+         return paving_fail("Profile %d: joint centre coverage was %.9g over %d elements summing to %.9g, "
+            "expected %.9g split evenly.", int(c.Profile), centre, visits, sum, c.JointCentre);
+      }
+   }
+
+   // Wide joints shape the single element ramp, and LINEAR leaves coverage unchanged.
+
+   params.JointWidth = 6;
+   params.EdgeProfile = GEZ::IN_OUT;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      const double inside = sampler.coverage(sampler.locate(4.0, 5.0));
+      if (std::abs(inside - 0.84375) > 1e-12) {
+         return paving_fail("Shaped wide joint coverage was %.9g, expected 0.84375.", inside);
+      }
+   }
+
+   params.EdgeProfile = GEZ::LINEAR;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      if (sampler.coverage(sampler.locate(4.0, 5.0)) != 0.75) {
+         return paving_fail("A LINEAR EdgeProfile must keep the linear ramp.");
+      }
+   }
    return true;
 }
 

@@ -501,8 +501,8 @@ Y defaults to X.  Sets @PavingFX.OriginX and @PavingFX.OriginY.</li>
 @PavingFX.CornerRadius.</li>
 <li>`edgeSoftness`: the width of the fringe over which elements blend into joints (default `0`, a one-pixel edge).
 Sets @PavingFX.EdgeSoftness.</li>
-<li>`bevelProfile`: `linear` (the default), `in`, `out`, `inOut`, `cubicIn`, `cubicOut`, `cubicInOut`, `circleIn`,
-`circleOut` or `circleInOut`.  Sets @PavingFX.BevelProfile.</li>
+<li>`bevelProfile` and `edgeProfile`: `linear` (the default), `in`, `out`, `inOut`, `cubicIn`, `cubicOut`,
+`cubicInOut`, `circleIn`, `circleOut` or `circleInOut`.  Sets @PavingFX.BevelProfile and @PavingFX.EdgeProfile.</li>
 <li>`angle`, `rowOffset`, `elementHeight`, `jointHeight`, `hueVariation`, `chromaVariation`, `lightVariation` and
 `heightVariation`: numbers that set @PavingFX.Angle, @PavingFX.RowOffset, @PavingFX.ElementHeightValue,
 @PavingFX.JointHeightValue, @PavingFX.HueVariation, @PavingFX.ChromaVariation, @PavingFX.LightVariation and

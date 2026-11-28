@@ -10,60 +10,78 @@
          against periodic neighbouring bricks before clipping the lit result to the tile bounds. -->
     <filter id="brickWall" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse"
       x="-16" y="-16" width="464" height="288" color-interpolation-filters="sRGB">
+
       <!-- Clay albedo: opaque single-channel mottling and fine grit modulate the parametric brick colour. -->
+
       <feFlood flood-color="param(brick) #a24a2e" result="brickBase"/>
+
       <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.0625 0.125" numOctaves="3" seed="17"
         persistence="0.58" lacunarity="2" normalise="true" period="27 32" result="clayMottle">
         <stop offset="0" stop-color="#000000"/>
         <stop offset="1" stop-color="#ffffff"/>
       </xvg:feFractalNoise>
+
       <feComposite in="brickBase" in2="clayMottle" operator="arithmetic" k1="0.48" k2="0.76" result="clayMid"/>
+
       <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.25" numOctaves="2" seed="31"
         persistence="0.5" lacunarity="2" normalise="true" period="108 64" result="clayGrit">
         <stop offset="0" stop-color="#000000"/>
         <stop offset="1" stop-color="#ffffff"/>
       </xvg:feFractalNoise>
+
       <feComposite in="clayMid" in2="clayGrit" operator="arithmetic" k1="0.22" k2="0.89" result="clayTex"/>
 
       <!-- Sandy mortar albedo: fine periodic grit modulates the parametric mortar colour. -->
+
       <feFlood flood-color="param(mortar) #aaa397" result="mortarBase"/>
+
       <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.5" numOctaves="2" seed="5"
         persistence="0.55" lacunarity="2" normalise="true" period="216 128" result="sandGrit">
         <stop offset="0" stop-color="#000000"/>
         <stop offset="1" stop-color="#ffffff"/>
       </xvg:feFractalNoise>
+
       <feComposite in="mortarBase" in2="sandGrit" operator="arithmetic" k1="0.34" k2="0.83" result="mortarTex"/>
 
-      <!-- Running-bond brick and mortar arrangement with deterministic per-brick OKLCH firing variation. -->
+      <!-- Running-bond brick and mortar arrangement with deterministic per-brick OKLCH firing variation.  A three unit
+           S-curve edge fringe blends the clay into the mortar inside the 3.5 unit bevel. -->
       <xvg:fePaving layout="running" seed="19" elementSize="72 32" rowOffset="0.5" origin="16 16" period="6 8"
-        jointWidth="5" fillMode="continuous" elementMap="clayTex" jointMap="mortarTex"
-        hueVariation="5.5" chromaVariation="0.02" lightVariation="0.06" result="albedo"/>
+        jointWidth="5" fillMode="continuous" elementMap="clayTex" jointMap="mortarTex" cornerRadius="4"
+        edgeSoftness="3" edgeProfile="inOut" hueVariation="5.5" chromaVariation="0.02" lightVariation="0.06"
+        result="albedo"/>
 
       <!-- Floating-point height field: gentle S-curve brick bevels with clay undulation and pitted micro-relief. -->
       <xvg:fePaving layout="running" mode="height" seed="19" elementSize="72 32" rowOffset="0.5" origin="16 16"
-        period="6 8" jointWidth="5" bevelWidth="3.5" bevelProfile="cubicInOut" elementHeight="1.0"
-        jointHeight="0.0" heightVariation="0.10" xvg:outputMode="height" result="pavingHeight"/>
+        period="6 8" jointWidth="5" bevelWidth="3.5" bevelProfile="cubicInOut" elementHeight="1.0" cornerRadius="4"
+        jointHeight="0.0" heightVariation="0.50" xvg:outputMode="height" result="pavingHeight"/>
+
       <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.125" numOctaves="3" seed="43"
         persistence="0.58" lacunarity="2" normalise="true" period="54 32"
         xvg:outputMode="height" result="clayRelief"/>
+
       <feComposite in="pavingHeight" in2="clayRelief" operator="arithmetic" k2="1" k3="0.30"
         xvg:outputMode="height" result="heightMid"/>
+
       <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.5" numOctaves="2" seed="59"
         persistence="0.5" lacunarity="2" normalise="true" period="216 128"
         xvg:outputMode="height" result="fineRelief"/>
+
       <feComposite in="heightMid" in2="fineRelief" operator="arithmetic" k2="1" k3="0.12"
         xvg:outputMode="height" result="height"/>
 
       <!-- Soft matte upper-left lighting with gentle wrap and subtle mortar recession, clipped to 432 x 256. -->
-      <xvg:feLighting in="height" in2="albedo" x="0" y="0" width="432" height="256" surfaceScale="2.0"
+
+      <xvg:feLighting in="height" in2="albedo" x="0" y="0" width="432" height="256" surfaceScale=".6"
         diffuseConstant="0.78" specularConstant="0.04" specularExponent="8" ambient="#504c48"
-        wrap="0.35" xvg:cavity="0.10" xvg:penumbra="2.5">
-        <feDistantLight azimuth="235" elevation="62"/>
+        wrap="0.35" xvg:cavity="0.30" xvg:penumbra="2.5">
+        <feDistantLight azimuth="265" elevation="62"/>
       </xvg:feLighting>
     </filter>
+
     <pattern id="pidMaterialsBricks" patternUnits="userSpaceOnUse" width="432" height="256" viewBox="0 0 432 256">
       <rect width="432" height="256" filter="url(#brickWall)"/>
     </pattern>
   </defs>
+
   <rect width="100%" height="100%" fill="url(#pidMaterialsBricks)"/>
 </svg>

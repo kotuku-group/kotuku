@@ -265,6 +265,7 @@
     ~int(LMD) Mode
     ~int(LFM) FillMode
     ~int(GEZ) BevelProfile
+    ~int(GEZ) EdgeProfile
     ~int(FOM) OutputMode
     ~int(VSM) ResampleMethod
     ~obj(FilterEffect) ElementMap

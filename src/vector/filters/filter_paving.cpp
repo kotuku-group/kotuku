@@ -26,12 +26,12 @@ square filter regions and in `BOUNDING_BOX` primitive units.
 upstream #ElementMap, separated by joints using #JointColour or an upstream #JointMap.  Per-element perceptual OKLCH
 variation is controlled by #HueVariation, #ChromaVariation, #LightVariation and #Seed.  Edges between elements and
 joints are analytically anti-aliased when #JointWidth is positive, and #EdgeSoftness widens that transition into a
-fringe that blends elements into their joints.  For thin joints, coverage includes the elements on either side of the
-joint and limits the sampling footprint to the shortest element dimension per axis.</li>
+fringe that blends elements into their joints, shaped by #EdgeProfile.  For thin joints, coverage includes the elements
+on either side of the joint and limits the sampling footprint to the shortest element dimension per axis.</li>
 <li>`HEIGHT`: Produces a bevelled relief field rising from #JointHeightValue in joints to `#ElementHeightValue` plus
 seeded #HeightVariation on element interiors, shaped across #BevelWidth by #BevelProfile.</li>
 <li>`MASK`: Produces element coverage in [0, 1], with analytic edge anti-aliasing when #JointWidth is positive,
-widened by #EdgeSoftness.</li>
+widened by #EdgeSoftness and shaped by #EdgeProfile.</li>
 <li>`ID`: Produces a discrete seeded hash in [0, 1) per element, and 0 in joints.</li>
 </list>
 
@@ -51,9 +51,16 @@ SVG documents can use the effect with the `xvg:fePaving` element.  Refer to the 
 
 -END-
 
-// TODO: Support ParameterMaps (a filter input that varies a field per sample) for JointWidth, BevelWidth,
-// ElementHeightValue, JointHeightValue, HueVariation, ChromaVariation, LightVariation and HeightVariation, once a
-// binding facility shared by the filter classes has been designed.
+TODO: Support ParameterMaps (a filter input that varies a field per sample) for JointWidth, BevelWidth,
+ElementHeightValue, JointHeightValue, HueVariation, ChromaVariation, LightVariation and HeightVariation, once a
+binding facility shared by the filter classes has been designed.
+
+Additional `LAY` arrangements: `FLEMISH` (alternating stretcher/header bond), `HEXAGON` (hexagonal pavers /
+honeycomb), `OCTAGON` (octagon-and-dot tiles), and random-length ashlar.
+
+Mortar recession noise and per-element random UV offset/flip for `ElementMap` in `LOCAL` mode.
+
+Custom piecewise-linear `BevelProfile` curves once a shared filter `Profile` type is introduced.
 
 *********************************************************************************************************************/
 
@@ -98,6 +105,7 @@ class extPavingFX : public extFilterEffect {
    LMD Mode = LMD::COLOUR;
    LFM FillMode = LFM::LOCAL;
    GEZ BevelProfile = GEZ::LINEAR;
+   GEZ EdgeProfile = GEZ::LINEAR;
    FOM OutputMode = FOM::IMAGE;
    VSM ResampleMethod = VSM::BILINEAR;
    int PeriodX = 0;
@@ -453,6 +461,7 @@ static ERR PAVINGFX_Draw(extPavingFX *Self, struct acDraw *Args)
       .LightVariation     = Self->LightVariation,
       .HeightVariation    = Self->HeightVariation,
       .BevelProfile       = Self->BevelProfile,
+      .EdgeProfile        = Self->EdgeProfile,
       .Seed               = Self->Seed,
       .PeriodX            = Self->PeriodX,
       .PeriodY            = Self->PeriodY
@@ -913,9 +922,9 @@ EdgeSoftness: Width of the fringe over which elements blend into their joints, i
 
 By default, element edges are anti-aliased across one output pixel, which leaves a hard boundary between elements and
 joints when the pattern is magnified.  EdgeSoftness sets a minimum width for that transition.  Element coverage then
-ramps linearly from 0 to 1 across a band of this width, centred on the element edge, so that in `COLOUR` mode the
-element colour blends into the joint colour.  The same widened coverage is produced in `MASK` mode.  `HEIGHT` and `ID`
-modes are unaffected; shape the relief with #BevelWidth instead.
+ramps from 0 to 1 across a band of this width, centred on the element edge and shaped by #EdgeProfile, so that in
+`COLOUR` mode the element colour blends into the joint colour.  The same widened coverage is produced in `MASK` mode.
+`HEIGHT` and `ID` modes are unaffected; shape the relief with #BevelWidth instead.
 
 The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region.
 Defaults to 0, which keeps the one-pixel edge.  The band is limited to the shortest element dimension.  If it is
@@ -927,6 +936,31 @@ the colour transition with the bevelled relief.
 static ERR PAVINGFX_SET_EdgeSoftness(extPavingFX *Self, Unit &Value)
 {
    return update_paving_unit(Self, Self->EdgeSoftness, Value, false, true);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+EdgeProfile: Shapes the coverage transition between elements and joints.
+Lookup: GEZ
+
+Selects the easing curve applied to element coverage across the edge in `COLOUR` and `MASK` modes.  With the default
+`LINEAR` profile, coverage ramps evenly across the band set by #EdgeSoftness.  `IN_OUT`, `CUBIC_IN_OUT` and
+`CIRCLE_IN_OUT` hold the element and joint colours longer at either side and blend more steeply through the middle,
+which gives a softer looking fringe that keeps 50% coverage on the element edge.  The `IN` profiles keep joint colour
+over more of the band so that the fringe falls on the element side of the edge, and the `OUT` profiles move it into
+the joint instead.
+
+Where a thin joint is covered by more than one element, the profile shapes their combined coverage and each element
+keeps its share of the result.  When #EdgeSoftness is narrower than an output pixel, the profile shapes the one-pixel
+anti-aliasing ramp instead.  `HEIGHT` and `ID` modes are unaffected; see #BevelProfile for the relief.
+
+*********************************************************************************************************************/
+
+static ERR PAVINGFX_SET_EdgeProfile(extPavingFX *Self, GEZ Value)
+{
+   if ((int(Value) < int(GEZ::LINEAR)) or (int(Value) > int(GEZ::CIRCLE_IN_OUT))) return ERR::OutOfRange;
+   return update_paving(Self, Self->EdgeProfile, Value);
 }
 
 /*********************************************************************************************************************
@@ -1390,6 +1424,7 @@ static ERR paving_xml(const extPavingFX &Effect, filter_xml_element &Element)
       "linear", "in", "out", "inOut", "cubicIn", "cubicOut", "cubicInOut", "circleIn", "circleOut", "circleInOut"
    };
    if (Effect.BevelProfile != GEZ::LINEAR) Element.attribute("bevelProfile", profiles[int(Effect.BevelProfile)]);
+   if (Effect.EdgeProfile != GEZ::LINEAR) Element.attribute("edgeProfile", profiles[int(Effect.EdgeProfile)]);
 
    if (Effect.Angle != 0) Element.attribute("angle", Effect.Angle);
    if (Effect.RowOffset != 0.5) Element.attribute("rowOffset", Effect.RowOffset);
@@ -1454,6 +1489,7 @@ static const FieldArray clPavingFXFields[] = {
    { "Mode",               FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, PAVINGFX_SET_Mode, &clPavingFXLMD },
    { "FillMode",           FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, PAVINGFX_SET_FillMode, &clPavingFXLFM },
    { "BevelProfile",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, PAVINGFX_SET_BevelProfile, &clPavingFXGEZ },
+   { "EdgeProfile",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, PAVINGFX_SET_EdgeProfile, &clPavingFXGEZ },
    { "OutputMode",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, PAVINGFX_SET_OutputMode, &clPavingFXFOM },
    { "ResampleMethod",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, PAVINGFX_SET_ResampleMethod, &clPavingFXVSM },
    { "PeriodX",            FDF_INT|FDF_RW, nullptr, PAVINGFX_SET_PeriodX },
