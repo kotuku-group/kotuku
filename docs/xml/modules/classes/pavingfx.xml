@@ -14,17 +14,20 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>PavingFX is a source effect that takes no primary input.  It partitions the pattern plane into rectangular elements separated by joints according to <fl>Layout</fl> (<code>RUNNING</code>, <code>STACK</code>, <code>BASKET_WEAVE</code>, <code>HERRINGBONE</code> or <code>CHECKER</code>), and evaluates each sample solely from its position in primitive units.  Clipped, partial and full redraws therefore produce identical values.</p>
-<p>Element dimensions are given by <fl>ElementWidth</fl> and <fl>ElementHeight</fl>, positioned by <fl>OriginX</fl> and <fl>OriginY</fl>, and rotated about the origin by <fl>Angle</fl>.  Percentages in <fl>ElementWidth</fl> and <fl>OriginX</fl> refer to the width of the filter region, and percentages in <fl>ElementHeight</fl> and <fl>OriginY</fl> refer to its height.  Percentages in <fl>JointWidth</fl> and <fl>BevelWidth</fl> refer to the normalised diagonal of the filter region (<code>sqrt((width^2 + height^2) / 2)</code>), so horizontal and vertical joints and bevels share the same thickness on non-square regions.</p>
+<p>Element dimensions are given by <fl>ElementWidth</fl> and <fl>ElementHeight</fl>, positioned by <fl>OriginX</fl> and <fl>OriginY</fl>, and rotated about the origin by <fl>Angle</fl>.  Percentages in <fl>ElementWidth</fl> and <fl>OriginX</fl> refer to the width of the filter region, and percentages in <fl>ElementHeight</fl> and <fl>OriginY</fl> refer to its height.  Percentages in <fl>JointWidth</fl>, <fl>BevelWidth</fl>, <fl>CornerRadius</fl> and <fl>EdgeSoftness</fl> refer to the normalised diagonal of the filter region (<code>sqrt((width^2 + height^2) / 2)</code>), so horizontal and vertical joints, bevels, rounded corners and edge fringes share the same scale on non-square regions.</p>
 <p><code>BASKET_WEAVE</code> and <code>HERRINGBONE</code> require the resolved <code>ElementWidth / ElementHeight</code> ratio to lie within <code>1e-4</code> of an integer <code>k &gt;= 2</code>.  With the default <code>ElementWidth = 25%</code> and <code>ElementHeight = 12.5%</code>, this holds automatically on square filter regions and in <code>BOUNDING_BOX</code> primitive units.</p>
 <p><fl>Mode</fl> selects the generated field:</p>
 <list type="bullet">
 <li><code>COLOUR</code>: Draws elements using <fl>ElementColour</fl> (and <fl>AlternateColour</fl> for odd-parity cells in <code>CHECKER</code>) or an
 upstream <fl>ElementMap</fl>, separated by joints using <fl>JointColour</fl> or an upstream <fl>JointMap</fl>.  Per-element perceptual OKLCH
 variation is controlled by <fl>HueVariation</fl>, <fl>ChromaVariation</fl>, <fl>LightVariation</fl> and <fl>Seed</fl>.  Edges between elements and
-joints are analytically anti-aliased over one output pixel whenever <fl>JointWidth</fl> is positive.</li>
+joints are analytically anti-aliased when <fl>JointWidth</fl> is positive, and <fl>EdgeSoftness</fl> widens that transition into a
+fringe that blends elements into their joints.  For thin joints, coverage includes the elements on either side of the
+joint and limits the sampling footprint to the shortest element dimension per axis.</li>
 <li><code>HEIGHT</code>: Produces a bevelled relief field rising from <fl>JointHeightValue</fl> in joints to <code><fl>ElementHeightValue</fl></code> plus
 seeded <fl>HeightVariation</fl> on element interiors, shaped across <fl>BevelWidth</fl> by <fl>BevelProfile</fl>.</li>
-<li><code>MASK</code>: Produces element coverage in [0, 1], with analytic edge anti-aliasing when <fl>JointWidth</fl> is positive.</li>
+<li><code>MASK</code>: Produces element coverage in [0, 1], with analytic edge anti-aliasing when <fl>JointWidth</fl> is positive,
+widened by <fl>EdgeSoftness</fl>.</li>
 <li><code>ID</code>: Produces a discrete seeded hash in [0, 1) per element, and 0 in joints.</li>
 </list>
 <p>In <code>IMAGE</code> <fl>OutputMode</fl>, scalar modes (<code>HEIGHT</code>, <code>MASK</code> and <code>ID</code>) clamp values to [0, 1] and draw opaque greyscale in the effect's colour space, or through <fl>ColourMap</fl> or <fl>Stops</fl>.  Set <fl>OutputMode</fl> to <code>HEIGHT</code> to emit an unclamped floating-point scalar surface for numerical consumers such as <class name="LightingFX">LightingFX</class> or <class name="CompositeFX">CompositeFX</class>.  <code>Mode = COLOUR</code> cannot be combined with <code>OutputMode = HEIGHT</code>.</p>
@@ -48,7 +51,7 @@ seeded <fl>HeightVariation</fl> on element interiors, shaped across <fl>BevelWid
         <param type="INT" name="Height">The height of the region to be drawn.</param>
       </input>
       <description>
-<p>Draw fails with <code>ERR::InvalidValue</code> if <code>Mode</code> is <code>COLOUR</code> with <code>OutputMode</code> set to <code>HEIGHT</code>, if <code>BASKET_WEAVE</code> or <code>HERRINGBONE</code> is drawn with a resolved <code>ElementWidth / ElementHeight</code> ratio that is not within <code>1e-4</code> of an integer <code>&gt;= 2</code>, if a periodic pattern is rotated, if a periodic <code>RUNNING</code> layout has a non-integer <code>PeriodY * RowOffset</code>, or if a periodic <code>CHECKER</code> or <code>BASKET_WEAVE</code> layout has an odd period.  It fails with <code>ERR::OutOfRange</code> if pattern coordinates across the drawn area would exceed 2^52.</p>
+<p>Draw fails with <code>ERR::InvalidValue</code> if <code>Mode</code> is <code>COLOUR</code> with <code>OutputMode</code> set to <code>HEIGHT</code>, if <code>BASKET_WEAVE</code> or <code>HERRINGBONE</code> is drawn with a resolved <code>ElementWidth / ElementHeight</code> ratio that is not within <code>1e-4</code> of an integer <code>&gt;= 2</code>, if a periodic pattern is rotated, if a periodic <code>RUNNING</code> layout has a non-integer <code>PeriodY * RowOffset</code>, or if a periodic <code>CHECKER</code> or <code>BASKET_WEAVE</code> layout has an odd period.  It fails with <code>ERR::OutOfRange</code> if pattern coordinates across the drawn area would exceed 2^52, or if the possible <code>HEIGHT</code> mode values exceed the finite range of a 32-bit float when <fl>OutputMode</fl> is <code>HEIGHT</code>.</p>
       </description>
     </action>
 
@@ -113,6 +116,27 @@ seeded <fl>HeightVariation</fl> on element interiors, shaped across <fl>BevelWid
       <type>STRING</type>
       <description>
 <p>Applies when <fl>Mode</fl> is <code>HEIGHT</code>, <code>MASK</code> or <code>ID</code> and <fl>OutputMode</fl> is <code>IMAGE</code>.  The clamped value selects a colour from the named colourmap, from 0 to 1.  Setting a colourmap replaces custom <fl>Stops</fl>.  Set an empty string to restore greyscale output.  Unknown names fail with <code>ERR::NotFound</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CornerRadius</name>
+      <comment>Radius of circular corner rounding on each element, in pattern units.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region. Defaults to 0 (sharp 90-degree corners).  Values larger than half the interior element width or height (after subtracting <fl>JointWidth</fl>) are clamped so rounded corners never self-intersect.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>EdgeSoftness</name>
+      <comment>Width of the fringe over which elements blend into their joints, in pattern units.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>By default, element edges are anti-aliased across one output pixel, which leaves a hard boundary between elements and joints when the pattern is magnified.  EdgeSoftness sets a minimum width for that transition.  Element coverage then ramps linearly from 0 to 1 across a band of this width, centred on the element edge, so that in <code>COLOUR</code> mode the element colour blends into the joint colour.  The same widened coverage is produced in <code>MASK</code> mode.  <code>HEIGHT</code> and <code>ID</code> modes are unaffected; shape the relief with <fl>BevelWidth</fl> instead.</p>
+<p>The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region. Defaults to 0, which keeps the one-pixel edge.  The band is limited to the shortest element dimension.  If it is wider than <fl>JointWidth</fl>, no part of a joint shows the pure joint colour; keeping the fringe within <fl>BevelWidth</fl> aligns the colour transition with the bevelled relief.</p>
       </description>
     </field>
 

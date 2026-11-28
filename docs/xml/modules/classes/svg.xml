@@ -316,8 +316,9 @@ and a percentage refers to the filter region.  The default is <code>25% 12.5%</c
 <class name="PavingFX" field="ElementHeight">PavingFX.ElementHeight</class>.</li>
 <li><code>origin</code>: the X and optional Y position of the pattern lattice, relative to the filter region's top-left corner.
 Y defaults to X.  Sets <class name="PavingFX" field="OriginX">PavingFX.OriginX</class> and <class name="PavingFX" field="OriginY">PavingFX.OriginY</class>.</li>
-<li><code>jointWidth</code> and <code>bevelWidth</code>: lengths for the mortar gap and interior edge bevel (default <code>1%</code> each).  Sets
-<class name="PavingFX" field="JointWidth">PavingFX.JointWidth</class> and <class name="PavingFX" field="BevelWidth">PavingFX.BevelWidth</class>.</li>
+<li><code>jointWidth</code>, <code>bevelWidth</code> and <code>cornerRadius</code>: lengths for the mortar gap (default <code>1%</code>), interior edge bevel
+(default <code>1%</code>) and element corner rounding (default <code>0</code>).  Sets <class name="PavingFX" field="JointWidth">PavingFX.JointWidth</class>, <class name="PavingFX" field="BevelWidth">PavingFX.BevelWidth</class> and
+<class name="PavingFX" field="CornerRadius">_PavingFX.CornerRadius_</class>.</li>
 <li><code>bevelProfile</code>: <code>linear</code> (the default), <code>in</code>, <code>out</code>, <code>inOut</code>, <code>cubicIn</code>, <code>cubicOut</code>, <code>cubicInOut</code>, <code>circleIn</code>,
 <code>circleOut</code> or <code>circleInOut</code>.  Sets <class name="PavingFX" field="BevelProfile">PavingFX.BevelProfile</class>.</li>
 <li><code>angle</code>, <code>rowOffset</code>, <code>elementHeight</code>, <code>jointHeight</code>, <code>hueVariation</code>, <code>chromaVariation</code>, <code>lightVariation</code> and

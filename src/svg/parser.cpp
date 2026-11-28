@@ -2836,6 +2836,8 @@ ERR svgState::parse_fe_paving(objVectorFilter *Filter, XTag &Tag) noexcept
 
          case SVF_jointWidth:      valid = set_unit(val, &objPavingFX::setJointWidth); break;
          case SVF_bevelWidth:      valid = set_unit(val, &objPavingFX::setBevelWidth); break;
+         case SVF_cornerRadius:    valid = set_unit(val, &objPavingFX::setCornerRadius); break;
+         case SVF_edgeSoftness:    valid = set_unit(val, &objPavingFX::setEdgeSoftness); break;
 
          case SVF_bevelProfile: {
             const auto text = kt::font_traits::trim(std::string_view(val));

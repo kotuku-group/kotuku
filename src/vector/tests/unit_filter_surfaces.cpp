@@ -1347,6 +1347,11 @@ static bool test_paving_check()
       { "Zero width", paving_fixture(STACK, 0, 6), ERR::InvalidValue },
       { "NaN height", paving_fixture(STACK, 6, std::nan("")), ERR::InvalidValue },
       { "Negative joint", with(running, [](auto &P) { P.JointWidth = -1; }), ERR::InvalidValue },
+      { "Negative corner radius", with(running, [](auto &P) { P.CornerRadius = -1; }), ERR::InvalidValue },
+      { "NaN corner radius", with(running, [](auto &P) { P.CornerRadius = std::nan(""); }), ERR::InvalidValue },
+      { "Negative edge softness", with(running, [](auto &P) { P.EdgeSoftness = -1; }), ERR::InvalidValue },
+      { "NaN edge softness", with(running, [](auto &P) { P.EdgeSoftness = std::nan(""); }), ERR::InvalidValue },
+      { "Edge softness", with(running, [](auto &P) { P.EdgeSoftness = 2; }), ERR::Okay },
       { "Basket 2.5", paving_fixture(BASKET_WEAVE, 15, 6), ERR::InvalidValue },
       { "Basket 1", paving_fixture(BASKET_WEAVE, 6, 6), ERR::InvalidValue },
       { "Basket within tolerance", paving_fixture(BASKET_WEAVE, 12, 6.0002), ERR::Okay },
@@ -1497,6 +1502,61 @@ static bool test_paving_profiles()
       }
    }
 
+   // Rounded corners: exact circular signed distance, clamping to the inscribed radius, smooth bevels and zero-joint
+   // corner spandrels.
+
+   params = paving_fixture(STACK, 20, 10);
+   params.JointWidth = 2;
+   params.BevelWidth = 4;
+   params.CornerRadius = 3;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      if (std::abs(sampler.corner_radius() - 3.0) > 1e-12) return paving_fail("Corner radius must remain 3.");
+      // Corner pocket at (1.1, 1.1): ex = 0.1, ey = 0.1, dist to arc centre (3, 3) = hypot(2.9, 2.9) > 3 -> outside.
+      const auto corner = sampler.locate(1.1, 1.1);
+      if ((sampler.interior(corner) >= 0) or (sampler.id(corner, 0.5) != 0.0) or
+          (sampler.height(corner, 0) != 0.0)) {
+         return paving_fail("Rounded corner pocket must behave as joint.");
+      }
+      // On the arc at ex = 3 - 3/sqrt(2), ey = 3 - 3/sqrt(2): interior == 0, coverage == 0.5.
+      const double arc_off = 1.0 + 3.0 - (3.0 / std::sqrt(2.0));
+      const auto on_arc = sampler.locate(arc_off, arc_off);
+      if ((std::abs(sampler.interior(on_arc)) > 1e-9) or (std::abs(sampler.coverage(on_arc) - 0.5) > 1e-9)) {
+         return paving_fail("On-arc point must have interior 0 and coverage 0.5.");
+      }
+      // Arc centre at (4, 4) has interior == 3 -> height = 3 / 4 = 0.75.
+      const auto arc_centre = sampler.locate(4.0, 4.0);
+      if ((std::abs(sampler.interior(arc_centre) - 3.0) > 1e-9) or
+          (std::abs(sampler.height(arc_centre, 0) - 0.75) > 1e-9)) {
+         return paving_fail("Arc centre must have interior equal to corner radius.");
+      }
+   }
+
+   // Oversized corner radius clamps to half the interior shortest side: (10/2) - 1 = 4.
+
+   params.CornerRadius = 100;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      if (std::abs(sampler.corner_radius() - 4.0) > 1e-12) {
+         return paving_fail("Oversized corner radius must clamp to 4, got %.9g.", sampler.corner_radius());
+      }
+   }
+
+   // Zero joint width with rounded corners keeps full coverage on straight edges while opening corner pockets.
+
+   params = paving_fixture(STACK, 20, 20);
+   params.JointWidth = 0;
+   params.CornerRadius = 6;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      if (sampler.coverage(sampler.locate(10.0, 0.0)) != 1.0) {
+         return paving_fail("Straight edge midpoint must stay at full coverage when JointWidth is 0.");
+      }
+      if (sampler.coverage(sampler.locate(0.1, 0.1)) != 0.0) {
+         return paving_fail("Corner spandrel must open to zero coverage when CornerRadius is 6.");
+      }
+   }
+
    // On an axis-aligned integer grid, coverage at pixel centres is exactly 0 or 1 and agrees with the element ID.
 
    params = paving_fixture(STACK, 8, 4);
@@ -1538,6 +1598,69 @@ static bool test_paving_profiles()
       const auto s = sampler.locate(10.0, 0.75); // Vertical macro-cell: LX = 0.75, LY = 2
       if ((not s.Vertical) or (std::abs(sampler.coverage(s) - 0.75) > 1e-12)) {
          return paving_fail("Vertical element coverage was %.9g, expected 0.75.", sampler.coverage(s));
+      }
+   }
+
+   // EdgeSoftness widens the one pixel ramp into a linear fringe centred on the element edge.  Thin joints blend both
+   // neighbours, so a fringe wider than the joint leaves no pure joint colour at the joint centre.
+
+   params = paving_fixture(STACK, 20, 10);
+   params.JointWidth = 2;
+   params.EdgeSoftness = 4;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      const std::pair<double, double> expected[] = { { 0.0, 0.5 }, { 1.0, 0.5 }, { 2.0, 0.75 }, { 3.0, 1.0 } };
+      for (auto [x, want] : expected) {
+         const double cov = sampler.coverage(sampler.locate(x, 5.0));
+         if (std::abs(cov - want) > 1e-12) {
+            return paving_fail("Soft thin joint coverage at x = %.2f was %.9g, expected %.9g.", x, cov, want);
+         }
+      }
+      double previous = sampler.coverage(sampler.locate(0.0, 5.0));
+      for (double x=0.05; x <= 4.0; x += 0.05) {
+         const double cov = sampler.coverage(sampler.locate(x, 5.0));
+         if (cov < previous - 1e-12) return paving_fail("Soft coverage decreases at x = %.2f.", x);
+         previous = cov;
+      }
+   }
+
+   // An element occupies one quarter of a footprint centred on its square corner on either side of the threshold.
+
+   for (double softness : { 1.99999, 2.0, 2.00001 }) {
+      params.EdgeSoftness = softness;
+      const paving_sampler sampler(params, 1.0, 1.0);
+      const double coverage = sampler.coverage(sampler.locate(1.0, 1.0));
+      if (std::abs(coverage - 0.25) > 1e-12) {
+         return paving_fail("Corner coverage at softness %.5f was %.9g, expected 0.25.", softness, coverage);
+      }
+   }
+
+   // Wide joints take the single element ramp, which is also widened.
+
+   params.JointWidth = 6;
+   params.EdgeSoftness = 4;
+   {
+      const paving_sampler sampler(params, 1.0, 1.0);
+      const double c0 = sampler.coverage(sampler.locate(3.0, 5.0)); // On the edge
+      const double c1 = sampler.coverage(sampler.locate(4.0, 5.0)); // One unit inside
+      const double c2 = sampler.coverage(sampler.locate(0.0, 5.0)); // Joint centre
+      if ((std::abs(c0 - 0.5) > 1e-12) or (std::abs(c1 - 0.75) > 1e-12) or (c2 != 0.0)) {
+         return paving_fail("Soft wide joint coverage was %.9g, %.9g and %.9g, expected 0.5, 0.75 and 0.", c0, c1, c2);
+      }
+   }
+
+   // A softness below the pixel footprint leaves the one pixel ramp unchanged.
+
+   params.JointWidth = 1.5;
+   params.EdgeSoftness = 0.5;
+   {
+      const paving_sampler soft(params, 1.0, 1.0);
+      params.EdgeSoftness = 0;
+      const paving_sampler hard(params, 1.0, 1.0);
+      for (double x=0.0; x < 3.0; x += 0.125) {
+         if (soft.coverage(soft.locate(x, 5.0)) != hard.coverage(hard.locate(x, 5.0))) {
+            return paving_fail("A sub-pixel EdgeSoftness changed coverage at x = %.3f.", x);
+         }
       }
    }
    return true;
@@ -1764,7 +1887,7 @@ struct paving_pipeline_fixture {
    CSTRING Name;
    LMD Mode = LMD::HEIGHT;
    paving_params Params;
-   Unit ElementWidth, ElementHeight, OriginX, OriginY, JointWidth, BevelWidth;
+   Unit ElementWidth, ElementHeight, OriginX, OriginY, JointWidth, BevelWidth, CornerRadius = Unit(0.0);
    double Angle = 0;
    VUNIT PrimitiveUnits = VUNIT::USERSPACE;
    TClipRectangle<double> Subregion = { 0.0 };
@@ -1795,7 +1918,7 @@ static bool test_filter_paving_case(const paving_pipeline_fixture &Case)
    const auto &p = Case.Params;
    auto elem_w = Case.ElementWidth, elem_h = Case.ElementHeight;
    auto orig_x = Case.OriginX, orig_y = Case.OriginY;
-   auto joint_w = Case.JointWidth, bevel_w = Case.BevelWidth;
+   auto joint_w = Case.JointWidth, bevel_w = Case.BevelWidth, corner_r = Case.CornerRadius;
    if ((PAVINGFX_SET_Layout(paving, LAY(int(p.Layout))) != ERR::Okay) or
        (PAVINGFX_SET_Mode(paving, Case.Mode) != ERR::Okay) or
        (PAVINGFX_SET_Seed(paving, p.Seed) != ERR::Okay) or
@@ -1805,6 +1928,7 @@ static bool test_filter_paving_case(const paving_pipeline_fixture &Case)
        (PAVINGFX_SET_OriginY(paving, orig_y) != ERR::Okay) or
        (PAVINGFX_SET_JointWidth(paving, joint_w) != ERR::Okay) or
        (PAVINGFX_SET_BevelWidth(paving, bevel_w) != ERR::Okay) or
+       (PAVINGFX_SET_CornerRadius(paving, corner_r) != ERR::Okay) or
        (PAVINGFX_SET_BevelProfile(paving, p.BevelProfile) != ERR::Okay) or
        (PAVINGFX_SET_Angle(paving, Case.Angle) != ERR::Okay) or
        (PAVINGFX_SET_RowOffset(paving, p.RowOffset) != ERR::Okay) or
@@ -1938,9 +2062,14 @@ static bool test_filter_paving()
    oversized_height.Params.ElementHeightValue = 1e40;
    oversized_height.DrawError = ERR::OutOfRange;
 
-   return test_filter_paving_case(height_offset) and test_filter_paving_case(mask_rotated) and
-      test_filter_paving_case(id_bbox) and test_filter_paving_case(clipped) and
-      test_filter_paving_case(oversized_height);
+   auto rounded_height = height_offset;
+   rounded_height.Name = "Rounded height subregion";
+   rounded_height.Params.CornerRadius = 0.03 * region_diag;
+   rounded_height.CornerRadius = Unit(0.03, FD_SCALED);
+
+   return test_filter_paving_case(height_offset) and test_filter_paving_case(rounded_height) and
+      test_filter_paving_case(mask_rotated) and test_filter_paving_case(id_bbox) and
+      test_filter_paving_case(clipped) and test_filter_paving_case(oversized_height);
 }
 
 //********************************************************************************************************************

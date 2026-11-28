@@ -4310,57 +4310,57 @@ class objPavingFX : public objFilterEffect {
    }
 
    inline ERR getElementColour(struct FRGB * &Value) noexcept {
-      Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 224));
-      return ERR::Okay;
-   }
-
-   inline ERR getJointColour(struct FRGB * &Value) noexcept {
-      Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 240));
-      return ERR::Okay;
-   }
-
-   inline ERR getAlternateColour(struct FRGB * &Value) noexcept {
       Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 256));
       return ERR::Okay;
    }
 
+   inline ERR getJointColour(struct FRGB * &Value) noexcept {
+      Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 272));
+      return ERR::Okay;
+   }
+
+   inline ERR getAlternateColour(struct FRGB * &Value) noexcept {
+      Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 288));
+      return ERR::Okay;
+   }
+
    inline ERR getLayout(LAY &Value) noexcept {
-      Value = *((LAY *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 272));
+      Value = *((LAY *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 304));
       return ERR::Okay;
    }
 
    inline ERR getMode(LMD &Value) noexcept {
-      Value = *((LMD *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 276));
+      Value = *((LMD *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 308));
       return ERR::Okay;
    }
 
    inline ERR getFillMode(LFM &Value) noexcept {
-      Value = *((LFM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 280));
+      Value = *((LFM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 312));
       return ERR::Okay;
    }
 
    inline ERR getBevelProfile(GEZ &Value) noexcept {
-      Value = *((GEZ *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 284));
+      Value = *((GEZ *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 316));
       return ERR::Okay;
    }
 
    inline ERR getOutputMode(FOM &Value) noexcept {
-      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 288));
+      Value = *((FOM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 320));
       return ERR::Okay;
    }
 
    inline ERR getResampleMethod(VSM &Value) noexcept {
-      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 292));
+      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 324));
       return ERR::Okay;
    }
 
    inline ERR getElementMap(objFilterEffect * &Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[41];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getJointMap(objFilterEffect * &Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
+      auto field = &this->Class->Dictionary[48];
       return field->GetValue(this, &Value);
    }
 
@@ -4404,53 +4404,63 @@ class objPavingFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getCornerRadius(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 160));
+      return ERR::Okay;
+   }
+
+   inline ERR getEdgeSoftness(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 176));
+      return ERR::Okay;
+   }
+
    inline ERR getAngle(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 160));
-      return ERR::Okay;
-   }
-
-   inline ERR getRowOffset(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 168));
-      return ERR::Okay;
-   }
-
-   inline ERR getElementHeightValue(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 176));
-      return ERR::Okay;
-   }
-
-   inline ERR getJointHeightValue(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 184));
-      return ERR::Okay;
-   }
-
-   inline ERR getHueVariation(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 192));
       return ERR::Okay;
    }
 
-   inline ERR getChromaVariation(double &Value) noexcept {
+   inline ERR getRowOffset(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 200));
       return ERR::Okay;
    }
 
-   inline ERR getLightVariation(double &Value) noexcept {
+   inline ERR getElementHeightValue(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 208));
       return ERR::Okay;
    }
 
-   inline ERR getHeightVariation(double &Value) noexcept {
+   inline ERR getJointHeightValue(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 216));
       return ERR::Okay;
    }
 
+   inline ERR getHueVariation(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 224));
+      return ERR::Okay;
+   }
+
+   inline ERR getChromaVariation(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 232));
+      return ERR::Okay;
+   }
+
+   inline ERR getLightVariation(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 240));
+      return ERR::Okay;
+   }
+
+   inline ERR getHeightVariation(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 248));
+      return ERR::Okay;
+   }
+
    inline ERR getPeriodX(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 296));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 328));
       return ERR::Okay;
    }
 
    inline ERR getPeriodY(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 300));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 332));
       return ERR::Okay;
    }
 
@@ -4463,32 +4473,32 @@ class objPavingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setElementColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[43];
+      auto field = &this->Class->Dictionary[45];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setJointColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[36];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setAlternateColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setLayout(const LAY Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[38];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMode(const LMD Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4498,117 +4508,127 @@ class objPavingFX : public objFilterEffect {
    }
 
    inline ERR setBevelProfile(const GEZ Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOutputMode(const FOM Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
+      auto field = &this->Class->Dictionary[42];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setResampleMethod(const VSM Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setElementMap(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[41];
       return field->WriteValue(this, field, 0x08100309, Value);
    }
 
    inline ERR setJointMap(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, 0x08100309, Value);
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setSeed(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[44];
+      auto field = &this->Class->Dictionary[46];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setElementWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[42];
+      auto field = &this->Class->Dictionary[44];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setElementHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setOriginX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[37];
+      auto field = &this->Class->Dictionary[39];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setOriginY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setJointWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setBevelWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setCornerRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setEdgeSoftness(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setAngle(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setRowOffset(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setElementHeightValue(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setJointHeightValue(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setHueVariation(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setChromaVariation(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
+      auto field = &this->Class->Dictionary[40];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setLightVariation(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[45];
+      auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setHeightVariation(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPeriodX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPeriodY(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[41];
+      auto field = &this->Class->Dictionary[43];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

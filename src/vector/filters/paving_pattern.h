@@ -50,6 +50,8 @@ struct paving_params {
    double ElementHeight = 0;      // Resolved, > 0
    double JointWidth = 0;         // Resolved, >= 0
    double BevelWidth = 0;         // Resolved, >= 0
+   double CornerRadius = 0;       // Resolved, >= 0; clamped to half the interior element size
+   double EdgeSoftness = 0;       // Resolved, >= 0; minimum width of the element-to-joint coverage ramp
    double RowOffset = 0.5;        // RUNNING only; fraction of ElementWidth per row
    double Angle = 0;              // Degrees; only checked against the periods here
    double ElementHeightValue = 1.0;
@@ -151,6 +153,8 @@ inline ERR paving_check(const paving_params &Params)
    if (not (std::isfinite(Params.ElementHeight) and (Params.ElementHeight > 0))) return ERR::InvalidValue;
    if (not (std::isfinite(Params.JointWidth) and (Params.JointWidth >= 0))) return ERR::InvalidValue;
    if (not (std::isfinite(Params.BevelWidth) and (Params.BevelWidth >= 0))) return ERR::InvalidValue;
+   if (not (std::isfinite(Params.CornerRadius) and (Params.CornerRadius >= 0))) return ERR::InvalidValue;
+   if (not (std::isfinite(Params.EdgeSoftness) and (Params.EdgeSoftness >= 0))) return ERR::InvalidValue;
    if (not std::isfinite(Params.RowOffset)) return ERR::InvalidValue;
    if ((Params.PeriodX < 0) or (Params.PeriodX > PAVING_MAX_PERIOD)) return ERR::OutOfRange;
    if ((Params.PeriodY < 0) or (Params.PeriodY > PAVING_MAX_PERIOD)) return ERR::OutOfRange;
@@ -331,18 +335,45 @@ class paving_sampler {
    paving_params m_params;
    double m_length, m_thickness;
    double m_half_joint;
+   double m_corner_radius = 0;
    double m_aa_x, m_aa_y;
    int m_ratio = 1;
    int64_t m_row_shift = 0;   // RUNNING: whole elements shifted per vertical period
    int64_t m_wrap_x = 0, m_wrap_y = 0;
    bool m_solid_joint;
 
+   double element_coverage(double U, double V, double RU, double RV) const {
+      auto overlap = [this](double Centre, double Size, double Radius) {
+         const double first = std::max((m_half_joint - Centre) / Radius, -1.0);
+         const double last = std::min(((Size - Centre) - m_half_joint) / Radius, 1.0);
+         return std::max(0.0, (last - first) * 0.5);
+      };
+
+      const double box = overlap(U, m_length, RU) * overlap(V, m_thickness, RV);
+      if ((box <= 0.0) or (m_corner_radius <= 0.0)) return box;
+      const double ex = std::min(U, m_length - U) - m_half_joint;
+      const double ey = std::min(V, m_thickness - V) - m_half_joint;
+      if ((ex >= m_corner_radius) or (ey >= m_corner_radius)) return box;
+      const double cx = m_corner_radius - ex;
+      const double cy = m_corner_radius - ey;
+      const double dist = std::hypot(cx, cy);
+      const double aa_u = RU * 2.0, aa_v = RV * 2.0;
+      const double aa = (dist > 1e-12) ?
+         std::hypot((cx / dist) * aa_u, (cy / dist) * aa_v) : std::min(aa_u, aa_v);
+      const double arc = std::clamp(((m_corner_radius - dist) / aa) + 0.5, 0.0, 1.0);
+      return std::min(box, arc);
+   }
+
 public:
    paving_sampler(const paving_params &Params, double AAX = 1.0, double AAY = 1.0) : m_params(Params) {
       m_length = Params.ElementWidth;
       m_thickness = Params.ElementHeight;
-      m_aa_x = std::max(std::abs(AAX), 1e-12);
-      m_aa_y = std::max(std::abs(AAY), 1e-12);
+      // EdgeSoftness widens the coverage footprint so that elements blend into joints across a fringe instead of
+      // one output pixel.  The footprint is a box filter, so the fringe is a linear ramp centred on the edge.
+
+      const double soft = std::isfinite(Params.EdgeSoftness) ? std::max(Params.EdgeSoftness, 0.0) : 0.0;
+      m_aa_x = std::max({ std::abs(AAX), soft, 1e-12 });
+      m_aa_y = std::max({ std::abs(AAY), soft, 1e-12 });
 
       if ((Params.Layout IS paving_layout::BASKET_WEAVE) or (Params.Layout IS paving_layout::HERRINGBONE)) {
          m_ratio = std::max(paving_ratio(Params.ElementWidth, Params.ElementHeight), 1);
@@ -351,6 +382,10 @@ public:
 
       m_half_joint = Params.JointWidth * 0.5;
       m_solid_joint = Params.JointWidth >= std::min(m_length, m_thickness);
+      if (not m_solid_joint) {
+         const double max_radius = (std::min(m_length, m_thickness) * 0.5) - m_half_joint;
+         m_corner_radius = std::clamp(Params.CornerRadius, 0.0, std::max(0.0, max_radius));
+      }
 
       if (Params.Layout IS paving_layout::HERRINGBONE) {
          m_wrap_x = int64_t(Params.PeriodX) * 2 * m_ratio;
@@ -369,6 +404,7 @@ public:
    const paving_params & params() const { return m_params; }
    double length() const { return m_length; }
    double thickness() const { return m_thickness; }
+   double corner_radius() const { return m_corner_radius; }
    int ratio() const { return m_ratio; }
 
    // The pattern-unit translations over which a periodic paving repeats, or zero on an aperiodic axis.
@@ -426,12 +462,15 @@ public:
       };
    }
 
-   // Mitered distance from the joint edge into the element; zero or less inside the joint.
+   // Signed distance from the rounded element edge into the interior; zero or less inside the joint or corner pocket.
 
    double interior(const paving_sample &Sample) const {
-      const double dx = std::min(Sample.LX, m_length - Sample.LX);
-      const double dy = std::min(Sample.LY, m_thickness - Sample.LY);
-      return std::min(dx, dy) - m_half_joint;
+      const double ex = std::min(Sample.LX, m_length - Sample.LX) - m_half_joint;
+      const double ey = std::min(Sample.LY, m_thickness - Sample.LY) - m_half_joint;
+      if ((m_corner_radius > 0.0) and (ex < m_corner_radius) and (ey < m_corner_radius)) {
+         return m_corner_radius - std::hypot(m_corner_radius - ex, m_corner_radius - ey);
+      }
+      return std::min(ex, ey);
    }
 
    // Limit the footprint to one shortest element dimension per axis.  Every rectangle it overlaps then
@@ -440,7 +479,9 @@ public:
    std::pair<double, double> coverage_radius() const {
       const double x = std::min(m_aa_x, std::min(m_length, m_thickness));
       const double y = std::min(m_aa_y, std::min(m_length, m_thickness));
-      if ((m_half_joint <= 0) or (m_params.JointWidth >= std::max(x, y))) return { 0, 0 };
+      if (((m_half_joint <= 0) and (m_corner_radius <= 0)) or (m_params.JointWidth >= std::max(x, y))) {
+         return { 0, 0 };
+      }
       return { x * 0.5, y * 0.5 };
    }
 
@@ -448,7 +489,7 @@ public:
 
    template<class Visitor>
    double visit_coverage(const paving_sample &Sample, Visitor Visit) const {
-      if (m_params.JointWidth <= 0) {
+      if ((m_params.JointWidth <= 0) and (m_corner_radius <= 0)) {
          Visit(Sample, 1.0);
          return 1.0;
       }
@@ -460,19 +501,15 @@ public:
       const double ru = Sample.Vertical ? ry : rx;
       const double rv = Sample.Vertical ? rx : ry;
       if (rx > 0) {
-         if ((dx - m_half_joint >= ru) and (dy - m_half_joint >= rv)) {
+         if ((dx - m_half_joint >= ru) and (dy - m_half_joint >= rv) and
+             ((m_corner_radius <= 0) or (dx - m_half_joint - ru >= m_corner_radius) or
+              (dy - m_half_joint - rv >= m_corner_radius))) {
             Visit(Sample, 1.0);
             return 1.0;
          }
 
-         auto overlap = [this](double Centre, double Size, double Radius) {
-            const double first = std::max((m_half_joint - Centre) / Radius, -1.0);
-            const double last = std::min(((Size - Centre) - m_half_joint) / Radius, 1.0);
-            return std::max(0.0, (last - first) * 0.5);
-         };
-
          if ((dx + m_half_joint >= ru) and (dy + m_half_joint >= rv)) {
-            const double coverage = overlap(Sample.LX, m_length, ru) * overlap(Sample.LY, m_thickness, rv);
+            const double coverage = element_coverage(Sample.LX, Sample.LY, ru, rv);
             if (coverage > 0.0) Visit(Sample, coverage);
             return coverage;
          }
@@ -494,8 +531,7 @@ public:
 
                const double u = element.LX - (element.Vertical ? y : x);
                const double v = element.LY - (element.Vertical ? x : y);
-               const double weight = overlap(u, m_length, element.Vertical ? ry : rx) *
-                  overlap(v, m_thickness, element.Vertical ? rx : ry);
+               const double weight = element_coverage(u, v, element.Vertical ? ry : rx, element.Vertical ? rx : ry);
                if (weight <= 0.0) continue;
                element.U = std::clamp(u / m_length, 0.0, 1.0);
                element.V = std::clamp(v / m_thickness, 0.0, 1.0);
@@ -506,11 +542,11 @@ public:
          return std::min(coverage, 1.0);
       }
 
-      const double aa_u = Sample.Vertical ? m_aa_y : m_aa_x;
-      const double aa_v = Sample.Vertical ? m_aa_x : m_aa_y;
-      const double u = std::clamp(((dx - m_half_joint) / aa_u) + 0.5, 0.0, 1.0);
-      const double v = std::clamp(((dy - m_half_joint) / aa_v) + 0.5, 0.0, 1.0);
-      const double coverage = std::min(u, v);
+      // Use the same coverage as the neighbour path.  Only the set of candidate elements changes at the threshold.
+
+      const double radius_u = (Sample.Vertical ? m_aa_y : m_aa_x) * 0.5;
+      const double radius_v = (Sample.Vertical ? m_aa_x : m_aa_y) * 0.5;
+      const double coverage = element_coverage(Sample.LX, Sample.LY, radius_u, radius_v);
       if (coverage > 0.0) Visit(Sample, coverage);
       return coverage;
    }

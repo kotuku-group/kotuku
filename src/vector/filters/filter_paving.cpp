@@ -10,9 +10,10 @@ produce identical values.
 
 Element dimensions are given by #ElementWidth and #ElementHeight, positioned by #OriginX and #OriginY, and rotated
 about the origin by #Angle.  Percentages in #ElementWidth and #OriginX refer to the width of the filter region, and
-percentages in #ElementHeight and #OriginY refer to its height.  Percentages in #JointWidth and #BevelWidth refer to
-the normalised diagonal of the filter region (`sqrt((width^2 + height^2) / 2)`), so horizontal and vertical joints
-and bevels share the same thickness on non-square regions.
+percentages in #ElementHeight and #OriginY refer to its height.  Percentages in #JointWidth, #BevelWidth,
+#CornerRadius and #EdgeSoftness refer to the normalised diagonal of the filter region (`sqrt((width^2 + height^2) /
+2)`), so horizontal and vertical joints, bevels, rounded corners and edge fringes share the same scale on non-square
+regions.
 
 `BASKET_WEAVE` and `HERRINGBONE` require the resolved `ElementWidth / ElementHeight` ratio to lie within `1e-4` of
 an integer `k >= 2`.  With the default `ElementWidth = 25%` and `ElementHeight = 12.5%`, this holds automatically on
@@ -24,11 +25,13 @@ square filter regions and in `BOUNDING_BOX` primitive units.
 <li>`COLOUR`: Draws elements using #ElementColour (and #AlternateColour for odd-parity cells in `CHECKER`) or an
 upstream #ElementMap, separated by joints using #JointColour or an upstream #JointMap.  Per-element perceptual OKLCH
 variation is controlled by #HueVariation, #ChromaVariation, #LightVariation and #Seed.  Edges between elements and
-joints are analytically anti-aliased when #JointWidth is positive.  For thin joints, coverage includes the elements
-on either side of the joint and limits the sampling footprint to the shortest element dimension per axis.</li>
+joints are analytically anti-aliased when #JointWidth is positive, and #EdgeSoftness widens that transition into a
+fringe that blends elements into their joints.  For thin joints, coverage includes the elements on either side of the
+joint and limits the sampling footprint to the shortest element dimension per axis.</li>
 <li>`HEIGHT`: Produces a bevelled relief field rising from #JointHeightValue in joints to `#ElementHeightValue` plus
 seeded #HeightVariation on element interiors, shaped across #BevelWidth by #BevelProfile.</li>
-<li>`MASK`: Produces element coverage in [0, 1], with analytic edge anti-aliasing when #JointWidth is positive.</li>
+<li>`MASK`: Produces element coverage in [0, 1], with analytic edge anti-aliasing when #JointWidth is positive,
+widened by #EdgeSoftness.</li>
 <li>`ID`: Produces a discrete seeded hash in [0, 1) per element, and 0 in joints.</li>
 </list>
 
@@ -78,6 +81,8 @@ class extPavingFX : public extFilterEffect {
    Unit OriginY = Unit(0.0);
    Unit JointWidth = Unit(0.01, FD_SCALED);
    Unit BevelWidth = Unit(0.01, FD_SCALED);
+   Unit CornerRadius = Unit(0.0);
+   Unit EdgeSoftness = Unit(0.0);
    double Angle = 0;
    double RowOffset = 0.5;
    double ElementHeightValue = 1.0;
@@ -419,10 +424,13 @@ static ERR PAVINGFX_Draw(extPavingFX *Self, struct acDraw *Args)
    const double elem_h  = resolve(Self->ElementHeight, domain_h);
    const double orig_x  = domain.left + resolve(Self->OriginX, domain_w);
    const double orig_y  = domain.top + resolve(Self->OriginY, domain_h);
-   const double joint_w = resolve(Self->JointWidth, diagonal);
-   const double bevel_w = resolve(Self->BevelWidth, diagonal);
+   const double joint_w  = resolve(Self->JointWidth, diagonal);
+   const double bevel_w  = resolve(Self->BevelWidth, diagonal);
+   const double corner_r = resolve(Self->CornerRadius, diagonal);
+   const double edge_soft = resolve(Self->EdgeSoftness, diagonal);
    if ((not std::isfinite(elem_w)) or (not std::isfinite(elem_h)) or (not std::isfinite(orig_x)) or
-       (not std::isfinite(orig_y)) or (not std::isfinite(joint_w)) or (not std::isfinite(bevel_w))) {
+       (not std::isfinite(orig_y)) or (not std::isfinite(joint_w)) or (not std::isfinite(bevel_w)) or
+       (not std::isfinite(corner_r)) or (not std::isfinite(edge_soft))) {
       return ERR::InvalidValue;
    }
    if ((elem_w <= 0) or (elem_h <= 0)) return ERR::Okay;
@@ -434,6 +442,8 @@ static ERR PAVINGFX_Draw(extPavingFX *Self, struct acDraw *Args)
       .ElementHeight      = elem_h,
       .JointWidth         = joint_w,
       .BevelWidth         = bevel_w,
+      .CornerRadius       = corner_r,
+      .EdgeSoftness       = edge_soft,
       .RowOffset          = Self->RowOffset,
       .Angle              = angle,
       .ElementHeightValue = Self->ElementHeightValue,
@@ -460,7 +470,8 @@ static ERR PAVINGFX_Draw(extPavingFX *Self, struct acDraw *Args)
    if (angle != 0.0) pattern.rotate(-angle * agg::pi / 180.0);
    if (not finite_transform(pattern)) return ERR::InvalidValue;
 
-   // Compute directional 1-pixel anti-aliasing footprints from the combined pixel-to-pattern Jacobian.
+   // Compute directional 1-pixel anti-aliasing footprints from the combined pixel-to-pattern Jacobian.  The sampler
+   // widens them to EdgeSoftness when that is larger.
 
    agg::trans_affine to_pattern = sampling;
    to_pattern *= pattern;
@@ -877,6 +888,45 @@ static ERR PAVINGFX_SET_ColourMap(extPavingFX *Self, const std::string_view &Val
    if (auto error = set_colour_ramp_map(*Self, Value); error != ERR::Okay) return error;
    paving_modified(Self);
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CornerRadius: Radius of circular corner rounding on each element, in pattern units.
+
+The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region.
+Defaults to 0 (sharp 90-degree corners).  Values larger than half the interior element width or height (after
+subtracting #JointWidth) are clamped so rounded corners never self-intersect.
+
+*********************************************************************************************************************/
+
+static ERR PAVINGFX_SET_CornerRadius(extPavingFX *Self, Unit &Value)
+{
+   return update_paving_unit(Self, Self->CornerRadius, Value, false, true);
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+EdgeSoftness: Width of the fringe over which elements blend into their joints, in pattern units.
+
+By default, element edges are anti-aliased across one output pixel, which leaves a hard boundary between elements and
+joints when the pattern is magnified.  EdgeSoftness sets a minimum width for that transition.  Element coverage then
+ramps linearly from 0 to 1 across a band of this width, centred on the element edge, so that in `COLOUR` mode the
+element colour blends into the joint colour.  The same widened coverage is produced in `MASK` mode.  `HEIGHT` and `ID`
+modes are unaffected; shape the relief with #BevelWidth instead.
+
+The value must be finite and non-negative.  A percentage refers to the normalised diagonal of the filter region.
+Defaults to 0, which keeps the one-pixel edge.  The band is limited to the shortest element dimension.  If it is
+wider than #JointWidth, no part of a joint shows the pure joint colour; keeping the fringe within #BevelWidth aligns
+the colour transition with the bevelled relief.
+
+*********************************************************************************************************************/
+
+static ERR PAVINGFX_SET_EdgeSoftness(extPavingFX *Self, Unit &Value)
+{
+   return update_paving_unit(Self, Self->EdgeSoftness, Value, false, true);
 }
 
 /*********************************************************************************************************************
@@ -1333,6 +1383,8 @@ static ERR paving_xml(const extPavingFX &Effect, filter_xml_element &Element)
    const Unit default_joint(0.01, FD_SCALED), default_bevel(0.01, FD_SCALED);
    if (not same_length(Effect.JointWidth, default_joint)) Element.attribute("jointWidth", length(Effect.JointWidth));
    if (not same_length(Effect.BevelWidth, default_bevel)) Element.attribute("bevelWidth", length(Effect.BevelWidth));
+   if (Effect.CornerRadius.Value != 0) Element.attribute("cornerRadius", length(Effect.CornerRadius));
+   if (Effect.EdgeSoftness.Value != 0) Element.attribute("edgeSoftness", length(Effect.EdgeSoftness));
 
    static constexpr std::string_view profiles[] = {
       "linear", "in", "out", "inOut", "cubicIn", "cubicOut", "cubicInOut", "circleIn", "circleOut", "circleInOut"
@@ -1385,6 +1437,8 @@ static const FieldArray clPavingFXFields[] = {
    { "OriginY",            FDF_UNIT|FDF_RW, nullptr, PAVINGFX_SET_OriginY },
    { "JointWidth",         FDF_UNIT|FDF_RW, nullptr, PAVINGFX_SET_JointWidth },
    { "BevelWidth",         FDF_UNIT|FDF_RW, nullptr, PAVINGFX_SET_BevelWidth },
+   { "CornerRadius",       FDF_UNIT|FDF_RW, nullptr, PAVINGFX_SET_CornerRadius },
+   { "EdgeSoftness",       FDF_UNIT|FDF_RW, nullptr, PAVINGFX_SET_EdgeSoftness },
    { "Angle",              FDF_DOUBLE|FDF_RW, nullptr, PAVINGFX_SET_Angle },
    { "RowOffset",          FDF_DOUBLE|FDF_RW, nullptr, PAVINGFX_SET_RowOffset },
    { "ElementHeightValue", FDF_DOUBLE|FDF_RW, nullptr, PAVINGFX_SET_ElementHeightValue },
