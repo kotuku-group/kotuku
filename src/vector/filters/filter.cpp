@@ -1120,6 +1120,7 @@ static ERR render_scalar_to_filter(extFilterEffect *Effect, int Width, int Heigh
 #include "filter_merge.cpp"
 #include "filter_morphology.cpp"
 #include "filter_offset.cpp"
+#include "filter_paving.cpp"
 #include "filter_remap.cpp"
 #include "filter_source.cpp"
 #include "filter_tile.cpp"
@@ -1382,6 +1383,13 @@ static filter_operation describe_filter_operation(const extFilterEffect *Effect)
 
       case CLASSID::OFFSETFX:
          return { SINGLE, effect_sampling<extOffsetFX> };
+
+      case CLASSID::PAVINGFX:
+         return {
+            .Inputs = GENERATOR,
+            .Format = ((const extPavingFX *)Effect)->OutputMode IS FOM::HEIGHT ?
+                      filter_surface_format::SCALAR_F32 : filter_surface_format::RGBA8
+         };
 
       case CLASSID::REMAPFX:
          return { SINGLE };
@@ -3192,6 +3200,7 @@ static ERR describe_filter_xml(extFilterEffect *Effect, filter_xml_element &Elem
       case CLASSID::MERGEFX:        Element.Name = "feMerge"; break;
       case CLASSID::MORPHOLOGYFX:   error = morphology_xml(*(extMorphologyFX *)Effect, Element); break;
       case CLASSID::OFFSETFX:       error = offset_xml(*(extOffsetFX *)Effect, Element); break;
+      case CLASSID::PAVINGFX:       error = paving_xml(*(extPavingFX *)Effect, Element); break;
       case CLASSID::REMAPFX:        error = remap_xml(*(extRemapFX *)Effect, Element); break;
       case CLASSID::SOURCEFX:       error = source_xml(*(extSourceFX *)Effect, Element); break;
       case CLASSID::TILEFX:         Element.Name = "feTile"; break;
@@ -3299,20 +3308,35 @@ static ERR bind_filter_xml(std::span<extFilterEffect * const> Effects, std::span
          }
       }
       else if (effect->FilterExtension) {
-         if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;
-         const bool combined = ((const extLightingFX *)effect)->Type IS LT::COMBINED;
-         const CSTRING attributes[] = { "xvg:normalMap", "xvg:occlusionMap", "xvg:roughnessMap",
-            combined ? "xvg:matcap" : "xvg:combinedMatcap" };
-         const auto inputs = effect->FilterExtension->Inputs;
-         if (inputs.size() != std::size(attributes)) return ERR::NoSupport;
-         for (size_t slot = 0; slot < inputs.size(); slot++) {
-            const auto &input = inputs[slot];
-            if (input.Source IS VSF::NONE) continue;
-            if (input.Source != VSF::REFERENCE) return ERR::NoSupport;
-            // The matcap attribute also accepts a path, so its result reference takes a '#' prefix.
-            const std::string_view prefix = (&input IS &((const extLightingFX *)effect)->MatcapEffect) ? "#" : "";
-            if (auto error = bind(attributes[slot], input.Source, input.Reference, prefix); error != ERR::Okay) {
-               return error;
+         if (effect->classID() IS CLASSID::PAVINGFX) {
+            const CSTRING attributes[] = { "elementMap", "jointMap" };
+            const auto inputs = effect->FilterExtension->Inputs;
+            if (inputs.size() != std::size(attributes)) return ERR::NoSupport;
+            for (size_t slot = 0; slot < inputs.size(); slot++) {
+               const auto &input = inputs[slot];
+               if (input.Source IS VSF::NONE) continue;
+               if (input.Source != VSF::REFERENCE) return ERR::NoSupport;
+               if (auto error = bind(attributes[slot], input.Source, input.Reference); error != ERR::Okay) {
+                  return error;
+               }
+            }
+         }
+         else {
+            if (effect->classID() != CLASSID::LIGHTINGFX) return ERR::NoSupport;
+            const bool combined = ((const extLightingFX *)effect)->Type IS LT::COMBINED;
+            const CSTRING attributes[] = { "xvg:normalMap", "xvg:occlusionMap", "xvg:roughnessMap",
+               combined ? "xvg:matcap" : "xvg:combinedMatcap" };
+            const auto inputs = effect->FilterExtension->Inputs;
+            if (inputs.size() != std::size(attributes)) return ERR::NoSupport;
+            for (size_t slot = 0; slot < inputs.size(); slot++) {
+               const auto &input = inputs[slot];
+               if (input.Source IS VSF::NONE) continue;
+               if (input.Source != VSF::REFERENCE) return ERR::NoSupport;
+               // The matcap attribute also accepts a path, so its result reference takes a '#' prefix.
+               const std::string_view prefix = (&input IS &((const extLightingFX *)effect)->MatcapEffect) ? "#" : "";
+               if (auto error = bind(attributes[slot], input.Source, input.Reference, prefix); error != ERR::Okay) {
+                  return error;
+               }
             }
          }
       }

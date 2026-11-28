@@ -61,6 +61,7 @@ using namespace kt;
 
 #include "../link/linear_rgb.h"
 #include "../link/unicode.h"
+#include "easing.h"
 
 #include <math.h>
 #define __STDC_FORMAT_MACROS
@@ -82,7 +83,7 @@ extern OBJECTPTR clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX, clTileFX;
-extern OBJECTPTR clCellularFX;
+extern OBJECTPTR clCellularFX, clPavingFX;
 extern OBJECTPTR glVectorModule;
 
 typedef agg::pod_auto_array<agg::rgba8, 256> GRADIENT_TABLE;
@@ -1147,55 +1148,7 @@ class GradientColours {
       GradientColours(const std::array<FRGB, 256> &, double, double = 1.0, GEZ = GEZ::LINEAR);
       GRADIENT_TABLE table;
 
-      static double ease(GEZ Easing, double Value) {
-         switch (Easing) {
-            case GEZ::IN:
-               return Value * Value;
-
-            case GEZ::OUT: {
-               const double inverse = 1.0 - Value;
-               return 1.0 - (inverse * inverse);
-            }
-
-            case GEZ::IN_OUT:
-               return Value * Value * (3.0 - (2.0 * Value));
-
-            case GEZ::CUBIC_IN:
-               return Value * Value * Value;
-
-            case GEZ::CUBIC_OUT: {
-               const double inverse = 1.0 - Value;
-               return 1.0 - (inverse * inverse * inverse);
-            }
-
-            case GEZ::CUBIC_IN_OUT:
-               if (Value < 0.5) return 4.0 * Value * Value * Value;
-               else {
-                  const double inverse = -2.0 * Value + 2.0;
-                  return 1.0 - ((inverse * inverse * inverse) * 0.5);
-               }
-
-            case GEZ::CIRCLE_IN:
-               return 1.0 - std::sqrt(std::max(0.0, 1.0 - (Value * Value)));
-
-            case GEZ::CIRCLE_OUT:
-               return std::sqrt(std::max(0.0, Value * (2.0 - Value)));
-
-            case GEZ::CIRCLE_IN_OUT:
-               if (Value < 0.5) {
-                  const double scaled = 2.0 * Value;
-                  return (1.0 - std::sqrt(std::max(0.0, 1.0 - (scaled * scaled)))) * 0.5;
-               }
-               else {
-                  const double inverse = -2.0 * Value + 2.0;
-                  return (std::sqrt(std::max(0.0, 1.0 - (inverse * inverse))) + 1.0) * 0.5;
-               }
-
-            case GEZ::LINEAR:
-            default:
-               return Value;
-         }
-      }
+      static double ease(GEZ Easing, double Value) { return gez_ease(Easing, Value); }
 };
 
 //********************************************************************************************************************
@@ -1263,6 +1216,7 @@ extern ERR init_mergefx(void);
 extern ERR init_morphfx(void);
 extern ERR init_offsetfx(void);
 extern ERR init_pattern(void);
+extern ERR init_pavingfx(void);
 extern ERR init_remapfx(void);
 extern ERR init_sourcefx(void);
 extern ERR init_tilefx(void);

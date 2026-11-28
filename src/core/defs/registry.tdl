@@ -127,6 +127,7 @@ header({ path="system/registry", copyright="Paul Manias 1996-2026" }, function()
     "SOURCEFX",
     "WAVEFUNCTIONFX",
     "CELLULARFX",
+    "PAVINGFX",
     "FILTEREFFECT",
     "CONTROLLER",
     "NETCLIENT",

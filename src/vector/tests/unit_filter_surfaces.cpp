@@ -1,5 +1,10 @@
 // Included by filter.cpp to exercise the private planner, renderer and surface pool through real filter objects.
 
+#include <map>
+#include <set>
+#include <tuple>
+#include "../filters/paving_pattern.h"
+
 struct filter_test_scene {
    extVectorScene::create Scene;
    extVectorViewport *Viewport = nullptr;
@@ -1144,6 +1149,802 @@ static bool test_filter_cellular()
       test_filter_cellular_case(bounding_box) and test_filter_cellular_case(clipped);
 }
 
+//********************************************************************************************************************
+// PavingFX pattern evaluator (paving_pattern.h).
+
+template <class... Args> static bool paving_fail(CSTRING Format, Args... Values)
+{
+   kt::Log("FilterTest").warning(Format, Values...);
+   return false;
+}
+
+static paving_params paving_fixture(paving_layout Layout, double Width, double Height, double RowOffset = 0.5)
+{
+   return { .Layout = Layout, .ElementWidth = Width, .ElementHeight = Height, .RowOffset = RowOffset };
+}
+
+using paving_key = std::tuple<int64_t, int64_t, int64_t>;
+
+struct paving_anchor {
+   double X, Y;
+   bool Vertical;
+};
+
+// The pattern position of an element's top-left corner, derived from a sample within it.
+
+static paving_anchor paving_sample_anchor(const paving_sample &Sample, double QX, double QY)
+{
+   if (Sample.Vertical) return { QX - Sample.LY, QY - Sample.LX, true };
+   else return { QX - Sample.LX, QY - Sample.LY, false };
+}
+
+// Every sampled position must lie within the bounds of exactly one element, every element must have one anchor and
+// orientation, and the interior of every element must map back to it.
+
+static bool test_paving_partition(CSTRING Name, const paving_params &Params)
+{
+   if (paving_check(Params) != ERR::Okay) return paving_fail("%s: the parameters were rejected.", Name);
+
+   const paving_sampler sampler(Params);
+   const double length = sampler.length(), thickness = sampler.thickness();
+   const double span = 4.0 * length * ((Params.Layout IS paving_layout::HERRINGBONE) ? 2.0 : 1.0);
+   const double tolerance = 1e-9 * span;
+   std::map<paving_key, paving_anchor> elements;
+   std::map<std::tuple<int64_t, int64_t, bool>, paving_key> anchors;
+   int horizontal = 0, vertical = 0;
+
+   auto visit = [&](double QX, double QY) -> bool {
+      const auto s = sampler.locate(QX, QY);
+      if ((s.LX < 0) or (s.LX >= length) or (s.LY < 0) or (s.LY >= thickness) or (s.U < 0) or (s.U >= 1.0) or
+          (s.V < 0) or (s.V >= 1.0)) {
+         return paving_fail("%s: local position %.9g,%.9g (u,v %.9g,%.9g) at %.9g,%.9g is out of bounds.", Name,
+            s.LX, s.LY, s.U, s.V, QX, QY);
+      }
+
+      if ((std::abs(s.U * length - s.LX) > tolerance) or (std::abs(s.V * thickness - s.LY) > tolerance)) {
+         return paving_fail("%s: (u, v) does not match the local position at %.9g,%.9g.", Name, QX, QY);
+      }
+
+      const paving_key key { s.KeyX, s.KeyY, s.KeyZ };
+      const auto anchor = paving_sample_anchor(s, QX, QY);
+      auto [it, inserted] = elements.try_emplace(key, anchor);
+      if (inserted) {
+         if (anchor.Vertical) vertical++;
+         else horizontal++;
+         const std::tuple<int64_t, int64_t, bool> rounded { std::llround(anchor.X * 4096.0),
+            std::llround(anchor.Y * 4096.0), anchor.Vertical };
+         if (not anchors.try_emplace(rounded, key).second) {
+            return paving_fail("%s: two element keys share the anchor %.9g,%.9g.", Name, anchor.X, anchor.Y);
+         }
+      }
+      else if ((std::abs(it->second.X - anchor.X) > tolerance) or (std::abs(it->second.Y - anchor.Y) > tolerance) or
+               (it->second.Vertical != anchor.Vertical)) {
+         return paving_fail("%s: element %" PRId64 ",%" PRId64 ",%" PRId64 " has inconsistent anchors %.9g,%.9g and "
+            "%.9g,%.9g.", Name, s.KeyX, s.KeyY, s.KeyZ, it->second.X, it->second.Y, anchor.X, anchor.Y);
+      }
+
+      if ((Params.Layout IS paving_layout::CHECKER) and (s.Parity != int((s.KeyX + s.KeyY) & 1))) {
+         return paving_fail("%s: checker parity is wrong at %.9g,%.9g.", Name, QX, QY);
+      }
+      return true;
+   };
+
+   // Irregular sample positions, then positions exactly on element boundaries.
+
+   const double step = std::min(length, thickness) / 7.3;
+   for (double qy = -span + 0.0137; qy < span; qy += step) {
+      for (double qx = -span + 0.0291; qx < span; qx += step) {
+         if (not visit(qx, qy)) return false;
+      }
+   }
+
+   for (double qy = -span; qy < span; qy += thickness * 0.5) {
+      for (double qx = -span; qx < span; qx += thickness * 0.5) {
+         if (not visit(qx, qy)) return false;
+      }
+   }
+
+   // The interior of each element must belong to it, which excludes overlapping elements.
+
+   const double inset = 1e-6 * length;
+   for (const auto &[key, anchor] : elements) {
+      const double width = anchor.Vertical ? thickness : length;
+      const double height = anchor.Vertical ? length : thickness;
+      const double probes[5][2] = {
+         { anchor.X + width * 0.5, anchor.Y + height * 0.5 }, { anchor.X + inset, anchor.Y + inset },
+         { anchor.X + width - inset, anchor.Y + inset }, { anchor.X + inset, anchor.Y + height - inset },
+         { anchor.X + width - inset, anchor.Y + height - inset }
+      };
+      for (const auto &probe : probes) {
+         const auto s = sampler.locate(probe[0], probe[1]);
+         if (paving_key { s.KeyX, s.KeyY, s.KeyZ } != key) {
+            return paving_fail("%s: position %.9g,%.9g inside element %" PRId64 ",%" PRId64 ",%" PRId64 " maps to "
+               "another element.", Name, probe[0], probe[1], std::get<0>(key), std::get<1>(key), std::get<2>(key));
+         }
+      }
+
+      // Layout-specific anchor positions.
+
+      const auto [kx, ky, kz] = key;
+      double ex = 0, ey = 0;
+      bool known = true;
+      if (Params.Layout IS paving_layout::RUNNING) {
+         ex = (double(kx) + (double(ky) * Params.RowOffset)) * length;
+         ey = double(ky) * thickness;
+      }
+      else if ((Params.Layout IS paving_layout::STACK) or (Params.Layout IS paving_layout::CHECKER)) {
+         ex = double(kx) * length;
+         ey = double(ky) * thickness;
+      }
+      else if (Params.Layout IS paving_layout::HERRINGBONE) {
+         ex = double(kx) * thickness;
+         ey = double(ky) * thickness;
+         const int64_t phase = paving_floor_mod(kx - ky, 2 * sampler.ratio());
+         if (phase != (kz ? 2 * sampler.ratio() - 1 : 0)) {
+            return paving_fail("%s: herringbone anchor %" PRId64 ",%" PRId64 " has phase %" PRId64 ".", Name, kx, ky,
+               phase);
+         }
+      }
+      else known = false;
+
+      if (known and ((std::abs(anchor.X - ex) > tolerance) or (std::abs(anchor.Y - ey) > tolerance))) {
+         return paving_fail("%s: element %" PRId64 ",%" PRId64 " is anchored at %.9g,%.9g, expected %.9g,%.9g.", Name,
+            kx, ky, anchor.X, anchor.Y, ex, ey);
+      }
+   }
+
+   const bool rotated = (Params.Layout IS paving_layout::BASKET_WEAVE) or (Params.Layout IS paving_layout::HERRINGBONE);
+   if (rotated and ((horizontal IS 0) or (vertical IS 0))) {
+      return paving_fail("%s: expected both horizontal and vertical elements (%d, %d).", Name, horizontal, vertical);
+   }
+   if ((not rotated) and (vertical != 0)) return paving_fail("%s: unexpected vertical elements.", Name);
+
+   // The sampled area is filled exactly by whole elements in its interior, so the element count must match its area
+   // to within the elements crossing its boundary.
+
+   const double expected = (4.0 * span * span) / (length * thickness);
+   const double boundary = (8.0 * span) / std::min(length, thickness) + 8;
+   if (std::abs(double(elements.size()) - expected) > boundary) {
+      return paving_fail("%s: found %d elements, expected about %.1f.", Name, int(elements.size()), expected);
+   }
+   return true;
+}
+
+static bool test_paving_layouts()
+{
+   using enum paving_layout;
+   return test_paving_partition("Running 0", paving_fixture(RUNNING, 12, 5, 0.0)) and
+      test_paving_partition("Running 1/2", paving_fixture(RUNNING, 12, 5, 0.5)) and
+      test_paving_partition("Running 1/3", paving_fixture(RUNNING, 9, 4, 1.0 / 3.0)) and
+      test_paving_partition("Running -1/4", paving_fixture(RUNNING, 10.5, 3.25, -0.25)) and
+      test_paving_partition("Running 2.75", paving_fixture(RUNNING, 8, 6, 2.75)) and
+      test_paving_partition("Stack", paving_fixture(STACK, 7, 11)) and
+      test_paving_partition("Checker", paving_fixture(CHECKER, 6, 6)) and
+      test_paving_partition("Basket weave k=2", paving_fixture(BASKET_WEAVE, 16, 8)) and
+      test_paving_partition("Basket weave k=3", paving_fixture(BASKET_WEAVE, 15, 5)) and
+      test_paving_partition("Basket weave k=3 near", paving_fixture(BASKET_WEAVE, 15, 5.0001)) and
+      test_paving_partition("Herringbone k=2", paving_fixture(HERRINGBONE, 12, 6)) and
+      test_paving_partition("Herringbone k=3", paving_fixture(HERRINGBONE, 9, 3)) and
+      test_paving_partition("Herringbone k=4", paving_fixture(HERRINGBONE, 10, 2.5));
+}
+
+//********************************************************************************************************************
+
+static bool test_paving_check()
+{
+   using enum paving_layout;
+   struct check_case {
+      CSTRING Name;
+      paving_params Params;
+      ERR Expected;
+   };
+
+   auto with = [](paving_params Params, auto Modify) { Modify(Params); return Params; };
+   const auto running = paving_fixture(RUNNING, 12, 6);
+
+   const check_case cases[] = {
+      { "Default running", running, ERR::Okay },
+      { "Zero width", paving_fixture(STACK, 0, 6), ERR::InvalidValue },
+      { "NaN height", paving_fixture(STACK, 6, std::nan("")), ERR::InvalidValue },
+      { "Negative joint", with(running, [](auto &P) { P.JointWidth = -1; }), ERR::InvalidValue },
+      { "Basket 2.5", paving_fixture(BASKET_WEAVE, 15, 6), ERR::InvalidValue },
+      { "Basket 1", paving_fixture(BASKET_WEAVE, 6, 6), ERR::InvalidValue },
+      { "Basket within tolerance", paving_fixture(BASKET_WEAVE, 12, 6.0002), ERR::Okay },
+      { "Herringbone 1.5", paving_fixture(HERRINGBONE, 9, 6), ERR::InvalidValue },
+      { "Herringbone 4", paving_fixture(HERRINGBONE, 24, 6), ERR::Okay },
+      { "Rotated periodic", with(running, [](auto &P) { P.PeriodX = 2; P.Angle = 30; }), ERR::InvalidValue },
+      { "Full turn periodic", with(running, [](auto &P) { P.PeriodX = 2; P.Angle = -720; }), ERR::Okay },
+      { "Rotated aperiodic", with(running, [](auto &P) { P.Angle = 30; }), ERR::Okay },
+      { "Running odd rows", with(running, [](auto &P) { P.PeriodY = 3; }), ERR::InvalidValue },
+      { "Running even rows", with(running, [](auto &P) { P.PeriodY = 2; }), ERR::Okay },
+      { "Running thirds", with(running, [](auto &P) { P.PeriodY = 3; P.RowOffset = 1.0 / 3.0; }), ERR::Okay },
+      { "Running horizontal only", with(running, [](auto &P) { P.PeriodX = 3; }), ERR::Okay },
+      { "Checker odd", with(paving_fixture(CHECKER, 6, 6), [](auto &P) { P.PeriodX = 3; }), ERR::InvalidValue },
+      { "Checker even", with(paving_fixture(CHECKER, 6, 6), [](auto &P) { P.PeriodX = 4; P.PeriodY = 2; }),
+         ERR::Okay },
+      { "Basket odd", with(paving_fixture(BASKET_WEAVE, 12, 6), [](auto &P) { P.PeriodY = 1; }), ERR::InvalidValue },
+      { "Herringbone odd", with(paving_fixture(HERRINGBONE, 12, 6), [](auto &P) { P.PeriodX = 1; }), ERR::Okay },
+      { "Period limit", with(paving_fixture(STACK, 6, 6), [](auto &P) { P.PeriodX = PAVING_MAX_PERIOD; }),
+         ERR::Okay },
+      { "Period overflow", with(paving_fixture(STACK, 6, 6), [](auto &P) { P.PeriodX = PAVING_MAX_PERIOD + 1; }),
+         ERR::OutOfRange }
+   };
+
+   for (const auto &c : cases) {
+      const auto error = paving_check(c.Params);
+      if (error != c.Expected) {
+         return paving_fail("%s: paving_check() returned %s, expected %s.", c.Name, GetErrorMsg(error),
+            GetErrorMsg(c.Expected));
+      }
+   }
+
+   const paving_sampler stack(paving_fixture(STACK, 1, 1));
+   if (not stack.lattice_fits(-1e15, -1e15, 1e15, 1e15)) return paving_fail("A 1e15 extent must fit the lattice.");
+   if (stack.lattice_fits(0, 0, 1e16, 1)) return paving_fail("A 1e16 extent must not fit the lattice.");
+   if (stack.lattice_fits(0, 0, std::numeric_limits<double>::infinity(), 1)) {
+      return paving_fail("An infinite extent must not fit the lattice.");
+   }
+
+   const paving_sampler skewed(paving_fixture(RUNNING, 1, 1, 1e6));
+   if (skewed.lattice_fits(0, 0, 1, 1e10)) return paving_fail("Row offsets must count towards the lattice extent.");
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_paving_profiles()
+{
+   using enum paving_layout;
+
+   // Elements of 20 x 10 with 1 unit half-joints and a 3 unit bevel.  Along y = 5 the interior distance is
+   // min(x, 20 - x, 5) - 1.
+
+   auto params = paving_fixture(STACK, 20, 10);
+   params.JointWidth = 2;
+   params.BevelWidth = 3;
+   params.JointHeightValue = -0.5;
+   params.ElementHeightValue = 2.0;
+
+   const GEZ profiles[] = { GEZ::LINEAR, GEZ::IN, GEZ::OUT, GEZ::IN_OUT, GEZ::CUBIC_IN, GEZ::CUBIC_OUT,
+      GEZ::CUBIC_IN_OUT, GEZ::CIRCLE_IN, GEZ::CIRCLE_OUT, GEZ::CIRCLE_IN_OUT };
+
+   double midpoints[10];
+   for (int p=0; p < 10; p++) {
+      params.BevelProfile = profiles[p];
+      const paving_sampler sampler(params);
+      double previous = -1e9;
+      for (double x=0; x <= 10.0; x += 0.01) {
+         const double h = sampler.height(sampler.locate(x, 5.0), 0.0);
+         if (h < previous - 1e-12) return paving_fail("Profile %d: height decreases at x = %.3f.", p, x);
+         if ((x <= 1.0) and (h != -0.5)) return paving_fail("Profile %d: joint height %.9g at x = %.3f.", p, h, x);
+         if ((x >= 4.0) and (h != 2.0)) return paving_fail("Profile %d: element height %.9g at x = %.3f.", p, h, x);
+         previous = h;
+      }
+      midpoints[p] = sampler.height(sampler.locate(2.5, 5.0), 0.0);
+      if ((midpoints[p] <= -0.5) or (midpoints[p] >= 2.0)) {
+         return paving_fail("Profile %d: the bevel midpoint %.9g is not between the joint and element.", p,
+            midpoints[p]);
+      }
+
+      // Seeded height offsets raise the element top.
+
+      if (sampler.height(sampler.locate(10, 5), 0.25) != 2.25) return paving_fail("Height offsets must apply.");
+   }
+
+   if (std::abs(midpoints[0] - 0.75) > 1e-9) return paving_fail("The linear bevel midpoint is %.9g.", midpoints[0]);
+   if (not ((midpoints[8] > midpoints[0]) and (midpoints[0] > midpoints[7]))) {
+      return paving_fail("CIRCLE_OUT must be above LINEAR and CIRCLE_IN below it at the bevel midpoint.");
+   }
+
+   // No bevel: a step from joint to element.
+
+   params.BevelProfile = GEZ::LINEAR;
+   params.BevelWidth = 0;
+   {
+      const paving_sampler sampler(params);
+      if ((sampler.height(sampler.locate(0.99, 5), 0) != -0.5) or (sampler.height(sampler.locate(1.01, 5), 0) != 2.0)) {
+         return paving_fail("A zero bevel width must step from the joint to the element.");
+      }
+   }
+
+   // A bevel wider than the element peaks along the centre ridge without overshoot or discontinuity.
+
+   params.BevelWidth = 8;
+   {
+      const paving_sampler sampler(params);
+      double previous = sampler.height(sampler.locate(0, 5), 0);
+      for (double x=0.01; x < 20.0; x += 0.01) {
+         const double h = sampler.height(sampler.locate(x, 5), 0);
+         if ((h >= 2.0) or (std::abs(h - previous) > 0.01)) {
+            return paving_fail("Wide bevel: height %.9g at x = %.2f overshoots or jumps.", h, x);
+         }
+         previous = h;
+      }
+   }
+
+   // No joint: full coverage everywhere, with the bevel still sloping from the element edge.
+
+   params.JointWidth = 0;
+   params.BevelWidth = 3;
+   {
+      const paving_sampler sampler(params, 1.3, 0.7);
+      for (double y=0.05; y < 20; y += 0.5) {
+         for (double x=0.05; x < 40; x += 0.5) {
+            if (sampler.coverage(sampler.locate(x, y)) != 1.0) {
+               return paving_fail("Coverage must be 1 without joints, at %.2f,%.2f.", x, y);
+            }
+         }
+      }
+      if (sampler.height(sampler.locate(0, 5), 0) != -0.5) {
+         return paving_fail("The element edge must be at joint height.");
+      }
+      if (std::abs(sampler.height(sampler.locate(1.5, 5), 0) - 0.75) > 1e-9) return paving_fail("Joint-free bevel.");
+      if (sampler.id(sampler.locate(0, 5), 0.5) != 0.5) return paving_fail("IDs must cover edges without joints.");
+   }
+
+   // Joints at least as wide as the element leave only joint output.
+
+   for (double joint : { 10.0, 25.0 }) {
+      params.JointWidth = joint;
+      const paving_sampler sampler(params, 0.8, 0.8);
+      for (double y=0.0; y < 20; y += 0.25) {
+         for (double x=0.0; x < 40; x += 0.25) {
+            const auto s = sampler.locate(x, y);
+            if ((sampler.height(s, 0) != -0.5) or (sampler.coverage(s) != 0.0) or (sampler.id(s, 0.5) != 0.0)) {
+               return paving_fail("A %.0f unit joint must cover %.2f,%.2f entirely.", joint, x, y);
+            }
+         }
+      }
+   }
+
+   // On an axis-aligned integer grid, coverage at pixel centres is exactly 0 or 1 and agrees with the element ID.
+
+   params = paving_fixture(STACK, 8, 4);
+   params.JointWidth = 2;
+   {
+      const paving_sampler sampler(params);
+      for (int y=-8; y < 8; y++) {
+         for (int x=-16; x < 16; x++) {
+            const auto s = sampler.locate(x + 0.5, y + 0.5);
+            const double cov = sampler.coverage(s);
+            if ((cov != 0.0) and (cov != 1.0)) {
+               return paving_fail("Coverage %.9g at pixel %d,%d is not binary.", cov, x, y);
+            }
+            if ((cov IS 1.0) != (sampler.id(s, 0.5) IS 0.5)) {
+               return paving_fail("Coverage and ID disagree at pixel %d,%d.", x, y);
+            }
+         }
+      }
+   }
+
+   // A fractional joint gives partial coverage across a one pixel ramp, scaled by the pixel footprint.
+
+   params.JointWidth = 1.5;
+   {
+      const paving_sampler sampler(params, 2.0, 1.0);
+      const double c0 = sampler.coverage(sampler.locate(0.75, 2.0));  // On the joint edge: half coverage
+      const double c1 = sampler.coverage(sampler.locate(1.25, 2.0));  // A quarter pixel inside the element
+      if ((std::abs(c0 - 0.5) > 1e-12) or (std::abs(c1 - 0.75) > 1e-12)) {
+         return paving_fail("Joint edge coverage was %.9g and %.9g, expected 0.5 and 0.75.", c0, c1);
+      }
+   }
+
+   // Vertical elements swap the pixel footprints.
+
+   params = paving_fixture(BASKET_WEAVE, 8, 4);
+   params.JointWidth = 1;
+   {
+      const paving_sampler sampler(params, 2.0, 1.0);
+      const auto s = sampler.locate(10.0, 0.75); // Vertical macro-cell: LX = 0.75, LY = 2
+      if ((not s.Vertical) or (std::abs(sampler.coverage(s) - 0.75) > 1e-12)) {
+         return paving_fail("Vertical element coverage was %.9g, expected 0.75.", sampler.coverage(s));
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_paving_colour()
+{
+   auto lab_of = [](const oklab::LinearRGB &C) { return paving_lch_from_linear(C.r, C.g, C.b); };
+   auto in_gamut = [](const oklab::LinearRGB &C) {
+      return (C.r >= 0) and (C.r <= 1) and (C.g >= 0) and (C.g <= 1) and (C.b >= 0) and (C.b <= 1);
+   };
+
+   // Without variation fields, every element offset is zero and the colour round-trips.  The ten digit OKLab
+   // coefficients limit round-trip precision to about 1e-7.
+
+   auto params = paving_fixture(paving_layout::STACK, 8, 4);
+   params.Seed = 99;
+   if (params.colour_varied()) return paving_fail("Default parameters must not vary colour.");
+   {
+      const paving_sampler sampler(params);
+      const auto v = sampler.variation(sampler.element_key(sampler.locate(3, 3)));
+      if ((v.Hue != 0) or (v.Chroma != 0) or (v.Light != 0) or (v.Height != 0)) {
+         return paving_fail("Zero variation fields must give zero offsets.");
+      }
+      const auto base = paving_lch_from_linear(0.4, 0.2, 0.1);
+      const auto out = paving_adjust_oklch(base, v.Light, v.Chroma, v.Hue, v.HueUnit, false);
+      if ((std::abs(out.r - 0.4) > 1e-6) or (std::abs(out.g - 0.2) > 1e-6) or (std::abs(out.b - 0.1) > 1e-6)) {
+         return paving_fail("Unvaried colours must round-trip.");
+      }
+   }
+
+   // Variates span the configured ranges and are deterministic per element.
+
+   params.HueVariation = 12;
+   params.ChromaVariation = 0.05;
+   params.LightVariation = 0.1;
+   params.HeightVariation = 0.3;
+   {
+      const paving_sampler sampler(params);
+      double min_hue = 1e9, max_hue = -1e9;
+      std::set<uint64_t> keys;
+      for (int y=0; y < 16; y++) {
+         for (int x=0; x < 16; x++) {
+            const auto key = sampler.element_key(sampler.locate(x * 8 + 1, y * 4 + 1));
+            keys.insert(key);
+            const auto v = sampler.variation(key);
+            if ((std::abs(v.Hue) > 12) or (std::abs(v.Chroma) > 0.05) or (std::abs(v.Light) > 0.1) or
+                (std::abs(v.Height) > 0.3) or (v.Id < 0) or (v.Id >= 1)) {
+               return paving_fail("Element variation is out of range.");
+            }
+            min_hue = std::min(min_hue, v.Hue);
+            max_hue = std::max(max_hue, v.Hue);
+            if (sampler.element_key(sampler.locate(x * 8 + 6.5, y * 4 + 2.5)) != key) {
+               return paving_fail("Keys must be constant within an element.");
+            }
+         }
+      }
+      if (keys.size() != 256) return paving_fail("Expected 256 distinct element keys, found %d.", int(keys.size()));
+      if ((min_hue > -6) or (max_hue < 6)) return paving_fail("Hue variates do not span their range.");
+   }
+
+   // 64-bit seeds are not truncated, and seed zero is seeded.
+
+   const int64_t seeds[] = { 0, 1, int64_t(1) << 32, (int64_t(1) << 32) + 1, -1, INT64_MIN };
+   std::set<uint64_t> seeded;
+   for (auto seed : seeds) seeded.insert(paving_element_key(seed, 0, 0, 0));
+   if (seeded.size() != std::size(seeds)) return paving_fail("Distinct seeds must give distinct element keys.");
+   if (paving_element_key(0, 0, 0, 0) IS 0) return paving_fail("Seed zero must be mixed.");
+
+   // Hue shifts preserve lightness and chroma when in gamut.
+
+   const auto brick = paving_lch_from_linear(0.3, 0.12, 0.06);
+   {
+      const auto out = lab_of(paving_adjust_oklch(brick, 0, 0, 25, 0, true));
+      double dh = out.H - (brick.H + 25.0 * agg::pi / 180.0);
+      dh = std::remainder(dh, 2.0 * agg::pi);
+      if ((std::abs(out.L - brick.L) > 1e-6) or (std::abs(out.C - brick.C) > 1e-6) or (std::abs(dh) > 1e-6)) {
+         return paving_fail("An in-gamut hue shift changed lightness, chroma or hue.");
+      }
+   }
+
+   // Out-of-gamut results reduce chroma at fixed lightness and hue.
+
+   const auto red = paving_lch_from_linear(0.9, 0.08, 0.04);
+   for (double dh : { -30.0, 0.0, 40.0 }) {
+      const auto rgb = paving_adjust_oklch(red, -0.05, 0.25, dh, 0, true);
+      if (not in_gamut(rgb)) return paving_fail("The gamut-mapped colour is out of gamut.");
+      const auto out = lab_of(rgb);
+      const double target_h = red.H + dh * agg::pi / 180.0;
+      const double hue_error = std::remainder(out.H - target_h, 2.0 * agg::pi);
+      if ((std::abs(out.L - (red.L - 0.05)) > 2e-3) or (std::abs(hue_error) > 1e-2) or (out.C >= red.C + 0.25)) {
+         return paving_fail("Gamut mapping at %+.0f degrees moved L %.6f -> %.6f or hue by %.6f.", dh, red.L - 0.05,
+            out.L, hue_error);
+      }
+   }
+
+   // Lightness is clamped.
+
+   {
+      const auto white = paving_adjust_oklch(brick, 2.0, 0, 0, 0, false);
+      if ((std::abs(white.r - 1) > 1e-6) or (std::abs(white.g - 1) > 1e-6) or (std::abs(white.b - 1) > 1e-6)) {
+         return paving_fail("Lightness above 1 must clamp to white.");
+      }
+      const auto black = paving_adjust_oklch(brick, -2.0, 0, 0, 0, false);
+      if ((black.r > 1e-9) or (black.g > 1e-9) or (black.b > 1e-9)) {
+         return paving_fail("Lightness must clamp to black.");
+      }
+   }
+
+   // Neutral greys stay neutral without hue variation, and take the seeded hue with it.
+
+   const auto grey = paving_lch_from_linear(0.2, 0.2, 0.2);
+   if (not grey.Neutral) return paving_fail("Grey must be classified as neutral.");
+   {
+      const auto rgb = paving_adjust_oklch(grey, 0.05, 0.04, 30, 0.25, false);
+      const auto out = lab_of(rgb);
+      if ((std::abs(rgb.r - rgb.g) > 1e-9) or (std::abs(rgb.g - rgb.b) > 1e-9) or (out.C > 1e-6) or
+          (std::abs(out.L - (grey.L + 0.05)) > 1e-6)) {
+         return paving_fail("Grey acquired a tint without hue variation.");
+      }
+   }
+   for (double unit : { 0.1, 0.4, 0.8 }) {
+      const auto out = lab_of(paving_adjust_oklch(grey, 0, 0.03, 30, unit, true));
+      if ((std::abs(out.C - 0.03) > 1e-6) or
+          (std::abs(std::remainder(out.H - unit * 2.0 * agg::pi, 2.0 * agg::pi)) > 1e-6)) {
+         return paving_fail("A tinted grey must take chroma 0.03 at the seeded hue (C %.6f).", out.C);
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Periodic pavings must repeat exactly, including seeded appearance, and wrapping must not merge distinct elements
+// within one period.
+
+static bool test_paving_period(CSTRING Name, paving_params Params, int ElementsPerPeriod)
+{
+   Params.Seed = -123456789;
+   Params.JointWidth = 0.75;
+   Params.BevelWidth = 1.25;
+   Params.HueVariation = 10;
+   Params.ChromaVariation = 0.03;
+   Params.LightVariation = 0.08;
+   Params.HeightVariation = 0.2;
+   if (paving_check(Params) != ERR::Okay) return paving_fail("%s: the parameters were rejected.", Name);
+
+   const paving_sampler sampler(Params);
+   double px, py;
+   sampler.period_vector(px, py);
+   const double extent_x = (px > 0) ? px : 4.0 * sampler.length();
+   const double extent_y = (py > 0) ? py : 4.0 * sampler.length();
+   const double step = sampler.thickness() / 3.1;
+   std::set<uint64_t> wrapped;
+
+   const double shifts[][2] = { { px, 0 }, { 0, py }, { px, py }, { -px, 0 }, { 0, -py }, { 3 * px, -2 * py } };
+
+   for (double qy = 0.0113; qy < extent_y; qy += step) {
+      for (double qx = 0.0071; qx < extent_x; qx += step) {
+         const auto a = sampler.locate(qx, qy);
+         const auto key = sampler.element_key(a);
+         wrapped.insert(key);
+         const double ha = sampler.height(a, sampler.variation(key).Height);
+
+         for (const auto &shift : shifts) {
+            if ((shift[0] IS 0) and (shift[1] IS 0)) continue;
+            const auto b = sampler.locate(qx + shift[0], qy + shift[1]);
+            const auto key_b = sampler.element_key(b);
+            if ((key_b != key) or (std::abs(a.LX - b.LX) > 1e-9) or (std::abs(a.LY - b.LY) > 1e-9) or
+                (a.Vertical != b.Vertical) or (a.Parity != b.Parity) or
+                (std::abs(sampler.height(b, sampler.variation(key_b).Height) - ha) > 1e-9) or
+                (std::abs(sampler.coverage(a) - sampler.coverage(b)) > 1e-9)) {
+               return paving_fail("%s: position %.4f,%.4f does not repeat over %.4f,%.4f.", Name, qx, qy, shift[0],
+                  shift[1]);
+            }
+         }
+      }
+   }
+
+   if ((px > 0) and (py > 0) and (int(wrapped.size()) != ElementsPerPeriod)) {
+      return paving_fail("%s: found %d distinct elements per period, expected %d.", Name, int(wrapped.size()),
+         ElementsPerPeriod);
+   }
+
+   // Without periods, the same translation must change the element.
+
+   auto aperiodic = Params;
+   aperiodic.PeriodX = aperiodic.PeriodY = 0;
+   const paving_sampler unwrapped(aperiodic);
+   const double qx = sampler.length() * 0.5, qy = sampler.thickness() * 0.5;
+   if (unwrapped.element_key(unwrapped.locate(qx, qy)) IS
+       unwrapped.element_key(unwrapped.locate(qx + extent_x, qy + extent_y))) {
+      return paving_fail("%s: aperiodic elements must not repeat.", Name);
+   }
+   return true;
+}
+
+static bool test_paving_periods()
+{
+   using enum paving_layout;
+   auto periodic = [](paving_params Params, int X, int Y) { Params.PeriodX = X; Params.PeriodY = Y; return Params; };
+
+   return test_paving_period("Running 1/2", periodic(paving_fixture(RUNNING, 12, 5, 0.5), 3, 2), 6) and
+      test_paving_period("Running 1/3", periodic(paving_fixture(RUNNING, 9, 4, 1.0 / 3.0), 4, 3), 12) and
+      test_paving_period("Running -1/4", periodic(paving_fixture(RUNNING, 10, 4, -0.25), 2, 4), 8) and
+      test_paving_period("Running 3/2", periodic(paving_fixture(RUNNING, 10, 4, 1.5), 3, 2), 6) and
+      test_paving_period("Running rows only", periodic(paving_fixture(RUNNING, 12, 5, 0.5), 0, 2), 0) and
+      test_paving_period("Running columns only", periodic(paving_fixture(RUNNING, 12, 5, 0.5), 5, 0), 0) and
+      test_paving_period("Stack", periodic(paving_fixture(STACK, 7, 3), 3, 5), 15) and
+      test_paving_period("Checker", periodic(paving_fixture(CHECKER, 6, 6), 2, 4), 8) and
+      test_paving_period("Basket weave k=2", periodic(paving_fixture(BASKET_WEAVE, 16, 8), 2, 2), 8) and
+      test_paving_period("Basket weave k=3", periodic(paving_fixture(BASKET_WEAVE, 15, 5), 4, 2), 24) and
+      test_paving_period("Herringbone k=2", periodic(paving_fixture(HERRINGBONE, 12, 6), 1, 1), 8) and
+      test_paving_period("Herringbone k=3", periodic(paving_fixture(HERRINGBONE, 9, 3), 2, 1), 24) and
+      test_paving_period("Herringbone k=4", periodic(paving_fixture(HERRINGBONE, 10, 2.5), 1, 1), 16);
+}
+
+//********************************************************************************************************************
+// Draws a HEIGHT-output PavingFX through a probe and compares every sample with paving_sampler evaluated from pixel
+// centres in client coordinates.  Pixels outside Covered must be zero.
+
+struct paving_pipeline_fixture {
+   CSTRING Name;
+   LMD Mode = LMD::HEIGHT;
+   paving_params Params;
+   Unit ElementWidth, ElementHeight, OriginX, OriginY, JointWidth, BevelWidth;
+   double Angle = 0;
+   VUNIT PrimitiveUnits = VUNIT::USERSPACE;
+   TClipRectangle<double> Subregion = { 0.0 };
+   int PageWidth = 80, PageHeight = 40;
+   double AAX = 1.0, AAY = 1.0;
+   ERR DrawError = ERR::Okay;
+   std::function<void(double, double, double &, double &)> Pattern;
+   std::function<bool(double, double)> Covered;
+};
+
+static bool test_filter_paving_case(const paving_pipeline_fixture &Case)
+{
+   auto fixture_class = register_filter_test_class<extFilterSurfaceTest>();
+   filter_test_scene scene(80, 40);
+   if ((not fixture_class.ok()) or (not scene.ready())) return false;
+   scene.Filter->PrimitiveUnits = Case.PrimitiveUnits;
+   scene.Scene->PageWidth = Case.PageWidth;
+   scene.Scene->PageHeight = Case.PageHeight;
+
+   const auto owner = fl::Owner(scene.Filter->UID);
+   auto paving = Case.Subregion.valid() and (Case.Subregion.width() > 0) ?
+      extPavingFX::create::local(owner, fl::X(Case.Subregion.left), fl::Y(Case.Subregion.top),
+         fl::Width(Case.Subregion.width()), fl::Height(Case.Subregion.height())) :
+      extPavingFX::create::local(owner);
+   auto probe = extFilterSurfaceTest::create::local(owner);
+   if ((not paving) or (not probe)) return false;
+
+   const auto &p = Case.Params;
+   auto elem_w = Case.ElementWidth, elem_h = Case.ElementHeight;
+   auto orig_x = Case.OriginX, orig_y = Case.OriginY;
+   auto joint_w = Case.JointWidth, bevel_w = Case.BevelWidth;
+   if ((PAVINGFX_SET_Layout(paving, LAY(int(p.Layout))) != ERR::Okay) or
+       (PAVINGFX_SET_Mode(paving, Case.Mode) != ERR::Okay) or
+       (PAVINGFX_SET_Seed(paving, p.Seed) != ERR::Okay) or
+       (PAVINGFX_SET_ElementWidth(paving, elem_w) != ERR::Okay) or
+       (PAVINGFX_SET_ElementHeight(paving, elem_h) != ERR::Okay) or
+       (PAVINGFX_SET_OriginX(paving, orig_x) != ERR::Okay) or
+       (PAVINGFX_SET_OriginY(paving, orig_y) != ERR::Okay) or
+       (PAVINGFX_SET_JointWidth(paving, joint_w) != ERR::Okay) or
+       (PAVINGFX_SET_BevelWidth(paving, bevel_w) != ERR::Okay) or
+       (PAVINGFX_SET_BevelProfile(paving, p.BevelProfile) != ERR::Okay) or
+       (PAVINGFX_SET_Angle(paving, Case.Angle) != ERR::Okay) or
+       (PAVINGFX_SET_RowOffset(paving, p.RowOffset) != ERR::Okay) or
+       (PAVINGFX_SET_ElementHeightValue(paving, p.ElementHeightValue) != ERR::Okay) or
+       (PAVINGFX_SET_JointHeightValue(paving, p.JointHeightValue) != ERR::Okay) or
+       (PAVINGFX_SET_HeightVariation(paving, p.HeightVariation) != ERR::Okay) or
+       (PAVINGFX_SET_PeriodX(paving, p.PeriodX) != ERR::Okay) or
+       (PAVINGFX_SET_PeriodY(paving, p.PeriodY) != ERR::Okay) or
+       (PAVINGFX_SET_OutputMode(paving, FOM::HEIGHT) != ERR::Okay)) {
+      return paving_fail("%s: a PavingFX field was rejected.", Case.Name);
+   }
+
+   filter_named_input inputs[] { { "Paving", { .Kind = filter_input_kind::SCALAR_MAP } } };
+   const filter_effect_extension probe_extension { inputs };
+   probe->FilterExtension = &probe_extension;
+   if (set_named_filter_input(probe, "Paving", VSF::REFERENCE, paving) != ERR::Okay) return false;
+
+   const paving_sampler reference(p, Case.AAX, Case.AAY);
+   int covered = 0;
+   probe->DrawRoutine = [&](extFilterEffect *Effect) {
+      filter_map_view map;
+      if (auto error = get_filter_map(Effect, "Paving", map); error != ERR::Okay) return error;
+      const auto &view = map.Source;
+      for (int y=view.OriginY; y < view.OriginY + view.Height; ++y) {
+         for (int x=view.OriginX; x < view.OriginX + view.Width; ++x) {
+            const double px = x + 0.5, py = y + 0.5;
+            double expected = 0;
+            if (Case.Covered(px, py)) {
+               double qx, qy;
+               Case.Pattern(px, py, qx, qy);
+               const auto s = reference.locate(qx, qy);
+               if (Case.Mode IS LMD::HEIGHT) {
+                  const double dz = (p.HeightVariation != 0) ?
+                     reference.variation(reference.element_key(s)).Height : 0.0;
+                  expected = reference.height(s, dz);
+               }
+               else if (Case.Mode IS LMD::MASK) expected = reference.coverage(s);
+               else expected = reference.id(s, cellular_hash(reference.element_key(s), 0));
+               covered++;
+            }
+            const float actual = map.sample(px, py)[0];
+            if (std::abs(actual - expected) > 1e-5 * std::max(1.0, std::abs(expected))) {
+               kt::Log("FilterTest").warning("%s: sample at %d,%d was %.9g, expected %.9g.", Case.Name, x, y,
+                  actual, expected);
+               return ERR::InvalidValue;
+            }
+         }
+      }
+      return ERR::Okay;
+   };
+
+   filter_render_result output;
+   if (auto error = scene.draw(output); error != Case.DrawError) {
+      return paving_fail("%s: draw returned %s, expected %s.", Case.Name, GetErrorMsg(error),
+         GetErrorMsg(Case.DrawError));
+   }
+   return (Case.DrawError != ERR::Okay) or
+      filter_test_expect(covered >= 100, "The PavingFX fixture compared too few covered samples.");
+}
+
+static bool test_filter_paving()
+{
+   // The filter region spans x = [-2, 80) and y = [0, 40) in client units, which equal scene pixels here.
+
+   constexpr double region_left = -2, region_top = 0, region_width = 82, region_height = 40;
+   const double region_diag = filter_render_context::normalised_diagonal(region_width, region_height);
+
+   paving_pipeline_fixture height_offset {
+      .Name = "Height subregion",
+      .Mode = LMD::HEIGHT,
+      .Params = { .Layout = paving_layout::RUNNING, .ElementWidth = 16, .ElementHeight = 8,
+         .JointWidth = 0.02 * region_diag, .BevelWidth = 3.0, .RowOffset = 0.5, .ElementHeightValue = 1.5,
+         .JointHeightValue = -0.25, .HeightVariation = 0.25, .BevelProfile = GEZ::CIRCLE_OUT, .Seed = -77 },
+      .ElementWidth = Unit(16.0), .ElementHeight = Unit(8.0), .OriginX = Unit(3.0), .OriginY = Unit(-2.0),
+      .JointWidth = Unit(0.02, FD_SCALED), .BevelWidth = Unit(3.0),
+      .Subregion = { 6, 3, 56, 33 },
+      .Pattern = [&](double X, double Y, double &QX, double &QY) {
+         QX = X - (region_left + 3.0);
+         QY = Y - (region_top - 2.0);
+      },
+      .Covered = [](double X, double Y) { return (X >= 6) and (X < 56) and (Y >= 3) and (Y < 33); }
+   };
+
+   paving_pipeline_fixture mask_rotated {
+      .Name = "Rotated herringbone mask",
+      .Mode = LMD::MASK,
+      .Params = { .Layout = paving_layout::HERRINGBONE, .ElementWidth = 16, .ElementHeight = 8,
+         .JointWidth = 2.0, .Angle = 30 },
+      .ElementWidth = Unit(16.0), .ElementHeight = Unit(8.0), .OriginX = Unit(0.25, FD_SCALED),
+      .OriginY = Unit(10.0), .JointWidth = Unit(2.0), .BevelWidth = Unit(0.0),
+      .Angle = 30,
+      .Pattern = [&](double X, double Y, double &QX, double &QY) {
+         const double du = X - (region_left + 0.25 * region_width), dv = Y - (region_top + 10.0);
+         const double c = std::cos(30.0 * agg::pi / 180.0), s = std::sin(30.0 * agg::pi / 180.0);
+         QX = (c * du) + (s * dv);
+         QY = (c * dv) - (s * du);
+      },
+      .Covered = [&](double X, double Y) {
+         return (X >= region_left) and (X < region_left + region_width) and (Y >= region_top) and
+            (Y < region_top + region_height);
+      }
+   };
+
+   // In BOUNDING_BOX units, primitive coordinates are fractions of the client bounds (0, 0) to (80, 40).
+
+   const double bb_w = region_width / 80.0, bb_h = region_height / 40.0;
+   const double bb_diag = filter_render_context::normalised_diagonal(bb_w, bb_h);
+   paving_pipeline_fixture id_bbox {
+      .Name = "Bounding box periodic ID",
+      .Mode = LMD::ID,
+      .Params = { .Layout = paving_layout::BASKET_WEAVE, .ElementWidth = 0.2, .ElementHeight = 0.1,
+         .JointWidth = 0.02 * bb_diag, .Seed = 9, .PeriodX = 2, .PeriodY = 2 },
+      .ElementWidth = Unit(0.2), .ElementHeight = Unit(0.1), .OriginX = Unit(0.05), .OriginY = Unit(0.0),
+      .JointWidth = Unit(0.02, FD_SCALED), .BevelWidth = Unit(0.0),
+      .PrimitiveUnits = VUNIT::BOUNDING_BOX,
+      .AAX = 1.0 / 80.0, .AAY = 1.0 / 40.0,
+      .Pattern = [&](double X, double Y, double &QX, double &QY) {
+         QX = (X / 80.0) - ((region_left / 80.0) + 0.05);
+         QY = (Y / 40.0) - (region_top / 40.0);
+      },
+      .Covered = mask_rotated.Covered
+   };
+
+   auto clipped = height_offset;
+   clipped.Name = "Clipped redraw";
+   clipped.PageWidth = 37;
+   clipped.PageHeight = 23;
+
+   auto oversized_height = height_offset;
+   oversized_height.Name = "Height exceeds scalar range";
+   oversized_height.Params.ElementHeightValue = 1e40;
+   oversized_height.DrawError = ERR::OutOfRange;
+
+   return test_filter_paving_case(height_offset) and test_filter_paving_case(mask_rotated) and
+      test_filter_paving_case(id_bbox) and test_filter_paving_case(clipped) and
+      test_filter_paving_case(oversized_height);
+}
+
+//********************************************************************************************************************
+
 void vector_filter_unit_tests(std::string_view Options, int &Passed, int &Total)
 {
    if (Options IS "filter:named") {
@@ -1166,5 +1967,14 @@ void vector_filter_unit_tests(std::string_view Options, int &Passed, int &Total)
    else if (Options IS "filter:cellular") {
       Total++;
       if (test_filter_cellular()) Passed++;
+   }
+   else if (Options IS "filter:paving") {
+      Total += 6;
+      if (test_paving_check()) Passed++;
+      if (test_paving_layouts()) Passed++;
+      if (test_paving_profiles()) Passed++;
+      if (test_paving_colour()) Passed++;
+      if (test_paving_periods()) Passed++;
+      if (test_filter_paving()) Passed++;
    }
 }

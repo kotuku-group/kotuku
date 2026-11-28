@@ -482,6 +482,61 @@ element.  When a scene is saved, a @TurbulenceFX that uses no extensions is writ
 &lt;/filter&gt;
 </pre>
 
+The `xvg:fePaving` element generates structured brickwork, paving, tile and checker arrangements with @PavingFX.  It
+takes no primary input, though it can sample earlier filter results as optional element or joint textures in `colour`
+mode.  Its own attributes are unprefixed:
+
+<list type="bullet">
+<li>`layout`: `running` (the default), `stack`, `basketWeave`, `herringbone` or `checker`.  Sets @PavingFX.Layout.</li>
+<li>`mode`: `colour` (or `color`, the default), `height`, `mask` or `id`.  Sets @PavingFX.Mode.</li>
+<li>`seed`: a 64-bit integer that selects deterministic per-element appearance and height variation.  Sets
+@PavingFX.Seed.</li>
+<li>`elementSize`: the nominal element width and optional height before rotation.  The height defaults to the width,
+and a percentage refers to the filter region.  The default is `25% 12.5%`.  Sets @PavingFX.ElementWidth and
+@PavingFX.ElementHeight.</li>
+<li>`origin`: the X and optional Y position of the pattern lattice, relative to the filter region's top-left corner.
+Y defaults to X.  Sets @PavingFX.OriginX and @PavingFX.OriginY.</li>
+<li>`jointWidth` and `bevelWidth`: lengths for the mortar gap and interior edge bevel (default `1%` each).  Sets
+@PavingFX.JointWidth and @PavingFX.BevelWidth.</li>
+<li>`bevelProfile`: `linear` (the default), `in`, `out`, `inOut`, `cubicIn`, `cubicOut`, `cubicInOut`, `circleIn`,
+`circleOut` or `circleInOut`.  Sets @PavingFX.BevelProfile.</li>
+<li>`angle`, `rowOffset`, `elementHeight`, `jointHeight`, `hueVariation`, `chromaVariation`, `lightVariation` and
+`heightVariation`: numbers that set @PavingFX.Angle, @PavingFX.RowOffset, @PavingFX.ElementHeightValue,
+@PavingFX.JointHeightValue, @PavingFX.HueVariation, @PavingFX.ChromaVariation, @PavingFX.LightVariation and
+@PavingFX.HeightVariation.</li>
+<li>`elementColor`, `jointColor` and `alternateColor`: SVG colours (including `currentColor`) that set
+@PavingFX.ElementColour, @PavingFX.JointColour and @PavingFX.AlternateColour.</li>
+<li>`elementMap` and `jointMap`: names of earlier filter results sampled inside elements and joints in `colour` mode.
+Sets @PavingFX.ElementMap and @PavingFX.JointMap.</li>
+<li>`fillMode`: `local` (the default) or `continuous`.  Sets @PavingFX.FillMode.</li>
+<li>`resampleMethod`: `bilinear` (the default) or `neighbour` (or `neighbor`).  Sets @PavingFX.ResampleMethod.</li>
+<li>`period`: whole numbers of pattern lattice units after which per-element variation repeats horizontally and,
+optionally, vertically.  The vertical period defaults to the horizontal one.  Sets @PavingFX.PeriodX and
+@PavingFX.PeriodY.</li>
+<li>`colormap`: a named colour map such as `cmap:viridis` for scalar `IMAGE` output.  Child `stop` elements define a
+custom colour ramp instead.</li>
+</list>
+
+The shared `x`, `y`, `width`, `height`, `result` and `color-interpolation-filters` attributes apply as they do to
+standard primitives.  `xvg:outputMode="height"` produces a floating-point scalar result for enhanced lighting and other
+numerical consumers, and must keep its prefix.  An invalid value is reported and the field keeps its default.  Some
+combinations can only be checked when the filter is drawn, and the element then draws nothing: `mode="colour"` with
+`xvg:outputMode="height"`, `basketWeave` or `herringbone` with a non-integer width-to-height ratio below 2, a `period`
+with an `angle` that is not a multiple of 360, `running` with a vertical `period` where `periodY * rowOffset` is not
+an integer, and `checker` or `basketWeave` with an odd non-zero `period`.  Other renderers do not draw the element.
+
+<pre>
+&lt;filter id="bricks" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"&gt;
+  &lt;xvg:fePaving seed="7" elementSize="48 24" jointWidth="3" bevelWidth="4" elementColor="#b25a42"
+      jointColor="#c8c0b4" hueVariation="8" lightVariation="0.06" result="albedo"/&gt;
+  &lt;xvg:fePaving seed="7" mode="height" elementSize="48 24" jointWidth="3" bevelWidth="4" bevelProfile="circleOut"
+      heightVariation="0.15" xvg:outputMode="height" result="height"/&gt;
+  &lt;xvg:feLighting in="height" in2="albedo" surfaceScale="10" specularConstant="0.2"&gt;
+    &lt;feDistantLight azimuth="225" elevation="45"/&gt;
+  &lt;/xvg:feLighting&gt;
+&lt;/filter&gt;
+</pre>
+
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
 enhanced programmatic access unique to Kotuku.
