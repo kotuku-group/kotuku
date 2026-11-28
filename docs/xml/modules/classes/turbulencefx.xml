@@ -15,6 +15,7 @@
     <description>
 <p>This filter effect creates an image using the Perlin turbulence function. It allows the synthesis of artificial textures like clouds or marble.  For a detailed description the of the Perlin turbulence function, see &quot;Texturing and Modeling&quot;, Ebert et al, AP Professional, 1994. The resulting image will fill the entire filter primitive subregion for this filter primitive.</p>
 <p>It is possible to create bandwidth-limited noise by synthesizing only one octave.</p>
+<p>The effect implements the SVG <code>feTurbulence</code> primitive.  Kōtuku extends it with control over the octave stack (<fl>Persistence</fl>, <fl>Lacunarity</fl> and <fl>Normalise</fl>), the mapping of the result (<fl>Amplitude</fl> and <fl>Offset</fl>), the noise domain (<fl>OriginX</fl>, <fl>OriginY</fl> and <fl>Angle</fl>), seamless repetition (<fl>PeriodX</fl> and <fl>PeriodY</fl>), animation (<fl>Phase</fl> and <fl>PhasePeriod</fl>), colour ramps (<fl>ColourMap</fl> and <fl>Stops</fl>) and two further <fl>Type</fl> functions, <code>BILLOW</code> and <code>RIDGED</code>.  Each extension field defaults to the value that reproduces SVG output exactly.  The <fl>Compliance</fl> field declares whether the extensions are permitted.</p>
 <p>The following order is used for applying the pseudo random numbers.  An initial seed value is computed based on <fl>Seed</fl>.  Then the implementation computes the lattice points for R, then continues getting additional pseudo random numbers relative to the last generated pseudo random number and computes the lattice points for G, and so on for B and A.</p></description>
     <source>
       <file path="filters/">filter_turbulence.cpp</file>
@@ -33,11 +34,68 @@
         <param type="INT" name="Width">The width of the region to be drawn.</param>
         <param type="INT" name="Height">The height of the region to be drawn.</param>
       </input>
+      <description>
+<p>Draw fails with <code>ERR::InvalidValue</code> if an extension field is in use while the resolved <fl>Compliance</fl> is <code>SVG1</code> or <code>SVG2</code>, if <fl>Stitch</fl> is combined with <fl>PeriodX</fl> or <fl>PeriodY</fl>, if <fl>Stitch</fl> or a period is combined with an <fl>Angle</fl> that is not a multiple of 360, or if <fl>Stitch</fl>, a period or <fl>PhasePeriod</fl> is combined with several octaves and a fractional <fl>Lacunarity</fl>.  A warning is logged in each case.  It fails with <code>ERR::OutOfRange</code> if the drawn area or <fl>Phase</fl> lies so far from the origin, at the finest octave, that lattice coordinates can no longer be represented, or if a period of the finest octave cannot be represented.</p>
+      </description>
     </action>
 
   </actions>
 
   <fields>
+    <field>
+      <name>Amplitude</name>
+      <comment>Scales the mapped noise value.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The noise value is mapped to the range [0, 1] as described for <fl>Type</fl>, multiplied by Amplitude and then added to <fl>Offset</fl>.  The result is clamped to [0, 1] for output.  The value must be finite and defaults to 1.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Angle</name>
+      <comment>Rotates the noise domain clockwise about its origin, in degrees.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The rotation is applied about the point given by <fl>OriginX</fl> and <fl>OriginY</fl>.  The value must be finite and defaults to 0. A stitched or periodic domain cannot be rotated: if <fl>Stitch</fl>, <fl>PeriodX</fl> or <fl>PeriodY</fl> is set, the Angle must be a multiple of 360 or the effect will fail to draw.</p>
+<p>If <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> is <code>BOUNDING_BOX</code>, the rotation applies in bounding-box units and therefore appears skewed for a bounding box that is not square.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ColourMap</name>
+      <comment>Draws <code>IMAGE</code> output through a pre-defined colour ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The noise value of each sample is computed from the alpha lattice, as for <code>HEIGHT</code> output, and clamped to [0, 1].  It then selects a colour from the named colourmap, from the first colour at 0 to the last at 1.  The following colourmaps from the matplotlib and seaborn projects are supported: <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
+<p>Setting a colourmap replaces custom <fl>Stops</fl>.  Set an empty string to clear the ramp and restore the four independent noise channels.  Ramp colours are drawn as authored in either colour space.  <code>HEIGHT</code> output ignores the ramp. Unknown names fail with <code>ERR::NotFound</code>.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Compliance</name>
+      <comment>Declares whether SVG restrictions apply to the effect.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="FXC">FXC</type>
+      <description>
+<p>The default, <code>INHERIT</code>, uses the <class name="VectorScene" field="Compliance">VectorScene.Compliance</class> of the scene that owns the filter, or <code>NONE</code> if there is no scene.  An explicit value always overrides the scene.</p>
+<p>The extension fields are <fl>Persistence</fl>, <fl>Lacunarity</fl>, <fl>Normalise</fl>, <fl>Amplitude</fl>, <fl>Offset</fl>, <fl>OriginX</fl>, <fl>OriginY</fl>, <fl>Angle</fl>, <fl>PeriodX</fl>, <fl>PeriodY</fl>, <fl>Phase</fl>, <fl>PhasePeriod</fl>, <fl>ColourMap</fl>, <fl>Stops</fl> and the <code>BILLOW</code> and <code>RIDGED</code> values of <fl>Type</fl>.  When the compliance is <code>SVG1</code> or <code>SVG2</code>, each extension field must remain at its default:</p>
+<list type="bullet">
+<li>Initialisation fails with <code>ERR::InvalidValue</code> if the compliance is set explicitly and an extension field is in
+use.</li>
+<li>After initialisation, writing a value other than the default to an extension field returns <code>ERR::NoSupport</code>.
+Writing the default is always permitted.</li>
+<li>Setting <code>SVG1</code> or <code>SVG2</code> after initialisation returns <code>ERR::InvalidState</code> while an extension field is in use.</li>
+<li>If the compliance is inherited from an SVG scene and an extension field is in use, <code>Draw</code> logs a warning and fails
+with <code>ERR::InvalidValue</code>.</li>
+</list>
+<p><code>SVG1</code> and <code>SVG2</code> currently apply the same restrictions.</p>
+<types lookup="FXC"/>
+      </description>
+    </field>
+
     <field>
       <name>FX</name>
       <comment>The base frequency for noise on the X axis.</comment>
@@ -59,6 +117,26 @@
     </field>
 
     <field>
+      <name>Lacunarity</name>
+      <comment>The frequency multiplier between octaves.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Each octave samples the noise Lacunarity times more finely than the previous one.  The value must lie in the range [1, 8] and defaults to 2, the fixed multiplier of SVG.  If <fl>Stitch</fl> is enabled and there is more than one octave, the value must be an integer, otherwise <code>Draw</code> fails with <code>ERR::InvalidValue</code>.  The same applies if <fl>PeriodX</fl> or <fl>PeriodY</fl> is set.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Normalise</name>
+      <comment>Divides the octave sum by its total weight.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>If <code>TRUE</code>, the sum of the octaves is divided by the sum of their weights, <code>Persistence^0 + ... + Persistence^(Octaves-1)</code>, before it is mapped.  This keeps several octaves within the range of a single octave, so that changing <fl>Octaves</fl> or <fl>Persistence</fl> does not change the overall contrast.  Defaults to <code>FALSE</code>.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Octaves</name>
       <comment>The numOctaves parameter for the noise function.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -69,13 +147,97 @@
     </field>
 
     <field>
+      <name>Offset</name>
+      <comment>Adds to the scaled noise value.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>See <fl>Amplitude</fl>.  The value must be finite and defaults to 0.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OriginX</name>
+      <comment>The horizontal origin of the noise domain.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>The noise is sampled relative to this point, so moving the origin translates the noise without changing it.  <fl>Angle</fl> rotates the domain about the origin, and <fl>PeriodX</fl> and <fl>PeriodY</fl> measure their repeats from it.</p>
+<p>The origin is expressed in primitive units and is measured from primitive-unit (0, 0), which is also the origin of SVG <code>feTurbulence</code>.  A percentage refers to the width of the filter region.  The value must be finite and defaults to 0. This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OriginY</name>
+      <comment>The vertical origin of the noise domain.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>A percentage refers to the height of the filter region.  The value must be finite and defaults to 0.  See <fl>OriginX</fl>. This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>OutputMode</name>
       <comment>Selects an image or a linear height result from the noise's alpha channel.</comment>
       <access read="R" write="S">Read/Set</access>
       <type lookup="FOM">FOM</type>
       <description>
-<p>Use <code>HEIGHT</code> when passing the result to enhanced <class name="LightingFX">LightingFX</class> or height-output <class name="BlurFX">BlurFX</class>.</p>
+<p>Use <code>HEIGHT</code> when passing the result to enhanced <class name="LightingFX">LightingFX</class> or height-output <class name="BlurFX">BlurFX</class>.  <code>HEIGHT</code> output ignores <fl>ColourMap</fl> and <fl>Stops</fl>.</p>
 <types lookup="FOM"/>
+      </description>
+    </field>
+
+    <field>
+      <name>PeriodX</name>
+      <comment>Repeats the noise horizontally after this number of lattice cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The first octave repeats exactly every <code>PeriodX / FX</code> primitive units, measured from <fl>OriginX</fl>, and octave <code>k</code> repeats every <code>PeriodX * Lacunarity^k</code> cells of its own lattice, so the full octave stack repeats with no seam.  Unlike <fl>Stitch</fl>, the period does not adjust the frequency or depend on the primitive subregion.</p>
+<p>The value must lie in the range [0, 1048576], and 0, the default, disables horizontal repetition.  A period cannot be combined with <fl>Stitch</fl> or a rotated domain, and a period with several octaves requires an integer <fl>Lacunarity</fl>; <code>Draw</code> fails with <code>ERR::InvalidValue</code> otherwise.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PeriodY</name>
+      <comment>Repeats the noise vertically after this number of lattice cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The value must lie in the range [0, 1048576], and 0, the default, disables vertical repetition.  See <fl>PeriodX</fl>.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Persistence</name>
+      <comment>The weight of each octave relative to the previous one.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Octave <code>k</code> is weighted by <code>Persistence^k</code>.  The value must lie in the range [0, 1] and defaults to 0.5, the fixed weight of SVG.  Lower values give smoother results, and a value of 0 leaves the first octave only.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Phase</name>
+      <comment>Animates the noise by moving through a third lattice dimension.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The noise is a slice of 3-D gradient noise, and Phase selects the position of the slice in lattice cells.  Changing it gradually makes the pattern evolve smoothly, and a change of about one cell gives an unrelated pattern.  Octave <code>k</code> moves <fl>Lacunarity</fl><code>^k</code> times faster, so fine detail changes faster than coarse detail.</p>
+<p>A Phase of 0, the default, reproduces the noise exactly as drawn without animation.  Other values cost about twice as much to draw.  The noise does not repeat unless <fl>PhasePeriod</fl> is set.  The value must be finite.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PhasePeriod</name>
+      <comment>Loops the <fl>Phase</fl> animation after this number of lattice cells.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>If set, the noise at <code>Phase + PhasePeriod</code> is identical to the noise at <fl>Phase</fl>, so an animation that advances <fl>Phase</fl> from 0 to PhasePeriod loops without a seam.  Octave <code>k</code> repeats after <code>PhasePeriod * Lacunarity^k</code> cells of its own lattice.  Small periods give short loops with less variety: a period of 1 returns to its starting pattern after a single cell.</p>
+<p>The value must lie in the range [0, 1048576], and 0, the default, disables looping.  A period with several octaves requires an integer <fl>Lacunarity</fl>; <code>Draw</code> fails with <code>ERR::InvalidValue</code> otherwise.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
       </description>
     </field>
 
@@ -101,11 +263,32 @@
     </field>
 
     <field>
+      <name>Stops</name>
+      <comment>Draws <code>IMAGE</code> output through a custom colour ramp.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;GradientStop&gt;</type>
+      <description>
+<p>The noise value of each sample is computed from the alpha lattice, as for <code>HEIGHT</code> output, and clamped to [0, 1].  It then selects a colour from the gradient defined by the stops, including the opacity of each stop.  At least two stops are required, or the setter fails with <code>ERR::InvalidValue</code>.  A ramp from opaque black to opaque white draws the noise as greyscale.</p>
+<p>Setting stops replaces any named <fl>ColourMap</fl>.  Set an empty array to clear the ramp and restore the four independent noise channels.  Ramp colours are drawn as authored in either colour space.  <code>HEIGHT</code> output ignores the ramp.  This is a Kōtuku extension; see <fl>Compliance</fl>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Type</name>
-      <comment>Can be set to 'noise' or 'turbulence'.</comment>
+      <comment>Selects the function that combines the octaves of noise.</comment>
       <access read="R" write="S">Read/Set</access>
       <type lookup="TB">TB</type>
       <description>
+<p>Each octave <code>k</code> samples gradient noise <code>n</code> at <fl>Lacunarity</fl><code>^k</code> times the base frequency and weights it by <fl>Persistence</fl><code>^k</code>.  The weighted terms are summed and the sum is mapped to the range [0, 1]:</p>
+<types type="Type">
+<type name="TURBULENCE">The term is <code>abs(n)</code> and the sum is used directly.  This is the default.</type>
+<type name="NOISE">The term is <code>n</code> and the sum <code>s</code> is mapped to <code>(s + 1) / 2</code>.</type>
+<type name="BILLOW">The term is <code>2 * sqrt(2) * abs(n) - 1</code> and the sum <code>s</code> is mapped to <code>(s + 1) / 2</code>.  The rounded
+lobes resemble cumulus cloud.</type>
+<type name="RIDGED">The term is <code>(1 - sqrt(2) * abs(n))^2</code>, multiplied by twice the previous octave's term clamped to
+[0, 1].  The sum is used directly.  The sharp crests resemble mountain ridges or veins.</type>
+</types>
+<p><code>BILLOW</code> and <code>RIDGED</code> are Kōtuku extensions that are not available under SVG <fl>Compliance</fl>.</p>
 <types lookup="TB"/>
       </description>
     </field>
@@ -115,6 +298,10 @@
       <comment>Describes the primitive using the <class name="FilterEffect" field="XMLDef">FilterEffect.XMLDef</class> format.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <description>
+<p>The element that is written depends on the resolved <fl>Compliance</fl>.  If the compliance resolves to <code>SVG1</code> or <code>SVG2</code>, the primitive is written as a standard <code>feTurbulence</code> element.  If <fl>Compliance</fl> is explicitly <code>NONE</code>, it is always written as <code>xvg:feFractalNoise</code>, so that the declaration survives a round trip.  If <fl>Compliance</fl> is <code>INHERIT</code> and resolves to <code>NONE</code>, <code>feTurbulence</code> is written when every extension field is at its default, and <code>xvg:feFractalNoise</code> otherwise.</p>
+<p>In each case, <code>HEIGHT</code> output is described by an <code>xvg:outputMode</code> attribute.  The <code>xvg:feFractalNoise</code> element only includes attributes whose fields differ from their defaults.</p>
+      </description>
       <tags>caller-owns-result</tags>
     </field>
 
@@ -126,12 +313,26 @@
       <const name="NATIVE">BlurFX preserves its input format, including scalar and vector floats.</const>
     </constants>
 
+    <constants lookup="FXC">
+      <const name="INHERIT">Use the Compliance of the scene that owns the filter, or <code>NONE</code> if there is no scene.</const>
+      <const name="NONE">Kotuku extensions to the standard are permitted.</const>
+      <const name="SVG1">SVG 1.1 restrictions apply.</const>
+      <const name="SVG2">SVG 2 restrictions apply.</const>
+    </constants>
+
     <constants lookup="TB">
+      <const name="BILLOW">Sum rescaled absolute noise, giving rounded, cloud-like lobes.</const>
       <const name="NOISE">Use the fractal noise function.</const>
+      <const name="RIDGED">Use a ridged multifractal, giving sharp crests.</const>
       <const name="TURBULENCE">Use the standard turbulence function.</const>
     </constants>
 
   </types>
   <structs>
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
+      <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
+      <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
   </structs>
 </book>

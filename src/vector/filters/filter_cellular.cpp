@@ -54,6 +54,7 @@ SVG documents can use the effect with the `xvg:feCellular` element.  Refer to th
 *********************************************************************************************************************/
 
 #include "cellular_noise.h"
+#include "filter_colour_ramp.h"
 
 class extCellularFX : public extFilterEffect {
    public:
@@ -105,12 +106,6 @@ class extCellularFX : public extFilterEffect {
          .PeriodX     = PeriodX,
          .PeriodY     = PeriodY
       };
-   }
-
-   void clear_colours() {
-      ColourMap.clear();
-      Stops.clear();
-      Colours.reset();
    }
 
    extCellularFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
@@ -326,15 +321,9 @@ static ERR CELLULARFX_Draw(extCellularFX *Self, struct acDraw *Args)
                   return;
                }
 
-               const auto level = uint8_t(std::lround(std::clamp(Value, 0.0, 1.0) * 255.0));
-               if (colours) {
-                  const auto &rgb = colours->table[level];
-                  pixel[r] = rgb.r;
-                  pixel[g] = rgb.g;
-                  pixel[b] = rgb.b;
-                  pixel[a] = rgb.a;
-               }
+               if (colours) write_colour_ramp_pixel(*colours, Value, pixel, r, g, b, a);
                else {
+                  const auto level = uint8_t(std::lround(std::clamp(Value, 0.0, 1.0) * 255.0));
                   pixel[r] = pixel[g] = pixel[b] = linear_rgb ? glLinearRGB.invert(level) : level;
                   pixel[a] = 255;
                }
@@ -455,22 +444,9 @@ output ignores the ramp.  Unknown names fail with `ERR::NotFound`.
 
 static ERR CELLULARFX_SET_ColourMap(extCellularFX *Self, const std::string_view &Value)
 {
-   if (Value.empty()) {
-      Self->clear_colours();
-      cellular_modified(Self);
-      return ERR::Okay;
-   }
-
-   if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
-      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, 1));
-      if (not colours) return ERR::AllocMemory;
-      Self->Colours = std::move(colours);
-      Self->ColourMap = Value;
-      Self->Stops.clear();
-      cellular_modified(Self);
-      return ERR::Okay;
-   }
-   else return ERR::NotFound;
+   if (auto error = set_colour_ramp_map(*Self, Value); error != ERR::Okay) return error;
+   cellular_modified(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -680,23 +656,7 @@ output ignores the ramp.
 
 static ERR CELLULARFX_SET_Stops(extCellularFX *Self, std::span<const GradientStop> &Value)
 {
-   if (Value.empty()) {
-      Self->clear_colours();
-      cellular_modified(Self);
-      return ERR::Okay;
-   }
-
-   if (Value.size() < 2) return ERR::InvalidValue;
-
-   kt::vector<GradientStop> stops;
-   stops.assign(Value.begin(), Value.end());
-   auto colours = std::unique_ptr<GradientColours>(new (std::nothrow)
-      GradientColours(stops, VCS::SRGB, GCI::DEFAULT, GHM::SHORTER, 1.0, 1));
-   if (not colours) return ERR::AllocMemory;
-
-   Self->Stops = std::move(stops);
-   Self->Colours = std::move(colours);
-   Self->ColourMap.clear();
+   if (auto error = set_colour_ramp_stops(*Self, Value); error != ERR::Okay) return error;
    cellular_modified(Self);
    return ERR::Okay;
 }
@@ -799,19 +759,7 @@ static ERR cellular_xml(const extCellularFX &Effect, filter_xml_element &Element
 
    if (Effect.OutputMode IS FOM::HEIGHT) Element.attribute("xvg:outputMode", "height");
 
-   if (not Effect.ColourMap.empty()) Element.attribute("colormap", Effect.ColourMap);
-   else {
-      double last_offset = 0;
-      for (const auto &stop : Effect.Stops) {
-         if ((stop.Offset < last_offset) or (stop.Offset > 1.0)) return ERR::NoSupport;
-         auto &child = Element.child("stop");
-         child.attribute("offset", stop.Offset);
-         write_filter_xml_colour(child, "stop-color", stop.RGB);
-         last_offset = stop.Offset;
-      }
-   }
-
-   return ERR::Okay;
+   return colour_ramp_xml(Effect, Element);
 }
 
 //********************************************************************************************************************

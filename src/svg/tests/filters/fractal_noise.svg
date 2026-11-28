@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TurbulenceFX extensions through xvg:feFractalNoise.
+
+Row 1: the four noise types at the same frequency, octaves and seed: fractalNoise (greyscale through a ramp, as it
+would otherwise be drawn as four independent channels), turbulence, billow and ridged.  Billow and ridged are
+normalised and use colour ramps.
+Row 2: lacunarity 3 with persistence 0.65, an amplitude and offset that raise contrast, a domain rotated by 30
+degrees about an offset origin, and a 4 x 4 cell (64 x 64) periodic subregion repeated by feTile (no seams may be
+visible).
+Row 3: a stitched subregion with lacunarity 3 repeated by feTile, ridged noise as a height field for lighting,
+custom ramp stops, and a plain feTurbulence beside it for reference, which must look like the fractalNoise
+channels of an unextended noise.
+
+Each tile is a 220 x 220 filter region in its own user space. -->
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xvg="http://www.kotuku.dev/xmlns/svg" width="980" height="740"
+  viewBox="0 0 980 740">
+  <defs>
+    <filter id="noise" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.02" numOctaves="5" seed="1">
+        <stop offset="0" stop-color="#000"/>
+        <stop offset="1" stop-color="#fff"/>
+      </xvg:feFractalNoise>
+    </filter>
+
+    <filter id="turbulence" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise baseFrequency="0.02" numOctaves="5" seed="1" colormap="cmap:inferno"/>
+    </filter>
+
+    <filter id="billow" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="billow" baseFrequency="0.02" numOctaves="5" seed="1" normalise="true"
+        colormap="cmap:mako"/>
+    </filter>
+
+    <filter id="ridged" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="ridged" baseFrequency="0.02" numOctaves="5" seed="1" normalise="true"
+        colormap="cmap:magma"/>
+    </filter>
+
+    <filter id="lacunarity" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.015" numOctaves="4" seed="2" lacunarity="3"
+        persistence="0.65" colormap="cmap:viridis"/>
+    </filter>
+
+    <filter id="contrast" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.03" numOctaves="3" seed="3" amplitude="2.5"
+        offset="-0.75" colormap="cmap:rocket"/>
+    </filter>
+
+    <filter id="rotated" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="ridged" baseFrequency="0.08 0.01" numOctaves="2" seed="4" angle="30"
+        origin="110 110" colormap="cmap:flare"/>
+    </filter>
+
+    <filter id="periodic" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="fractalNoise" baseFrequency="0.0625" numOctaves="3" seed="5" period="4"
+        x="0" y="0" width="64" height="64" colormap="cmap:icefire"/>
+      <feTile/>
+    </filter>
+
+    <filter id="stitched" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="billow" baseFrequency="0.05" numOctaves="3" seed="6" lacunarity="3"
+        stitchTiles="stitch" x="0" y="0" width="55" height="55" colormap="cmap:viridis"/>
+      <feTile/>
+    </filter>
+
+    <filter id="relief" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="ridged" baseFrequency="0.015" numOctaves="5" seed="7" normalise="true"
+        xvg:outputMode="height" result="height"/>
+      <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="10" diffuseConstant="1" specularConstant="0.3"
+        specularExponent="12" ambient="#303030">
+        <feDistantLight azimuth="225" elevation="40"/>
+      </xvg:feLighting>
+    </filter>
+
+    <filter id="stops" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <xvg:feFractalNoise type="turbulence" baseFrequency="0.01 0.04" numOctaves="4" seed="8" normalise="true">
+        <stop offset="0" stop-color="#f0e6d0"/>
+        <stop offset="0.3" stop-color="#c8a070"/>
+        <stop offset="0.55" stop-color="#6a4020"/>
+        <stop offset="1" stop-color="#2a1808"/>
+      </xvg:feFractalNoise>
+    </filter>
+
+    <filter id="reference" filterUnits="userSpaceOnUse" x="0" y="0" width="220" height="220"
+      color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="5" seed="1"/>
+    </filter>
+  </defs>
+
+  <rect width="100%" height="100%" fill="#808080"/>
+
+  <g transform="translate(20 20)"><rect width="220" height="220" filter="url(#noise)"/></g>
+  <g transform="translate(260 20)"><rect width="220" height="220" filter="url(#turbulence)"/></g>
+  <g transform="translate(500 20)"><rect width="220" height="220" filter="url(#billow)"/></g>
+  <g transform="translate(740 20)"><rect width="220" height="220" filter="url(#ridged)"/></g>
+
+  <g transform="translate(20 260)"><rect width="220" height="220" filter="url(#lacunarity)"/></g>
+  <g transform="translate(260 260)"><rect width="220" height="220" filter="url(#contrast)"/></g>
+  <g transform="translate(500 260)"><rect width="220" height="220" filter="url(#rotated)"/></g>
+  <g transform="translate(740 260)"><rect width="220" height="220" filter="url(#periodic)"/></g>
+
+  <g transform="translate(20 500)"><rect width="220" height="220" filter="url(#stitched)"/></g>
+  <g transform="translate(260 500)"><rect width="220" height="220" fill="#b8a080" filter="url(#relief)"/></g>
+  <g transform="translate(500 500)"><rect width="220" height="220" filter="url(#stops)"/></g>
+  <g transform="translate(740 500)"><rect width="220" height="220" filter="url(#reference)"/></g>
+</svg>

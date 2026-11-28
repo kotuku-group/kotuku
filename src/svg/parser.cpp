@@ -2573,6 +2573,32 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noex
 }
 
 //********************************************************************************************************************
+// Checks the syntax of a length for a Kōtuku source effect before it is converted by SVGUnit(), which would otherwise
+// accept trailing text.
+
+static bool valid_effect_length(std::string_view Value) noexcept
+{
+   constexpr std::string_view suffixes[] = { "", "%", "px", "em", "ex", "in", "cm", "mm", "pt", "pc" };
+   auto text = Value;
+   if (text.starts_with('+')) text.remove_prefix(1);
+   double number;
+   const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
+   if (error != std::errc()) return false;
+   const auto suffix = text.substr(end - text.data());
+   return std::ranges::find(suffixes, suffix) != std::end(suffixes);
+}
+
+// Reads a whole-cell repeat period for a Kōtuku source effect, in the range of the CellularFX and TurbulenceFX
+// periods.
+
+static bool read_effect_period(std::string_view Value, int &Period) noexcept
+{
+   constexpr int max_period = 1 << 20;
+   const auto [end, error] = std::from_chars(Value.data(), Value.data() + Value.size(), Period);
+   return (error IS std::errc()) and (end IS Value.data() + Value.size()) and (Period >= 0) and (Period <= max_period);
+}
+
+//********************************************************************************************************************
 // <xvg:feCellular> generates a cellular (Worley) texture.  Class attributes are unprefixed; the output mode is a shared
 // extension attribute in the Kōtuku namespace.  Invalid values are reported and leave the field's default in place.
 
@@ -2595,14 +2621,7 @@ ERR svgState::parse_fe_cellular(objVectorFilter *Filter, XTag &Tag) noexcept
    };
 
    auto read_length = [&](std::string_view Value, Unit &Length) {
-      constexpr std::string_view suffixes[] = { "", "%", "px", "em", "ex", "in", "cm", "mm", "pt", "pc" };
-      auto text = Value;
-      if (text.starts_with('+')) text.remove_prefix(1);
-      double number;
-      const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
-      if (error != std::errc()) return false;
-      const auto suffix = text.substr(end - text.data());
-      if (std::ranges::find(suffixes, suffix) IS std::end(suffixes)) return false;
+      if (not valid_effect_length(Value)) return false;
       Length = SVGUnit(Value);
       return std::isfinite(Length.Value);
    };
@@ -2615,13 +2634,6 @@ ERR svgState::parse_fe_cellular(objVectorFilter *Filter, XTag &Tag) noexcept
       }
       if (Positive and ((length_x.Value <= 0) or (length_y.Value <= 0))) return false;
       return ((fx->*SetX)(length_x) IS ERR::Okay) and ((fx->*SetY)(length_y) IS ERR::Okay);
-   };
-
-   auto read_period = [](std::string_view Value, int &Period) {
-      constexpr int max_period = 1 << 20; // Matches the CellularFX period range.
-      const auto [end, error] = std::from_chars(Value.data(), Value.data() + Value.size(), Period);
-      return (error IS std::errc()) and (end IS Value.data() + Value.size()) and
-         (Period >= 0) and (Period <= max_period);
    };
 
    std::string result_name;
@@ -2658,7 +2670,7 @@ ERR svgState::parse_fe_cellular(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_period: {
             std::string_view x, y;
             int px, py;
-            valid = read_value_pair(val, x, y) and read_period(x, px) and read_period(y, py) and
+            valid = read_value_pair(val, x, y) and read_effect_period(x, px) and read_effect_period(y, py) and
                (fx->setPeriodX(px) IS ERR::Okay) and (fx->setPeriodY(py) IS ERR::Okay);
             break;
          }
@@ -3110,6 +3122,11 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
    if (NewObject(CLASSID::TURBULENCEFX, &fx) != ERR::Okay) return ERR::NewObject;
    SetOwner(fx, Filter);
 
+   // The element declares SVG expectations, so the Kōtuku extensions of TurbulenceFX are disabled even if the scene
+   // permits them.  xvg:feFractalNoise is the extended form.
+
+   fx->setCompliance(((Self->Scene) and (Self->Scene->Compliance IS VSC::SVG1)) ? FXC::SVG1 : FXC::SVG2);
+
    std::string result_name;
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
@@ -3152,6 +3169,157 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
    apply_primitive_colour_space(fx, Tag);
    if (!fx->init()) {
       if (!result_name.empty()) parse_result(Self, fx, result_name);
+      return ERR::Okay;
+   }
+   else {
+      FreeResource(fx);
+      return ERR::Init;
+   }
+}
+
+//********************************************************************************************************************
+// <xvg:feFractalNoise> is the extended form of feTurbulence, giving access to the Kōtuku extensions of TurbulenceFX.
+// Class attributes are unprefixed and their defaults are the class defaults.  As for xvg:feCellular, the output mode
+// is a shared extension attribute in the Kōtuku namespace.  Invalid values are reported and leave the field's default
+// in place.
+
+ERR svgState::parse_fe_fractal_noise(objVectorFilter *Filter, XTag &Tag) noexcept
+{
+   kt::Log log(__FUNCTION__);
+   objTurbulenceFX *fx;
+
+   if (NewObject(CLASSID::TURBULENCEFX, &fx) != ERR::Okay) return ERR::NewObject;
+   SetOwner(fx, Filter);
+   fx->setCompliance(FXC::NONE);
+
+   auto set_number = [&](std::string_view Value, auto Setter) {
+      const auto number = kt::font_traits::parse_number(Value);
+      return number and ((fx->*Setter)(*number) IS ERR::Okay);
+   };
+
+   auto set_integer = [&](std::string_view Value, auto Setter) {
+      int number;
+      return read_integer_value(Value, number) and ((fx->*Setter)(number) IS ERR::Okay);
+   };
+
+   auto read_length = [&](std::string_view Value, Unit &Length) {
+      if (not valid_effect_length(Value)) return false;
+      Length = SVGUnit(Value);
+      return std::isfinite(Length.Value);
+   };
+
+   auto set_output_mode = [&](std::string_view Value) {
+      const auto text = kt::font_traits::trim(Value);
+      if (iequals("height", text)) fx->setOutputMode(FOM::HEIGHT);
+      else if (iequals("image", text)) fx->setOutputMode(FOM::IMAGE);
+      else return false;
+      return true;
+   };
+
+   std::string result_name;
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      bool valid = true;
+      switch(strhash(Tag.Attribs[a].Name)) {
+         case SVF_baseFrequency: {
+            std::string_view x, y;
+            valid = read_value_pair(val, x, y);
+            if (valid) {
+               const auto freq_x = kt::font_traits::parse_number(x);
+               const auto freq_y = kt::font_traits::parse_number(y);
+               valid = freq_x and freq_y and std::isfinite(*freq_x) and std::isfinite(*freq_y) and
+                  (*freq_x >= 0) and (*freq_y >= 0) and
+                  (fx->setFX(*freq_x) IS ERR::Okay) and (fx->setFY(*freq_y) IS ERR::Okay);
+            }
+            break;
+         }
+
+         case SVF_numOctaves: {
+            int octaves;
+            valid = read_integer_value(val, octaves) and (octaves >= 0) and (octaves <= 30) and
+               (fx->setOctaves(octaves) IS ERR::Okay);
+            break;
+         }
+         case SVF_seed:        valid = set_integer(val, &objTurbulenceFX::setSeed); break;
+
+         case SVF_stitchTiles: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("stitch", text)) fx->setStitch(true);
+            else if (iequals("noStitch", text)) fx->setStitch(false);
+            else valid = false;
+            break;
+         }
+
+         case SVF_type: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("fractalNoise", text)) fx->setType(TB::NOISE);
+            else if (iequals("turbulence", text)) fx->setType(TB::TURBULENCE);
+            else if (iequals("billow", text)) fx->setType(TB::BILLOW);
+            else if (iequals("ridged", text)) fx->setType(TB::RIDGED);
+            else valid = false;
+            break;
+         }
+
+         case SVF_persistence: valid = set_number(val, &objTurbulenceFX::setPersistence); break;
+         case SVF_lacunarity:  valid = set_number(val, &objTurbulenceFX::setLacunarity); break;
+         case SVF_amplitude:   valid = set_number(val, &objTurbulenceFX::setAmplitude); break;
+         case SVF_offset:      valid = set_number(val, &objTurbulenceFX::setOffset); break;
+         case SVF_angle:       valid = set_number(val, &objTurbulenceFX::setAngle); break;
+
+         case SVF_normalise: {
+            const auto text = kt::font_traits::trim(std::string_view(val));
+            if (iequals("true", text)) fx->setNormalise(true);
+            else if (iequals("false", text)) fx->setNormalise(false);
+            else valid = false;
+            break;
+         }
+
+         case SVF_origin: {
+            std::string_view x, y;
+            Unit origin_x, origin_y;
+            valid = read_value_pair(val, x, y) and read_length(x, origin_x) and read_length(y, origin_y) and
+               (fx->setOriginX(origin_x) IS ERR::Okay) and (fx->setOriginY(origin_y) IS ERR::Okay);
+            break;
+         }
+
+         case SVF_period: {
+            std::string_view x, y;
+            int px, py;
+            valid = read_value_pair(val, x, y) and read_effect_period(x, px) and read_effect_period(y, py) and
+               (fx->setPeriodX(px) IS ERR::Okay) and (fx->setPeriodY(py) IS ERR::Okay);
+            break;
+         }
+
+         case SVF_phase:       valid = set_number(val, &objTurbulenceFX::setPhase); break;
+         case SVF_phasePeriod: valid = set_integer(val, &objTurbulenceFX::setPhasePeriod); break;
+
+         case SVF_colormap: valid = (fx->setColourMap(val) IS ERR::Okay); break;
+         case SVF_x:        fx->setX(SVGUnit(val)); break;
+         case SVF_y:        fx->setY(SVGUnit(val)); break;
+         case SVF_width:    fx->setWidth(SVGUnit(val)); break;
+         case SVF_height:   fx->setHeight(SVGUnit(val)); break;
+         case SVF_in:       parse_input_source(Self, fx, val); break;
+         case SVF_result:   result_name = val; break;
+
+         default:
+            if (kotuku_attrib(Self, Tag, Tag.Attribs[a].Name) IS "outputMode") valid = set_output_mode(val);
+            break;
+      }
+
+      if (not valid) log.warning("Invalid %s '%s' on %s.", Tag.Attribs[a].Name.c_str(), val.c_str(), Tag.name());
+   }
+
+   apply_primitive_colour_space(fx, Tag);
+   if (!fx->init()) {
+      if (!result_name.empty()) parse_result(Self, fx, result_name);
+
+      if (Tag.hasChildTags()) {
+         auto stops = process_gradient_stops(Tag);
+         if (stops.size() >= 2) fx->setStops(stops);
+      }
+
       return ERR::Okay;
    }
    else {
@@ -3534,6 +3702,14 @@ void svgState::proc_filter(XTag &Tag) noexcept
                case SVF_kotuku_feCellular:
                   if ((child.NamespaceID IS glKotukuNamespace) or (child.NamespaceID IS glKotukuSVGNamespace)) {
                      parse_fe_cellular(filter, child);
+                     break;
+                  }
+                  log.warning("Filter element '%s' not recognised.", child.name());
+                  break;
+
+               case SVF_kotuku_feFractalNoise:
+                  if ((child.NamespaceID IS glKotukuNamespace) or (child.NamespaceID IS glKotukuSVGNamespace)) {
+                     parse_fe_fractal_noise(filter, child);
                      break;
                   }
                   [[fallthrough]];

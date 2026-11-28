@@ -3550,3 +3550,243 @@ end
    assert((#layers is 3) and (layers[1].enabled is 0) and (layers[2].opacity is 0),
       'Export and reload must preserve both ways of making a layer inactive')
 end
+
+-- xvg:feFractalNoise creates a TurbulenceFX with its Kōtuku extensions enabled, whereas feTurbulence is always strict
+-- SVG.  These tests are global for the same reason as the CellularFX tests.
+
+global function turbulenceFX(SVG:obj!, Index:num):obj
+   local _, filter = check SVG.scene.mtFindDef('f')
+   return obj.find(filter.children('TurbulenceFX')[Index ?? 0])
+end
+
+-- Every attribute sets its field, and the element enables the extensions explicitly.
+
+@Test global function FractalNoiseParsesEveryAttribute()
+   local svg <close> = document('<xvg:feFractalNoise baseFrequency="0.05 0.08" numOctaves="4" seed="9" ' ..
+      'type="ridged" persistence="0.6" lacunarity="3" normalise="true" amplitude="1.5" offset="-0.25" ' ..
+      'origin="3 25%" angle="30" colormap="cmap:magma" xvg:outputMode="height" x="2" y="4" width="40" ' ..
+      'height="50" result="noise"/>' ..
+      '<xvg:feFractalNoise baseFrequency="0.1" stitchTiles="stitch" type="billow" period="4 6"/>' ..
+      '<xvg:feFractalNoise type="fractalNoise" period="5" phase="-0.4" phasePeriod="3">' ..
+      '<stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></xvg:feFractalNoise>', nil, 64,
+      KOTUKU_NS)
+
+   local fx = turbulenceFX(svg, 0)
+   assert(fx.compliance is FXC_NONE, 'xvg:feFractalNoise must enable the extensions explicitly')
+   assert((fx.fx is 0.05) and (fx.fy is 0.08) and (fx.octaves is 4) and (fx.seed is 9), 'SVG attributes must be set')
+   assert(fx.type is TB_RIDGED, 'type="ridged" must select TB_RIDGED')
+   assert((fx.persistence is 0.6) and (fx.lacunarity is 3) and (fx.normalise is 1), 'Octave controls must be set')
+   assert((fx.amplitude is 1.5) and (fx.offset is -0.25) and (fx.angle is 30), 'Mapping and angle must be set')
+   assert((fx.originX is 3) and (fx.colourMap is 'cmap:magma') and (fx.outputMode is FOM_HEIGHT),
+      'The origin, colour map and output mode must be set')
+
+   local second = turbulenceFX(svg, 1)
+   assert((second.fx is 0.1) and (second.fy is 0.1), 'A single frequency must apply to both axes')
+   assert((second.stitch is 1) and (second.type is TB_BILLOW), 'stitchTiles and type="billow" must be set')
+   assert((second.periodX is 4) and (second.periodY is 6), 'Both periods must be set')
+
+   local third = turbulenceFX(svg, 2)
+   assert((third.type is TB_NOISE) and (third.periodX is 5) and (third.periodY is 5),
+      'A single period must apply to both axes')
+   assert(#third.stops is 2, 'Child stops must define a ramp')
+   assert((third.phase is -0.4) and (third.phasePeriod is 3), 'The phase and its period must be set')
+
+   local xml = effectXML(svg)
+   assert(xml.find('origin="3 25%"', 0, true), f'A percentage origin must survive XMLDef: {xml}')
+end
+
+-- A default element writes no attributes, and invalid values leave each default in place.
+
+@Test global function FractalNoiseRejectsInvalidAttributes()
+   local svg <close> = document('<xvg:feFractalNoise/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(svg) is '<xvg:feFractalNoise/>', f'A default element must write no attributes: {effectXML(svg)}')
+
+   local invalid <close> = document('<xvg:feFractalNoise baseFrequency="-1" numOctaves="1.5" seed="x" ' ..
+      'stitchTiles="maybe" type="cloud" persistence="2" lacunarity="0.5" normalise="yes" amplitude="inf" ' ..
+      'offset="bad" origin="1 2 3" angle="x" period="-1" colormap="cmap:unknown" xvg:outputMode="vector" ' ..
+      'phase="x" phasePeriod="1.5"/>',
+      nil, 64, KOTUKU_NS)
+   assert(effectXML(invalid) is '<xvg:feFractalNoise/>',
+      f'Invalid attributes must leave every default in place: {effectXML(invalid)}')
+
+   for attr in values(array<str> { 'baseFrequency="0.1 -1"', 'baseFrequency="0.1 inf"', 'numOctaves="-1"',
+      'numOctaves="31"', 'origin="3 bad"', 'origin="3%junk"', 'period="4 1048577"', 'period="4 2)"' }) do
+      local malformed <close> = document(f'<xvg:feFractalNoise {attr}/>', nil, 64, KOTUKU_NS)
+      local xml = effectXML(malformed)
+      assert(xml is '<xvg:feFractalNoise/>', f'{attr} must leave every default in place: {xml}')
+   end
+
+   local unprefixed <close> = document('<xvg:feFractalNoise outputMode="height"/>', nil, 64, KOTUKU_NS)
+   assert(turbulenceFX(unprefixed).outputMode is FOM_IMAGE, 'The output mode must keep its Kotuku prefix')
+end
+
+@Test global function FractalNoiseRequiresKotukuNamespace()
+   local declarations = 'xmlns:k="http://www.kotuku.dev/xmlns/svg" xmlns:foreign="urn:foreign"'
+   local svg <close> = document('<feFractalNoise seed="1"/><foreign:feFractalNoise seed="2"/>' ..
+      '<k:feFractalNoise seed="4"/>', nil, 64, declarations)
+   assert(effectXML(svg) is '<xvg:feFractalNoise seed="4"/>',
+      f'Only the element bound to the Kotuku namespace must be parsed: {effectXML(svg)}')
+end
+
+-- Without extensions, xvg:feFractalNoise is the same noise as the equivalent feTurbulence.
+
+@Test global function FractalNoiseDefaultsMatchFeTurbulence()
+   for type in values(array<str> { 'fractalNoise', 'turbulence' }) do
+      local settings = f'type="{type}" baseFrequency="0.05 0.11" numOctaves="3" seed="7"'
+      local standard <close> = document(f'<feTurbulence {settings}/>', nil, 64, KOTUKU_NS)
+      local extended <close> = document(f'<xvg:feFractalNoise {settings}/>', nil, 64, KOTUKU_NS)
+      local a <close> = draw(standard, 64)
+      local b <close> = draw(extended, 64)
+      local diff = imageDifference(a, b)
+      assert(diff is 0, f'Default {type} extensions must reproduce feTurbulence (max difference {diff})')
+   end
+end
+
+-- feTurbulence declares SVG expectations: its compliance is explicit, extension attributes are ignored and the
+-- extension fields cannot be enabled afterwards.
+
+@Test global function FeTurbulenceIsStrictSVG()
+   local settings = 'type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="7"'
+   local plain <close> = document(f'<feTurbulence {settings}/>', nil, 64, KOTUKU_NS)
+   local reference <close> = draw(plain, 64)
+   assert(turbulenceFX(plain).compliance is FXC_SVG2,
+      'feTurbulence in a document permitting extensions must still declare SVG2')
+
+   local extras <close> = document(f'<feTurbulence {settings} persistence="0.2" lacunarity="3" normalise="true" ' ..
+      'amplitude="2" offset="0.5" origin="7 9" angle="30" period="4" colormap="cmap:magma" xvg:lacunarity="3" ' ..
+      'xvg:persistence="0.2"/>', nil, 64, KOTUKU_NS)
+   local fx = turbulenceFX(extras)
+   assert((fx.persistence is 0.5) and (fx.lacunarity is 2) and (fx.normalise is 0) and (fx.amplitude is 1) and
+      (fx.periodX is 0) and (fx.colourMap is nil), 'Extension attributes on feTurbulence must be ignored')
+   local ignored <close> = draw(extras, 64)
+   assert(imageDifference(reference, ignored) is 0, 'Ignored attributes must not change the output')
+   assert(effectXML(extras).startsWith('<feTurbulence '), f'XMLDef must remain feTurbulence: {effectXML(extras)}')
+
+   assert(fx.set('lacunarity', 3) is ERR_NoSupport, 'Extensions must be refused after initialisation')
+   assert(fx.set('lacunarity', 2) is ERR_Okay, 'Writing the default must be allowed')
+
+   local svg1 <close> = document(f'<feTurbulence {settings}/>', nil, 64, KOTUKU_NS .. ' xvg:compliance="svg1"')
+   assert(turbulenceFX(svg1).compliance is FXC_SVG1, 'An SVG 1.1 scene must give feTurbulence SVG1 compliance')
+   local standard <close> = document(f'<feTurbulence {settings}/>', nil, 64)
+   assert(turbulenceFX(standard).compliance is FXC_SVG2, 'A standard document must give SVG2 compliance')
+end
+
+-- An inherited compliance writes feTurbulence unless an extension is in use, while an explicit NONE always writes
+-- xvg:feFractalNoise.
+
+@Test global function TurbulenceXMLDefFollowsCompliance()
+   local svg <close> = document('<feTurbulence baseFrequency="0.05" seed="3"/>', nil, 64, KOTUKU_NS)
+   local fx = turbulenceFX(svg)
+   check fx.set('compliance', FXC_INHERIT)
+   assert(effectXML(svg).startsWith('<feTurbulence '), f'An unextended effect must stay standard: {effectXML(svg)}')
+
+   check fx.set('lacunarity', 3)
+   assert(effectXML(svg) is '<xvg:feFractalNoise baseFrequency="0.05" seed="3" lacunarity="3"/>',
+      f'An extension under INHERIT must select xvg:feFractalNoise: {effectXML(svg)}')
+
+   check fx.set('lacunarity', 2)
+   assert(effectXML(svg).startsWith('<feTurbulence '), f'Resetting the extension must restore feTurbulence')
+
+   check fx.set('compliance', FXC_NONE)
+   assert(effectXML(svg) is '<xvg:feFractalNoise baseFrequency="0.05" seed="3"/>',
+      f'An explicit NONE must always write xvg:feFractalNoise: {effectXML(svg)}')
+
+   check fx.set('compliance', FXC_SVG1)
+   assert(effectXML(svg).startsWith('<feTurbulence '), 'An explicit SVG1 must write feTurbulence')
+
+   -- A scene that is SVG2 resolves INHERIT to SVG2, so XMLDef is standard even with an extension (which cannot draw).
+
+   local standard <close> = document('<feTurbulence baseFrequency="0.05" seed="3"/>', nil, 64)
+   local strict = turbulenceFX(standard)
+   check strict.set('compliance', FXC_INHERIT)
+   check strict.set('lacunarity', 3)
+   assert(effectXML(standard).startsWith('<feTurbulence '), 'An SVG2 scene must keep feTurbulence')
+end
+
+-- Every extension written by XMLDef re-parses and survives an SVG save to render the same pixels, including an
+-- inherited effect in a scene that permits extensions.
+
+@Test global function FractalNoiseXMLDefRoundTrips()
+   local effects = [[
+   <xvg:feFractalNoise baseFrequency="0.04 0.06" numOctaves="4" seed="-11" type="ridged" persistence="0.6"
+      lacunarity="2.5" normalise="true" amplitude="1.25" offset="-0.1" origin="3 12.5%" angle="30"
+      xvg:outputMode="height" result="height"/>
+   <xvg:feLighting in="height" in2="SourceGraphic" surfaceScale="6" diffuseConstant="1" result="lit">
+      <feDistantLight azimuth="45" elevation="40"/>
+   </xvg:feLighting>
+   <xvg:feFractalNoise baseFrequency="0.125" numOctaves="2" type="billow" lacunarity="3" stitchTiles="stitch"
+      colormap="cmap:rocket" x="4" y="6" width="20" height="30" result="ramp"/>
+   <xvg:feFractalNoise baseFrequency="0.25" numOctaves="3" type="fractalNoise" period="4 2" phase="1.25"
+      phasePeriod="2" x="30" y="8" width="30" height="40" result="stops">
+      <stop offset="0" stop-color="#102030"/>
+      <stop offset="0.5" stop-color="#40a0c0"/>
+      <stop offset="1" stop-color="#e0f4ff"/>
+   </xvg:feFractalNoise>
+   <feMerge><feMergeNode in="lit"/><feMergeNode in="ramp"/><feMergeNode in="stops"/></feMerge>]]
+   local svg <close> = document(effects, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   local original <close> = draw(svg, 64)
+   local xml = effectXML(svg)
+   for _, expected in array<str> { 'baseFrequency="0.04 0.06"', 'numOctaves="4"', 'seed="-11"', 'type="ridged"',
+      'persistence="0.6"', 'lacunarity="2.5"', 'normalise="true"', 'amplitude="1.25"', 'offset="-0.1"',
+      'origin="3 12.5%"', 'angle="30"', 'xvg:outputMode="height"', 'type="billow"', 'stitchTiles="stitch"',
+      'colormap="cmap:rocket"', 'period="4 2"', 'phase="1.25"', 'phasePeriod="2"', '<stop offset="0.5"' } do
+      assert(xml.find(expected, 0, true), f'XMLDef must write {expected}: {xml}')
+   end
+
+   local loaded <close> = document(xml, nil, 64, KOTUKU_NS, 'filterUnits="userSpaceOnUse"')
+   assert(effectXML(loaded) is xml, f'Re-parsed XMLDef must serialise identically: {effectXML(loaded)}')
+   local diff = imageDifference(original, draw(loaded, 64))
+   assert(diff is 0, f'XMLDef must re-parse to an identical render (max difference {diff}): {xml}')
+
+   local restored <close> = obj.new('svg', { statement=saveFilterDocument(svg) })
+   assert(effectXML(restored) is xml, 'The fractal noise settings must survive an SVG save and reload')
+   diff = imageDifference(original, draw(restored, 64))
+   assert(diff is 0, f'The saved fractal noise must render identically after reload (max difference {diff})')
+   assert(mGfx.ReadRGBPixel(original, 10, 20).alpha is 255, 'The merged noise result must be drawn')
+
+   -- Both elements round-trip in one document: the standard one stays standard.
+
+   local mixed <close> = document('<feTurbulence baseFrequency="0.05" seed="2" result="a"/>' ..
+      '<xvg:feFractalNoise baseFrequency="0.05" seed="2" type="billow" result="b"/>' ..
+      '<feComposite in="a" in2="b" operator="arithmetic" k2="0.5" k3="0.5"/>', nil, 64, KOTUKU_NS)
+   local mixed_original <close> = draw(mixed, 64)
+   local mixed_xml = effectXML(mixed)
+   local mixed_restored <close> = obj.new('svg', { statement=saveFilterDocument(mixed) })
+   assert(effectXML(mixed_restored) is mixed_xml, f'Both elements must survive a save: {effectXML(mixed_restored)}')
+   assert(turbulenceFX(mixed_restored, 0).compliance is FXC_SVG2, 'The reloaded feTurbulence must stay strict')
+   assert(imageDifference(mixed_original, draw(mixed_restored, 64)) is 0, 'Both elements must render after reload')
+end
+
+-- An explicit NONE overrides the document, so xvg:feFractalNoise renders its extensions in an svg2 document, and the
+-- saved document keeps the Kotuku namespace that the element needs.
+
+@Test global function FractalNoiseRendersInSVG2Documents()
+   local effect = '<xvg:feFractalNoise baseFrequency="0.05" numOctaves="3" seed="5" type="ridged" lacunarity="3"/>'
+   local open <close> = document(effect, nil, 64, KOTUKU_NS)
+   local strict <close> = document(effect, nil, 64, KOTUKU_NS .. ' xvg:compliance="svg2"')
+   assert(strict.scene.compliance is VSC_SVG2, 'The document must declare SVG2 compliance')
+   local reference <close> = draw(open, 64)
+   local result <close> = draw(strict, 64)
+   assert(mGfx.ReadRGBPixel(result, 20, 20).alpha > 0, 'The extended noise must be drawn in an svg2 document')
+   assert(imageDifference(reference, result) is 0, 'The svg2 document must not change the extended noise')
+
+   local plain <close> = document('<feTurbulence baseFrequency="0.05" numOctaves="3" seed="5"/>', nil, 64)
+   local plain_bmp <close> = draw(plain, 64)
+   assert(imageDifference(plain_bmp, result) > 0, 'The ridged extension must change the output')
+
+   local saved = saveFilterDocument(strict)
+   assert(saved.find('xmlns:xvg=') and saved.find('xvg:compliance="svg2"'),
+      'Saving must keep the Kotuku namespace and the svg2 declaration')
+   local restored <close> = obj.new('svg', { statement=saved })
+   assert(restored.scene.compliance is VSC_SVG2, 'The reloaded document must remain svg2')
+   assert(imageDifference(reference, draw(restored, 64)) is 0, 'The reloaded extensions must render identically')
+
+   -- An inherited extension in an svg2 scene cannot draw, so the filter is skipped and the rect drawn unfiltered.
+
+   local fx = turbulenceFX(strict)
+   check fx.set('compliance', FXC_INHERIT)
+   local rejected <close> = draw(strict, 64)
+   local unfiltered_svg <close> = document('', '<rect width="64" height="64"/>', 64)
+   local unfiltered <close> = draw(unfiltered_svg, 64)
+   assert(imageDifference(rejected, unfiltered) is 0, 'An inherited extension must not draw in an svg2 scene')
+end

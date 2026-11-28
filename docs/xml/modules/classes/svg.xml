@@ -279,6 +279,32 @@ instead.</li>
   &lt;/xvg:feLighting&gt;
 &lt;/filter&gt;
 </pre>
+<p>The <code>feTurbulence</code> element always follows the SVG standard: its <class name="TurbulenceFX" field="Compliance">TurbulenceFX.Compliance</class> is set to the scene's <code>SVG1</code> or <code>SVG2</code> compliance, or to <code>SVG2</code> in a document that permits Kōtuku features, and it accepts no extension attributes other than <code>xvg:outputMode</code>.  The <code>xvg:feFractalNoise</code> element creates the same <class name="TurbulenceFX">TurbulenceFX</class> with its Kōtuku extensions enabled, even in a document that declares <code>xvg:compliance</code>.  It takes no input, and its own attributes are unprefixed:</p>
+<list type="bullet">
+<li><code>baseFrequency</code>, <code>numOctaves</code>, <code>seed</code> and <code>stitchTiles</code>: as for <code>feTurbulence</code>.  The vertical frequency defaults
+to the horizontal one.</li>
+<li><code>type</code>: <code>turbulence</code> (the default), <code>fractalNoise</code>, <code>billow</code> or <code>ridged</code>.  Sets <class name="TurbulenceFX" field="Type">TurbulenceFX.Type</class>.</li>
+<li><code>persistence</code>, <code>lacunarity</code>, <code>amplitude</code>, <code>offset</code> and <code>angle</code>: numbers that set <class name="TurbulenceFX" field="Persistence">TurbulenceFX.Persistence</class>,
+<class name="TurbulenceFX" field="Lacunarity">TurbulenceFX.Lacunarity</class>, <class name="TurbulenceFX" field="Amplitude">TurbulenceFX.Amplitude</class>, <class name="TurbulenceFX" field="Offset">TurbulenceFX.Offset</class> and <class name="TurbulenceFX" field="Angle">TurbulenceFX.Angle</class>.</li>
+<li><code>normalise</code>: <code>true</code> or <code>false</code> (the default).  Sets <class name="TurbulenceFX" field="Normalise">TurbulenceFX.Normalise</class>.</li>
+<li><code>origin</code>: the X and optional Y origin of the noise domain, measured from primitive-unit (0, 0).  Y defaults to X,
+and a percentage refers to the filter region.  Sets <class name="TurbulenceFX" field="OriginX">TurbulenceFX.OriginX</class> and <class name="TurbulenceFX" field="OriginY">TurbulenceFX.OriginY</class>.</li>
+<li><code>period</code>: whole numbers of lattice cells after which the first octave repeats horizontally and, optionally,
+vertically.  The vertical period defaults to the horizontal one.  Sets <class name="TurbulenceFX" field="PeriodX">TurbulenceFX.PeriodX</class> and
+<class name="TurbulenceFX" field="PeriodY">TurbulenceFX.PeriodY</class>.</li>
+<li><code>phase</code>: a number that selects the position of the noise in its animation, in lattice cells.  Sets
+<class name="TurbulenceFX" field="Phase">TurbulenceFX.Phase</class>.</li>
+<li><code>phasePeriod</code>: a whole number of lattice cells after which the <code>phase</code> loops.  Sets
+<class name="TurbulenceFX" field="PhasePeriod">TurbulenceFX.PhasePeriod</class>.</li>
+<li><code>colormap</code>: a named colour map such as <code>cmap:viridis</code>.  Child <code>stop</code> elements define a custom colour ramp
+instead.</li>
+</list>
+<p>Unlike <code>feTurbulence</code>, the defaults are those of <class name="TurbulenceFX">TurbulenceFX</class>, so <code>baseFrequency</code> is 0 and <code>numOctaves</code> is 1 when omitted.  The shared <code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>, <code>result</code> and <code>color-interpolation-filters</code> attributes apply as they do to standard primitives, and <code>xvg:outputMode=&quot;height&quot;</code> must keep its prefix.  An invalid value is reported and the field keeps its default.  Some combinations can only be checked when the filter is drawn, and the element then draws nothing: <code>stitchTiles=&quot;stitch&quot;</code> with a <code>period</code>, either of them with an <code>angle</code> that is not a multiple of 360, and either of them or a <code>phasePeriod</code> with several octaves and a fractional <code>lacunarity</code>.  Other renderers do not draw the element.  When a scene is saved, a <class name="TurbulenceFX">TurbulenceFX</class> that uses no extensions is written as <code>feTurbulence</code>; see <class name="TurbulenceFX" field="XMLDef">TurbulenceFX.XMLDef</class>.</p>
+<pre>&lt;filter id=&quot;ridges&quot; xmlns:xvg=&quot;http://www.kotuku.dev/xmlns/svg&quot;&gt;
+  &lt;xvg:feFractalNoise type=&quot;ridged&quot; baseFrequency=&quot;0.02&quot; numOctaves=&quot;5&quot; lacunarity=&quot;2.2&quot; persistence=&quot;0.6&quot;
+      normalise=&quot;true&quot; colormap=&quot;cmap:magma&quot;/&gt;
+&lt;/filter&gt;
+</pre>
 <p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>
