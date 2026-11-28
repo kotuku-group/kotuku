@@ -496,8 +496,11 @@ and a percentage refers to the filter region.  The default is `25% 12.5%`.  Sets
 @PavingFX.ElementHeight.</li>
 <li>`origin`: the X and optional Y position of the pattern lattice, relative to the filter region's top-left corner.
 Y defaults to X.  Sets @PavingFX.OriginX and @PavingFX.OriginY.</li>
-<li>`jointWidth` and `bevelWidth`: lengths for the mortar gap and interior edge bevel (default `1%` each).  Sets
-@PavingFX.JointWidth and @PavingFX.BevelWidth.</li>
+<li>`jointWidth`, `bevelWidth` and `cornerRadius`: lengths for the mortar gap (default `1%`), interior edge bevel
+(default `1%`) and element corner rounding (default `0`).  Sets @PavingFX.JointWidth, @PavingFX.BevelWidth and
+@PavingFX.CornerRadius.</li>
+<li>`edgeSoftness`: the width of the fringe over which elements blend into joints (default `0`, a one-pixel edge).
+Sets @PavingFX.EdgeSoftness.</li>
 <li>`bevelProfile`: `linear` (the default), `in`, `out`, `inOut`, `cubicIn`, `cubicOut`, `cubicInOut`, `circleIn`,
 `circleOut` or `circleInOut`.  Sets @PavingFX.BevelProfile.</li>
 <li>`angle`, `rowOffset`, `elementHeight`, `jointHeight`, `hueVariation`, `chromaVariation`, `lightVariation` and

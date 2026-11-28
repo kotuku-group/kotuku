@@ -3807,17 +3807,18 @@ end
    assert(effectXML(svg) is '<xvg:fePaving/>', f'A default element must write no attributes: {effectXML(svg)}')
 
    local invalid <close> = document('<xvg:fePaving layout="hex" mode="albedo" seed="1.5" elementSize="0" ' ..
-      'origin="1 2 3" jointWidth="-1" bevelWidth="-2px" bevelProfile="bounce" angle="x" rowOffset="nan" ' ..
-      'elementHeight="inf" jointHeight="x" hueVariation="200" chromaVariation="0.5" lightVariation="-0.1" ' ..
-      'heightVariation="101" elementColor="bogus" jointColor="none" alternateColor="bad" fillMode="stretch" ' ..
-      'resampleMethod="cubic" period="-1" elementMap="missing" jointMap="missing" colormap="cmap:unknown" ' ..
-      'xvg:outputMode="vector"/>', nil, 64, KOTUKU_NS)
+      'origin="1 2 3" jointWidth="-1" bevelWidth="-2px" cornerRadius="-1px" edgeSoftness="-1" ' ..
+      'bevelProfile="bounce" angle="x" ' ..
+      'rowOffset="nan" elementHeight="inf" jointHeight="x" hueVariation="200" chromaVariation="0.5" ' ..
+      'lightVariation="-0.1" heightVariation="101" elementColor="bogus" jointColor="none" alternateColor="bad" ' ..
+      'fillMode="stretch" resampleMethod="cubic" period="-1" elementMap="missing" jointMap="missing" ' ..
+      'colormap="cmap:unknown" xvg:outputMode="vector"/>', nil, 64, KOTUKU_NS)
    assert(effectXML(invalid) is '<xvg:fePaving/>',
       f'Invalid attributes must leave every default in place: {effectXML(invalid)}')
 
    for attr in values(array<str> { 'elementSize="16 -1"', 'elementSize="8pxjunk"', 'elementSize="8,"',
-      'origin="3 bad"', 'origin="3%junk"', 'jointWidth="2pxjunk"', 'bevelWidth="bad"', 'period="4 -1"',
-      'period="4 1048577"', 'period="4 2)"' }) do
+      'origin="3 bad"', 'origin="3%junk"', 'jointWidth="2pxjunk"', 'bevelWidth="bad"', 'cornerRadius="3pxjunk"',
+      'edgeSoftness="bad"', 'period="4 -1"', 'period="4 1048577"', 'period="4 2)"' }) do
       local malformed <close> = document(f'<xvg:fePaving {attr}/>', nil, 64, KOTUKU_NS)
       assert(effectXML(malformed) is '<xvg:fePaving/>', f'{attr} must leave every default in place')
    end
@@ -3826,8 +3827,10 @@ end
    assert(pavingFX(unprefixed).outputMode is FOM_IMAGE, 'The output mode must keep its Kotuku prefix')
 
    local lengths <close> = document('<xvg:fePaving elementSize="+8px,25%" origin="-2px 3em" jointWidth="+2px" ' ..
-      'bevelWidth="0.5em"/>', nil, 64, KOTUKU_NS)
-   assert(effectXML(lengths) is '<xvg:fePaving elementSize="8 25%" origin="-2 48" jointWidth="2" bevelWidth="8"/>',
+      'bevelWidth="0.5em" cornerRadius="2.5px" edgeSoftness="0.125em"/>', nil, 64, KOTUKU_NS)
+   assert(effectXML(lengths) is
+      '<xvg:fePaving elementSize="8 25%" origin="-2 48" jointWidth="2" bevelWidth="8" cornerRadius="2.5" ' ..
+      'edgeSoftness="2"/>',
       f'Valid SVG units must be resolved: {effectXML(lengths)}')
 
    local aliases <close> = document('<xvg:fePaving mode="color" resampleMethod="neighbor" ' ..
@@ -3855,10 +3858,10 @@ end
    <xvg:feCellular seed="3" cellSize="16" colormap="cmap:flare" result="brickTex"/>
    <feFlood flood-color="#383430" result="mortarTex"/>
    <xvg:fePaving layout="herringbone" seed="-9007199254740993" elementSize="16 8" origin="3 4.5" jointWidth="2"
-      bevelWidth="3" bevelProfile="circleOut" angle="30" elementColor="#c05030" jointColor="#302820"
-      alternateColor="#506070" hueVariation="15" chromaVariation="0.05" lightVariation="0.1" fillMode="continuous"
-      resampleMethod="neighbour" elementMap="brickTex" jointMap="mortarTex" x="0" y="0" width="32" height="32"
-      result="mapped"/>
+      bevelWidth="3" cornerRadius="1.5" edgeSoftness="1.25" bevelProfile="circleOut" angle="30" elementColor="#c05030"
+      jointColor="#302820" alternateColor="#506070" hueVariation="15" chromaVariation="0.05" lightVariation="0.1"
+      fillMode="continuous" resampleMethod="neighbour" elementMap="brickTex" jointMap="mortarTex" x="0" y="0"
+      width="32" height="32" result="mapped"/>
    <xvg:fePaving layout="running" mode="height" seed="11" elementSize="25% 12" rowOffset="0.25" elementHeight="1.5"
       jointHeight="-0.25" heightVariation="0.2" bevelProfile="cubicInOut" xvg:outputMode="height" result="height"/>
    <xvg:feLighting in="height" in2="mapped" surfaceScale="6" diffuseConstant="1" result="lit">
@@ -3883,8 +3886,9 @@ end
    local original <close> = draw(svg, 64)
    local xml = effectXML(svg)
    for _, expected in array<str> { 'layout="herringbone"', 'seed="-9007199254740993"', 'elementSize="16 8"',
-      'origin="3 4.5"', 'jointWidth="2"', 'bevelWidth="3"', 'bevelProfile="circleOut"', 'angle="30"',
-      'elementColor="rgb(192 80 48)"', 'jointColor="rgb(48 40 32)"', 'alternateColor="rgb(80 96 112)"',
+      'origin="3 4.5"', 'jointWidth="2"', 'bevelWidth="3"', 'cornerRadius="1.5"', 'edgeSoftness="1.25"',
+      'bevelProfile="circleOut"',
+      'angle="30"', 'elementColor="rgb(192 80 48)"', 'jointColor="rgb(48 40 32)"', 'alternateColor="rgb(80 96 112)"',
       'hueVariation="15"', 'chromaVariation="0.05"', 'lightVariation="0.1"', 'fillMode="continuous"',
       'resampleMethod="neighbour"', 'elementMap="', 'jointMap="', 'mode="height"', 'elementSize="25% 12"',
       'rowOffset="0.25"', 'elementHeight="1.5"', 'jointHeight="-0.25"', 'heightVariation="0.2"',
