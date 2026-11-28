@@ -91,9 +91,11 @@ GOLDEN = {
 
 -- The filtered rectangle is offset and not square, so that bounding-box units differ from user space on both axes.
 
-function buildCase(Case:table):obj
+-- Fields: extra TurbulenceFX fields, applied at creation.  Scene: the VectorScene compliance, VSC_NONE by default.
+
+function buildCase(Case:table):<obj, obj>
    local space = (Case.space is 'linear') ? VCS_LINEAR_RGB : VCS_SRGB
-   local scene = obj.new('VectorScene', { pageWidth=SIZE, pageHeight=SIZE, compliance=VSC_NONE })
+   local scene = obj.new('VectorScene', { pageWidth=SIZE, pageHeight=SIZE, compliance=Case.scene ?? VSC_NONE })
    local root = scene.new('VectorViewport', { width=SIZE, height=SIZE, colourSpace=VCS_SRGB })
    local filter = scene.new('VectorFilter', {
       units=VUNIT_USERSPACE, x=0, y=0, width=SIZE, height=SIZE, colourSpace=space,
@@ -107,10 +109,14 @@ function buildCase(Case:table):obj
       check mVec.Rotate(matrix, Case.rotate, SIZE / 2, SIZE / 2)
    end
 
-   local noise = filter.new('TurbulenceFX', {
+   local fields = {
       type=Case.type, octaves=Case.octaves, seed=(Case.seed is nil) ? 7 : Case.seed, stitch=Case.stitch and 1 or 0,
       fx=Case.fx ?? 0.045, fy=Case.fy ?? 0.07, outputMode=(Case.mode is 'height') ? FOM_HEIGHT : FOM_IMAGE
-   })
+   }
+   if Case.fields then
+      for key, value in Case.fields do fields[key] = value end
+   end
+   local noise = filter.new('TurbulenceFX', fields)
 
    if Case.region then
       noise.{ x=Case.region[0], y=Case.region[1], width=Case.region[2], height=Case.region[3] }
@@ -123,7 +129,7 @@ function buildCase(Case:table):obj
       local blue = filter.new('FloodFX', { colour='0,0,1,1' })
       filter.new('CompositeFX', { input=red, mix=blue, operator=OP_OVER, amountMask=noise })
    end
-   return scene
+   return scene, noise
 end
 
 function drawScene(Scene:obj):obj
@@ -200,4 +206,859 @@ end
          assert(crc(second) is GOLDEN[case.name], f'{case.name} must match the baseline on redraw')
       end
    end
+end
+
+--------------------------------------------------------------------------------------------------------------------
+-- Extension fields.  HEIGHT cases are read from the red channel, which the amount mask mixes in proportion to the
+-- height.
+
+function heights(Case:table):array<double>
+   Case.mode = 'height'
+   local bitmap <close> = renderCase(Case)
+   local result = array<double>
+   for y in {0 to SIZE} do
+      for x in {0 to SIZE} do
+         result.push(mGfx.ReadRGBPixel(bitmap, x, y).red)
+      end
+   end
+   return result
+end
+
+-- Returns the largest difference between Actual and the mapping of Reference, and the spread of Actual.  Saturated
+-- reference pixels are skipped because their true value is unknown.
+
+function compare(Actual:array<double>, Reference:array<double>, Mapping:func):<num, num>
+   local worst, low, high = 0, 255, 0
+   for i, value in Actual do
+      if (Reference[i] <= 0) or (Reference[i] >= 255) then continue end
+      local expected = math.min(math.max(Mapping(Reference[i]), 0), 255)
+      worst = math.max(worst, math.abs(value - expected))
+      low = math.min(low, value)
+      high = math.max(high, value)
+   end
+   return worst, high - low
+end
+
+function isBlank(Bitmap:obj):bool
+   for y in {4 to SIZE by 8} do
+      for x in {4 to SIZE by 8} do
+         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
+         if (p.red != 0) or (p.green != 0) or (p.blue != 255) then return false end
+      end
+   end
+   return true
+end
+
+function newEffect(Fields:table):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=SIZE, pageHeight=SIZE })
+   local filter = scene.new('VectorFilter', { })
+   return scene, filter.new('TurbulenceFX', Fields)
+end
+
+@Test function ExtensionFieldsHaveSvgDefaults()
+   local scene <close>, fx = newEffect({ })
+   assert(fx.compliance is FXC_INHERIT, 'Compliance must default to INHERIT')
+   assert((fx.persistence is 0.5) and (fx.lacunarity is 2), 'Octave defaults must match SVG')
+   assert((fx.amplitude is 1) and (fx.offset is 0) and (fx.normalise is 0), 'Mapping defaults must be neutral')
+   assert((fx.originX is 0) and (fx.originY is 0) and (fx.angle is 0), 'Domain defaults must be neutral')
+   assert((fx.periodX is 0) and (fx.periodY is 0), 'Periods must default to 0')
+   assert((fx.phase is 0) and (fx.phasePeriod is 0), 'Phase fields must default to 0')
+   assert(fx.xmlDef.startsWith('feTurbulence'), 'A default effect must describe feTurbulence')
+end
+
+@Test function SettersRejectInvalidValues()
+   local scene <close>, fx = newEffect({ })
+   local nan = 0 / 0
+   local cases = {
+      { 'persistence', -0.01, ERR_OutOfRange }, { 'persistence', 1.01, ERR_OutOfRange },
+      { 'persistence', nan, ERR_InvalidValue }, { 'lacunarity', 0.99, ERR_OutOfRange },
+      { 'lacunarity', 8.01, ERR_OutOfRange }, { 'lacunarity', 1/0, ERR_InvalidValue },
+      { 'amplitude', nan, ERR_InvalidValue }, { 'amplitude', -1/0, ERR_InvalidValue },
+      { 'offset', 1/0, ERR_InvalidValue }, { 'compliance', 4, ERR_OutOfRange }, { 'compliance', -1, ERR_OutOfRange },
+      { 'type', 4, ERR_InvalidValue }, { 'originX', nan, ERR_InvalidValue }, { 'originY', 1/0, ERR_InvalidValue },
+      { 'angle', nan, ERR_InvalidValue }, { 'periodX', -1, ERR_OutOfRange }, { 'periodY', 1048577, ERR_OutOfRange },
+      { 'phase', nan, ERR_InvalidValue }, { 'phase', -1/0, ERR_InvalidValue }, { 'phasePeriod', -1, ERR_OutOfRange },
+      { 'phasePeriod', 1048577, ERR_OutOfRange }
+   }
+   for _, entry in cases do
+      local field, value, expected = entry[0], entry[1], entry[2]
+      local before = fx.get(field)
+      local error = fx.set(field, value)
+      assert(error is expected, f'{field} = {value} returned {mSys.GetErrorMsg(error)}')
+      assert(fx.get(field) is before, f'A rejected {field} must keep its previous value')
+   end
+
+   for _, entry in { { 'persistence', 0 }, { 'persistence', 1 }, { 'lacunarity', 1 }, { 'lacunarity', 8 },
+         { 'amplitude', -3 }, { 'offset', 2.5 }, { 'normalise', 1 }, { 'type', 'Billow' }, { 'type', 'Ridged' },
+         { 'compliance', 'None' }, { 'originX', -12.5 }, { 'originY', '25%' }, { 'angle', -725 },
+         { 'periodX', 1048576 }, { 'periodY', 0 }, { 'phase', -3.25 }, { 'phasePeriod', 1048576 } } do
+      assert(fx.set(entry[0], entry[1]) is ERR_Okay, f'{entry[0]} = {entry[1]} must be accepted')
+   end
+   assert(fx.type is TB_RIDGED, 'Types must be selectable by name')
+   assert(fx.compliance is FXC_NONE, 'Compliance must be selectable by name')
+
+   local scene2 <close>, standard = newEffect({ })
+   standard.compliance = 'Svg1'
+   assert(standard.compliance is FXC_SVG1, 'SVG1 must be selectable by name')
+end
+
+@Test function ExplicitSvgComplianceRejectsExtensionsAtInit()
+   for _, fields in { { persistence=0.6 }, { lacunarity=3 }, { normalise=1 }, { amplitude=2 }, { offset=0.1 },
+         { type=TB_BILLOW }, { type=TB_RIDGED }, { originX=1 }, { originY='5%' }, { angle=360 }, { periodX=4 },
+         { periodY=1 }, { phase=0.5 }, { phasePeriod=2 } } do
+      for _, compliance in { FXC_SVG1, FXC_SVG2 } do
+         local scene <close> = obj.new('VectorScene', { })
+         local fx = scene.new('VectorFilter', { }).new('TurbulenceFX')
+         fx.compliance = compliance
+         for key, value in fields do fx.set(key, value) end
+         try
+            fx.init()
+            raise f'Init must fail for {fields} under compliance {compliance}'
+         except e when ERR_InvalidValue
+         end
+      end
+   end
+
+   -- Defaults written explicitly are not extensions, and INHERIT or NONE accept anything at Init.
+
+   local scene <close>, fx = newEffect({ compliance=FXC_SVG2, persistence=0.5, lacunarity=2, amplitude=1, offset=0,
+      normalise=0, type=TB_NOISE, originX=0, originY='0%', angle=0, periodX=0, periodY=0, phase=0, phasePeriod=0 })
+   local scene2 <close>, fx2 = newEffect({ compliance=FXC_NONE, persistence=0.6, type=TB_RIDGED })
+   local scene3 <close>, fx3 = newEffect({ persistence=0.6, type=TB_BILLOW })
+end
+
+@Test function SvgComplianceRefusesExtensionWritesAfterInit()
+   local scene <close>, fx = newEffect({ compliance=FXC_SVG1 })
+   for _, entry in { { 'persistence', 0.6, 0.5 }, { 'lacunarity', 3, 2 }, { 'normalise', 1, 0 },
+         { 'amplitude', 2, 1 }, { 'offset', 0.1, 0 }, { 'type', TB_BILLOW, TB_NOISE },
+         { 'type', TB_RIDGED, TB_NOISE }, { 'originX', 2, 0 }, { 'originY', -3, 0 }, { 'angle', 90, 0 },
+         { 'periodX', 2, 0 }, { 'periodY', 7, 0 }, { 'phase', 0.5, 0 }, { 'phasePeriod', 3, 0 } } do
+      local field, value, default = entry[0], entry[1], entry[2]
+      local error = fx.set(field, value)
+      assert(error is ERR_NoSupport, f'{field} = {value} returned {mSys.GetErrorMsg(error)}')
+      assert(fx.set(field, default) is ERR_Okay, f'Writing the default to {field} must succeed')
+   end
+
+   -- Range checks take precedence, and NONE lifts the restriction.
+
+   assert(fx.set('persistence', 2) is ERR_OutOfRange, 'Range checks must come first')
+   check fx.set('compliance', FXC_NONE)
+   assert(fx.set('persistence', 0.6) is ERR_Okay, 'NONE must permit extensions')
+end
+
+@Test function SwitchingToSvgComplianceRequiresDefaults()
+   local scene <close>, fx = newEffect({ lacunarity=3 })
+   for _, compliance in { FXC_SVG1, FXC_SVG2 } do
+      local error = fx.set('compliance', compliance)
+      assert(error is ERR_InvalidState, f'Compliance {compliance} returned {mSys.GetErrorMsg(error)}')
+      assert(fx.compliance is FXC_INHERIT, 'A rejected compliance must not be stored')
+   end
+   assert(fx.set('compliance', FXC_NONE) is ERR_Okay, 'NONE must always be accepted')
+   assert(fx.set('compliance', FXC_INHERIT) is ERR_Okay, 'INHERIT must always be accepted')
+   fx.lacunarity = 2
+   assert(fx.set('compliance', FXC_SVG2) is ERR_Okay, 'SVG2 must be accepted once all fields are default')
+end
+
+@Test function InheritedSvgComplianceFailsAtDrawTime()
+   local standard <close> = renderCase({ type=TB_TURBULENCE, octaves=2, scene=VSC_SVG2 })
+   assert(not isBlank(standard), 'A standard effect must draw in an SVG2 scene')
+
+   for index, fields in { { persistence=0.6 }, { type=TB_RIDGED }, { amplitude=0.5 }, { originX=3 },
+         { angle=45 }, { periodX=2 }, { phase=0.5 }, { phasePeriod=2 } } do
+      local rejected <close> = renderCase({ type=TB_TURBULENCE, octaves=2, scene=VSC_SVG2, fields=fields })
+      assert(isBlank(rejected), f'Extension {index} must not draw through an inherited SVG2 compliance')
+
+      -- An explicit NONE overrides the scene, and an SVG1 scene restricts like SVG2.
+
+      fields.compliance = FXC_NONE
+      local permitted <close> = renderCase({ type=TB_TURBULENCE, octaves=2, scene=VSC_SVG2, fields=fields })
+      assert(not isBlank(permitted), f'Extension {index} must draw with an explicit NONE compliance')
+
+      fields.compliance = nil
+      local svg1 <close> = renderCase({ type=TB_TURBULENCE, octaves=2, scene=VSC_SVG1, fields=fields })
+      assert(isBlank(svg1), f'Extension {index} must not draw through an inherited SVG1 compliance')
+   end
+end
+
+@Test function DefaultExtensionValuesReproduceTheBaseline()
+   -- Writing every extension field at its default must take the original code path.
+
+   local defaults = { persistence=0.5, lacunarity=2, amplitude=1, offset=0, normalise=0, compliance=FXC_NONE,
+      originX=0, originY=0, angle=0, periodX=0, periodY=0 }
+   for _, case in CASES do
+      if case.name in array<str> { 'noise_oct4', 'turbulence_oct4_stitch', 'noise_oct4_height',
+            'turbulence_oct4_rotated' } then
+         local copy = table.clone(case)
+         copy.fields = defaults
+         local bitmap <close> = renderCase(copy)
+         assert(crc(bitmap) is GOLDEN[case.name], f'{case.name} must match the baseline with explicit defaults')
+      end
+   end
+
+   -- A persistence of zero leaves only the first octave, which is exact.
+
+   local single <close> = renderCase({ type=TB_NOISE, octaves=4, fields={ persistence=0 } })
+   assert(crc(single) is GOLDEN.noise_oct1, 'Persistence 0 must reduce four octaves to the first')
+
+   local lacunarity <close> = renderCase({ type=TB_NOISE, octaves=4, fields={ lacunarity=3 } })
+   assert(crc(lacunarity) != GOLDEN.noise_oct4, 'Lacunarity 3 must change a multi-octave result')
+   local one_octave <close> = renderCase({ type=TB_NOISE, octaves=1, fields={ lacunarity=3 } })
+   assert(crc(one_octave) is GOLDEN.noise_oct1, 'Lacunarity must not affect a single octave')
+end
+
+@Test function BillowAndRidgedTermsFollowTurbulence()
+   -- With one octave, turbulence gives |n|, billow (2*sqrt2*|n| - 1 + 1) / 2 = sqrt2*|n| and ridged
+   -- (1 - sqrt2*|n|)^2.  Each is compared with the turbulence height at the same pixel.
+
+   local root2 = math.sqrt(2)
+   local turbulence = heights({ type=TB_TURBULENCE, octaves=1 })
+
+   local billow = heights({ type=TB_BILLOW, octaves=1 })
+   local worst, spread = compare(billow, turbulence, (T => T * root2))
+   assert(worst <= 2, f'Billow must be sqrt(2) times turbulence, worst difference {worst}')
+   assert(spread > 150, f'Billow must span most of the range, spread {spread}')
+
+   local ridged = heights({ type=TB_RIDGED, octaves=1 })
+   worst, spread = compare(ridged, turbulence, (T => ((1 - root2 * T / 255) ** 2) * 255))
+   assert(worst <= 4, f'Ridged must be (1 - sqrt2*|n|)^2, worst difference {worst}')
+   assert(spread > 150, f'Ridged must span most of the range, spread {spread}')
+
+   -- With several octaves both stay within their ranges and differ from one octave.
+
+   for _, type in { TB_BILLOW, TB_RIDGED } do
+      local multi <close> = renderCase({ type=type, octaves=4 })
+      local single <close> = renderCase({ type=type, octaves=1 })
+      assert(crc(multi) != crc(single), f'Type {type} must add detail with more octaves')
+   end
+end
+
+@Test function NormaliseDividesByTheOctaveWeights()
+   local turbulence = heights({ type=TB_TURBULENCE, octaves=3 })
+   local normalised = heights({ type=TB_TURBULENCE, octaves=3, fields={ normalise=1 } })
+   local worst = compare(normalised, turbulence, (T => T / 1.75))
+   assert(worst <= 2, f'Three octaves at persistence 0.5 must be divided by 1.75, worst difference {worst}')
+
+   local soft = heights({ type=TB_TURBULENCE, octaves=3, fields={ persistence=0.25 } })
+   local soft_normalised = heights({ type=TB_TURBULENCE, octaves=3, fields={ persistence=0.25, normalise=1 } })
+   worst = compare(soft_normalised, soft, (T => T / 1.3125))
+   assert(worst <= 2, f'Persistence 0.25 must be divided by 1.3125, worst difference {worst}')
+
+   -- A centred sum is normalised before it is mapped to [0, 1].
+
+   local noise = heights({ type=TB_NOISE, octaves=2 })
+   local noise_normalised = heights({ type=TB_NOISE, octaves=2, fields={ normalise=1 } })
+   worst = compare(noise_normalised, noise, (T => ((T / 127.5 - 1) / 1.5 + 1) * 127.5))
+   assert(worst <= 2, f'Normalised noise must stay centred, worst difference {worst}')
+
+   local zero <close> = renderCase({ type=TB_NOISE, octaves=0, fields={ normalise=1 } })
+   assert(crc(zero) is GOLDEN.noise_oct0, 'Normalising zero octaves must not divide by zero')
+end
+
+@Test function AmplitudeAndOffsetScaleTheMappedValue()
+   local turbulence = heights({ type=TB_TURBULENCE, octaves=2 })
+   local scaled = heights({ type=TB_TURBULENCE, octaves=2, fields={ amplitude=0.5, offset=0.25 } })
+   local worst = compare(scaled, turbulence, (T => T * 0.5 + 63.75))
+   assert(worst <= 2, f'Amplitude 0.5 and offset 0.25 must apply after mapping, worst difference {worst}')
+
+   local inverted = heights({ type=TB_TURBULENCE, octaves=2, fields={ amplitude=-1, offset=1 } })
+   worst = compare(inverted, turbulence, (T => 255 - T))
+   assert(worst <= 2, f'Amplitude -1 and offset 1 must invert, worst difference {worst}')
+
+   local noise = heights({ type=TB_NOISE, octaves=2 })
+   local doubled = heights({ type=TB_NOISE, octaves=2, fields={ amplitude=2, offset=-0.5 } })
+   worst = compare(doubled, noise, (T => T * 2 - 127.5))
+   assert(worst <= 3, f'Noise must be mapped to [0, 1] before scaling, worst difference {worst}')
+
+   -- Out-of-range values clamp.
+
+   local saturated <close> = renderCase({ type=TB_TURBULENCE, octaves=2, mode='height', fields={ offset=5 } })
+   local p = mGfx.ReadRGBPixel(saturated, 20, 20)
+   assert(p.red >= 254, f'An offset of 5 must clamp to 1, got {p.red}')
+end
+
+@Test function StitchedFractionalLacunarityFailsAtDrawTime()
+   local rejected <close> = renderCase({ type=TB_NOISE, octaves=2, stitch=true, fields={ lacunarity=2.5 } })
+   assert(isBlank(rejected), 'Stitching several octaves with a fractional lacunarity must not draw')
+   local single <close> = renderCase({ type=TB_NOISE, octaves=1, stitch=true, fields={ lacunarity=2.5 } })
+   assert(not isBlank(single), 'One stitched octave must accept a fractional lacunarity')
+   local integral <close> = renderCase({ type=TB_NOISE, octaves=2, stitch=true, fields={ lacunarity=3 } })
+   assert(not isBlank(integral), 'Stitching with an integer lacunarity must draw')
+end
+
+@Test function StitchWithLacunarityThreeStillTiles()
+   -- The subregion is 48 units wide with three lattice cells, so stitching does not adjust the frequency and only the
+   -- wrapping differs.  Across a stitched seam, the left and right columns must be as close as adjacent columns.
+
+   local function seam(Stitch:bool):<num, num>
+      local values = heights({ type=TB_NOISE, octaves=2, stitch=Stitch, fx=1/16, fy=1/16, region={ 8, 8, 48, 48 },
+         fields={ lacunarity=3 } })
+      local seam_sum, adjacent_sum = 0, 0
+      for y in {8 to 56} do
+         local row = y * SIZE
+         seam_sum += math.abs(values[row + 8] - values[row + 55])
+         for x in {8 to 55} do
+            adjacent_sum += math.abs(values[row + x] - values[row + x + 1])
+         end
+      end
+      return seam_sum / 48, adjacent_sum / (48 * 47)
+   end
+
+   local stitched, adjacent = seam(true)
+   assert(stitched <= adjacent * 2, f'Stitched seam difference {stitched} must be close to adjacent {adjacent}')
+   local open, open_adjacent = seam(false)
+   assert(open > open_adjacent * 4, f'Unstitched seam difference {open} must exceed adjacent {open_adjacent}')
+end
+
+--------------------------------------------------------------------------------------------------------------------
+-- Domain and periodicity.  The filter covers the page in user space at one unit per pixel, so a pixel (x, y) samples
+-- the noise at (x + 0.5, y + 0.5).
+
+-- Returns the largest difference between Actual at (x, y) and Reference at Map(x, y), over the pixels for which Map
+-- returns a position on the page.
+
+function compareMapped(Actual:array<double>, Reference:array<double>, Map:func):<num, num>
+   local worst, count = 0, 0
+   for y in {0 to SIZE} do
+      for x in {0 to SIZE} do
+         local rx, ry = Map(x, y)
+         if (rx >= 0) and (rx < SIZE) and (ry >= 0) and (ry < SIZE) then
+            worst = math.max(worst, math.abs(Actual[y * SIZE + x] - Reference[ry * SIZE + rx]))
+            count++
+         end
+      end
+   end
+   return worst, count
+end
+
+@Test function OriginTranslatesTheNoise()
+   local reference = heights({ type=TB_NOISE, octaves=3 })
+
+   for _, origin in { { 8, 4 }, { -5, 11 } } do
+      local ox, oy = origin[0], origin[1]
+      local shifted = heights({ type=TB_NOISE, octaves=3, fields={ originX=ox, originY=oy } })
+      local worst, count = compareMapped(shifted, reference,
+         function(X:num, Y:num):<num, num> return X - ox, Y - oy end)
+      assert(count > 2000, f'Origin {ox},{oy} compared too few pixels ({count})')
+      assert(worst <= 1, f'Origin {ox},{oy} must translate the noise, worst difference {worst}')
+      local unshifted = compareMapped(shifted, reference, function(X:num, Y:num):<num, num> return X, Y end)
+      assert(worst < unshifted, 'The origin must move the noise')
+   end
+
+   -- Percentages refer to the 64 unit filter region, so 12.5% is 8 units.
+
+   local absolute <close> = renderCase({ type=TB_NOISE, octaves=3, fields={ originX=8, originY=-16 } })
+   local relative <close> = renderCase({ type=TB_NOISE, octaves=3, fields={ originX='12.5%', originY='-25%' } })
+   assert(crc(absolute) is crc(relative), 'A percentage origin must resolve against the filter region')
+end
+
+@Test function QuarterTurnSwapsTheSamplingAxes()
+   -- With FX = FY and the origin at the page's right edge, a 90 degree turn maps pixel (x, y) to the domain point
+   -- (y + 0.5, 63.5 - x), which is the reference pixel (y, 63 - x).
+
+   local reference = heights({ type=TB_NOISE, octaves=3, fx=0.07, fy=0.07 })
+   local rotated = heights({ type=TB_NOISE, octaves=3, fx=0.07, fy=0.07, fields={ originX=SIZE, angle=90 } })
+   local worst = compareMapped(rotated, reference, function(X:num, Y:num):<num, num> return Y, SIZE - 1 - X end)
+   assert(worst <= 1, f'A quarter turn must swap the sampling axes, worst difference {worst}')
+
+   local unrotated = compareMapped(rotated, reference, function(X:num, Y:num):<num, num> return X, Y end)
+   assert(unrotated > 20, f'The rotation must change the noise, difference {unrotated}')
+
+   -- Whole turns are the identity and keep the original code path.
+
+   for _, angle in { 360, -720 } do
+      local turned <close> = renderCase({ type=TB_NOISE, octaves=4, fields={ angle=angle } })
+      assert(crc(turned) is GOLDEN.noise_oct4, f'An angle of {angle} must reproduce the baseline')
+   end
+end
+
+@Test function PeriodRepeatsEveryOctave()
+   -- Shifting by the period in user units must reproduce the same values on both axes.  The origin of 40 puts most
+   -- samples at negative domain coordinates.
+
+   local cases = {
+      { label='lacunarity 2', octaves=4, fx=1/8, period=2, shift=16, fields={ } },
+      { label='lacunarity 3', octaves=3, fx=1/8, period=2, shift=16, fields={ lacunarity=3 } },
+      { label='negative domain', octaves=3, fx=1/8, period=3, shift=24, fields={ lacunarity=3, originX=40,
+         originY=40 } },
+      { label='beyond the lattice', octaves=2, fx=5, period=300, shift=60, fields={ originX=-7 } }
+   }
+
+   for _, case in cases do
+      local fields = table.clone(case.fields)
+      fields.periodX = case.period
+      fields.periodY = case.period
+      local values = heights({ type=TB_NOISE, octaves=case.octaves, fx=case.fx, fy=case.fx, fields=fields })
+      local shift = case.shift
+      local worst_x, count_x = compareMapped(values, values, function(X:num, Y:num):<num, num> return X + shift, Y end)
+      local worst_y, count_y = compareMapped(values, values, function(X:num, Y:num):<num, num> return X, Y + shift end)
+      assert((count_x > 0) and (count_y > 0), f'{case.label}: no pixels compared')
+      assert((worst_x is 0) and (worst_y is 0),
+         f'{case.label}: the noise must repeat every {shift} units, differences {worst_x} and {worst_y}')
+
+      local open = heights({ type=TB_NOISE, octaves=case.octaves, fx=case.fx, fy=case.fx, fields=case.fields })
+      local worst_open = compareMapped(open, open, function(X:num, Y:num):<num, num> return X + shift, Y end)
+      assert(worst_open > 20, f'{case.label}: unwrapped noise must not repeat, difference {worst_open}')
+   end
+
+   -- Within the first period the wrap only affects the last cell of each octave, so the domain [0, 3) cells of a
+   -- 4-cell period must match unwrapped noise exactly.  Octave 1 spans up to 6 of its 8 cells and would be wrapped
+   -- early if its period were not scaled by the lacunarity.
+
+   local wrapped = heights({ type=TB_NOISE, octaves=2, fx=1/8, fy=1/8, fields={ periodX=4, periodY=4 } })
+   local unwrapped = heights({ type=TB_NOISE, octaves=2, fx=1/8, fy=1/8 })
+   local inner = 0
+   for y in {0 to 24} do
+      for x in {0 to 24} do
+         inner = math.max(inner, math.abs(wrapped[y * SIZE + x] - unwrapped[y * SIZE + x]))
+      end
+   end
+   assert(inner is 0, f'The first period must match unwrapped noise, difference {inner}')
+
+   -- A period on one axis leaves the other unwrapped.
+
+   local values = heights({ type=TB_NOISE, octaves=2, fx=1/8, fy=1/8, fields={ periodX=2 } })
+   local across = compareMapped(values, values, function(X:num, Y:num):<num, num> return X + 16, Y end)
+   local down = compareMapped(values, values, function(X:num, Y:num):<num, num> return X, Y + 16 end)
+   assert(across is 0, f'PeriodX must repeat horizontally, difference {across}')
+   assert(down > 20, f'PeriodX must not repeat vertically, difference {down}')
+end
+
+@Test function StitchFollowsTheOrigin()
+   -- The stitched tile is the subregion measured from the origin.  An origin of (-8, 8) with the subregion at (8, 8)
+   -- must therefore match the same tile without an origin and with the subregion at (16, 0), translated by (8, -8).
+   -- A tile origin taken from the subregion alone would start on a different lattice cell, which is still seamless
+   -- but samples other gradients.
+
+   local shifted = heights({ type=TB_NOISE, octaves=2, stitch=true, fx=1/16, fy=1/16, region={ 8, 8, 48, 48 },
+      fields={ originX=-8, originY=8 } })
+   local reference = heights({ type=TB_NOISE, octaves=2, stitch=true, fx=1/16, fy=1/16, region={ 16, 0, 48, 48 } })
+   local worst = 0
+   for y in {8 to 56} do
+      for x in {8 to 56} do
+         worst = math.max(worst, math.abs(shifted[y * SIZE + x] - reference[(y - 8) * SIZE + x + 8]))
+      end
+   end
+   assert(worst <= 1, f'A stitched origin must translate the tile, worst difference {worst}')
+end
+
+@Test function InvalidDomainCombinationsFailAtDrawTime()
+   local rejected = {
+      { label='Stitch with a period', stitch=true, fields={ periodX=2 } },
+      { label='a rotated period', fields={ periodY=2, angle=45 } },
+      { label='a rotated stitch', stitch=true, fields={ angle=30 } },
+      { label='a fractional periodic lacunarity', fields={ periodX=2, lacunarity=2.5 } }
+   }
+   for _, case in rejected do
+      local bitmap <close> = renderCase({ type=TB_NOISE, octaves=2, stitch=case.stitch, fields=case.fields })
+      assert(isBlank(bitmap), f'{case.label} must not draw')
+   end
+
+   local accepted = {
+      { label='a period turned by 360', octaves=2, fields={ periodX=2, angle=360 } },
+      { label='one periodic octave with a fractional lacunarity', octaves=1, fields={ periodX=2, lacunarity=2.5 } },
+      { label='a stitched origin', octaves=2, stitch=true, fields={ originX=3 } }
+   }
+   for _, case in accepted do
+      local bitmap <close> = renderCase({ type=TB_NOISE, octaves=case.octaves, stitch=case.stitch,
+         fields=case.fields })
+      assert(not isBlank(bitmap), f'{case.label} must draw')
+   end
+end
+
+@Test function ExtremeDomainsAreOutOfRange()
+   for _, case in {
+         { label='a distant origin', fx=1, fields={ originX=1e9 } },
+         { label='a distant rotated origin', fx=1, fields={ originY=-1e9, angle=45 } },
+         { label='a fine lacunarity stack', fx=1, octaves=12, fields={ lacunarity=8 } },
+         { label='an unrepresentable period', fx=0.01, octaves=10, fields={ lacunarity=8, periodX=1048576 } } } do
+      local bitmap <close> = renderCase({ type=TB_NOISE, octaves=case.octaves ?? 2, fx=case.fx, fy=case.fx,
+         fields=case.fields })
+      assert(isBlank(bitmap), f'{case.label} must not draw')
+   end
+
+   local near <close> = renderCase({ type=TB_NOISE, octaves=2, fx=1, fy=1, fields={ originX=1e6 } })
+   assert(not isBlank(near), 'A representable origin must draw')
+end
+
+@Test function DomainChangesInvalidateTheCache()
+   -- The IMAGE result is cached between draws, so each domain change must be redrawn, and restoring the defaults
+   -- must return to the baseline.
+
+   for _, entry in { { 'originX', 6 }, { 'originY', '10%' }, { 'angle', 15 }, { 'periodX', 3 }, { 'phase', 0.3 } } do
+      local field, value = entry[0], entry[1]
+      local scene <close>, noise = buildCase({ type=TB_NOISE, octaves=4 })
+      local first <close> = drawScene(scene)
+      assert(crc(first) is GOLDEN.noise_oct4, 'The first draw must match the baseline')
+      noise.set(field, value)
+      local changed <close> = drawScene(scene)
+      assert(crc(changed) != GOLDEN.noise_oct4, f'Setting {field} must invalidate the cached result')
+      noise.set(field, 0)
+      local restored <close> = drawScene(scene)
+      assert(crc(restored) is GOLDEN.noise_oct4, f'Resetting {field} must restore the baseline')
+   end
+end
+
+--------------------------------------------------------------------------------------------------------------------
+-- Colour ramps.  A ramp draws the alpha-lattice value, as HEIGHT output does, so ramp output is compared with the
+-- red channel of the HEIGHT capture.
+
+function stop(Offset:num, R:num, G:num, B:num, A:num):struct<GradientStop>
+   local s = struct<GradientStop>
+   s.offset = Offset
+   s.rgb.red = R
+   s.rgb.green = G
+   s.rgb.blue = B
+   s.rgb.alpha = (A is nil) ? 1.0 : A
+   return s
+end
+
+function greyStops():array<struct<GradientStop>>
+   return array<struct<GradientStop>> { stop(0, 0, 0, 0), stop(1, 1, 1, 1) }
+end
+
+-- Builds Case, applies Ramp(noise) and draws it.
+
+function renderRamp(Case:table, Ramp:func):obj
+   local scene <close>, noise = buildCase(Case)
+   Ramp(noise)
+   return drawScene(scene)
+end
+
+-- Returns the largest difference between Fn(pixel) and Expected over the primitive, skipping the background.
+
+function worstOver(Bitmap:obj, Fn:func):num
+   local worst = 0
+   for y in {8 to 54 by 3} do
+      for x in {6 to 58 by 3} do
+         worst = math.max(worst, Fn(mGfx.ReadRGBPixel(Bitmap, x, y), x, y))
+      end
+   end
+   return worst
+end
+
+@Test function RampFieldsDefaultToEmpty()
+   local scene <close>, fx = newEffect({ })
+   assert(fx.colourMap is nil, 'ColourMap must default to empty')
+   assert((fx.stops is nil) or (#fx.stops is 0), 'Stops must default to empty')
+end
+
+@Test function GreyRampDrawsTheHeightValue()
+   for _, type in { TB_NOISE, TB_TURBULENCE, TB_RIDGED } do
+      local height = heights({ type=type, octaves=4 })
+      local ramp <close> = renderRamp({ type=type, octaves=4 }, function(Noise)
+         Noise.stops = greyStops()
+      end)
+      local worst = worstOver(ramp, function(P, X, Y)
+         assert((P.red is P.green) and (P.green is P.blue) and (P.alpha is 255),
+            f'A black to white ramp must be opaque grey at {X},{Y}')
+         return math.abs(P.red - height[Y * SIZE + X])
+      end)
+      assert(worst <= 2, f'A grey ramp of type {type} must match the HEIGHT value, worst difference {worst}')
+   end
+end
+
+@Test function RampEndpointsAndOpacity()
+   -- Amplitude 0 pins every sample to the Offset, which selects one end of the ramp.  Values beyond [0, 1] clamp.
+
+   local stops = array<struct<GradientStop>> { stop(0, 1, 0, 0), stop(1, 0.25, 0.5, 0.75, 0.5) }
+   for _, entry in { { -3, 255, 0, 0, 255 }, { 0, 255, 0, 0, 255 }, { 1, 64, 128, 191, 128 },
+         { 4, 64, 128, 191, 128 } } do
+      local bitmap <close> = renderRamp({ type=TB_NOISE, octaves=2, fields={ amplitude=0, offset=entry[0] } },
+         function(Noise) Noise.stops = stops end)
+      local worst = worstOver(bitmap, function(P)
+         return math.max(math.abs(P.red - entry[1]), math.abs(P.green - entry[2]), math.abs(P.blue - entry[3]),
+            math.abs(P.alpha - entry[4]))
+      end)
+      assert(worst <= 1, f'Offset {entry[0]} must select {entry[1]},{entry[2]},{entry[3]},{entry[4]}, ' ..
+         f'worst difference {worst}')
+   end
+
+   -- The midpoint of a two-stop ramp interpolates both colour and opacity.
+
+   local middle <close> = renderRamp({ type=TB_NOISE, octaves=2, fields={ amplitude=0, offset=0.5 } },
+      function(Noise) Noise.stops = array<struct<GradientStop>> { stop(0, 0, 0, 0, 0), stop(1, 1, 1, 1, 1) } end)
+   local p = mGfx.ReadRGBPixel(middle, 20, 20)
+   assert(math.abs(p.alpha - 128) <= 2, f'The ramp midpoint must be half transparent, alpha {p.alpha}')
+end
+
+@Test function ColourMapSelectsANamedRamp()
+   local low <close> = renderRamp({ type=TB_NOISE, octaves=2, fields={ amplitude=0, offset=0 } },
+      function(Noise) Noise.colourMap = 'cmap:viridis' end)
+   local high <close> = renderRamp({ type=TB_NOISE, octaves=2, fields={ amplitude=0, offset=1 } },
+      function(Noise) Noise.colourMap = 'cmap:viridis' end)
+   local a = mGfx.ReadRGBPixel(low, 20, 20)
+   local lo = { red=a.red, green=a.green, blue=a.blue, alpha=a.alpha }
+   local hi = mGfx.ReadRGBPixel(high, 20, 20)
+   assert((lo.blue > lo.red) and (lo.alpha is 255), 'The low end of viridis must be opaque blue-violet')
+   assert((hi.green > hi.blue) and (hi.red > hi.blue) and (hi.alpha is 255), 'The high end of viridis must be yellow')
+
+   local noisy <close> = renderRamp({ type=TB_NOISE, octaves=4 }, function(Noise) Noise.colourMap = 'cmap:magma' end)
+   assert(crc(noisy) != GOLDEN.noise_oct4, 'A colourmap must change IMAGE output')
+end
+
+@Test function RampsReplaceEachOther()
+   local scene <close>, noise = buildCase({ type=TB_NOISE, octaves=4 })
+   noise.stops = greyStops()
+   local grey <close> = drawScene(scene)
+   assert(crc(grey) != GOLDEN.noise_oct4, 'Stops must replace the four noise channels')
+
+   noise.colourMap = 'cmap:viridis'
+   assert((noise.stops is nil) or (#noise.stops is 0), 'A colourmap must replace the stops')
+   local viridis <close> = drawScene(scene)
+   assert(crc(viridis) != crc(grey), 'Changing the ramp must invalidate the cached result')
+
+   noise.stops = greyStops()
+   assert(noise.colourMap is nil, 'Stops must replace the colourmap')
+   assert(#noise.stops is 2, 'The stops must read back')
+   local grey2 <close> = drawScene(scene)
+   assert(crc(grey2) is crc(grey), 'Restoring the stops must restore their output')
+
+   -- Rejected values keep the current ramp.
+
+   assert(noise.set('colourMap', 'cmap:unknown') is ERR_NotFound, 'Unknown colourmaps must fail')
+   try
+      noise.stops = array<struct<GradientStop>> { stop(0, 1, 0, 0) }
+      raise 'A single stop must be rejected'
+   except e when ERR_InvalidValue
+   end
+   assert(#noise.stops is 2, 'Rejected values must keep the current stops')
+   local kept <close> = drawScene(scene)
+   assert(crc(kept) is crc(grey), 'Rejected values must keep the current ramp')
+
+   -- Clearing either field restores the baseline.
+
+   noise.stops = array<struct<GradientStop>> { }
+   local cleared <close> = drawScene(scene)
+   assert(crc(cleared) is GOLDEN.noise_oct4, 'Empty stops must restore the baseline')
+
+   noise.colourMap = 'cmap:magma'
+   noise.colourMap = ''
+   assert(noise.colourMap is nil, 'An empty colourmap must clear the ramp')
+   local cleared2 <close> = drawScene(scene)
+   assert(crc(cleared2) is GOLDEN.noise_oct4, 'An empty colourmap must restore the baseline')
+end
+
+@Test function RampsAreDrawnAsAuthoredInEitherColourSpace()
+   local stops = array<struct<GradientStop>> { stop(0, 0.1, 0.2, 0.3), stop(1, 0.9, 0.6, 0.4) }
+   local srgb <close> = renderRamp({ type=TB_NOISE, octaves=4 }, function(Noise) Noise.stops = stops end)
+   local linear <close> = renderRamp({ type=TB_NOISE, octaves=4, space='linear' }, function(Noise)
+      Noise.stops = stops
+   end)
+   assert(crc(srgb) is crc(linear), 'Ramp colours must not be converted for a linearRGB filter')
+
+   local fixed <close> = renderRamp({ type=TB_NOISE, octaves=2, space='linear', fields={ amplitude=0, offset=1 } },
+      function(Noise) Noise.stops = stops end)
+   local p = mGfx.ReadRGBPixel(fixed, 20, 20)
+   assert((math.abs(p.red - 230) <= 1) and (math.abs(p.green - 153) <= 1) and (math.abs(p.blue - 102) <= 1),
+      f'The final stop must be drawn as authored in linearRGB, got {p.red},{p.green},{p.blue}')
+end
+
+function rampSetups():table
+   return {
+      function(Noise) Noise.stops = greyStops() end,
+      function(Noise) Noise.colourMap = 'cmap:viridis' end
+   }
+end
+
+@Test function HeightOutputIgnoresTheRamp()
+   for _, setup in rampSetups() do
+      local bitmap <close> = renderRamp({ type=TB_NOISE, octaves=4, mode='height' }, setup)
+      assert(crc(bitmap) is GOLDEN.noise_oct4_height, 'HEIGHT output must ignore the ramp')
+   end
+end
+
+@Test function RampsAreSvgExtensions()
+   for _, setup in rampSetups() do
+      -- Init fails under an explicit SVG compliance.
+
+      local scene <close> = obj.new('VectorScene', { })
+      local fx = scene.new('VectorFilter', { }).new('TurbulenceFX')
+      fx.compliance = FXC_SVG2
+      setup(fx)
+      try
+         fx.init()
+         raise 'Init must fail for a ramp under SVG2 compliance'
+      except e when ERR_InvalidValue
+      end
+
+      -- An inherited SVG2 compliance fails at draw time, and an explicit NONE overrides it.
+
+      local rejected <close> = renderRamp({ type=TB_NOISE, octaves=2, scene=VSC_SVG2 }, setup)
+      assert(isBlank(rejected), 'A ramp must not draw through an inherited SVG2 compliance')
+      local permitted <close> = renderRamp({ type=TB_NOISE, octaves=2, scene=VSC_SVG2,
+         fields={ compliance=FXC_NONE } }, setup)
+      assert(not isBlank(permitted), 'A ramp must draw with an explicit NONE compliance')
+   end
+
+   -- After Init, SVG compliance refuses a ramp but permits clearing one.
+
+   local scene <close>, fx = newEffect({ compliance=FXC_SVG1 })
+   try
+      fx.stops = greyStops()
+      raise 'Stops must be refused under SVG1'
+   except e when ERR_NoSupport
+   end
+   assert(fx.set('colourMap', 'cmap:viridis') is ERR_NoSupport, 'A colourmap must be refused under SVG1')
+   fx.stops = array<struct<GradientStop>> { }
+   assert(fx.set('colourMap', '') is ERR_Okay, 'Clearing the colourmap must be permitted')
+
+   local scene2 <close>, fx2 = newEffect({ })
+   fx2.colourMap = 'cmap:viridis'
+   assert(fx2.set('compliance', FXC_SVG2) is ERR_InvalidState, 'SVG2 must be refused while a ramp is set')
+   fx2.colourMap = ''
+   assert(fx2.set('compliance', FXC_SVG2) is ERR_Okay, 'SVG2 must be accepted once the ramp is cleared')
+end
+
+--------------------------------------------------------------------------------------------------------------------
+-- Phase animation.  The noise is a slice of 3-D gradient noise whose z = 0 layer is the 2-D noise.
+
+-- Returns the mean absolute difference between two height captures.
+
+function meanDifference(A:array<double>, B:array<double>):num
+   local total = 0
+   for i, value in A do total += math.abs(value - B[i]) end
+   return total / #A
+end
+
+function spread(Values:array<double>):num
+   local mean = 0
+   for _, value in Values do mean += value end
+   mean /= #Values
+   local total = 0
+   for _, value in Values do total += (value - mean) ** 2 end
+   return math.sqrt(total / #Values)
+end
+
+@Test function PhaseZeroReproducesTheBaseline()
+   -- A phase of zero, or of a whole number of loops, takes the 2-D path whatever the period.
+
+   for _, fields in { { phase=0, phasePeriod=3 }, { phase=4, phasePeriod=2 }, { phase=-6, phasePeriod=3 } } do
+      for _, name in { 'noise_oct4', 'turbulence_oct4_stitch', 'noise_oct4_height', 'noise_oct4_bbox' } do
+         local case
+         for _, entry in CASES do
+            if entry.name is name then case = table.clone(entry) end
+         end
+         case.fields = fields
+         local bitmap <close> = renderCase(case)
+         assert(crc(bitmap) is GOLDEN[name], f'{name} with phase {fields.phase} must reproduce the baseline')
+      end
+   end
+end
+
+@Test function PhaseAnimatesSmoothly()
+   -- Small phase steps change the noise slightly, and a step of one cell gives a different pattern.
+
+   local base = heights({ type=TB_NOISE, octaves=3, fx=1/12, fy=1/12 })
+   local step = heights({ type=TB_NOISE, octaves=3, fx=1/12, fy=1/12, fields={ phase=0.02 } })
+   local far = heights({ type=TB_NOISE, octaves=3, fx=1/12, fy=1/12, fields={ phase=1 } })
+   local near_diff, far_diff = meanDifference(base, step), meanDifference(base, far)
+   assert(near_diff > 0, 'A small phase step must change the noise')
+   assert(near_diff < 3, f'A small phase step must change the noise slightly, mean difference {near_diff}')
+   assert(far_diff > near_diff * 8, f'A whole cell must give a different pattern, {far_diff} against {near_diff}')
+
+   -- The contrast stays steady through a cell.  A z gradient that is too strong or too weak makes it pulse.
+
+   local reference = spread(base)
+   for _, phase in { 0.25, 0.5, 0.75 } do
+      local ratio = spread(heights({ type=TB_NOISE, octaves=3, fx=1/12, fy=1/12, fields={ phase=phase } })) /
+         reference
+      assert((ratio > 0.8) and (ratio < 1.25), f'Contrast at phase {phase} changed by a factor of {ratio}')
+   end
+end
+
+@Test function PhasePeriodLoopsExactly()
+   -- Phases one loop apart reach the same layers through the z wrap, with or without the phase reduction.
+
+   for _, case in {
+         { label='lacunarity 2', octaves=3, period=2, a=1.5, b=-0.5, fields={ } },
+         { label='lacunarity 3', octaves=3, period=1, a=0.375, b=2.375, fields={ lacunarity=3 } } } do
+      local fields_a, fields_b = table.clone(case.fields), table.clone(case.fields)
+      fields_a.{ phase=case.a, phasePeriod=case.period }
+      fields_b.{ phase=case.b, phasePeriod=case.period }
+      local a = heights({ type=TB_NOISE, octaves=case.octaves, fx=1/12, fy=1/12, fields=fields_a })
+      local b = heights({ type=TB_NOISE, octaves=case.octaves, fx=1/12, fy=1/12, fields=fields_b })
+      local worst = compareMapped(a, b, function(X:num, Y:num):<num, num> return X, Y end)
+      assert(worst is 0, f'{case.label}: phases {case.a} and {case.b} must match, difference {worst}')
+
+      fields_a.phasePeriod = nil
+      fields_b.phasePeriod = nil
+      local open_a = heights({ type=TB_NOISE, octaves=case.octaves, fx=1/12, fy=1/12, fields=fields_a })
+      local open_b = heights({ type=TB_NOISE, octaves=case.octaves, fx=1/12, fy=1/12, fields=fields_b })
+      assert(meanDifference(open_a, open_b) > 5, f'{case.label}: without a period the phases must differ')
+   end
+
+   -- Before the wrap, looped noise equals open noise.  Octave 1 samples z = 1.5 across layers 1 and 2, which a period
+   -- of 2 that is not scaled by the lacunarity would wrap early.
+
+   local looped = heights({ type=TB_NOISE, octaves=2, fx=1/12, fy=1/12, fields={ phase=0.75, phasePeriod=2 } })
+   local open = heights({ type=TB_NOISE, octaves=2, fx=1/12, fy=1/12, fields={ phase=0.75 } })
+   local inner = compareMapped(looped, open, function(X:num, Y:num):<num, num> return X, Y end)
+   assert(inner is 0, f'The first loop must match open noise, difference {inner}')
+
+   -- IMAGE output loops as well.
+
+   local first <close> = renderCase({ type=TB_TURBULENCE, octaves=4, fields={ phase=0.25, phasePeriod=2 } })
+   local second <close> = renderCase({ type=TB_TURBULENCE, octaves=4, fields={ phase=4.25, phasePeriod=2 } })
+   assert(crc(first) is crc(second), 'IMAGE output must loop with the phase period')
+   assert(crc(first) != GOLDEN.turbulence_oct4, 'A non-zero phase must change IMAGE output')
+end
+
+@Test function PhaseKeepsSpatialRepetition()
+   -- A spatial period still repeats exactly at a non-zero phase.
+
+   local values = heights({ type=TB_NOISE, octaves=3, fx=1/8, fy=1/8,
+      fields={ periodX=2, periodY=2, phase=0.4 } })
+   local across = compareMapped(values, values, function(X:num, Y:num):<num, num> return X + 16, Y end)
+   local down = compareMapped(values, values, function(X:num, Y:num):<num, num> return X, Y + 16 end)
+   assert((across is 0) and (down is 0), f'The period must repeat at phase 0.4, differences {across} and {down}')
+
+   -- A stitched tile stays seamless: across the seam the columns are as close as adjacent columns.
+
+   local tile = heights({ type=TB_NOISE, octaves=2, stitch=true, fx=1/16, fy=1/16, region={ 8, 8, 48, 48 },
+      fields={ phase=0.4 } })
+   local seam_sum, adjacent_sum = 0, 0
+   for y in {8 to 56} do
+      local row = y * SIZE
+      seam_sum += math.abs(tile[row + 8] - tile[row + 55])
+      for x in {8 to 55} do adjacent_sum += math.abs(tile[row + x] - tile[row + x + 1]) end
+   end
+   local seam, adjacent = seam_sum / 48, adjacent_sum / (48 * 47)
+   assert(seam <= adjacent * 2, f'Stitched seam difference {seam} must be close to adjacent {adjacent}')
+end
+
+@Test function PhaseValidationAndLimits()
+   local rejected = {
+      { label='a fractional lacunarity with a phase period', octaves=2, fields={ phasePeriod=2, lacunarity=2.5 } },
+      { label='a distant phase', octaves=2, fields={ phase=1e9 } }
+   }
+   for _, case in rejected do
+      local bitmap <close> = renderCase({ type=TB_NOISE, octaves=case.octaves, fields=case.fields })
+      assert(isBlank(bitmap), f'{case.label} must not draw')
+   end
+
+   local accepted = {
+      { label='one looped octave with a fractional lacunarity', octaves=1,
+         fields={ phase=0.5, phasePeriod=2, lacunarity=2.5 } },
+      { label='an open phase with a fractional lacunarity', octaves=3, fields={ phase=0.5, lacunarity=2.5 } },
+      { label='a distant phase reduced by its period', octaves=2, fields={ phase=1e9 + 0.5, phasePeriod=2 } }
+   }
+   for _, case in accepted do
+      local bitmap <close> = renderCase({ type=TB_NOISE, octaves=case.octaves, fields=case.fields })
+      assert(not isBlank(bitmap), f'{case.label} must draw')
+   end
+end
+
+@Test function SeedsThatShareALatticeShareTheAnimation()
+   local zero <close> = renderCase({ type=TB_NOISE, octaves=3, seed=0, fields={ phase=0.6 } })
+   local one <close> = renderCase({ type=TB_NOISE, octaves=3, seed=1, fields={ phase=0.6 } })
+   local two <close> = renderCase({ type=TB_NOISE, octaves=3, seed=2, fields={ phase=0.6 } })
+   assert(crc(zero) is crc(one), 'Seeds 0 and 1 must animate identically')
+   assert(crc(zero) != crc(two), 'Other seeds must animate differently')
+end
+
+@Test function PhaseIsDescribedByXmlDef()
+   local scene <close>, fx = newEffect({ phase=0.75, phasePeriod=3 })
+   local xml = fx.xmlDef
+   assert(xml.startsWith('xvg:feFractalNoise'), f'A phase must select xvg:feFractalNoise: {xml}')
+   assert(xml.find('phase="0.75"') and xml.find('phasePeriod="3"'), f'The phase fields must be written: {xml}')
 end

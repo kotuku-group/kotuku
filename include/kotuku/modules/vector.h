@@ -463,6 +463,8 @@ enum class TB : int {
    NIL = 0,
    TURBULENCE = 0,
    NOISE = 1,
+   BILLOW = 2,
+   RIDGED = 3,
 };
 
 enum class VSM : int {
@@ -487,6 +489,14 @@ enum class VSC : int {
    NONE = 0,
    SVG1 = 1,
    SVG2 = 2,
+};
+
+enum class FXC : int {
+   NIL = 0,
+   INHERIT = 0,
+   NONE = 1,
+   SVG1 = 2,
+   SVG2 = 3,
 };
 
 enum class RQ : int {
@@ -4424,8 +4434,19 @@ class objTurbulenceFX : public objFilterEffect {
 
    // Customised field getting
 
+   inline ERR getStops(std::span<GradientStop> &Value) noexcept {
+      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 144);
+      Value = std::span<GradientStop>(ktv->data(), ktv->size());
+      return ERR::Okay;
+   }
+
    inline ERR getType(TB &Value) noexcept {
       Value = *((TB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 28));
+      return ERR::Okay;
+   }
+
+   inline ERR getCompliance(FXC &Value) noexcept {
+      Value = *((FXC *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 36));
       return ERR::Okay;
    }
 
@@ -4459,6 +4480,71 @@ class objTurbulenceFX : public objFilterEffect {
       return ERR::Okay;
    }
 
+   inline ERR getPersistence(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 40));
+      return ERR::Okay;
+   }
+
+   inline ERR getLacunarity(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 48));
+      return ERR::Okay;
+   }
+
+   inline ERR getAmplitude(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 56));
+      return ERR::Okay;
+   }
+
+   inline ERR getOffset(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 64));
+      return ERR::Okay;
+   }
+
+   inline ERR getOriginX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 72));
+      return ERR::Okay;
+   }
+
+   inline ERR getOriginY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 88));
+      return ERR::Okay;
+   }
+
+   inline ERR getAngle(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 104));
+      return ERR::Okay;
+   }
+
+   inline ERR getColourMap(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 112));
+      return ERR::Okay;
+   }
+
+   inline ERR getNormalise(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 168));
+      return ERR::Okay;
+   }
+
+   inline ERR getPeriodX(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 172));
+      return ERR::Okay;
+   }
+
+   inline ERR getPeriodY(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 176));
+      return ERR::Okay;
+   }
+
+   inline ERR getPhasePeriod(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 180));
+      return ERR::Okay;
+   }
+
+   inline ERR getPhase(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 184));
+      return ERR::Okay;
+   }
+
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->GetValue(this, &Value);
@@ -4467,39 +4553,114 @@ class objTurbulenceFX : public objFilterEffect {
 
    // Customised field setting
 
+   inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
+      auto field = &this->Class->Dictionary[39];
+      return field->WriteValue(this, field, 0x00001310, &Value);
+   }
+
    inline ERR setType(const TB Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setOutputMode(const FOM Value) noexcept {
+   inline ERR setCompliance(const FXC Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setOutputMode(const FOM Value) noexcept {
+      auto field = &this->Class->Dictionary[32];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setFX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setOctaves(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSeed(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[36];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStitch(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPersistence(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[33];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setLacunarity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setAmplitude(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setOffset(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[38];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setOriginX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setOriginY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setAngle(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setColourMap(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setNormalise(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPeriodX(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPeriodY(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPhasePeriod(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPhase(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

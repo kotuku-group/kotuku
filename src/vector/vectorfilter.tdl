@@ -248,8 +248,10 @@
 
   klass('TileFX',         { base='FilterEffect', src='filters/filter_tile.cpp', output='filters/filter_tile_def.c', comment='Tile filter support class.', extended=true })
 
-  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB', 'FOM' }, extended=true }, [[
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB', 'FOM', 'FXC' }, extended=true }, [[
+    ~vector(struct(GradientStop)) Stops
     ~int(TB) Type
+    ~int(FXC) Compliance
     ~int(FOM) OutputMode
   ]])
 

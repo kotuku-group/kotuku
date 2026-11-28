@@ -440,6 +440,48 @@ octaves and a fractional `lacunarity`.  Other renderers do not draw the element.
 &lt;/filter&gt;
 </pre>
 
+The `feTurbulence` element always follows the SVG standard: its @TurbulenceFX.Compliance is set to the scene's
+`SVG1` or `SVG2` compliance, or to `SVG2` in a document that permits Kōtuku features, and it accepts no extension
+attributes other than `xvg:outputMode`.  The `xvg:feFractalNoise` element creates the same @TurbulenceFX with its
+Kōtuku extensions enabled, even in a document that declares `xvg:compliance`.  It takes no input, and its own
+attributes are unprefixed:
+
+<list type="bullet">
+<li>`baseFrequency`, `numOctaves`, `seed` and `stitchTiles`: as for `feTurbulence`.  The vertical frequency defaults
+to the horizontal one.</li>
+<li>`type`: `turbulence` (the default), `fractalNoise`, `billow` or `ridged`.  Sets @TurbulenceFX.Type.</li>
+<li>`persistence`, `lacunarity`, `amplitude`, `offset` and `angle`: numbers that set @TurbulenceFX.Persistence,
+@TurbulenceFX.Lacunarity, @TurbulenceFX.Amplitude, @TurbulenceFX.Offset and @TurbulenceFX.Angle.</li>
+<li>`normalise`: `true` or `false` (the default).  Sets @TurbulenceFX.Normalise.</li>
+<li>`origin`: the X and optional Y origin of the noise domain, measured from primitive-unit (0, 0).  Y defaults to X,
+and a percentage refers to the filter region.  Sets @TurbulenceFX.OriginX and @TurbulenceFX.OriginY.</li>
+<li>`period`: whole numbers of lattice cells after which the first octave repeats horizontally and, optionally,
+vertically.  The vertical period defaults to the horizontal one.  Sets @TurbulenceFX.PeriodX and
+@TurbulenceFX.PeriodY.</li>
+<li>`phase`: a number that selects the position of the noise in its animation, in lattice cells.  Sets
+@TurbulenceFX.Phase.</li>
+<li>`phasePeriod`: a whole number of lattice cells after which the `phase` loops.  Sets
+@TurbulenceFX.PhasePeriod.</li>
+<li>`colormap`: a named colour map such as `cmap:viridis`.  Child `stop` elements define a custom colour ramp
+instead.</li>
+</list>
+
+Unlike `feTurbulence`, the defaults are those of @TurbulenceFX, so `baseFrequency` is 0 and `numOctaves` is 1 when
+omitted.  The shared `x`, `y`, `width`, `height`, `result` and `color-interpolation-filters` attributes apply as they
+do to standard primitives, and `xvg:outputMode="height"` must keep its prefix.  An invalid value is reported and the
+field keeps its default.  Some combinations can only be checked when the filter is drawn, and the element then draws
+nothing: `stitchTiles="stitch"` with a `period`, either of them with an `angle` that is not a multiple of 360, and
+either of them or a `phasePeriod` with several octaves and a fractional `lacunarity`.  Other renderers do not draw the
+element.  When a scene is saved, a @TurbulenceFX that uses no extensions is written as `feTurbulence`; see
+@TurbulenceFX.XMLDef.
+
+<pre>
+&lt;filter id="ridges" xmlns:xvg="http://www.kotuku.dev/xmlns/svg"&gt;
+  &lt;xvg:feFractalNoise type="ridged" baseFrequency="0.02" numOctaves="5" lacunarity="2.2" persistence="0.6"
+      normalise="true" colormap="cmap:magma"/&gt;
+&lt;/filter&gt;
+</pre>
+
 Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom
 rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing
 enhanced programmatic access unique to Kotuku.

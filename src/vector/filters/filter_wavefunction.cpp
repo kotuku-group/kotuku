@@ -27,6 +27,8 @@ SVG documents can use the effect with the `xvg:feWaveFunction` element.
 
 *********************************************************************************************************************/
 
+#include "filter_colour_ramp.h"
+
 class extWaveFunctionFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::WAVEFUNCTIONFX;
@@ -53,12 +55,6 @@ class extWaveFunctionFX : public extFilterEffect {
    bool Dirty = true;
 
    ERR compute_wavefunction(int Resolution, int Width, int Height);
-
-   void clear_colours() {
-      ColourMap.clear();
-      Stops.clear();
-      Colours.reset();
-   }
 
    extWaveFunctionFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
       SourceType = VSF::NONE;
@@ -279,22 +275,9 @@ Setting a colourmap replaces custom stops.  Set an empty string to clear the act
 
 static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::string_view &Value)
 {
-   if (Value.empty()) {
-      Self->clear_colours();
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-
-   if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
-      auto colours = std::unique_ptr<GradientColours>(new (std::nothrow) GradientColours(it->second, 1));
-      if (not colours) return ERR::AllocMemory;
-      Self->Colours = std::move(colours);
-      Self->ColourMap = Value;
-      Self->Stops.clear();
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-   else return ERR::NotFound;
+   if (auto error = set_colour_ramp_map(*Self, Value); error != ERR::Okay) return error;
+   effect_modified(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -467,23 +450,7 @@ Setting stops replaces any named colourmap.  Set an empty array to clear the act
 
 static ERR WAVEFUNCTIONFX_SET_Stops(extWaveFunctionFX *Self, std::span<const GradientStop> &Value)
 {
-   if (Value.empty()) {
-      Self->clear_colours();
-      effect_modified(Self);
-      return ERR::Okay;
-   }
-
-   if (Value.size() < 2) return ERR::InvalidValue;
-
-   kt::vector<GradientStop> stops;
-   stops.assign(Value.begin(), Value.end());
-   auto colours = std::unique_ptr<GradientColours>(new (std::nothrow)
-      GradientColours(stops, VCS::SRGB, GCI::DEFAULT, GHM::SHORTER, 1.0, 1));
-   if (not colours) return ERR::AllocMemory;
-
-   Self->Stops = std::move(stops);
-   Self->Colours = std::move(colours);
-   Self->ColourMap.clear();
+   if (auto error = set_colour_ramp_stops(*Self, Value); error != ERR::Okay) return error;
    effect_modified(Self);
    return ERR::Okay;
 }
@@ -513,19 +480,7 @@ static ERR wavefunction_xml(const extWaveFunctionFX &Effect, filter_xml_element 
    if (Effect.CentreX != 0.5) Element.attribute("xvg:centreX", Effect.CentreX);
    if (Effect.CentreY != 0.5) Element.attribute("xvg:centreY", Effect.CentreY);
 
-   if (not Effect.ColourMap.empty()) Element.attribute("colormap", Effect.ColourMap);
-   else {
-      double last_offset = 0;
-      for (const auto &stop : Effect.Stops) {
-         if ((stop.Offset < last_offset) or (stop.Offset > 1.0)) return ERR::NoSupport;
-         auto &child = Element.child("stop");
-         child.attribute("offset", stop.Offset);
-         write_filter_xml_colour(child, "stop-color", stop.RGB);
-         last_offset = stop.Offset;
-      }
-   }
-
-   return ERR::Okay;
+   return colour_ramp_xml(Effect, Element);
 }
 
 //********************************************************************************************************************

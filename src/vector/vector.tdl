@@ -256,7 +256,9 @@ struct KeyValue;
 
   enums("TB", { type="int", start=0, "Function identifier for TurbulenceFX." },
     "TURBULENCE: Use the standard turbulence function.",
-    "NOISE: Use the fractal noise function.")
+    "NOISE: Use the fractal noise function.",
+    "BILLOW: Sum rescaled absolute noise, giving rounded, cloud-like lobes.",
+    "RIDGED: Use a ridged multifractal, giving sharp crests.")
 
   enums("VSM", { type="int", start=0, comments="Options for the VectorScene SampleMethod." },
     "AUTO: Selects a resampling method automatically.  The choice depends on the operation.",
@@ -277,6 +279,12 @@ struct KeyValue;
     "NONE: Kotuku's default behaviour, which extends standards where they produce poor results.",
     "SVG1: Follow the SVG 1.1 standard where it differs from the default behaviour.",
     "SVG2: Follow the SVG 2 standard where it differs from the default behaviour.")
+
+  enums("FXC", { type="int", start=0, comments="Standards compliance options for filter effects." },
+    "INHERIT: Use the Compliance of the scene that owns the filter, or `NONE` if there is no scene.",
+    "NONE: Kotuku extensions to the standard are permitted.",
+    "SVG1: SVG 1.1 restrictions apply.",
+    "SVG2: SVG 2 restrictions apply.")
 
   enums("RQ", { type="int", start=0, comments="Options for determining the quality of a rendered path." },
     "AUTO: The default option is chosen by the system.",

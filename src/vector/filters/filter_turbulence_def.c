@@ -3,6 +3,8 @@
 static const struct FieldDef clTurbulenceFXTB[] = {
    { "Turbulence", 0x00000000 },
    { "Noise", 0x00000001 },
+   { "Billow", 0x00000002 },
+   { "Ridged", 0x00000003 },
    { nullptr, 0 }
 };
 
@@ -10,6 +12,14 @@ static const struct FieldDef clTurbulenceFXFOM[] = {
    { "Image", 0x00000000 },
    { "Height", 0x00000001 },
    { "Native", 0x00000002 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clTurbulenceFXFXC[] = {
+   { "Inherit", 0x00000000 },
+   { "None", 0x00000001 },
+   { "Svg1", 0x00000002 },
+   { "Svg2", 0x00000003 },
    { nullptr, 0 }
 };
 
