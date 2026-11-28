@@ -1,0 +1,203 @@
+   include 'vector'
+   module display as mGfx
+   module vector as mVec
+
+-- Baseline output of TurbulenceFX, recorded from the implementation that predates the fractal noise extensions (see
+-- docs/plans/graphics/vector_filter_fractal_noise.md).  Every case must keep producing the same pixels when the
+-- extension fields are at their defaults, so the expected CRCs must never be regenerated to make a change pass.
+--
+-- A case without an entry in GOLDEN fails and reports its CRC.  New cases are recorded by running this file
+-- against a build that does not contain any change to the noise kernel.
+
+SIZE <const> = 64
+
+-- Unit: 'user' or 'bbox' primitive units.  Space: 'srgb' or 'linear'.  Mode: 'image' or 'height'.  Region: the
+-- primitive subregion as { x, y, width, height } in primitive units.  Rotate: degrees around the page centre, applied
+-- to the filtered vector.
+
+CASES = {
+   { name='noise_oct0',              type=TB_NOISE,      octaves=0 },
+   { name='noise_oct1',              type=TB_NOISE,      octaves=1 },
+   { name='noise_oct4',              type=TB_NOISE,      octaves=4 },
+   { name='turbulence_oct0',         type=TB_TURBULENCE, octaves=0 },
+   { name='turbulence_oct1',         type=TB_TURBULENCE, octaves=1 },
+   { name='turbulence_oct4',         type=TB_TURBULENCE, octaves=4 },
+   { name='noise_oct1_stitch',       type=TB_NOISE,      octaves=1, stitch=true, region={ 5, 3, 50, 45 } },
+   { name='noise_oct4_stitch',       type=TB_NOISE,      octaves=4, stitch=true, region={ 5, 3, 50, 45 } },
+   { name='turbulence_oct1_stitch',  type=TB_TURBULENCE, octaves=1, stitch=true, region={ 5, 3, 50, 45 } },
+   { name='turbulence_oct4_stitch',  type=TB_TURBULENCE, octaves=4, stitch=true, region={ 5, 3, 50, 45 } },
+   { name='noise_oct0_stitch',       type=TB_NOISE,      octaves=0, stitch=true },
+   { name='noise_oct4_seed_neg',     type=TB_NOISE,      octaves=4, seed=-7 },
+   { name='turbulence_oct4_seed_big', type=TB_TURBULENCE, octaves=4, seed=2147483646 },
+   { name='noise_oct4_linear',       type=TB_NOISE,      octaves=4, space='linear' },
+   { name='turbulence_oct4_linear',  type=TB_TURBULENCE, octaves=4, space='linear' },
+   { name='noise_oct4_height',       type=TB_NOISE,      octaves=4, mode='height' },
+   { name='turbulence_oct4_height',  type=TB_TURBULENCE, octaves=4, mode='height' },
+   { name='noise_oct0_height',       type=TB_NOISE,      octaves=0, mode='height' },
+   { name='noise_oct1_height',       type=TB_NOISE,      octaves=1, mode='height' },
+   { name='turbulence_oct4_stitch_height', type=TB_TURBULENCE, octaves=4, stitch=true, mode='height',
+      region={ 5, 3, 50, 45 } },
+   { name='noise_oct4_height_linear', type=TB_NOISE,     octaves=4, mode='height', space='linear' },
+   { name='noise_oct4_bbox',         type=TB_NOISE,      octaves=4, unit='bbox', fx=3, fy=5 },
+   { name='turbulence_oct4_bbox',    type=TB_TURBULENCE, octaves=4, unit='bbox', fx=3, fy=5 },
+   { name='noise_oct4_bbox_stitch',  type=TB_NOISE,      octaves=4, unit='bbox', fx=3, fy=5, stitch=true,
+      region={ 0.1, 0.05, 0.8, 0.9 } },
+   { name='turbulence_oct4_bbox_stitch', type=TB_TURBULENCE, octaves=4, unit='bbox', fx=3, fy=5, stitch=true,
+      region={ 0.1, 0.05, 0.8, 0.9 } },
+   { name='noise_oct4_bbox_height',  type=TB_NOISE,      octaves=4, unit='bbox', fx=3, fy=5, mode='height' },
+   { name='noise_oct4_rotated',      type=TB_NOISE,      octaves=4, rotate=30 },
+   { name='turbulence_oct4_rotated', type=TB_TURBULENCE, octaves=4, rotate=30 },
+   { name='noise_oct4_rotated_stitch', type=TB_NOISE,    octaves=4, rotate=30, stitch=true, region={ 5, 3, 50, 45 } },
+   { name='turbulence_oct4_rotated_stitch', type=TB_TURBULENCE, octaves=4, rotate=30, stitch=true,
+      region={ 5, 3, 50, 45 } },
+   { name='noise_oct4_rotated_height', type=TB_NOISE,    octaves=4, rotate=30, mode='height' },
+   { name='noise_oct4_rotated_bbox', type=TB_NOISE,      octaves=4, rotate=-20, unit='bbox', fx=3, fy=5 }
+}
+
+GOLDEN = {
+   noise_oct0=0x44e82cce,
+   noise_oct1=0x74c4909e,
+   noise_oct4=0x7e84ec2f,
+   turbulence_oct0=0xab54d286,
+   turbulence_oct1=0x49c61e8e,
+   turbulence_oct4=0xeb172d23,
+   noise_oct1_stitch=0x25985f09,
+   noise_oct4_stitch=0xa7a8e289,
+   turbulence_oct1_stitch=0x389555ac,
+   turbulence_oct4_stitch=0xc82a8bd4,
+   noise_oct0_stitch=0x44e82cce,
+   noise_oct4_seed_neg=0x6659b932,
+   turbulence_oct4_seed_big=0xa9af0cf9,
+   noise_oct4_linear=0xef4969b5,
+   turbulence_oct4_linear=0x384b30fa,
+   noise_oct4_height=0x7deb5e41,
+   turbulence_oct4_height=0x8887e0aa,
+   noise_oct0_height=0xc1224213,
+   noise_oct1_height=0x5d405b3e,
+   turbulence_oct4_stitch_height=0x17807420,
+   noise_oct4_height_linear=0xc63c195c,
+   noise_oct4_bbox=0x42a0c01d,
+   turbulence_oct4_bbox=0x59fa7923,
+   noise_oct4_bbox_stitch=0x3812d64c,
+   turbulence_oct4_bbox_stitch=0x7bb8d71c,
+   noise_oct4_bbox_height=0xc9a602e9,
+   noise_oct4_rotated=0x91057c1e,
+   turbulence_oct4_rotated=0x2689146e,
+   noise_oct4_rotated_stitch=0xb0c3d14c,
+   turbulence_oct4_rotated_stitch=0x75e04ea9,
+   noise_oct4_rotated_height=0x742669a3,
+   noise_oct4_rotated_bbox=0xc1d98c20
+}
+
+-- The filtered rectangle is offset and not square, so that bounding-box units differ from user space on both axes.
+
+function buildCase(Case:table):obj
+   local space = (Case.space is 'linear') ? VCS_LINEAR_RGB : VCS_SRGB
+   local scene = obj.new('VectorScene', { pageWidth=SIZE, pageHeight=SIZE, compliance=VSC_NONE })
+   local root = scene.new('VectorViewport', { width=SIZE, height=SIZE, colourSpace=VCS_SRGB })
+   local filter = scene.new('VectorFilter', {
+      units=VUNIT_USERSPACE, x=0, y=0, width=SIZE, height=SIZE, colourSpace=space,
+      primitiveUnits=(Case.unit is 'bbox') ? VUNIT_BOUNDING_BOX : VUNIT_USERSPACE
+   })
+   check scene.mtAddDef('noise', filter)
+
+   local rect = root.new('VectorRectangle', { x=4, y=6, width=56, height=50, fill='white', filter='url(#noise)' })
+   if Case.rotate then
+      local _, matrix = check rect.mtNewMatrix()
+      check mVec.Rotate(matrix, Case.rotate, SIZE / 2, SIZE / 2)
+   end
+
+   local noise = filter.new('TurbulenceFX', {
+      type=Case.type, octaves=Case.octaves, seed=(Case.seed is nil) ? 7 : Case.seed, stitch=Case.stitch and 1 or 0,
+      fx=Case.fx ?? 0.045, fy=Case.fy ?? 0.07, outputMode=(Case.mode is 'height') ? FOM_HEIGHT : FOM_IMAGE
+   })
+
+   if Case.region then
+      noise.{ x=Case.region[0], y=Case.region[1], width=Case.region[2], height=Case.region[3] }
+   end
+
+   -- A native height cannot be the final result.  It is captured as the amount mask that mixes blue into red.
+
+   if Case.mode is 'height' then
+      local red = filter.new('FloodFX', { colour='1,0,0,1' })
+      local blue = filter.new('FloodFX', { colour='0,0,1,1' })
+      filter.new('CompositeFX', { input=red, mix=blue, operator=OP_OVER, amountMask=noise })
+   end
+   return scene
+end
+
+function drawScene(Scene:obj):obj
+   local bitmap = obj.new('Bitmap', { width=SIZE, height=SIZE, bitsPerPixel=32,
+      flags=BMF_ALPHA_CHANNEL, bkgd='0,0,255,255', blendMode=BLM_NONE })
+   check bitmap.acClear()
+   Scene.bitmap = bitmap
+   check Scene.acDraw()
+   Scene.bitmap = nil
+   return bitmap
+end
+
+function renderCase(Case:table):obj
+   local scene <close> = buildCase(Case)
+   return drawScene(scene)
+end
+
+function crc(Bitmap:obj):num
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+--------------------------------------------------------------------------------------------------------------------
+
+@Test function OutputMatchesTheRecordedBaseline()
+   local failures = ''
+   for _, case in CASES do
+      local bitmap <close> = renderCase(case)
+      local hash = crc(bitmap)
+      local expected = GOLDEN[case.name]
+      if expected is nil then
+         failures ..= f'\n   {case.name}: no baseline, computed {string.format("0x%.8x", hash)}'
+      elseif hash != expected then
+         local p = mGfx.ReadRGBPixel(bitmap, 32, 32)
+         failures ..= f'\n   {case.name}: computed {string.format("0x%.8x", hash)}, expected ' ..
+            f'{string.format("0x%.8x", expected)}; centre {p.red},{p.green},{p.blue},{p.alpha}'
+      end
+   end
+   assert(failures is '', 'Turbulence output differs from the baseline:' .. failures)
+end
+
+@Test function CasesAreDistinct()
+   -- Guards the baseline against cases that do not exercise the setting they name.  Zero octaves produce constant
+   -- noise, so stitching cannot change it.
+
+   local seen = { }
+   for _, case in CASES do
+      local hash = GOLDEN[case.name]
+      if (hash != nil) and (case.name != 'noise_oct0_stitch') then
+         assert(seen[hash] is nil, f'{case.name} has the same output as {seen[hash]}')
+         seen[hash] = case.name
+      end
+   end
+end
+
+@Test function SeedsZeroAndOneShareALattice()
+   local zero <close> = renderCase({ type=TB_NOISE, octaves=4, seed=0 })
+   local one <close> = renderCase({ type=TB_NOISE, octaves=4, seed=1 })
+   local two <close> = renderCase({ type=TB_NOISE, octaves=4, seed=2 })
+   assert(crc(zero) is crc(one), 'Seeds 0 and 1 must produce the same lattice')
+   assert(crc(zero) != crc(two), 'Seed 2 must produce a different lattice')
+end
+
+@Test function RedrawingReusesIdenticalOutput()
+   -- The second draw of an unchanged effect is served from the IMAGE cache, or recomputed for HEIGHT, and must match
+   -- both the first draw and the baseline.
+
+   local names = array<str> { 'noise_oct4', 'turbulence_oct4_stitch', 'noise_oct4_rotated', 'noise_oct4_height' }
+   for _, case in CASES do
+      if case.name in names then
+         local scene <close> = buildCase(case)
+         local first <close> = drawScene(scene)
+         local second <close> = drawScene(scene)
+         assert(crc(first) is crc(second), f'{case.name} must redraw identically')
+         assert(crc(second) is GOLDEN[case.name], f'{case.name} must match the baseline on redraw')
+      end
+   end
+end
